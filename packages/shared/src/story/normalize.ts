@@ -47,7 +47,12 @@ export function mergeCharacters(llm: LlmCharacter[], existing: Character[]): Cha
     const id = byName(c.name);
     const current = id ? existing.find((e) => e.id === id) : undefined;
     if (current && seen.has(current.id)) continue;
-    const wardrobe = c.wardrobe.map((w, i) => ({ id: newId('wardrobe'), name: w.name, description: w.description, ...(i === 0 ? { default: true } : {}) }));
+    const wardrobe = c.wardrobe.map((w, i) => ({
+      id: newId('wardrobe'),
+      name: w.name,
+      description: w.description,
+      ...(i === 0 ? { default: true } : {}),
+    }));
     if (current) {
       seen.add(current.id);
       out.push(
@@ -84,7 +89,12 @@ export function mergeCharacters(llm: LlmCharacter[], existing: Character[]): Cha
   return out;
 }
 
-export function sceneFromLlm(s: LlmScene, index: number, beatId: string | null, resolve: (name: string) => string | null): Scene {
+export function sceneFromLlm(
+  s: LlmScene,
+  index: number,
+  beatId: string | null,
+  resolve: (name: string) => string | null,
+): Scene {
   const characterIds = [...new Set(s.characters.map(resolve).filter((x): x is string => !!x))];
   return {
     id: newId('scene'),
@@ -121,7 +131,10 @@ export interface ScreenplayResult {
   characters: Character[];
 }
 
-export function screenplayFromLlm(out: ScreenplayGenerateOutput, opts: { targetDurationSec: number; language: string; existing: Character[] }): ScreenplayResult {
+export function screenplayFromLlm(
+  out: ScreenplayGenerateOutput,
+  opts: { targetDurationSec: number; language: string; existing: Character[] },
+): ScreenplayResult {
   const characters = mergeCharacters(out.characters, opts.existing);
   const resolve = nameIndex(characters);
   const durations = fitOutline(out.outline, opts.targetDurationSec);
@@ -161,13 +174,18 @@ export function screenplayFromLlm(out: ScreenplayGenerateOutput, opts: { targetD
 }
 
 /** Appends extension scenes to the screenplay, linking each to its outline beat. */
-export function appendScenes(sp: Screenplay, llm: LlmScene[], characters: Character[]): { screenplay: Screenplay; added: Scene[] } {
+export function appendScenes(
+  sp: Screenplay,
+  llm: LlmScene[],
+  characters: Character[],
+): { screenplay: Screenplay; added: Scene[] } {
   const resolve = nameIndex(characters);
   const outline = sp.outline.map((b) => ({ ...b }));
   const scenes = [...sp.scenes];
   const added: Scene[] = [];
   for (const s of llm) {
-    const beat = outline.find((b) => b.index === s.beatIndex && !b.sceneId) ?? outline.find((b) => !b.sceneId);
+    const beat =
+      outline.find((b) => b.index === s.beatIndex && !b.sceneId) ?? outline.find((b) => !b.sceneId);
     const scene = sceneFromLlm(s, scenes.length, beat?.id ?? null, resolve);
     if (beat) {
       beat.sceneId = scene.id;
@@ -204,7 +222,12 @@ export function normalizePlannedShots(planned: LlmShot[], opts: ShotPlanOptions)
     }
     const parts = Math.ceil(d / max);
     for (let p = 0; p < parts; p++) {
-      split.push({ ...s, durationSec: d / parts, continuity: p === 0 ? s.continuity : 'continuous', dialogue: p === 0 ? s.dialogue : [] });
+      split.push({
+        ...s,
+        durationSec: d / parts,
+        continuity: p === 0 ? s.continuity : 'continuous',
+        dialogue: p === 0 ? s.dialogue : [],
+      });
     }
   }
   drafts = split;
@@ -243,19 +266,55 @@ export function normalizePlannedShots(planned: LlmShot[], opts: ShotPlanOptions)
 }
 
 /** Deterministic edit suggestions from signal analysis (always available, no LLM needed). */
-export function ruleSuggestions(input: { durationSec: number; silences: TimeRange[]; blackSegments: TimeRange[] }): EditSuggestion[] {
+export function ruleSuggestions(input: {
+  durationSec: number;
+  silences: TimeRange[];
+  blackSegments: TimeRange[];
+}): EditSuggestion[] {
   const out: EditSuggestion[] = [];
   const d = input.durationSec;
-  const add = (params: EditSuggestion['params'], description: string, rationale: string, confidence: number) =>
-    out.push({ id: newId('suggestion'), source: 'rules', description, rationale, confidence, params, status: 'pending' });
+  const add = (
+    params: EditSuggestion['params'],
+    description: string,
+    rationale: string,
+    confidence: number,
+  ) =>
+    out.push({
+      id: newId('suggestion'),
+      source: 'rules',
+      description,
+      rationale,
+      confidence,
+      params,
+      status: 'pending',
+    });
   for (const b of input.blackSegments) {
-    if (b.end - b.start >= 0.3) add({ kind: 'cut', start: b.start, end: b.end }, `Cut black frames ${b.start.toFixed(1)}–${b.end.toFixed(1)}s`, 'Black segment detected.', 0.9);
+    if (b.end - b.start >= 0.3)
+      add(
+        { kind: 'cut', start: b.start, end: b.end },
+        `Cut black frames ${b.start.toFixed(1)}–${b.end.toFixed(1)}s`,
+        'Black segment detected.',
+        0.9,
+      );
   }
   for (const s of input.silences) {
     const len = s.end - s.start;
-    if (s.start <= 0.05 && len > 0.4) add({ kind: 'cut', start: 0, end: Math.max(0, s.end - 0.2) }, 'Trim the silent start', 'Leading silence.', 0.8);
-    else if (s.end >= d - 0.05 && len > 0.6) add({ kind: 'cut', start: s.start + 0.3, end: d }, 'Trim the silent ending', 'Trailing silence.', 0.75);
-    else if (len > 1.2) add({ kind: 'tighten_silence', start: s.start, end: s.end, keepSec: 0.4 }, `Tighten a ${len.toFixed(1)}s pause`, 'Long silence slows the pace.', 0.7);
+    if (s.start <= 0.05 && len > 0.4)
+      add(
+        { kind: 'cut', start: 0, end: Math.max(0, s.end - 0.2) },
+        'Trim the silent start',
+        'Leading silence.',
+        0.8,
+      );
+    else if (s.end >= d - 0.05 && len > 0.6)
+      add({ kind: 'cut', start: s.start + 0.3, end: d }, 'Trim the silent ending', 'Trailing silence.', 0.75);
+    else if (len > 1.2)
+      add(
+        { kind: 'tighten_silence', start: s.start, end: s.end, keepSec: 0.4 },
+        `Tighten a ${len.toFixed(1)}s pause`,
+        'Long silence slows the pace.',
+        0.7,
+      );
   }
   if (d > 4) add({ kind: 'fade', in: 0.5, out: 1 }, 'Fade in and out', 'Softer start and ending.', 0.6);
   return out;
@@ -263,7 +322,11 @@ export function ruleSuggestions(input: { durationSec: number; silences: TimeRang
 
 /** Converts a flat LLM suggestion into a validated EditSuggestion (invalid ones are dropped). */
 export function suggestionFromLlm(raw: Record<string, unknown>, durationSec: number): EditSuggestion | null {
-  const { description, rationale, confidence, ...params } = raw as { description?: string; rationale?: string; confidence?: number } & Record<string, unknown>;
+  const { description, rationale, confidence, ...params } = raw as {
+    description?: string;
+    rationale?: string;
+    confidence?: number;
+  } & Record<string, unknown>;
   const parsed = SuggestionParamsSchema.safeParse(params);
   if (!parsed.success) return null;
   const p = parsed.data;

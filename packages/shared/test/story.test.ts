@@ -15,19 +15,36 @@ import * as f from '../src/testing/fixtures';
 const llm = ScreenplayGenerateOutputSchema.parse({
   title: 'The Keeper',
   characters: [
-    { name: 'Mira Vale', role: 'protagonist', identity: { age: '30s', gender: 'woman', hair: 'black bob' }, wardrobe: [{ name: 'Coat', description: 'grey coat' }] },
+    {
+      name: 'Mira Vale',
+      role: 'protagonist',
+      identity: { age: '30s', gender: 'woman', hair: 'black bob' },
+      wardrobe: [{ name: 'Coat', description: 'grey coat' }],
+    },
     { name: 'Jonah', role: 'supporting', identity: { age: '40s', gender: 'man' } },
   ],
   outline: [
     { summary: 'Arrival', estDurationSec: 50 },
     { summary: 'Letters', estDurationSec: 50 },
   ],
-  scenes: [{ beatIndex: 0, heading: 'INT. LAMP ROOM - NIGHT', characters: ['Mira', 'Jonah'], dialogue: [{ character: 'Mira', line: 'Who?' }], estDurationSec: 40 }],
+  scenes: [
+    {
+      beatIndex: 0,
+      heading: 'INT. LAMP ROOM - NIGHT',
+      characters: ['Mira', 'Jonah'],
+      dialogue: [{ character: 'Mira', line: 'Who?' }],
+      estDurationSec: 40,
+    },
+  ],
 });
 
 describe('screenplay normalization', () => {
   it('assigns ids, links scenes to beats and scales the outline to the target', () => {
-    const { screenplay, characters } = screenplayFromLlm(llm, { targetDurationSec: 60, language: 'en', existing: [] });
+    const { screenplay, characters } = screenplayFromLlm(llm, {
+      targetDurationSec: 60,
+      language: 'en',
+      existing: [],
+    });
     expect(characters.map((c) => c.name)).toEqual(['Mira Vale', 'Jonah']);
     expect(characters[0]!.lock).toEqual({ locked: false, version: 0 });
     expect(characters[0]!.wardrobe[0]).toMatchObject({ name: 'Coat', default: true });
@@ -53,7 +70,23 @@ describe('screenplay normalization', () => {
     const cast = [f.character({ name: 'Mira Vale' }), f.character({ name: 'Jonah Reed' })];
     expect(nameIndex(cast)('mira')).toBe(cast[0]!.id);
     const { screenplay } = screenplayFromLlm(llm, { targetDurationSec: 100, language: 'en', existing: cast });
-    const { screenplay: next, added } = appendScenes(screenplay, [{ beatIndex: 1, heading: 'EXT. SHORE', location: '', timeOfDay: '', summary: '', action: '', dialogue: [], characters: ['Jonah'], estDurationSec: 10 }], cast);
+    const { screenplay: next, added } = appendScenes(
+      screenplay,
+      [
+        {
+          beatIndex: 1,
+          heading: 'EXT. SHORE',
+          location: '',
+          timeOfDay: '',
+          summary: '',
+          action: '',
+          dialogue: [],
+          characters: ['Jonah'],
+          estDurationSec: 10,
+        },
+      ],
+      cast,
+    );
     expect(added[0]!.index).toBe(1);
     expect(next.outline[1]!.sceneId).toBe(added[0]!.id);
     expect(added[0]!.estDurationSec).toBe(50);
@@ -66,9 +99,33 @@ describe('shot planning normalization', () => {
     const mira = f.character({ name: 'Mira Vale' });
     const shots = normalizePlannedShots(
       [
-        { description: 'Wide of the lighthouse', action: '', camera: { framing: 'wide', movement: 'static' }, characters: [], durationSec: 25, continuity: 'continuous', dialogue: [] },
-        { description: 'Mira reads', action: 'She turns', camera: { framing: 'close_up', movement: 'dolly_in' }, characters: ['mira'], durationSec: 1, continuity: 'continuous', dialogue: [{ character: 'Mira', line: 'Who?' }] },
-        { description: '   ', action: '', camera: { framing: 'wide', movement: 'static' }, characters: [], durationSec: 5, continuity: 'cut', dialogue: [] },
+        {
+          description: 'Wide of the lighthouse',
+          action: '',
+          camera: { framing: 'wide', movement: 'static' },
+          characters: [],
+          durationSec: 25,
+          continuity: 'continuous',
+          dialogue: [],
+        },
+        {
+          description: 'Mira reads',
+          action: 'She turns',
+          camera: { framing: 'close_up', movement: 'dolly_in' },
+          characters: ['mira'],
+          durationSec: 1,
+          continuity: 'continuous',
+          dialogue: [{ character: 'Mira', line: 'Who?' }],
+        },
+        {
+          description: '   ',
+          action: '',
+          camera: { framing: 'wide', movement: 'static' },
+          characters: [],
+          durationSec: 5,
+          continuity: 'cut',
+          dialogue: [],
+        },
       ],
       { characters: [mira], minSec: 2, maxSec: 10, targetSec: 26 },
     );
@@ -97,10 +154,17 @@ describe('edit suggestions', () => {
   });
 
   it('validates LLM suggestions against the schema and the footage length', () => {
-    expect(suggestionFromLlm({ kind: 'transition', at: 5, type: 'crossfade', duration: 0.5, description: 'soften' }, 30)).toMatchObject({ source: 'ai', params: { kind: 'transition' } });
+    expect(
+      suggestionFromLlm(
+        { kind: 'transition', at: 5, type: 'crossfade', duration: 0.5, description: 'soften' },
+        30,
+      ),
+    ).toMatchObject({ source: 'ai', params: { kind: 'transition' } });
     expect(suggestionFromLlm({ kind: 'cut', start: 5, end: 2 }, 30)).toBeNull();
     expect(suggestionFromLlm({ kind: 'cut', start: 5, end: 99 }, 30)).toBeNull();
     expect(suggestionFromLlm({ kind: 'explode', at: 1 }, 30)).toBeNull();
-    expect(suggestionFromLlm({ kind: 'title', text: 'Hi', start: 0, duration: 2, confidence: 7 }, 30)?.confidence).toBe(0.5);
+    expect(
+      suggestionFromLlm({ kind: 'title', text: 'Hi', start: 0, duration: 2, confidence: 7 }, 30)?.confidence,
+    ).toBe(0.5);
   });
 });

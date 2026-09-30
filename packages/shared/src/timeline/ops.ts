@@ -29,20 +29,23 @@ export interface OpContext {
   newId?: (kind: 'item' | 'track') => string;
 }
 
-export function emptyTimeline(
-  opts: { fps: number; width: number; height: number },
-  ctx: OpContext = {},
-): Timeline {
-  const gen = ctx.newId ?? ((k) => newId(k));
+/** Stable ids of the default tracks, so every client addresses the same tracks of a not-yet-saved timeline. */
+export const DEFAULT_TRACK_IDS = {
+  video: 'trk_primaryvideo01',
+  audio: 'trk_musicbed000001',
+  text: 'trk_titles00000001',
+} as const;
+
+export function emptyTimeline(opts: { fps: number; width: number; height: number }): Timeline {
   return {
     version: 1,
     fps: opts.fps,
     width: opts.width,
     height: opts.height,
     tracks: [
-      { id: gen('track'), kind: 'video', name: 'Video', items: [] },
-      { id: gen('track'), kind: 'audio', name: 'Music', items: [] },
-      { id: gen('track'), kind: 'text', name: 'Titles', items: [] },
+      { id: DEFAULT_TRACK_IDS.video, kind: 'video', name: 'Video', items: [] },
+      { id: DEFAULT_TRACK_IDS.audio, kind: 'audio', name: 'Music', items: [] },
+      { id: DEFAULT_TRACK_IDS.text, kind: 'text', name: 'Titles', items: [] },
     ],
   };
 }

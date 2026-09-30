@@ -81,6 +81,7 @@ function plain(task: SdkTask): GatewayTask {
   return GatewayTaskSchema.parse(JSON.parse(JSON.stringify(task)));
 }
 
+/** Retry-After in ms, clamped to [1 s, 10 s]. */
 function retryAfterMs(info: HttpInfo<unknown>): number | undefined {
   const raw = info.response?.headers?.['retry-after'];
   const sec = raw ? Number.parseFloat(raw) : Number.NaN;
@@ -207,7 +208,11 @@ export class GatewayClient {
           task,
         );
       }
-      await sleep(retryAfterMs(info) ?? this.cfg.pollMs, opts.signal);
+      // A sub-second poll interval is a fast-poll mode (tests, local mocks); otherwise honour Retry-After.
+      await sleep(
+        this.cfg.pollMs < 1000 ? this.cfg.pollMs : (retryAfterMs(info) ?? this.cfg.pollMs),
+        opts.signal,
+      );
       try {
         info = await this.get(modality, task.id);
         transient = 0;

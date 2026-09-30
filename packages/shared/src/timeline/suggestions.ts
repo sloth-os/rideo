@@ -76,10 +76,7 @@ function clampRange(r: TimeRange, dur: number): TimeRange {
 export function applySuggestions(input: ApplySuggestionsInput, ctx: OpContext = {}): Timeline {
   const gen = ctx.newId ?? ((k) => newId(k));
   const accepted = input.suggestions.filter((s) => s.status === 'accepted');
-  const timeline = emptyTimeline(
-    { fps: input.fps, width: input.width, height: input.height },
-    { newId: gen },
-  );
+  const timeline = emptyTimeline({ fps: input.fps, width: input.width, height: input.height });
   const video = primaryTrack(timeline);
   const kept = keptRanges(input.durationSec, accepted);
 

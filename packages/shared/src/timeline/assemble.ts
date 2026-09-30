@@ -20,10 +20,7 @@ export interface AssembleInput {
 /** Builds the story timeline: selected takes in clip/shot order, scene crossfades, music bed, captions. */
 export function assembleStoryTimeline(input: AssembleInput, ctx: OpContext = {}): Timeline {
   const gen = ctx.newId ?? ((k) => newId(k));
-  const timeline = emptyTimeline(
-    { fps: input.fps, width: input.width, height: input.height },
-    { newId: gen },
-  );
+  const timeline = emptyTimeline({ fps: input.fps, width: input.width, height: input.height });
   const video = primaryTrack(timeline);
   const clips = [...input.clips]
     .filter((c) => input.includeUnapproved || c.status === 'approved')
