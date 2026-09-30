@@ -48,10 +48,28 @@ export const MediaRefSchema = z.object({
   durationSec: z.number().nonnegative().optional(),
   hasAudio: z.boolean().optional(),
   fps: z.number().positive().optional(),
-  proxy: z.object({ path: MediaPathSchema, mime: z.string() }).optional(),
+  videoCodec: z.string().max(50).optional(),
+  audioCodec: z.string().max(50).optional(),
   poster: z.object({ path: MediaPathSchema, mime: z.string() }).optional(),
 });
 export type MediaRef = z.infer<typeof MediaRefSchema>;
+
+/** What a probe (ffprobe on the server, the ffmpeg banner in the browser) knows about a media file. */
+export const ProbeSchema = z.object({
+  formatName: z.string().max(200),
+  durationSec: z.number().nonnegative(),
+  hasVideo: z.boolean(),
+  hasAudio: z.boolean(),
+  width: z.number().int().positive().optional(),
+  height: z.number().int().positive().optional(),
+  fps: z.number().positive().max(1000).optional(),
+  videoCodec: z.string().max(50).optional(),
+  audioCodec: z.string().max(50).optional(),
+  sampleRate: z.number().int().positive().optional(),
+  channels: z.number().int().positive().max(64).optional(),
+  rotation: z.number().min(-360).max(360).optional(),
+});
+export type Probe = z.infer<typeof ProbeSchema>;
 
 export const AspectRatioSchema = z.enum(['16:9', '9:16', '1:1', '4:3', '21:9']);
 export type AspectRatio = z.infer<typeof AspectRatioSchema>;
@@ -85,6 +103,7 @@ export const ERROR_CODES = [
   'unauthorized',
   'forbidden',
   'cancelled',
+  'lease_lost',
   'internal_error',
 ] as const;
 export const ErrorCodeSchema = z.enum(ERROR_CODES);

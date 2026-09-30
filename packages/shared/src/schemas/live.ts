@@ -91,11 +91,20 @@ export const ServerMessageSchema = z.discriminatedUnion('type', [
 ]);
 export type ServerMessage = z.infer<typeof ServerMessageSchema>;
 
+/** A tab's editor engine, reported with its presence (docs/design/realtime-sync.md#presence). */
+export const EngineStateSchema = z.object({
+  ffmpeg: z.enum(['unloaded', 'loading', 'ready', 'failed']),
+  webcodecs: z.object({ video: z.string().max(20).nullable(), audio: z.string().max(20).nullable() }),
+  busyJobId: z.string().max(100).nullable(),
+});
+export type EngineState = z.infer<typeof EngineStateSchema>;
+
 export const PresenceSchema = z.object({
   projectId: z.string().nullable(),
   route: z.string().max(500),
   selection: z.object({ kind: FocusKindSchema, id: z.string() }).nullable().optional(),
   viewport: z.object({ width: z.number(), height: z.number() }).optional(),
+  engine: EngineStateSchema.optional(),
 });
 export type Presence = z.infer<typeof PresenceSchema>;
 

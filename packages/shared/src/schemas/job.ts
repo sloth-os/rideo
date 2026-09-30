@@ -11,8 +11,9 @@ export const JOB_KINDS = [
   'shot.generate',
   'batch.generate',
   'music.generate',
-  'resource.process',
-  'analysis.run',
+  'media.process',
+  'analysis.signals',
+  'analysis.suggest',
   'edit.auto',
   'timeline.assemble',
   'export.render',
@@ -21,7 +22,8 @@ export const JOB_KINDS = [
 export const JobKindSchema = z.enum(JOB_KINDS);
 export type JobKind = z.infer<typeof JobKindSchema>;
 
-export const LANES = ['control', 'llm', 'image', 'video', 'music', 'media'] as const;
+/** `client` jobs are editor jobs: run by studio tabs, never by the server (docs/design/editor.md#editor-jobs). */
+export const LANES = ['control', 'llm', 'image', 'video', 'music', 'media', 'client'] as const;
 export const LaneSchema = z.enum(LANES);
 export type Lane = z.infer<typeof LaneSchema>;
 
@@ -35,13 +37,28 @@ export const JOB_LANES: Record<JobKind, Lane> = {
   'shot.generate': 'video',
   'batch.generate': 'control',
   'music.generate': 'music',
-  'resource.process': 'media',
-  'analysis.run': 'media',
+  'media.process': 'client',
+  'analysis.signals': 'client',
+  'analysis.suggest': 'llm',
   'edit.auto': 'control',
   'timeline.assemble': 'control',
-  'export.render': 'media',
+  'export.render': 'client',
   'export.finish': 'media',
 };
+
+export const EDITOR_JOB_KINDS = ['media.process', 'analysis.signals', 'export.render'] as const;
+export const EditorJobKindSchema = z.enum(EDITOR_JOB_KINDS);
+export type EditorJobKind = z.infer<typeof EditorJobKindSchema>;
+export function isEditorJob(job: Pick<Job, 'kind'>): job is Job & { kind: EditorJobKind } {
+  return (EDITOR_JOB_KINDS as readonly string[]).includes(job.kind);
+}
+
+export const JobLeaseSchema = z.object({
+  sessionId: z.string().min(1).max(100),
+  claimedAt: IsoDateSchema,
+  expiresAt: IsoDateSchema,
+});
+export type JobLease = z.infer<typeof JobLeaseSchema>;
 
 export const JobStatusSchema = z.enum(['queued', 'running', 'succeeded', 'failed', 'cancelled']);
 export type JobStatus = z.infer<typeof JobStatusSchema>;
@@ -74,6 +91,10 @@ export const JobSchema = z.object({
       }),
     )
     .default([]),
+  /** Editor jobs: the tab currently running it. */
+  lease: JobLeaseSchema.nullable().default(null),
+  /** Editor jobs: files uploaded so far (kept across leases so a render can resume). */
+  staged: z.array(z.string()).default([]),
   createdAt: IsoDateSchema,
   startedAt: IsoDateSchema.optional(),
   finishedAt: IsoDateSchema.optional(),
@@ -85,12 +106,21 @@ export function isTerminalJob(job: Pick<Job, 'status'>): boolean {
   return TERMINAL_JOB_STATUSES.includes(job.status);
 }
 
+export const ExportQualitySchema = z.enum(['draft', 'standard', 'high']);
+export type ExportQuality = z.infer<typeof ExportQualitySchema>;
+export const RenderEngineSchema = z.enum(['ffmpeg', 'webcodecs']);
+export type RenderEngine = z.infer<typeof RenderEngineSchema>;
+export const RenderEngineChoiceSchema = z.enum(['auto', 'ffmpeg', 'webcodecs']);
+export type RenderEngineChoice = z.infer<typeof RenderEngineChoiceSchema>;
+
 export const ExportSchema = z.object({
   id: IdSchema,
   createdAt: IsoDateSchema,
+  /** `server` exports are from before rendering moved to the browser (kept readable). */
   method: z.enum(['server', 'browser']),
+  engine: RenderEngineSchema.optional(),
   status: z.enum(['queued', 'rendering', 'finishing', 'succeeded', 'failed']),
-  quality: z.enum(['draft', 'standard', 'high']).default('standard'),
+  quality: ExportQualitySchema.default('standard'),
   media: MediaRefSchema.nullable().default(null),
   watermarkId: z.string().nullable().default(null),
   timelineCommit: z.string().nullable().default(null),

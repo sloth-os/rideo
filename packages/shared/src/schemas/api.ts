@@ -3,6 +3,7 @@ import { EditSuggestionSchema } from './analysis';
 import { CharacterRoleSchema, IdentitySchema, ReferenceViewSchema } from './character';
 import { CameraSchema } from './clip';
 import { AspectRatioSchema, IdSchema } from './common';
+import { ExportQualitySchema, RenderEngineChoiceSchema } from './job';
 import { ProjectKindSchema } from './project';
 import { ResourceKindSchema, ResourceRoleSchema } from './resource';
 import { DialogueLineSchema, StyleBibleSchema } from './screenplay';
@@ -172,7 +173,10 @@ export const SuggestionDecisionsInputSchema = z.object({
   decisions: z.array(z.object({ id: IdSchema, status: EditSuggestionSchema.shape.status })).min(1),
 });
 
-export const ExportInputSchema = z.object({ quality: z.enum(['draft', 'standard', 'high']).optional() });
+export const ExportInputSchema = z.object({
+  quality: ExportQualitySchema.optional(),
+  engine: RenderEngineChoiceSchema.optional(),
+});
 
 export const RestoreInputSchema = z.object({
   commit: z.string().min(4),

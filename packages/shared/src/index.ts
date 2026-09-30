@@ -1,6 +1,7 @@
 export * from './consistency';
 export * from './diff/json-diff';
 export * from './ids';
+export * from './media';
 export * from './prompt';
 export * from './schemas/analysis';
 export * from './schemas/api';
@@ -8,6 +9,7 @@ export * from './schemas/character';
 export * from './schemas/clip';
 export * from './schemas/common';
 export * from './schemas/documents';
+export * from './schemas/editor';
 export * from './schemas/gateway';
 export * from './schemas/job';
 export * from './schemas/live';

@@ -51,7 +51,7 @@ export type AutoActionId =
   | 'clip.pilot'
   | 'batch.generate'
   | 'timeline.assemble'
-  | 'analysis.run'
+  | 'analysis.start'
   | 'edit.auto';
 
 export interface StageDef {
@@ -170,7 +170,7 @@ export const EDIT_WORKFLOW: WorkflowDefinition = {
         requirements: ['analysis.completed'],
         tag: 'suggestions-reviewed',
       },
-      autoOnEnter: ['analysis.run'],
+      autoOnEnter: ['analysis.start'],
     },
     {
       id: 'edit',
