@@ -120,7 +120,8 @@ export function buildRenderPlan(input: RenderPlanInput): RenderPlan {
     let chain =
       `[${k}:v]trim=start=${n(s.in)}:end=${n(s.out)},setpts=(PTS-STARTPTS)/${n(s.speed)},` +
       `scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:color=black,` +
-      `setsar=1,fps=${fps},format=yuv420p`;
+      // settb: concat outputs AV_TIME_BASE, and xfade needs both inputs on the same timebase
+      `setsar=1,fps=${fps},format=yuv420p,settb=AVTB`;
     const e = s.effects;
     if (e && (e.brightness !== undefined || e.contrast !== undefined || e.saturation !== undefined)) {
       chain += `,eq=brightness=${n(e.brightness ?? 0)}:contrast=${n(e.contrast ?? 1)}:saturation=${n(e.saturation ?? 1)}`;
@@ -170,7 +171,8 @@ export function buildRenderPlan(input: RenderPlanInput): RenderPlan {
     );
     acc = `t${i}`;
   });
-  filters.push(`[${acc}]trim=duration=${n(duration)},format=yuv420p[vout]`);
+  // fps: snap AV_TIME_BASE timestamps back onto the frame grid so the trim yields exactly totalFrames
+  filters.push(`[${acc}]fps=${fps},trim=duration=${n(duration)},format=yuv420p[vout]`);
   const videoArgs = [
     ...vArgs,
     '-filter_complex',
