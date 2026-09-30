@@ -1,0 +1,12 @@
+**/node_modules
+**/dist
+.git
+.github
+data
+data-demo
+test-results
+playwright-report
+blob-report
+coverage
+.env
+*.log

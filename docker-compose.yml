@@ -1,0 +1,31 @@
+# Rideo + mm-gateway. Setup: cp .env.example .env; cp deploy/mm-gateway.example.yaml mm-gateway.yaml
+# (fill in provider keys), then: docker compose up -d  →  http://localhost:8787
+services:
+  rideo:
+    image: ghcr.io/sloth-os/rideo:latest
+    build: .
+    env_file: .env
+    environment:
+      MM_GATEWAY_URL: http://mm-gateway:8000
+      RIDEO_DATA_DIR: /data
+    ports:
+      - "8787:8787"
+    volumes:
+      - rideo-data:/data
+    depends_on:
+      - mm-gateway
+    restart: unless-stopped
+
+  mm-gateway:
+    image: ghcr.io/sloth-os/mm-gateway:latest
+    env_file: .env
+    environment:
+      MM_GATEWAY_CONFIG: /etc/mm-gateway/config.yaml
+    volumes:
+      - ./mm-gateway.yaml:/etc/mm-gateway/config.yaml:ro
+    expose:
+      - "8000"
+    restart: unless-stopped
+
+volumes:
+  rideo-data:

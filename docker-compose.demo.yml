@@ -1,0 +1,32 @@
+# Fully offline demo: Rideo with the mock mm-gateway (deterministic images, video, music and LLM).
+#   docker compose -f docker-compose.demo.yml up  →  http://localhost:8787
+services:
+  rideo:
+    image: ghcr.io/sloth-os/rideo:latest
+    build: .
+    environment:
+      MM_GATEWAY_URL: http://mock-gateway:8790
+      RIDEO_LLM_PROVIDER: openai
+      RIDEO_LLM_PROXY_DOMAIN: api.openai.com
+      RIDEO_GATEWAY_POLL_MS: "500"
+    ports:
+      - "8787:8787"
+    volumes:
+      - rideo-demo-data:/data
+    depends_on:
+      - mock-gateway
+
+  mock-gateway:
+    image: ghcr.io/sloth-os/rideo:latest
+    build: .
+    command: ["node", "packages/mock-gateway/dist/main.js"]
+    environment:
+      MOCK_GATEWAY_HOST: 0.0.0.0
+      MOCK_GATEWAY_PORT: "8790"
+    expose:
+      - "8790"
+    healthcheck:
+      disable: true
+
+volumes:
+  rideo-demo-data:

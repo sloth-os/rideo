@@ -1,0 +1,28 @@
+# mm-gateway config for Rideo (see docs/deployment.md#connecting-mm-gateway and the mm-gateway README).
+# Copy to ./mm-gateway.yaml; values like ${GOOGLE_API_KEY} come from .env.
+server:
+  host: 0.0.0.0
+  port: 8000
+
+backends:
+  - name: vertex
+    type: vertex # Imagen / Veo / Lyria through Application Default Credentials
+    tags: [prod]
+
+proxies:
+  # The LLM, the vision judge and speech-to-text reach their providers through /proxy/{domain}/...
+  - base_url: https://generativelanguage.googleapis.com # RIDEO_LLM_PROVIDER=gemini
+    tags: [prod]
+    accounts:
+      - id: main
+        headers: { x-goog-api-key: "${GOOGLE_API_KEY}" }
+  - base_url: https://api.openai.com # RIDEO_LLM_PROVIDER=openai
+    tags: [prod]
+    accounts:
+      - id: main
+        headers: { authorization: "Bearer ${OPENAI_API_KEY}" }
+
+keys:
+  - id: rideo
+    key: ${GATEWAY_API_KEY} # = MM_GATEWAY_API_KEY in .env
+    allow_tags: [prod]

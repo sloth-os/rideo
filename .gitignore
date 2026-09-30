@@ -13,3 +13,5 @@ blob-report/
 .vite/
 *.tsbuildinfo
 .tmp/
+data-demo/
+mm-gateway.yaml
