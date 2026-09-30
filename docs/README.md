@@ -17,6 +17,7 @@
 | [testing.md](testing.md) | Test pyramid, suites, fixtures, CI jobs |
 | [deployment.md](deployment.md) | Configuration, Docker, connecting mm-gateway and an external WebDAV server |
 | [brand.md](brand.md) | Brand and UI design tokens |
+| [roadmap.md](roadmap.md) | Market research (Sept 2026) and the prioritized list of features to build next |
 
 ## Glossary
 
