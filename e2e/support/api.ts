@@ -1,5 +1,7 @@
 import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import type { APIRequestContext } from '@playwright/test';
+import { parseProbe } from '@rideo/shared';
 
 type Job = { id: string; kind: string; status: string; error?: unknown };
 const TERMINAL = new Set(['succeeded', 'failed', 'cancelled']);
@@ -52,6 +54,39 @@ export class Api {
       const job = await this.call<Job>('POST', `/projects/${p.id}/screenplay/generate`, {});
       await this.waitJob(p.id, job.id);
     }
+    return p.id;
+  }
+
+  /** An edit project whose timeline holds one browser-probed clip (what the studio's upload would make). */
+  async editProjectWithClip(title: string, footage: string): Promise<string> {
+    const p = await this.call<{ id: string }>('POST', '/projects', { kind: 'edit', title, settings: TINY });
+    let banner = '';
+    try {
+      execFileSync(process.env.RIDEO_FFMPEG_PATH ?? 'ffmpeg', ['-hide_banner', '-i', footage], {
+        stdio: 'pipe',
+      });
+    } catch (err) {
+      banner = String((err as { stderr?: Buffer }).stderr ?? '');
+    }
+    const probe = parseProbe(banner);
+    const res = await this.request.post(`/api/projects/${p.id}/uploads`, {
+      multipart: {
+        meta: JSON.stringify({ probe }),
+        file: { name: 'clip.mp4', mimeType: 'video/mp4', buffer: readFileSync(footage) },
+      },
+    });
+    if (!res.ok()) throw new Error(`upload → ${res.status()} ${await res.text()}`);
+    const resource = await res.json();
+    const track = (await this.call<any>('GET', `/projects/${p.id}/timeline`)).tracks[0].id;
+    await this.call('POST', `/projects/${p.id}/timeline/ops`, {
+      ops: [
+        {
+          op: 'insert',
+          trackId: track,
+          item: { kind: 'video', source: { type: 'media', media: resource.media }, in: 0, out: 6 },
+        },
+      ],
+    });
     return p.id;
   }
 

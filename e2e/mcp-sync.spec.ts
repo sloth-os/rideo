@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { Api } from './support/api';
+import { Api, makeFootage } from './support/api';
 import { connectAgent } from './support/mcp';
 
 const PNG =
@@ -66,6 +66,45 @@ test('an agent drives the studio over MCP and the open page follows live', async
     );
     // …and none of this needed a page reload
     expect(await page.evaluate(() => (window as unknown as { __noReload?: boolean }).__noReload)).toBe(true);
+  } finally {
+    await agent.client.close();
+  }
+});
+
+test('an export requested by an agent is rendered by the open tab and watermarked by the server', async ({
+  page,
+  request,
+  baseURL,
+}, testInfo) => {
+  const api = new Api(request);
+  const pid = await api.editProjectWithClip(
+    `MCP export (${testInfo.project.name})`,
+    makeFootage(testInfo.outputPath('clip.mp4')),
+  );
+  const agent = await connectAgent(baseURL!);
+  try {
+    await page.goto(`/p/${pid}/editor`);
+    await expect(page.getByTestId('live-status')).toHaveAttribute('data-status', 'live');
+    await expect
+      .poll(async () => (await agent.call<any[]>('ui_sessions', { projectId: pid })).length)
+      .toBeGreaterThan(0);
+    const out = await agent.call('export_render', { projectId: pid, quality: 'draft' });
+    expect(out).toMatchObject({ job: { kind: 'export.render', lane: 'client' }, editorSessions: 1 });
+    const render = await agent.call('job_wait', { projectId: pid, jobId: out.job.id, timeoutSec: 120 });
+    expect(render).toMatchObject({ status: 'succeeded', attempts: 1 });
+    await expect
+      .poll(async () => (await agent.call<any[]>('export_list', { projectId: pid }))[0]?.status, {
+        timeout: 60_000,
+      })
+      .toBe('succeeded');
+    const [exp] = await agent.call<any[]>('export_list', { projectId: pid });
+    // every source decodes with WebCodecs in this browser, so `auto` renders with WebCodecs
+    expect(exp).toMatchObject({ method: 'browser', engine: 'webcodecs' });
+    expect(exp.watermarkId).toMatch(/^wm_/);
+    await agent.call('ui_navigate', { projectId: pid, view: 'exports' });
+    await expect(
+      page.locator(`[data-entity="export:${exp.id}"]`).getByTestId('download-export'),
+    ).toBeVisible();
   } finally {
     await agent.client.close();
   }

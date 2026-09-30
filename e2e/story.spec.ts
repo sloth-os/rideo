@@ -1,11 +1,19 @@
 import { expect, test } from '@playwright/test';
 import { Api, projectIdFrom } from './support/api';
+import { exportInThisTab } from './support/ui';
 
 test('idea → screenplay → locked cast → pilot → production → edit → watermarked export', async ({
   page,
   request,
 }) => {
   const api = new Api(request);
+  // Emulate a browser without an H.264 decoder (docs/testing.md): the preview must use local proxies built with
+  // ffmpeg.wasm, and `auto` must render the export with the ffmpeg.wasm engine.
+  await page.addInitScript(() => {
+    const original = VideoDecoder.isConfigSupported.bind(VideoDecoder);
+    VideoDecoder.isConfigSupported = async (config) =>
+      config.codec.startsWith('avc1') ? { supported: false, config } : original(config);
+  });
 
   await page.goto('/');
   await page.getByTestId('new-story').click();
@@ -90,6 +98,20 @@ test('idea → screenplay → locked cast → pilot → production → edit → 
   await videoItems.first().click();
   await page.getByLabel('Seek').fill('2');
   await expect(page.getByTestId('timecode')).toContainText('00:00:02:00');
+  // With H.264 hidden from WebCodecs the preview can only show picture through local proxies.
+  await expect
+    .poll(
+      () =>
+        page.evaluate(() => {
+          const c = document.querySelector<HTMLCanvasElement>('[data-testid=preview-canvas]')!;
+          const d = c.getContext('2d')!.getImageData(0, 0, c.width, c.height).data;
+          let lit = 0;
+          for (let i = 0; i < d.length; i += 4 * 97) if (d[i]! + d[i + 1]! + d[i + 2]! > 90) lit++;
+          return lit;
+        }),
+      { timeout: 60_000 },
+    )
+    .toBeGreaterThan(20);
   await page.getByTestId('split-item').click();
   await expect(videoItems).toHaveCount(before + 1);
   await videoItems.first().click();
@@ -110,12 +132,12 @@ test('idea → screenplay → locked cast → pilot → production → edit → 
   await page.mouse.up();
   await expect.poll(secondOut).toBeCloseTo(outBefore - 0.6, 2);
 
-  // Server export with the invisible watermark, verified from the Exports view
-  await page.getByTestId('open-export').click();
-  await page.getByLabel('Quality').selectOption('draft');
-  await page.getByTestId('export-server').click();
+  // Export: rendered in this tab (ffmpeg.wasm: Playwright's Chromium cannot decode H.264 with WebCodecs),
+  // then watermarked by the server
+  await exportInThisTab(page, { quality: 'draft' });
   await page.getByTestId('nav-exports').click();
   const card = page.locator('[data-entity^="export:"]').first();
+  await expect(card).toContainText('ffmpeg');
   await expect(card.getByTestId('download-export')).toBeVisible({ timeout: 120_000 });
   await card.getByTestId('verify-export').click();
   await expect(card.getByTestId('verify-result')).toContainText('found');
