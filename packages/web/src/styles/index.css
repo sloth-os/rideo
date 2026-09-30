@@ -1,0 +1,111 @@
+@import "tailwindcss";
+
+/* Brand tokens (docs/brand.md). Dark first; light under [data-theme="light"]. */
+:root,
+[data-theme="dark"] {
+  --color-bg: #0b0d12;
+  --color-surface: #12151c;
+  --color-surface-2: #1a1e28;
+  --color-border: #272c38;
+  --color-text: #e9ebf1;
+  --color-muted: #9aa2b4;
+  --color-accent: #ff6b3d;
+  --color-accent-contrast: #1a0c06;
+  --color-success: #2ec4b6;
+  --color-warning: #f4b740;
+  --color-danger: #ff4d5e;
+  --color-info: #5b8cff;
+  color-scheme: dark;
+}
+
+[data-theme="light"] {
+  --color-bg: #f6f7fa;
+  --color-surface: #ffffff;
+  --color-surface-2: #eef0f5;
+  --color-border: #d9dde6;
+  --color-text: #141821;
+  --color-muted: #586072;
+  --color-accent: #e4521f;
+  --color-accent-contrast: #ffffff;
+  --color-success: #10877c;
+  --color-warning: #a86b00;
+  --color-danger: #c8283a;
+  --color-info: #2c5fd9;
+  color-scheme: light;
+}
+
+@theme inline {
+  --color-bg: var(--color-bg);
+  --color-surface: var(--color-surface);
+  --color-surface-2: var(--color-surface-2);
+  --color-border: var(--color-border);
+  --color-text: var(--color-text);
+  --color-muted: var(--color-muted);
+  --color-accent: var(--color-accent);
+  --color-accent-contrast: var(--color-accent-contrast);
+  --color-success: var(--color-success);
+  --color-warning: var(--color-warning);
+  --color-danger: var(--color-danger);
+  --color-info: var(--color-info);
+  --font-sans: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --radius-control: 6px;
+  --radius-card: 10px;
+  --radius-dialog: 14px;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Live-update pulse: remote changes and agent ui_focus highlight an entity. */
+@keyframes rideo-pulse {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-accent) 70%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 10px transparent;
+  }
+}
+.pulse {
+  animation: rideo-pulse 1.2s ease-out 2;
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    /* biome-ignore lint/complexity/noImportantStyles: the reduced-motion reset must beat component styles */
+    animation-duration: 0.01ms !important;
+    /* biome-ignore lint/complexity/noImportantStyles: the reduced-motion reset must beat component styles */
+    transition-duration: 0.01ms !important;
+  }
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 8px;
+}
