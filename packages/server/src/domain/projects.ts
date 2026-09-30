@@ -255,10 +255,12 @@ export class ProjectService extends Service {
       const tmp = this.deps.media.tmp(f.name.split('.').pop() ?? 'bin');
       try {
         await pipeline(res.stream, createWriteStream(tmp));
+        // Audio and video are probed by a studio tab (media.process); images here.
         const media = await this.deps.media.putFile(projectId, tmp, {
           kind: 'uploads',
           name: f.name.replace(/\.[^.]+$/, ''),
           mime,
+          probe: kind === 'image',
         });
         imported.push({
           id: newId('resource'),
@@ -275,7 +277,7 @@ export class ProjectService extends Service {
           media,
           createdAt: new Date().toISOString(),
           origin: 'inbox',
-          status: kind === 'video' ? 'processing' : 'ready',
+          status: kind === 'image' ? 'ready' : 'processing',
         });
         await this.deps.storage.delete(f.path);
       } finally {
@@ -292,14 +294,15 @@ export class ProjectService extends Service {
       { message: `Import ${imported.length} file(s) from the WebDAV inbox` },
     );
     const branch = await this.branchOf(projectId);
-    for (const r of imported.filter((x) => x.kind === 'video')) {
+    for (const r of imported.filter((x) => x.kind !== 'image')) {
       await this.deps.jobs.enqueue({
         projectId,
-        kind: 'resource.process',
+        kind: 'media.process',
         params: { resourceId: r.id },
         actor: WEBDAV_ACTOR,
         branch,
         dedupeKey: `process:${r.id}`,
+        maxAttempts: 5,
       });
     }
     return imported.map((r) => r.name);

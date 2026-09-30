@@ -1,3 +1,4 @@
+import { rm } from 'node:fs/promises';
 import type { GatewayTask, MediaRef, ProjectDocs } from '@rideo/shared';
 import type { ClipService } from '../../domain/clips';
 import type { Deps } from '../../domain/deps';
@@ -6,7 +7,7 @@ import type { ProjectService } from '../../domain/projects';
 import type { StoryService } from '../../domain/story';
 import type { WorkflowService } from '../../domain/workflow';
 import type { GenerateOptions } from '../../gateway/gateway-client';
-import { makePoster, makeProxy } from '../../media/proxy';
+import { makePoster } from '../../media/poster';
 import type { Tx } from '../../vcs/repo';
 import type { JobContext } from '../queue';
 
@@ -59,8 +60,8 @@ export function gatewayOptions(
   };
 }
 
-/** Adds the browser-safe proxy and poster to a stored video (docs/design/editor.md#proxy-media). */
-export async function withProxy(
+/** Adds the JPEG poster to a stored video (generated takes; there are no server-side proxies). */
+export async function withPoster(
   deps: Deps,
   projectId: string,
   local: string,
@@ -68,34 +69,18 @@ export async function withProxy(
   signal?: AbortSignal,
 ): Promise<MediaRef> {
   if (!ref.mime.startsWith('video/')) return ref;
-  const stem = ref.hash.slice(0, 12);
-  const proxyTmp = deps.media.tmp('webm');
   const posterTmp = deps.media.tmp('jpg');
   try {
-    await makeProxy(deps.ff, local, proxyTmp, { fps: ref.fps, hasAudio: !!ref.hasAudio, signal });
     await makePoster(deps.ff, local, Math.min(1, (ref.durationSec ?? 2) / 2), posterTmp, signal);
-    const proxy = await deps.media.putFile(projectId, proxyTmp, {
-      kind: 'proxies',
-      name: 'proxy',
-      stem,
-      mime: 'video/webm',
-      probe: false,
-    });
     const poster = await deps.media.putFile(projectId, posterTmp, {
       kind: 'posters',
       name: 'poster',
-      stem,
+      stem: ref.hash.slice(0, 12),
       mime: 'image/jpeg',
       probe: false,
     });
-    return {
-      ...ref,
-      proxy: { path: proxy.path, mime: proxy.mime },
-      poster: { path: poster.path, mime: poster.mime },
-    };
+    return { ...ref, poster: { path: poster.path, mime: poster.mime } };
   } finally {
-    const { rm } = await import('node:fs/promises');
-    await rm(proxyTmp, { force: true });
     await rm(posterTmp, { force: true });
   }
 }

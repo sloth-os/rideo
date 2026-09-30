@@ -106,6 +106,15 @@ export class Metrics {
     ),
   );
   readonly liveSessions = this.add(new Gauge('rideo_live_sessions', 'Connected live sessions'));
+  readonly editorJobs = this.add(
+    new Counter(
+      'rideo_editor_jobs_total',
+      'Editor-job lifecycle events (claimed, completed, failed, expired, released)',
+    ),
+  );
+  readonly editorStagedBytes = this.add(
+    new Counter('rideo_editor_staged_bytes_total', 'Bytes staged by editor jobs'),
+  );
   readonly commits = this.add(new Counter('rideo_commits_total', 'Commits by actor kind'));
 
   add<M extends Metric>(m: M): M {

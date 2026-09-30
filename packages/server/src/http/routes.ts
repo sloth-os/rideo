@@ -17,14 +17,13 @@ import {
   ReferenceViewSchema,
   ReopenInputSchema,
   ResourceInputSchema,
-  ResourceKindSchema,
-  ResourceRoleSchema,
   RestoreInputSchema,
   ScreenplayPatchInputSchema,
   ShotUpdateInputSchema,
   SuggestionDecisionsInputSchema,
   TimelineOpsInputSchema,
   UpdateProjectInputSchema,
+  UploadMetaSchema,
 } from '@rideo/shared';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
@@ -43,28 +42,38 @@ interface UploadedFile {
   mime: string;
 }
 
+/** Multipart upload: file parts by field name (first one wins) and text fields. Callers remove the files. */
 async function receiveUpload(
   studio: Studio,
   req: FastifyRequest,
-): Promise<{ file: UploadedFile | null; fields: Record<string, string> }> {
-  if (!req.isMultipart()) return { file: null, fields: {} };
+): Promise<{
+  file: UploadedFile | null;
+  files: Record<string, UploadedFile>;
+  fields: Record<string, string>;
+}> {
+  if (!req.isMultipart()) return { file: null, files: {}, fields: {} };
   const fields: Record<string, string> = {};
-  let file: UploadedFile | null = null;
-  for await (const part of req.parts()) {
-    if (part.type === 'file') {
-      if (file) {
-        part.file.resume();
-        continue;
+  const files: Record<string, UploadedFile> = {};
+  try {
+    for await (const part of req.parts()) {
+      if (part.type === 'file') {
+        if (files[part.fieldname]) {
+          part.file.resume();
+          continue;
+        }
+        const path = studio.deps.media.tmp(extname(part.filename).slice(1) || 'bin');
+        files[part.fieldname] = { path, filename: part.filename, mime: part.mimetype };
+        await pipeline(part.file, createWriteStream(path));
+        if (part.file.truncated) throw invalid('upload exceeds the size limit');
+      } else {
+        fields[part.fieldname] = String(part.value);
       }
-      const path = studio.deps.media.tmp(extname(part.filename).slice(1) || 'bin');
-      await pipeline(part.file, createWriteStream(path));
-      if (part.file.truncated) throw invalid('upload exceeds the size limit');
-      file = { path, filename: part.filename, mime: part.mimetype };
-    } else {
-      fields[part.fieldname] = String(part.value);
     }
+  } catch (err) {
+    await Promise.all(Object.values(files).map((f) => rm(f.path, { force: true })));
+    throw err;
   }
-  return { file, fields };
+  return { file: files.file ?? null, files, fields };
 }
 
 function coalesceHeader(req: FastifyRequest): string | undefined {
@@ -128,22 +137,26 @@ export function registerRoutes(app: FastifyInstance, studio: Studio): void {
   app.get('/api/projects/:id/media/*', serveMedia);
 
   app.post('/api/projects/:id/uploads', async (req, reply) => {
-    const { file, fields } = await receiveUpload(studio, req);
-    if (!file) throw invalid('multipart field "file" is required');
+    const { file, files, fields } = await receiveUpload(studio, req);
     try {
+      if (!file) throw invalid('multipart field "file" is required');
+      // `meta` is the browser's probe (docs/design/editor.md#media-preparation-uploads); plain fields still work.
+      const meta = parse(UploadMetaSchema, {
+        ...(fields.kind ? { kind: fields.kind } : {}),
+        ...(fields.role ? { role: fields.role } : {}),
+        ...(fields.name ? { name: fields.name } : {}),
+        ...(fields.meta ? JSON.parse(fields.meta) : {}),
+      });
       const resource = await studio.story.addResource(
         actor(),
         pid(req),
         { file: file.path, filename: file.filename, mime: file.mime },
-        {
-          kind: fields.kind ? ResourceKindSchema.parse(fields.kind) : undefined,
-          role: fields.role ? ResourceRoleSchema.parse(fields.role) : undefined,
-          name: fields.name || file.filename,
-        },
+        { kind: meta.kind, role: meta.role, name: meta.name || file.filename },
+        { probe: meta.probe, poster: files.poster?.path },
       );
       return reply.code(201).send(resource);
     } finally {
-      await rm(file.path, { force: true });
+      await Promise.all(Object.values(files).map((f) => rm(f.path, { force: true })));
     }
   });
   app.post('/api/projects/:id/resources', async (req, reply) => {
@@ -383,23 +396,33 @@ export function registerRoutes(app: FastifyInstance, studio: Studio): void {
   app.post('/api/projects/:id/exports', async (req, reply) =>
     reply
       .code(202)
-      .send(await studio.edit.exportServer(actor(), pid(req), parse(ExportInputSchema, req.body).quality)),
+      .send(await studio.edit.createExport(actor(), pid(req), parse(ExportInputSchema, req.body ?? {}))),
   );
-  app.post('/api/projects/:id/exports/upload', async (req, reply) => {
-    const { file, fields } = await receiveUpload(studio, req);
-    if (!file) throw invalid('multipart field "file" is required');
-    const meta = parse(
-      z.object({
-        codec: z.string().max(80).optional(),
-        width: z.coerce.number().int().positive().optional(),
-        height: z.coerce.number().int().positive().optional(),
-        durationSec: z.coerce.number().positive().optional(),
-      }),
-      fields.meta ? JSON.parse(fields.meta) : fields,
-    );
-    return reply.code(202).send(await studio.edit.exportUpload(actor(), pid(req), file.path, meta));
-  });
   app.get('/api/projects/:id/exports', async (req) => studio.edit.exports(pid(req)));
+
+  // Editor jobs (docs/design/editor.md#editor-jobs)
+  app.addContentTypeParser('application/octet-stream', (_req, payload, done) => done(null, payload));
+  const jobId = (req: FastifyRequest) =>
+    parse(z.object({ jobId: z.string().regex(/^job_[0-9a-z]+$/) }), req.params).jobId;
+  app.post('/api/editor/claim', async (req) => {
+    const body = parse(z.object({ projectId: z.string() }).passthrough(), req.body);
+    return { job: await studio.editor.claim(body.projectId, body) };
+  });
+  app.get('/api/editor/jobs/:jobId', async (req) => studio.editor.job(jobId(req)));
+  app.post('/api/editor/jobs/:jobId/heartbeat', async (req) => studio.editor.heartbeat(jobId(req), req.body));
+  app.put(
+    '/api/editor/jobs/:jobId/files/:name',
+    { bodyLimit: studio.config.editor.fileMaxBytes },
+    async (req) => {
+      const q = parse(z.object({ sessionId: z.string().min(1).max(100) }), req.query);
+      const body = req.body as NodeJS.ReadableStream | undefined;
+      if (!body || typeof (body as { pipe?: unknown }).pipe !== 'function')
+        throw invalid('send the file as application/octet-stream');
+      return studio.editor.stageFile(jobId(req), q.sessionId, p<string>(req, 'name'), body);
+    },
+  );
+  app.post('/api/editor/jobs/:jobId/complete', async (req) => studio.editor.complete(jobId(req), req.body));
+  app.post('/api/editor/jobs/:jobId/fail', async (req) => studio.editor.fail(jobId(req), req.body));
 
   // History
   app.get('/api/projects/:id/history', async (req) => {

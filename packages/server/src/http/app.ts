@@ -92,7 +92,8 @@ export async function buildServer(
         }));
   const studio = createStudio(config, { log: app.log as unknown as Logger, storage, metrics });
 
-  await app.register(multipart, { limits: { fileSize: 4 * 1024 ** 3, files: 1 } });
+  // two file parts: the upload and the poster the browser made for it
+  await app.register(multipart, { limits: { fileSize: 4 * 1024 ** 3, files: 2 } });
   await app.register(websocket, { options: { maxPayload: 1024 * 1024 } });
 
   app.addHook('onRequest', async (req, reply) => {
@@ -203,7 +204,15 @@ export async function buildServer(
         resolve(import.meta.dirname, '../../web/dist'),
       ].find((dir) => existsSync(join(dir, 'index.html'))) ?? '');
   if (webDist && existsSync(join(webDist, 'index.html'))) {
-    await app.register(fastifyStatic, { root: webDist, wildcard: false, index: ['index.html'] });
+    await app.register(fastifyStatic, {
+      root: webDist,
+      wildcard: false,
+      index: ['index.html'],
+      // hashed build assets (including the 31 MB ffmpeg.wasm core) never change
+      setHeaders: (res, path) => {
+        if (/[\\/]assets[\\/]/.test(path)) res.header('cache-control', 'public, max-age=31536000, immutable');
+      },
+    });
     app.setNotFoundHandler((req, reply) => {
       const url = req.url.split('?')[0]!;
       if (req.method === 'GET' && !url.startsWith('/api/') && url !== '/mcp' && !url.startsWith('/dav')) {

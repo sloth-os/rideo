@@ -12,10 +12,12 @@ import {
   docsFromEntries,
   type EditSuggestion,
   type Export,
+  type ExportQuality,
   emptyTimeline,
   type Job,
   newId,
   type Project,
+  type RenderEngineChoice,
   type Resource,
   sortedClips,
   type Timeline,
@@ -137,14 +139,16 @@ export class EditService extends Service {
       },
       { message: 'Start footage analysis' },
     );
+    // The signals are computed by a studio tab with ffmpeg.wasm (docs/design/editor.md#footage-analysis).
     const job = await this.deps.jobs.enqueue({
       projectId,
-      kind: 'analysis.run',
-      params: { analysisId: analysis.id },
+      kind: 'analysis.signals',
+      params: { analysisId: analysis.id, resourceId, speech: !!this.deps.stt, maxThumbnails: 12 },
       actor,
       branch: await this.branchOf(projectId),
       dedupeKey: `analysis:${analysis.id}`,
       priority: 5,
+      maxAttempts: 5,
     });
     return { analysis, job };
   }
@@ -239,18 +243,21 @@ export class EditService extends Service {
     }
   }
 
-  async exportServer(
+  /** Queues an export; a studio tab renders it (`export.render` editor job) and the server watermarks it. */
+  async createExport(
     actor: Actor,
     projectId: string,
-    quality: Export['quality'] = 'standard',
+    opts: { quality?: ExportQuality; engine?: RenderEngineChoice } = {},
   ): Promise<{ export: Export; job: Job }> {
     await this.exportPrecheck(projectId);
+    const quality = opts.quality ?? 'standard';
+    const engine = opts.engine ?? 'auto';
     const h = await this.deps.projects.existing(projectId);
     const timelineCommit = (await h.repo.snapshot()).commit;
     const exp: Export = {
       id: newId('export'),
       createdAt: new Date().toISOString(),
-      method: 'server',
+      method: 'browser',
       status: 'queued',
       quality,
       media: null,
@@ -263,49 +270,11 @@ export class EditService extends Service {
     const job = await this.deps.jobs.enqueue({
       projectId,
       kind: 'export.render',
-      params: { exportId: exp.id },
+      params: { exportId: exp.id, quality, engine, chunkSec: 30, timelineCommit },
       actor,
       branch: await this.branchOf(projectId),
       dedupeKey: `export:${exp.id}`,
-      maxAttempts: 2,
-    });
-    return { export: exp, job };
-  }
-
-  /** A WebCodecs-rendered upload; the server applies the watermark finishing pass (the key stays server-side). */
-  async exportUpload(
-    actor: Actor,
-    projectId: string,
-    file: string,
-    meta: { codec?: string; width?: number; height?: number; durationSec?: number },
-  ): Promise<{ export: Export; job: Job }> {
-    await this.exportPrecheck(projectId);
-    const h = await this.deps.projects.existing(projectId);
-    const exp: Export = {
-      id: newId('export'),
-      createdAt: new Date().toISOString(),
-      method: 'browser',
-      status: 'finishing',
-      quality: 'standard',
-      media: null,
-      watermarkId: null,
-      timelineCommit: (await h.repo.snapshot()).commit,
-      ...(meta.codec ? { codec: meta.codec } : {}),
-      ...(meta.width ? { width: meta.width } : {}),
-      ...(meta.height ? { height: meta.height } : {}),
-      ...(meta.durationSec ? { durationSec: meta.durationSec } : {}),
-    };
-    await this.mutate(actor, projectId, (tx) => tx.set(docPath.export(exp.id), exp), {
-      message: 'Upload browser export',
-    });
-    const job = await this.deps.jobs.enqueue({
-      projectId,
-      kind: 'export.finish',
-      params: { exportId: exp.id, uploadPath: file },
-      actor,
-      branch: await this.branchOf(projectId),
-      dedupeKey: `export:${exp.id}`,
-      maxAttempts: 1,
+      maxAttempts: 5,
     });
     return { export: exp, job };
   }

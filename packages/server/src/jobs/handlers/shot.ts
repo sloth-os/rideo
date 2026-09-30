@@ -24,7 +24,7 @@ import { extractLastFrame, sampleFrames } from '../../media/frames';
 import { makeCastSheet } from '../../media/sheet';
 import { throwIfAborted } from '../../util/abort';
 import type { JobContext } from '../queue';
-import { commitAs, docsFor, gatewayOptions, type HandlerDeps, withProxy } from './common';
+import { commitAs, docsFor, gatewayOptions, type HandlerDeps, withPoster } from './common';
 
 interface Candidate {
   local: string;
@@ -279,8 +279,8 @@ export async function shotGenerate(deps: HandlerDeps, ctx: JobContext) {
         await copyFile(final.local, marked);
       }
       let video = await deps.media.putFile(projectId, marked, { kind: 'takes', name, mime: 'video/mp4' });
-      ctx.progress(0.96, 1, 'building preview proxy');
-      video = await withProxy(deps, projectId, marked, video, ctx.signal);
+      ctx.progress(0.96, 1, 'making the poster');
+      video = await withPoster(deps, projectId, marked, video, ctx.signal);
       const lastPath = await extractLastFrame(
         deps.ff,
         marked,

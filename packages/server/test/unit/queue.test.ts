@@ -12,7 +12,11 @@ const actor = { kind: 'user' as const, id: 'local' };
 const projectId = newId('project');
 const queues: JobQueue[] = [];
 
-function makeQueue(lanes: Record<string, number> = {}, storage = new MemoryBackend()) {
+function makeQueue(
+  lanes: Record<string, number> = {},
+  storage = new MemoryBackend(),
+  editorLeaseMs = 60_000,
+) {
   const hub = new LiveHub();
   const q = new JobQueue({
     storage,
@@ -21,6 +25,7 @@ function makeQueue(lanes: Record<string, number> = {}, storage = new MemoryBacke
     metrics: new Metrics(),
     log: silent,
     lanes: { control: 1, llm: 1, image: 1, video: 1, music: 1, media: 1, ...lanes },
+    editorLeaseMs,
   });
   queues.push(q);
   return { q, hub, storage };
@@ -179,11 +184,11 @@ describe('job queue', () => {
       if (e.kind === 'job') events.push(`${e.job.status}:${e.job.progress.done}`);
     });
     const hang = deferred();
-    first.q.register('export.render', async (ctx) => {
+    first.q.register('export.finish', async (ctx) => {
       ctx.progress(1, 4, 'rendering');
       await hang.promise;
     });
-    const job = await first.q.enqueue({ projectId, kind: 'export.render', actor, branch: 'main' });
+    const job = await first.q.enqueue({ projectId, kind: 'export.finish', actor, branch: 'main' });
     await new Promise((r) => setTimeout(r, 320));
     await first.q.shutdown();
     hang.resolve();
@@ -191,10 +196,123 @@ describe('job queue', () => {
     expect(events).toContain('running:1');
 
     const second = makeQueue({}, storage);
-    second.q.register('export.render', async () => 'rendered');
+    second.q.register('export.finish', async () => 'rendered');
     expect(await second.q.loadProject(projectId, true)).toBe(1);
     const done = await second.q.wait(job.id, 5000);
     expect(done.status).toBe('succeeded');
     expect(done.attempts).toBe(2);
+  });
+});
+
+describe('editor jobs (client lane)', () => {
+  const enqueue = (
+    q: JobQueue,
+    kind: 'export.render' | 'media.process',
+    extra: Record<string, unknown> = {},
+  ) => q.enqueue({ projectId, kind, params: {}, actor, branch: 'main', maxAttempts: 3, ...extra });
+
+  it('never runs them on the server; tabs claim by priority, then age, per project and kind', async () => {
+    const { q } = makeQueue();
+    const first = await enqueue(q, 'export.render');
+    await new Promise((r) => setTimeout(r, 5));
+    const second = await enqueue(q, 'export.render');
+    const urgent = await enqueue(q, 'media.process', { priority: 5 });
+    await new Promise((r) => setTimeout(r, 30));
+    expect(q.find(first.id)!.status).toBe('queued');
+    expect(await q.claim(newId('project'), 's1')).toBeNull();
+    expect((await q.claim(projectId, 's1', ['export.render']))!.id).toBe(first.id);
+    const claimed = (await q.claim(projectId, 's2'))!;
+    expect(claimed.id).toBe(urgent.id);
+    expect(claimed).toMatchObject({ status: 'running', attempts: 1, lease: { sessionId: 's2' } });
+    expect(Date.parse(claimed.lease!.expiresAt) - Date.now()).toBeGreaterThan(59_000);
+    expect((await q.claim(projectId, 's3'))!.id).toBe(second.id);
+    expect(await q.claim(projectId, 's3')).toBeNull();
+  });
+
+  it('extends leases on heartbeat, rejects other sessions and keeps staged files across a released lease', async () => {
+    const { q } = makeQueue();
+    const job = await enqueue(q, 'export.render');
+    await q.claim(projectId, 's1');
+    const before = q.find(job.id)!.lease!.expiresAt;
+    await new Promise((r) => setTimeout(r, 5));
+    const beat = q.heartbeat(job.id, 's1', { done: 1, total: 4, message: 'chunk 1/3' });
+    expect(beat.cancelled).toBe(false);
+    expect(beat.leaseExpiresAt! > before).toBe(true);
+    expect(q.find(job.id)!.progress).toEqual({ done: 1, total: 4, message: 'chunk 1/3' });
+    expect(() => q.heartbeat(job.id, 's2')).toThrowError(expect.objectContaining({ code: 'lease_lost' }));
+    await q.staged(job.id, 's1', 'part-0001.mp4');
+    await q.releaseSession('s1');
+    const released = q.find(job.id)!;
+    expect(released).toMatchObject({
+      status: 'queued',
+      lease: null,
+      staged: ['part-0001.mp4'],
+      error: { code: 'lease_released' },
+    });
+    expect(await q.claim(projectId, 's2')).toBeNull(); // backoff
+    await new Promise((r) => setTimeout(r, 1050));
+    expect(await q.claim(projectId, 's2')).toMatchObject({
+      id: job.id,
+      attempts: 2,
+      staged: ['part-0001.mp4'],
+    });
+  });
+
+  it('expires silent tabs and gives up after maxAttempts, running the end hook once', async () => {
+    const { q } = makeQueue({}, new MemoryBackend(), 50);
+    const ended: string[] = [];
+    q.onEditorJobEnded = async (j) => {
+      ended.push(`${j.id}:${j.status}`);
+    };
+    const job = await enqueue(q, 'media.process', { maxAttempts: 2 });
+    await q.claim(projectId, 's1');
+    expect(await q.expireLeases(Date.now() + 100)).toBe(1);
+    expect(q.find(job.id)).toMatchObject({ status: 'queued', error: { code: 'lease_expired' } });
+    await new Promise((r) => setTimeout(r, 1050));
+    await q.claim(projectId, 's1');
+    const waited = q.wait(job.id);
+    await q.expireLeases(Date.now() + 100);
+    expect((await waited).status).toBe('failed');
+    expect(ended).toEqual([`${job.id}:failed`]);
+  });
+
+  it('reports cancellation to the tab and completes with waiters resolved', async () => {
+    const { q } = makeQueue();
+    const ended: string[] = [];
+    q.onEditorJobEnded = async (j) => {
+      ended.push(j.status);
+    };
+    const doomed = await enqueue(q, 'export.render');
+    await q.claim(projectId, 's1');
+    await q.cancel(projectId, doomed.id);
+    expect(q.heartbeat(doomed.id, 's1')).toEqual({ cancelled: true, leaseExpiresAt: null });
+    expect(ended).toEqual(['cancelled']);
+    const job = await enqueue(q, 'media.process');
+    await q.claim(projectId, 's1');
+    const waited = q.wait(job.id);
+    await q.completeEditor(job.id, 's1', { ok: true });
+    expect(await waited).toMatchObject({ status: 'succeeded', lease: null, result: { ok: true } });
+    await expect(q.completeEditor(job.id, 's1', {})).rejects.toBeInstanceOf(AppError);
+    const failing = await enqueue(q, 'media.process');
+    await q.claim(projectId, 's1');
+    expect(
+      await q.failEditor(failing.id, 's1', { code: 'wasm_oom', message: 'out of memory' }),
+    ).toMatchObject({
+      status: 'queued',
+      error: { code: 'wasm_oom', retryable: true },
+    });
+  });
+
+  it('recovers editor jobs after a restart without their lease', async () => {
+    const storage = new MemoryBackend();
+    const { q } = makeQueue({}, storage);
+    const job = await enqueue(q, 'export.render');
+    await q.claim(projectId, 's1');
+    await q.staged(job.id, 's1', 'soundtrack.m4a');
+    await q.shutdown();
+    const { q: next } = makeQueue({}, storage);
+    expect(await next.loadProject(projectId, true)).toBe(1);
+    expect(next.find(job.id)).toMatchObject({ status: 'queued', lease: null, staged: ['soundtrack.m4a'] });
+    expect((await next.claim(projectId, 's9'))!.lease!.sessionId).toBe('s9');
   });
 });

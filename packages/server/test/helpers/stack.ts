@@ -23,6 +23,8 @@ export interface Stack {
   api: <T = any>(method: string, path: string, body?: unknown) => Promise<T>;
   waitJob: (projectId: string, jobId: string, timeoutMs?: number) => Promise<Job>;
   waitIdle: (projectId: string, timeoutMs?: number) => Promise<void>;
+  /** Waits until an export has succeeded or failed (render in an editor tab, then the finishing job). */
+  waitExport: (projectId: string, exportId: string, timeoutMs?: number) => Promise<any>;
   restart(): Promise<void>;
   stop(): Promise<void>;
 }
@@ -89,6 +91,16 @@ export async function startStack(
     }
     throw new Error('jobs did not settle');
   };
+  const waitExport = async (projectId: string, exportId: string, timeoutMs = 180_000) => {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      const exports = await api<any[]>('GET', `/projects/${projectId}/exports`);
+      const e = exports.find((x) => x.id === exportId);
+      if (e && (e.status === 'succeeded' || e.status === 'failed')) return e;
+      await new Promise((r) => setTimeout(r, 150));
+    }
+    throw new Error(`export ${exportId} did not finish`);
+  };
   const stack: Stack = {
     gw,
     get server() {
@@ -101,6 +113,7 @@ export async function startStack(
     api,
     waitJob,
     waitIdle,
+    waitExport,
     async restart() {
       await server.stop();
       ({ server, url } = await make());

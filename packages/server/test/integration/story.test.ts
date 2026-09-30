@@ -1,5 +1,6 @@
 import type { Clip, Job, Project } from '@rideo/shared';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { startEditorWorker } from '../helpers/editor-worker';
 import { ApiError, expectSucceeded, readyStoryProject, type Stack, startStack } from '../helpers/stack';
 
 let stack: Stack;
@@ -101,7 +102,8 @@ describe('story → movie workflow (REST, mock gateway)', () => {
       const take = shot.takes.find((t) => t.id === shot.selectedTakeId)!;
       expect(take.consistency.status).toBe('passed');
       expect(take.watermarkId).toMatch(/^wm_/);
-      expect(take.video?.proxy?.mime).toBe('video/webm');
+      expect(take.video?.poster?.mime).toBe('image/jpeg');
+      expect(take.video?.videoCodec).toBe('h264');
       expect(Object.keys(take.characterLocks).length).toBe(shot.characterIds.length);
     }
 
@@ -142,10 +144,13 @@ describe('story → movie workflow (REST, mock gateway)', () => {
     expect(kinds.text).toBeGreaterThan(0);
     await stack.api('POST', `/projects/${pid}/workflow/approve`, { gate: 'cut_approved' });
 
+    // Rendering happens in an editor tab; the reference worker stands in for it (native ffmpeg, same plan).
+    const editor = await startEditorWorker(stack, pid);
     const exp = await stack.api<any>('POST', `/projects/${pid}/exports`, { quality: 'draft' });
-    expectSucceeded(await stack.waitJob(pid, exp.job.id));
-    const [done] = await stack.api<any[]>('GET', `/projects/${pid}/exports`);
-    expect(done.status).toBe('succeeded');
+    expect(exp.job).toMatchObject({ kind: 'export.render', lane: 'client' });
+    const done = await stack.waitExport(pid, exp.export.id);
+    await editor.stop();
+    expect(done).toMatchObject({ status: 'succeeded', method: 'browser', engine: 'ffmpeg' });
     expect(done.media.mime).toBe('video/mp4');
     const detect = await stack.api<any>('POST', '/watermark/detect', {
       projectId: pid,

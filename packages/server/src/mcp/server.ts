@@ -9,11 +9,13 @@ import {
   CharacterInputSchema,
   CreateProjectInputSchema,
   clipBlockers,
+  ExportQualitySchema,
   FocusKindSchema,
   IdentitySchema,
   isTerminalJob,
   ProjectSettingsPatchSchema,
   ReferenceViewSchema,
+  RenderEngineChoiceSchema,
   ResourceKindSchema,
   ResourceRoleSchema,
   renderScreenplayMarkdown,
@@ -414,7 +416,7 @@ function buildServer(studio: Studio): McpServer {
   );
   tool(
     'resource_add',
-    'Add an image, video or audio resource from an https or data URI.',
+    'Add an image, video or audio resource from an https or data URI. Audio and video are probed by an open studio tab of the project (editor job).',
     {
       projectId: PROJECT,
       uri: z.string(),
@@ -422,7 +424,12 @@ function buildServer(studio: Studio): McpServer {
       role: ResourceRoleSchema.optional(),
       name: z.string().optional(),
     },
-    (a, actor) => studio.story.addResource(actor, a.projectId, { uri: a.uri }, a),
+    async (a, actor) => {
+      const resource = await studio.story.addResource(actor, a.projectId, { uri: a.uri }, a);
+      return resource.status === 'processing'
+        ? { resource, ...studio.editor.editorHint(a.projectId) }
+        : { resource };
+    },
   );
   tool(
     'resource_list',
@@ -539,9 +546,12 @@ function buildServer(studio: Studio): McpServer {
   );
   tool(
     'footage_analyze',
-    'Analyze an uploaded video and propose edit suggestions (job).',
+    'Analyze an uploaded video and propose edit suggestions. The signals are computed by an open studio tab of the project (editor job), then the AI suggestions run on the server.',
     { projectId: PROJECT, resourceId: z.string() },
-    (a, actor) => studio.edit.analyze(actor, a.projectId, a.resourceId),
+    async (a, actor) => ({
+      ...(await studio.edit.analyze(actor, a.projectId, a.resourceId)),
+      ...studio.editor.editorHint(a.projectId),
+    }),
   );
   tool(
     'suggestions_review',
@@ -563,9 +573,16 @@ function buildServer(studio: Studio): McpServer {
   );
   tool(
     'export_render',
-    'Render the timeline on the server with an invisible watermark (job).',
-    { projectId: PROJECT, quality: z.enum(['draft', 'standard', 'high']).optional() },
-    (a, actor) => studio.edit.exportServer(actor, a.projectId, a.quality),
+    'Export the timeline: an open studio tab of the project renders it (ffmpeg.wasm or WebCodecs, editor job), then the server adds the invisible watermark. Returns {export, job}; use job_wait.',
+    {
+      projectId: PROJECT,
+      quality: ExportQualitySchema.optional(),
+      engine: RenderEngineChoiceSchema.optional(),
+    },
+    async (a, actor) => ({
+      ...(await studio.edit.createExport(actor, a.projectId, a)),
+      ...studio.editor.editorHint(a.projectId),
+    }),
   );
   tool('export_list', 'List exports.', { projectId: PROJECT }, (a) => studio.edit.exports(a.projectId), ro);
   tool(

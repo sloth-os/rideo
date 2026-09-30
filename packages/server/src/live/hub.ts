@@ -48,6 +48,7 @@ export class LiveHub {
   private readonly buffers = new Map<string, Buffered[]>();
   private readonly listeners = new Set<HubListener>();
   private readonly acks = new Map<string, (sessionId: string, ok: boolean, error?: string) => void>();
+  private readonly closeListeners = new Set<(sessionId: string) => void>();
   private readonly heartbeat: NodeJS.Timeout;
 
   constructor(
@@ -77,8 +78,27 @@ export class LiveHub {
   }
 
   private drop(id: string): void {
-    this.sessions.delete(id);
+    if (!this.sessions.delete(id)) return;
     this.deps.metrics?.liveSessions.set({}, this.sessions.size);
+    for (const l of this.closeListeners) {
+      try {
+        l(id);
+      } catch {
+        // listeners must not break session cleanup
+      }
+    }
+  }
+
+  /** Called once per closed session (editor jobs leased to it are released). */
+  onSessionClosed(listener: (sessionId: string) => void): () => void {
+    this.closeListeners.add(listener);
+    return () => this.closeListeners.delete(listener);
+  }
+
+  /** Whether a live session exists and follows the project (editor-job claims). */
+  isSubscribed(sessionId: string, projectId: string): boolean {
+    const s = this.sessions.get(sessionId);
+    return !!s && (s.projects.has(projectId) || s.presence?.projectId === projectId);
   }
 
   attach(socket: LiveSocket, initialProject?: string): string {

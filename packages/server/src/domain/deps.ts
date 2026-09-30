@@ -6,6 +6,7 @@ import type { GatewayClient } from '../gateway/gateway-client';
 import type { JobQueue } from '../jobs/queue';
 import type { LiveHub } from '../live/hub';
 import type { Ffmpeg } from '../media/ffmpeg';
+import type { Staging } from '../media/staging';
 import type { MediaStore } from '../media/store';
 import type { Metrics } from '../metrics';
 import type { StorageBackend } from '../storage/backend';
@@ -38,5 +39,7 @@ export interface Deps {
   watermark: WatermarkService;
   hub: LiveHub;
   jobs: JobQueue;
+  /** Editor-job uploads on the server's disk. */
+  staging: Staging;
   stt?: SttClient;
 }

@@ -76,7 +76,8 @@ export const EnvSchema = z.object({
   RIDEO_BRAND_URL: str(''),
   RIDEO_FFMPEG_PATH: str('ffmpeg'),
   RIDEO_FFPROBE_PATH: str('ffprobe'),
-  RIDEO_FONT_FILE: str(),
+  RIDEO_EDITOR_LEASE_SEC: num(60),
+  RIDEO_EDITOR_FILE_MAX_BYTES: num(4 * 1024 ** 3),
   RIDEO_MEDIA_URI_MODE: z.enum(['data', 'url']).optional().default('data'),
   RIDEO_JOB_RECOVERY: bool(true),
   NODE_ENV: str('development'),
@@ -129,7 +130,8 @@ export interface Config {
   brand: { name: string; owner: string; url: string };
   ffmpegPath: string;
   ffprobePath: string;
-  fontFile?: string;
+  /** Editor jobs (docs/design/editor.md#editor-jobs). */
+  editor: { leaseSec: number; fileMaxBytes: number };
   mediaUriMode: 'data' | 'url';
   jobRecovery: boolean;
 }
@@ -230,7 +232,7 @@ export function loadConfig(
     brand: { name: e.RIDEO_BRAND_NAME!, owner: e.RIDEO_BRAND_OWNER ?? '', url: e.RIDEO_BRAND_URL ?? '' },
     ffmpegPath: e.RIDEO_FFMPEG_PATH!,
     ffprobePath: e.RIDEO_FFPROBE_PATH!,
-    fontFile: e.RIDEO_FONT_FILE,
+    editor: { leaseSec: e.RIDEO_EDITOR_LEASE_SEC, fileMaxBytes: e.RIDEO_EDITOR_FILE_MAX_BYTES },
     mediaUriMode: e.RIDEO_MEDIA_URI_MODE,
     jobRecovery: e.RIDEO_JOB_RECOVERY,
   };

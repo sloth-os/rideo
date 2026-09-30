@@ -11,14 +11,7 @@ import { GatewayClient } from '../gateway/gateway-client';
 import { ProxyClient } from '../gateway/proxy-client';
 import { batchGenerate, clipGenerate, clipPlan } from '../jobs/handlers/clips';
 import type { HandlerDeps } from '../jobs/handlers/common';
-import {
-  analysisRun,
-  editAuto,
-  exportFinish,
-  exportRender,
-  resourceProcess,
-  timelineAssemble,
-} from '../jobs/handlers/media';
+import { analysisSuggest, editAuto, exportFinish, timelineAssemble } from '../jobs/handlers/media';
 import { shotGenerate } from '../jobs/handlers/shot';
 import {
   characterDescribe,
@@ -30,6 +23,7 @@ import {
 import { JobQueue } from '../jobs/queue';
 import { LiveHub } from '../live/hub';
 import { Ffmpeg } from '../media/ffmpeg';
+import { Staging } from '../media/staging';
 import { MediaStore } from '../media/store';
 import { Metrics } from '../metrics';
 import type { StorageBackend } from '../storage/backend';
@@ -38,6 +32,7 @@ import { WatermarkService } from '../watermark/service';
 import { ClipService } from './clips';
 import type { Deps, Logger } from './deps';
 import { EditService } from './edit';
+import { EditorService } from './editor';
 import { HistoryService } from './history';
 import { ProjectService } from './projects';
 import { ProjectRegistry } from './registry';
@@ -53,6 +48,7 @@ export interface Studio {
   story: StoryService;
   clips: ClipService;
   edit: EditService;
+  editor: EditorService;
   history: HistoryService;
   ui: UiService;
   start(): Promise<void>;
@@ -113,7 +109,9 @@ export function createStudio(
     metrics,
     log: log.child({ component: 'jobs' }),
     lanes: config.lanes,
+    editorLeaseMs: config.editor.leaseSec * 1000,
   });
+  const staging = new Staging(config.dataDir);
   const projectsRegistry = new ProjectRegistry({
     storage,
     layout,
@@ -138,6 +136,7 @@ export function createStudio(
     watermark,
     hub,
     jobs,
+    staging,
     ...(config.stt ? { stt: new SttClient(proxy, config.stt.domain, config.stt.model) } : {}),
   };
   const services = {
@@ -146,7 +145,11 @@ export function createStudio(
     story: new StoryService(deps),
     clips: new ClipService(deps),
     edit: new EditService(deps),
+    editor: new EditorService(deps),
   };
+  // Editor jobs: failures and cancellations are recorded on their documents; a closed tab releases its jobs.
+  jobs.onEditorJobEnded = (job) => services.editor.ended(job);
+  hub.onSessionClosed((sessionId) => void jobs.releaseSession(sessionId));
   const handlerDeps: HandlerDeps = { ...deps, services };
   const reg = (
     kind: Parameters<JobQueue['register']>[0],
@@ -161,9 +164,7 @@ export function createStudio(
   reg('clip.generate', clipGenerate);
   reg('shot.generate', shotGenerate);
   reg('batch.generate', batchGenerate);
-  reg('resource.process', resourceProcess);
-  reg('analysis.run', analysisRun);
-  reg('export.render', exportRender);
+  reg('analysis.suggest', analysisSuggest);
   reg('export.finish', exportFinish);
   reg('edit.auto', editAuto);
   reg('timeline.assemble', timelineAssemble);
@@ -205,7 +206,7 @@ export function createStudio(
             });
           }
           return;
-        case 'analysis.run': {
+        case 'analysis.start': {
           const video = Object.values(docs.resources)
             .filter((r) => r.kind === 'video' && r.role === 'source' && r.status === 'ready')
             .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
@@ -234,6 +235,15 @@ export function createStudio(
   };
 
   let syncTimer: NodeJS.Timeout | null = null;
+  let sweepTimer: NodeJS.Timeout | null = null;
+  const sweepStaging = () =>
+    staging
+      .sweep((jobId) => {
+        const job = jobs.find(jobId);
+        return !!job && (job.status === 'queued' || job.status === 'running');
+      })
+      .then((n) => n && log.info({ removed: n }, 'removed stale editor-job staging folders'))
+      .catch((err) => log.warn({ err }, 'staging sweep failed'));
   const syncing = new Set<string>();
   return {
     config,
@@ -256,6 +266,9 @@ export function createStudio(
         }
       }
       if (recovered) log.info({ recovered }, 'recovered interrupted jobs');
+      await sweepStaging();
+      sweepTimer = setInterval(sweepStaging, 3600_000);
+      sweepTimer.unref();
       if (config.webdav.syncIntervalSec > 0) {
         syncTimer = setInterval(() => {
           for (const projectId of hub.subscribedProjects()) {
@@ -275,6 +288,7 @@ export function createStudio(
     },
     async stop() {
       if (syncTimer) clearInterval(syncTimer);
+      if (sweepTimer) clearInterval(sweepTimer);
       await jobs.shutdown();
       hub.close();
     },

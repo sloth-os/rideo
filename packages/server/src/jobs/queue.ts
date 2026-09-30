@@ -58,6 +58,11 @@ interface Running {
   holdsPermit: boolean;
 }
 
+export interface EditorJobError {
+  code: string;
+  message: string;
+}
+
 /** Persistent, lane-scheduled job queue (docs/design/generation-pipeline.md). */
 export class JobQueue {
   private readonly handlers = new Map<JobKind, JobHandler>();
@@ -69,7 +74,10 @@ export class JobQueue {
   private readonly lastPublish = new Map<string, number>();
   private readonly lastSave = new Map<string, number>();
   private timer: NodeJS.Timeout | null = null;
+  private leaseTimer: NodeJS.Timeout | null = null;
   private closed = false;
+  /** Called when an editor job ends without success (failed or cancelled), for document side effects. */
+  onEditorJobEnded?: (job: Job) => Promise<void>;
 
   constructor(
     private readonly deps: {
@@ -79,10 +87,16 @@ export class JobQueue {
       metrics: Metrics;
       log: JobLogger & { child?: (b: object) => JobLogger };
       lanes: Record<string, number>;
+      /** How long a tab holds an editor job without a heartbeat. */
+      editorLeaseMs?: number;
     },
   ) {
     for (const lane of LANES)
       this.lanes.set(lane, { sem: new Semaphore(Math.max(1, deps.lanes[lane] ?? 1)), waiting: [] });
+  }
+
+  private get leaseMs(): number {
+    return this.deps.editorLeaseMs ?? 60_000;
   }
 
   register(kind: JobKind, handler: JobHandler): void {
@@ -155,7 +169,8 @@ export class JobQueue {
 
   async enqueue(input: EnqueueInput): Promise<Job> {
     if (this.closed) throw new AppError('conflict', 'job queue is shutting down');
-    if (!this.handlers.has(input.kind)) throw new AppError('internal_error', `no handler for ${input.kind}`);
+    if (JOB_LANES[input.kind] !== 'client' && !this.handlers.has(input.kind))
+      throw new AppError('internal_error', `no handler for ${input.kind}`);
     if (input.dedupeKey) {
       const dup = [...this.jobs.values()].find(
         (j) => j.projectId === input.projectId && j.dedupeKey === input.dedupeKey && !isTerminalJob(j),
@@ -188,6 +203,8 @@ export class JobQueue {
   }
 
   private schedule(job: Job): void {
+    // Editor jobs wait for a studio tab to claim them (docs/design/editor.md#editor-jobs).
+    if (job.lane === 'client') return;
     const lane = this.lanes.get(job.lane)!;
     lane.waiting.push(job);
     lane.waiting.sort((a, b) => b.priority - a.priority || a.createdAt.localeCompare(b.createdAt));
@@ -406,10 +423,193 @@ export class JobQueue {
     job.status = 'cancelled';
     job.error = { code: 'cancelled', message: reason, retryable: false };
     job.finishedAt = new Date().toISOString();
+    job.lease = null;
+    await this.save(job);
+    this.publish(job);
+    this.resolveWaiters(job);
+    if (job.lane === 'client') await this.editorEnded(job);
+    return job;
+  }
+
+  // ---- Editor jobs (client lane) -------------------------------------------------------------------
+
+  /** Leases the next queued editor job of a project to a tab (highest priority, then oldest). */
+  async claim(projectId: string, sessionId: string, kinds?: readonly string[]): Promise<Job | null> {
+    if (this.closed) return null;
+    const now = Date.now();
+    const job = [...this.jobs.values()]
+      .filter(
+        (j) =>
+          j.projectId === projectId &&
+          j.lane === 'client' &&
+          j.status === 'queued' &&
+          (!kinds || kinds.includes(j.kind)) &&
+          (this.notBefore.get(j.id) ?? 0) <= now,
+      )
+      .sort((a, b) => b.priority - a.priority || a.createdAt.localeCompare(b.createdAt))[0];
+    if (!job) return null;
+    const at = new Date(now).toISOString();
+    job.status = 'running';
+    job.attempts += 1;
+    job.startedAt = at;
+    delete job.error;
+    job.lease = { sessionId, claimedAt: at, expiresAt: new Date(now + this.leaseMs).toISOString() };
+    this.notBefore.delete(job.id);
+    this.deps.metrics.editorJobs.inc({ kind: job.kind, event: 'claimed' });
+    this.deps.log.info(
+      { jobId: job.id, projectId, kind: job.kind, sessionId, attempt: job.attempts },
+      'editor job claimed',
+    );
+    this.ensureLeaseTimer();
+    await this.save(job);
+    this.publish(job);
+    return job;
+  }
+
+  private leased(jobId: string, sessionId: string): Job {
+    const job = this.jobs.get(jobId);
+    if (job?.lane !== 'client') throw notFound(`editor job ${jobId}`);
+    if (job.status !== 'running' || job.lease?.sessionId !== sessionId)
+      throw new AppError('lease_lost', `editor job ${jobId} is not leased to this session`);
+    return job;
+  }
+
+  /** Extends the lease and records progress; reports cancellation to the tab. */
+  heartbeat(
+    jobId: string,
+    sessionId: string,
+    progress?: Job['progress'],
+  ): { cancelled: boolean; leaseExpiresAt: string | null } {
+    const current = this.jobs.get(jobId);
+    if (current?.status === 'cancelled') return { cancelled: true, leaseExpiresAt: null };
+    const job = this.leased(jobId, sessionId);
+    job.lease!.expiresAt = new Date(Date.now() + this.leaseMs).toISOString();
+    if (progress) {
+      job.progress = {
+        done: progress.done,
+        total: progress.total,
+        ...(progress.message ? { message: progress.message } : {}),
+      };
+      this.publish(job, false);
+    }
+    void this.save(job, false);
+    return { cancelled: false, leaseExpiresAt: job.lease!.expiresAt };
+  }
+
+  /** Verifies the lease before a file upload (and extends it: uploads can be long). */
+  assertLease(jobId: string, sessionId: string): Job {
+    const job = this.leased(jobId, sessionId);
+    job.lease!.expiresAt = new Date(Date.now() + this.leaseMs).toISOString();
+    return job;
+  }
+
+  async staged(jobId: string, sessionId: string, name: string): Promise<Job> {
+    const job = this.leased(jobId, sessionId);
+    if (!job.staged.includes(name)) job.staged.push(name);
+    await this.save(job);
+    return job;
+  }
+
+  async completeEditor(jobId: string, sessionId: string, result: unknown): Promise<Job> {
+    const job = this.leased(jobId, sessionId);
+    job.status = 'succeeded';
+    job.result = result;
+    job.lease = null;
+    job.progress = {
+      done: job.progress.total || 1,
+      total: job.progress.total || 1,
+      message: job.progress.message,
+    };
+    job.finishedAt = new Date().toISOString();
+    this.deps.metrics.editorJobs.inc({ kind: job.kind, event: 'completed' });
+    this.deps.metrics.jobs.inc({ kind: job.kind, status: job.status });
+    this.deps.log.info({ jobId, projectId: job.projectId, kind: job.kind }, 'editor job completed');
     await this.save(job);
     this.publish(job);
     this.resolveWaiters(job);
     return job;
+  }
+
+  async failEditor(jobId: string, sessionId: string, error: EditorJobError): Promise<Job> {
+    const job = this.leased(jobId, sessionId);
+    this.deps.metrics.editorJobs.inc({ kind: job.kind, event: 'failed' });
+    return this.requeueOrEnd(job, error, error.code === 'cancelled');
+  }
+
+  /** Returns the job to the queue (keeping its staged files), or ends it when attempts are used up. */
+  private async requeueOrEnd(job: Job, error: EditorJobError, cancel = false): Promise<Job> {
+    job.lease = null;
+    if (cancel) {
+      job.status = 'cancelled';
+      job.error = { code: 'cancelled', message: error.message, retryable: false };
+    } else if (job.attempts < job.maxAttempts && !this.closed) {
+      job.status = 'queued';
+      job.error = { code: error.code, message: error.message, retryable: true };
+      this.notBefore.set(job.id, Date.now() + Math.min(30_000, 1000 * 2 ** (job.attempts - 1)));
+    } else {
+      job.status = 'failed';
+      job.error = { code: error.code, message: error.message, retryable: false };
+    }
+    this.deps.log.warn(
+      { jobId: job.id, projectId: job.projectId, kind: job.kind, code: error.code, status: job.status },
+      error.message,
+    );
+    if (isTerminalJob(job)) {
+      job.finishedAt = new Date().toISOString();
+      this.deps.metrics.jobs.inc({ kind: job.kind, status: job.status });
+    }
+    await this.save(job);
+    this.publish(job);
+    if (isTerminalJob(job)) {
+      this.resolveWaiters(job);
+      await this.editorEnded(job);
+    }
+    return job;
+  }
+
+  private async editorEnded(job: Job): Promise<void> {
+    try {
+      await this.onEditorJobEnded?.(job);
+    } catch (err) {
+      this.deps.log.warn({ err, jobId: job.id }, 'editor job end hook failed');
+    }
+  }
+
+  /** A tab's live session closed: its editor jobs go back to the queue at once. */
+  async releaseSession(sessionId: string): Promise<void> {
+    for (const job of [...this.jobs.values()]) {
+      if (job.lane === 'client' && job.status === 'running' && job.lease?.sessionId === sessionId) {
+        this.deps.metrics.editorJobs.inc({ kind: job.kind, event: 'released' });
+        await this.requeueOrEnd(job, { code: 'lease_released', message: 'the editor tab closed' });
+      }
+    }
+  }
+
+  /** Expires leases whose tab stopped sending heartbeats. */
+  async expireLeases(now = Date.now()): Promise<number> {
+    let n = 0;
+    for (const job of [...this.jobs.values()]) {
+      if (
+        job.lane === 'client' &&
+        job.status === 'running' &&
+        job.lease &&
+        Date.parse(job.lease.expiresAt) <= now
+      ) {
+        this.deps.metrics.editorJobs.inc({ kind: job.kind, event: 'expired' });
+        await this.requeueOrEnd(job, { code: 'lease_expired', message: 'the editor tab stopped responding' });
+        n++;
+      }
+    }
+    return n;
+  }
+
+  private ensureLeaseTimer(): void {
+    if (this.leaseTimer || this.closed) return;
+    this.leaseTimer = setInterval(
+      () => void this.expireLeases(),
+      Math.min(5000, Math.max(250, this.leaseMs / 4)),
+    );
+    this.leaseTimer.unref();
   }
 
   /** Loads a project's job records; re-enqueues interrupted work (docs/design/generation-pipeline.md#semantics). */
@@ -426,8 +626,9 @@ export class JobQueue {
       const job = parsed.data;
       if (isTerminalJob(job) && Date.parse(job.createdAt) < cutoff) continue;
       this.jobs.set(job.id, job);
-      if (!isTerminalJob(job) && recover && this.handlers.has(job.kind)) {
+      if (!isTerminalJob(job) && recover && (this.handlers.has(job.kind) || job.lane === 'client')) {
         job.status = 'queued';
+        job.lease = null;
         recovered++;
         this.publish(job);
         this.schedule(job);
@@ -439,6 +640,7 @@ export class JobQueue {
   async shutdown(): Promise<void> {
     this.closed = true;
     if (this.timer) clearTimeout(this.timer);
+    if (this.leaseTimer) clearInterval(this.leaseTimer);
     for (const [, r] of this.running) r.controller.abort('server shutdown');
   }
 }

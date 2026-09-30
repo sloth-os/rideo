@@ -11,6 +11,7 @@ import {
   kindFromMime,
   newId,
   type OutlineBeat,
+  type Probe,
   type Project,
   type ReferenceView,
   type Resource,
@@ -369,18 +370,25 @@ export class StoryService extends Service {
   async importMedia(
     projectId: string,
     source: UploadSource,
-    opts: { kind: Parameters<MediaStore['putFile']>[2]['kind']; name: string; maxBytes?: number },
+    opts: {
+      kind: Parameters<MediaStore['putFile']>[2]['kind'];
+      name: string;
+      maxBytes?: number;
+      probe?: Parameters<MediaStore['putFile']>[2]['probe'];
+    },
   ) {
     if ('uri' in source)
       return this.deps.media.importUri(projectId, source.uri, {
         kind: opts.kind,
         name: opts.name,
         maxBytes: opts.maxBytes,
+        probe: opts.probe,
       });
     return this.deps.media.putFile(projectId, source.file, {
       kind: opts.kind,
       name: opts.name,
       mime: source.mime,
+      probe: opts.probe,
     });
   }
 
@@ -500,11 +508,17 @@ export class StoryService extends Service {
     });
   }
 
+  /**
+   * Adds a resource. A browser upload carries its own probe (and poster), so it is ready at once; audio and
+   * video from anywhere else (MCP, URLs) get a `media.process` editor job (docs/design/editor.md#media-preparation-uploads).
+   * Images are probed here: they are generation inputs as much as media.
+   */
   async addResource(
     actor: Actor,
     projectId: string,
     source: UploadSource,
     input: Omit<ResourceInput, 'uri'> = {},
+    prepared: { probe?: Probe; poster?: string } = {},
   ): Promise<Resource> {
     const docs = await this.deps.projects.docs(projectId);
     const name =
@@ -513,13 +527,29 @@ export class StoryService extends Service {
         ? source.filename
         : (source.uri.startsWith('data:') ? 'upload' : new URL(source.uri).pathname.split('/').pop()) ||
           'resource');
-    const media = await this.importMedia(projectId, source, {
+    let media = await this.importMedia(projectId, source, {
       kind: 'uploads',
       name: name.replace(/\.[^.]+$/, ''),
       maxBytes: 4 * 1024 ** 3,
+      probe: prepared.probe ?? false,
     });
     const kind = input.kind ?? kindFromMime(media.mime);
     if (!kind) throw invalid(`unsupported media type ${media.mime}`);
+    if (kind === 'image' && !prepared.probe)
+      media = {
+        ...media,
+        ...(await this.deps.media.probeRef(await this.deps.media.localPath(projectId, media), media.mime)),
+      };
+    if (prepared.poster && kind !== 'audio') {
+      const poster = await this.deps.media.putFile(projectId, prepared.poster, {
+        kind: 'posters',
+        name: 'poster',
+        stem: media.hash.slice(0, 12),
+        mime: 'image/jpeg',
+        probe: false,
+      });
+      media = { ...media, poster: { path: poster.path, mime: poster.mime } };
+    }
     const role =
       input.role ??
       (kind === 'video'
@@ -529,6 +559,11 @@ export class StoryService extends Service {
         : kind === 'audio'
           ? 'music'
           : 'reference');
+    const needsEditor = kind !== 'image' && !prepared.probe;
+    const mismatch =
+      !!prepared.probe &&
+      ((kind === 'video' && !prepared.probe.hasVideo) || (kind === 'audio' && !prepared.probe.hasAudio));
+    if (mismatch) throw invalid(`the file has no ${kind} stream`);
     const resource: Resource = {
       id: newId('resource'),
       kind,
@@ -537,22 +572,26 @@ export class StoryService extends Service {
       media,
       createdAt: new Date().toISOString(),
       origin: 'uri' in source ? (source.uri.startsWith('data:') ? 'upload' : 'url') : 'upload',
-      status: kind === 'video' ? 'processing' : 'ready',
+      status: needsEditor ? 'processing' : 'ready',
     };
     await this.mutate(actor, projectId, (tx) => tx.set(docPath.resource(resource.id), resource), {
       message: `Add ${kind} resource ${name}`,
     });
-    if (kind === 'video') {
-      await this.deps.jobs.enqueue({
-        projectId,
-        kind: 'resource.process',
-        params: { resourceId: resource.id },
-        actor,
-        branch: await this.branchOf(projectId),
-        dedupeKey: `process:${resource.id}`,
-      });
-    }
+    if (needsEditor) await this.processInEditor(actor, projectId, resource.id);
     return resource;
+  }
+
+  /** Probe + poster of a resource by a studio tab (`media.process` editor job). */
+  async processInEditor(actor: Actor, projectId: string, resourceId: string): Promise<Job> {
+    return this.deps.jobs.enqueue({
+      projectId,
+      kind: 'media.process',
+      params: { resourceId },
+      actor,
+      branch: await this.branchOf(projectId),
+      dedupeKey: `process:${resourceId}`,
+      maxAttempts: 5,
+    });
   }
 
   async generateMusic(

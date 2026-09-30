@@ -3,7 +3,7 @@ import { copyFile, mkdir, readdir, readFile, rename, rm, stat, utimes, writeFile
 import { extname, join } from 'node:path';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
-import type { MediaRef } from '@rideo/shared';
+import type { MediaRef, Probe } from '@rideo/shared';
 import { slugify } from '@rideo/shared';
 import mime from 'mime-types';
 import { AppError } from '../errors';
@@ -13,11 +13,28 @@ import { randomHex, sha256, sha256File } from '../util/crypto';
 import type { Ffmpeg } from './ffmpeg';
 import { toPng } from './frames';
 
+/** MediaRef fields from a probe (server ffprobe or a browser's `parseProbe`). */
+export function mediaFields(
+  p: Omit<Probe, 'formatName'> & { formatName?: string },
+  mimeType: string,
+): Partial<MediaRef> {
+  const out: Partial<MediaRef> = {};
+  if (p.width) out.width = p.width;
+  if (p.height) out.height = p.height;
+  if (!mimeType.startsWith('image/')) {
+    out.durationSec = p.durationSec;
+    out.hasAudio = p.hasAudio;
+    if (p.fps && mimeType.startsWith('video/')) out.fps = p.fps;
+    if (p.videoCodec && p.hasVideo) out.videoCodec = p.videoCodec;
+    if (p.audioCodec && p.hasAudio) out.audioCodec = p.audioCodec;
+  }
+  return out;
+}
+
 export type MediaKind =
   | 'refs'
   | 'keyframes'
   | 'takes'
-  | 'proxies'
   | 'posters'
   | 'frames'
   | 'music'
@@ -30,8 +47,11 @@ export interface PutOptions {
   kind: MediaKind;
   name: string;
   mime?: string;
-  /** Probe duration/dimensions/audio with ffprobe (default true for audio/video/images). */
-  probe?: boolean;
+  /**
+   * Media fields: `true`/omitted probes with ffprobe (generated media), a `Probe` uses a browser's probe of an
+   * upload (no server-side media work), `false` stores the file without media fields.
+   */
+  probe?: boolean | Probe;
   /** Fixed filename stem instead of `<name>-<hash12>` (proxies are named by their original's hash). */
   stem?: string;
 }
@@ -144,16 +164,7 @@ export class MediaStore {
   async probeRef(file: string, mimeType: string): Promise<Partial<MediaRef>> {
     if (!/^(video|audio|image)\//.test(mimeType)) return {};
     try {
-      const p = await this.deps.ff.probe(file);
-      const out: Partial<MediaRef> = {};
-      if (p.width) out.width = p.width;
-      if (p.height) out.height = p.height;
-      if (!mimeType.startsWith('image/')) {
-        out.durationSec = p.durationSec;
-        out.hasAudio = p.hasAudio;
-        if (p.fps && mimeType.startsWith('video/')) out.fps = p.fps;
-      }
-      return out;
+      return mediaFields(await this.deps.ff.probe(file), mimeType);
     } catch (err) {
       this.deps.log?.warn({ err, file }, 'probe failed');
       return {};
@@ -178,7 +189,12 @@ export class MediaStore {
       await copyFile(file, cachePath);
       await this.touchCache(cacheName, size);
     }
-    const probe = opts.probe === false ? {} : await this.probeRef(file, mimeType);
+    const probe =
+      opts.probe === false
+        ? {}
+        : typeof opts.probe === 'object'
+          ? mediaFields(opts.probe, mimeType)
+          : await this.probeRef(file, mimeType);
     return { path, hash, mime: mimeType, size, ...probe };
   }
 
