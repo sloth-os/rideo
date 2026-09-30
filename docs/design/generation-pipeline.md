@@ -32,14 +32,17 @@ type Job = {
 | `shot.generate` | video | the shot pipeline below |
 | `batch.generate` | control | extend, plan and generate until the target length |
 | `music.generate` | music | SDK music task → resource |
-| `resource.process` | media | probe, proxy, poster for an uploaded or imported resource |
-| `analysis.run` | media | footage analysis + suggestions |
+| `media.process` | client | probe + poster of an imported resource (runs in a studio tab) |
+| `analysis.signals` | client | footage analysis signals with ffmpeg.wasm (runs in a studio tab) |
+| `analysis.suggest` | llm | transcript, AI summary and suggestions + rule suggestions from the signals |
 | `edit.auto` | control | accepted suggestions → timeline |
 | `timeline.assemble` | control | approved clips → timeline |
-| `export.render` | media | ffmpeg render + watermark (+ browser-render finishing) |
+| `export.render` | client | chunked render + soundtrack in a studio tab ([editor](editor.md#rendering)) |
+| `export.finish` | media | concat parts → watermark → encode → mux → publish |
 
 Lane concurrency defaults: `control=16, llm=2, image=2, video=2, music=1, media=1`. Override with
-`RIDEO_LANES="video=3,image=2"`. Within a lane, jobs run by priority (user-initiated regenerate = 10,
+`RIDEO_LANES="video=3,image=2"`. The `client` lane has no server concurrency: its jobs are claimed and run
+by studio tabs ([editor jobs](editor.md#editor-jobs)), one job per tab at a time. Within a lane, jobs run by priority (user-initiated regenerate = 10,
 pilot = 5, batch = 1), then FIFO. A job that waits for its children (`clip.generate` → `shot.generate`,
 `batch.generate` → `clip.generate`) releases its lane slot while waiting, so orchestration can never
 deadlock a lane.
@@ -91,7 +94,7 @@ music 10 min (`RIDEO_GATEWAY_TIMEOUT_*`).
 | video | 0.35–0.80 | video task with `first_frame`, references and clamped duration → download |
 | verify | 0.80–0.90 | sample frames (ffmpeg) → judge → retry the video up to `maxAttempts` |
 | watermark | 0.90–0.96 | embed the invisible watermark (raw frame pipe) + provenance metadata, register the id |
-| proxy | 0.96–0.99 | VP9/Opus WebM proxy (≤ 640 px wide) + JPEG poster |
+| poster | 0.96–0.99 | JPEG poster and the last frame (continuity); browsers that cannot decode H.264 build their own local proxy ([editor](editor.md#playback-compatibility-local-proxies)) |
 | commit | 1.00 | append the take to the clip (`meta.jobId`), auto-select it if it passed, set the shot status |
 
 A shot whose attempts are exhausted still commits its best take (`needs_review`), so the user can inspect

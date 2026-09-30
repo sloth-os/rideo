@@ -25,7 +25,7 @@ JSON and validated with the zod unions in `shared/src/schemas/live.ts`.
 |---|---|
 | `{type: "subscribe", projectId, lastSeq?}` | Start receiving events. With `lastSeq`, the server replays newer events from its ring buffer (the last 1000 per project), or sends `resync` when too far behind. |
 | `{type: "unsubscribe", projectId}` | Stop. |
-| `{type: "presence", projectId, route, selection?, viewport}` | What the user is looking at. Agents read it with `ui_sessions`. |
+| `{type: "presence", projectId, route, selection?, viewport, engine?}` | What the user is looking at, and the tab's editor engine (`{ffmpeg, webcodecs: {video, audio}, busyJobId}`). Agents read it with `ui_sessions`. |
 | `{type: "ui-ack", commandId, ok, error?}` | Acknowledges a UI command. |
 | `{type: "ping"}` | Heartbeat every 20 s; the server closes the socket after 60 s of silence. |
 
@@ -73,6 +73,9 @@ session.
 
 ## Presence
 
-The browser sends `presence` on every route change and selection change. The hub keeps
-`{sessionId, projectId, route, selection, viewport, connectedAt, lastSeen}` so agents can ask "what is the
-user looking at?" (`ui_sessions`) and aim their commands.
+The browser sends `presence` on every route change and selection change, and whenever its editor engine
+changes state. The hub keeps `{sessionId, projectId, route, selection, viewport, engine, connectedAt,
+lastSeen}` so agents can ask "what is the user looking at?" (`ui_sessions`) and aim their commands.
+
+When a session disconnects, the editor jobs leased to it go back to `queued` at once (instead of waiting for
+the lease to expire), and another tab of the project can resume them.

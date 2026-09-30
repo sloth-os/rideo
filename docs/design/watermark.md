@@ -52,7 +52,7 @@ typical, asserted in tests).
 
 ## Extraction
 
-For each sampled frame (up to `N = 48`, spread across the video) and each position `j`:
+For each sampled frame (up to `N = 48`, spread across the video; more frames would lower the bit errors but also inflate the margin of unmarked, static content past the 2.5 gate) and each position `j`:
 `soft_j = c_j · clamp(|A| − |B|, −1.5T, 1.5T)` is accumulated into `S[bit(j)]`, and `Σ soft²` is tracked per
 bit. The soft clamp limits the influence of strong natural edges (host interference).
 
@@ -63,10 +63,12 @@ bit. The soft clamp limits the influence of strong natural edges (host interfere
   false-positive rate, and the margin test pushes it far lower. The reported `confidence` is
   `min(1, meanMargin / 6)`.
 - **CRC-aided list decoding.** When the margin shows a watermark but the CRC fails (heavy compression flips a
-  few weak bits), up to 3 of the 16 least reliable bits (lowest margins) are flipped. A CRC-valid candidate
-  is accepted only if its id **exists in the provenance registry**. That verification makes a wrong
-  acceptance negligible: roughly 700 candidates × 2⁻¹⁶ CRC collisions, each of which must also hit a
-  registered 48-bit id. The result reports `corrected: <flips>`.
+  few weak bits), up to 4 of the 24 least reliable bits (lowest margins) are flipped. After x264 CRF 28, 1–4
+  wrong bits are typical and they rank among the weakest (measured over 30 random ids on the test clip: 28
+  had errors, at most 4, all within the 24 weakest), so a 3-of-16 search misses about one mark in five. A
+  CRC-valid candidate is accepted only if its id **exists in the provenance registry**. That verification
+  makes a wrong acceptance negligible: about 13 000 candidates × 2⁻¹⁶ CRC collisions (≈ 0.2 per search),
+  each of which must also hit a registered 48-bit id. The result reports `corrected: <flips>`.
 - Resolution: extraction first runs at the native size. If nothing is found, it rescales the frames (ffmpeg
   `scale`) to each candidate embedding size (the registry's known sizes plus 1920×1080, 1280×720,
   854×480, 640×360, 1080×1920, 720×1280, 1024×1024) and tries again.
@@ -83,12 +85,14 @@ ffmpeg -f rawvideo -pix_fmt yuv420p -s WxH -r <fps> -i - -i in -map 0:v -map 1:a
        -metadata copyright="© 2026 <owner>" -metadata comment="rideo-wm:v1:<id>" -movflags +faststart out.mp4
 ```
 
-Backpressure is respected on both pipes. Server exports render the timeline straight into this pipeline, so
-the final movie is encoded only once.
+Backpressure is respected on both pipes. Generated takes go through this pipeline right after
+verification.
 
-**Browser exports.** The key never leaves the server. A WebCodecs-rendered export is uploaded, and the
-server runs the same finishing pass (decode → embed → H.264 encode → register) before the export becomes
-downloadable.
+**Exports.** Exports are rendered in the browser ([editor](editor.md#rendering)), but the key never leaves
+the server: the browser uploads its video chunks and the soundtrack, and the `export.finish` job decodes the
+chunks in order (concat demuxer), embeds the watermark, encodes once at the export quality, muxes the
+soundtrack and registers the id before the export becomes downloadable. Nothing unwatermarked is ever
+published; the staged chunks stay on the server's local disk and are deleted after finishing.
 
 ## Registry record
 

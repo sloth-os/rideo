@@ -12,7 +12,7 @@
 | [design/mcp.md](design/mcp.md) | MCP server, transport, tool catalogue, UI control, agent attribution |
 | [design/realtime-sync.md](design/realtime-sync.md) | Live WebSocket protocol, events, sequence/replay, presence, UI commands |
 | [design/watermark.md](design/watermark.md) | Invisible watermark algorithm, payload, registry, detection, robustness |
-| [design/editor.md](design/editor.md) | Timeline model and ops, proxy media, WebCodecs preview/export, server render |
+| [design/editor.md](design/editor.md) | Timeline model and ops, the browser media engine (ffmpeg.wasm + WebCodecs), local proxies, analysis, chunked rendering, editor jobs |
 | [api/rest.md](api/rest.md) | REST API reference |
 | [testing.md](testing.md) | Test pyramid, suites, fixtures, CI jobs |
 | [deployment.md](deployment.md) | Configuration, Docker, connecting mm-gateway and an external WebDAV server |
@@ -28,7 +28,7 @@
 | Character | A cast member with a locked identity and approved reference images. |
 | Clip | 10 s–3 min of the movie, usually one scene. The unit of user review and approval. |
 | Shot | One generation unit inside a clip (a model-sized duration, e.g. 4–10 s). |
-| Take | One generated attempt of a shot: keyframe, video, proxy, consistency report, watermark id. |
+| Take | One generated attempt of a shot: keyframe, watermarked video, poster, consistency report, watermark id. |
 | Timeline | Tracks of items that reference takes or media, edited with pure operations. |
 | Gate | An approval that moves a workflow to its next stage. |
 | Actor | Who made a change: `user`, `agent` (MCP client), `system` (jobs), or `webdav` (external edit). |

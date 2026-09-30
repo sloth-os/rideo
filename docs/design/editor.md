@@ -1,4 +1,4 @@
-# Editor: timeline, WebCodecs preview and export, server render
+# Editor: timeline, browser media engine (ffmpeg.wasm + WebCodecs), rendering
 
 ## Timeline model
 
@@ -68,11 +68,17 @@ A committed `timeline.json` change carries `meta.ops` (the op list), so history 
 editor's undo restores `timeline.json` from the previous timeline commit
 (`history_restore {paths: ["timeline.json"]}`).
 
+The browser applies its own edits **optimistically**: the same reducer runs locally on the current
+timeline, the UI updates at once, and the ops are sent to `POST /timeline/ops`. The server's result (or
+the live `commit` event) is authoritative and replaces the local copy; a rejected batch rolls the local
+timeline back and shows the error. Concurrent edits by agents therefore never diverge for more than one
+round trip.
+
 ### Queries (shared, used by preview and render)
 
 `timelineDuration(t)` and `activeAt(t, time)` return the video layers at a time (one, or two during a
-transition, with `alpha`/`wipe` progress), the audio segments, and the text overlays. The browser
-compositor and the server render planner both consume this output, so they agree on every frame.
+transition, with `alpha`/`wipe` progress), the audio segments, and the text overlays. The WebCodecs
+compositor and the ffmpeg render planner both consume this output, so they agree on every frame.
 
 ### Generators
 
@@ -84,45 +90,125 @@ compositor and the server render planner both consume this output, so they agree
   when present). Speed ranges split segments. Transitions, titles, captions, music and fades map to their
   timeline fields. Suggestion times are in source seconds and are mapped to output time.
 
-## Proxy media
+## Where editing runs
 
-Chromium builds without proprietary codecs (including Playwright's) and some Linux browsers cannot decode
-H.264 or AAC. The server therefore creates a **browser-safe proxy** for every video, the standard NLE
-proxy workflow:
+Every editing operation runs **in the browser**. The server stores, versions and publishes; it never
+decodes or encodes media for editing.
 
-```
-ffmpeg -i in -vf "scale='min(640,iw)':-2" -c:v libvpx-vp9 -deadline realtime -cpu-used 8 -row-mt 1 \
-       -crf 38 -b:v 0 -g <2·fps> -c:a libopus -b:a 64k proxy.webm
-ffmpeg -ss <mid> -i in -frames:v 1 -vf scale=480:-2 poster.jpg
-```
+| Operation | Runs in | Engine |
+|---|---|---|
+| Timeline edits (ops, undo, assemble preview) | browser (optimistic) + server (authoritative commit) | shared reducer |
+| Probe and poster of an upload | browser, before the upload | ffmpeg.wasm |
+| Playback of media the browser cannot decode | browser, local proxy cached in OPFS | ffmpeg.wasm (transcode) + WebCodecs |
+| Preview player | browser | WebCodecs (mediabunny) |
+| Footage analysis signals (scenes, black, silence, loudness, thumbnails, speech audio) | browser | ffmpeg.wasm |
+| Footage analysis AI (summary, suggestions, transcript) | server | LLM / vision / STT through the gateway proxy |
+| Rendering the timeline | browser, in chunks | ffmpeg.wasm filtergraph or WebCodecs compositor; soundtrack via ffmpeg.wasm |
+| Invisible watermark of the finished export | server | native ffmpeg + watermark core (the key never leaves the server) |
 
-Proxies share timestamps with the originals, so edits made on proxies apply unchanged to the originals in
-the server render.
+The server keeps native ffmpeg only for work that is not editing: the generation pipeline (judge frame
+samples, continuity frames, posters of generated takes, cast sheets, brief attachment frames) and the
+watermark (embedding and detection). See [generation-pipeline](generation-pipeline.md) and
+[watermark](watermark.md).
 
-## Browser engine (WebCodecs via mediabunny)
+Work that an agent or the WebDAV inbox starts (no browser involved) becomes an **editor job**: a job in
+the `client` lane that an open studio tab of that project claims and runs. See [Editor jobs](#editor-jobs).
 
-`packages/web/src/features/editor/engine/`:
+## Browser media engine
+
+`packages/web/src/engine/`:
 
 | Module | Role |
 |---|---|
-| `media-pool.ts` | One mediabunny `Input(UrlSource(proxyUrl))` per media hash, with a `CanvasSink` (preview size, `fit: contain`, pooled canvases) and an `AudioBufferSink`. Lazy and reference-counted. |
-| `compositor.ts` | `render(ctx, time)`: `activeAt` → frames → draw with alpha (crossfade), clip rect (wipe), black fades; effects via `ctx.filter`; text presets. |
-| `player.ts` | Playback clocked by `AudioContext.currentTime`. Per-item `canvases()` iterators give sequential decode, `getCanvas()` handles scrubbing, and audio buffers are scheduled on the audio graph with gain automation. |
-| `exporter.ts` | Offline render: fixed-step frames to an `OffscreenCanvas` → `CanvasSource`; audio mixdown in an `OfflineAudioContext` → `AudioBufferSource`; `Output(Mp4OutputFormat \| WebMOutputFormat)` → `BufferTarget`. |
-| `capabilities.ts` | WebCodecs presence and a valid container/codec pair: MP4 with H.264 + AAC, else WebM with VP9/AV1/VP8 + Opus, else MP4 with H.264 + Opus (WebM never carries H.264). Without an audio encoder the export is video-only. |
-| `trim.ts` | Edge-drag trimming → `trim` ops (scaled by speed, clamped to the media); on free tracks a left-edge drag also `move`s the item so its right edge stays put. |
+| `ffmpeg.ts` | One ffmpeg.wasm instance per tab (`@ffmpeg/ffmpeg` 0.12, single-threaded FFmpeg 5.1 core served from our origin, loaded lazily). Runs one command at a time (queue). Inputs are `Blob`s mounted read-only with `WORKERFS` (no copy into wasm memory); outputs are read back and deleted. Log lines are captured for the shared parsers. Cancelling terminates the worker and reloads the core (≈ 1 s). |
+| `media-files.ts` | Blob access to project media: files this tab uploaded are reused from memory, others are downloaded once (LRU). |
+| `prepare.ts` | Probe (`ffmpeg -i` banner, parsed by `shared/media/probe.ts`) and poster for a file. |
+| `codecs.ts`, `local-proxy.ts` | Whether WebCodecs decodes a media file, and the local proxy when it does not (see below). |
+| `media-jobs.ts` | The `media.process` and `analysis.signals` editor jobs. |
+| `render/` | Chunked rendering: `engine-choice.ts`, `ffmpeg-engine.ts` (chunk graph and soundtrack), `webcodecs-engine.ts` (compositor chunk), `export-job.ts` (the `export.render` editor job). The plan itself is `shared/media/render-plan.ts`. |
+| `worker.ts`, `index.ts`, `state.ts` | The editor-job worker (claims, heartbeats, runs and completes the open project's editor jobs), its per-tab instance, and the engine state shown in the header and sent with presence. |
+| `fonts.ts` | The bundled DejaVu Sans, used by drawtext and by the WebCodecs compositor, so titles look the same in both engines. |
 
-When WebCodecs is missing, the preview falls back to `<video>` elements per item, with a banner, and
-browser export is disabled (server render remains).
+ffmpeg.wasm is not used for real-time playback; the preview player (`features/editor/engine/player.ts`)
+decodes with WebCodecs, fed by originals or local proxies. The core is 31 MB; it is fetched on first
+use and cached by the browser (long-lived `Cache-Control`, hashed file name).
 
-Browser export decodes originals when the browser can (`canDecode`). Otherwise it uses proxies and labels
-the result *draft*. The file is uploaded to `POST /api/projects/:id/exports/upload`. The server then runs the
-watermark finishing pass (the key never leaves the server) and publishes the export.
+Measured single-thread throughput (headless Chromium on an 8-core ARM server): H.264 720p decode ≈ 130
+fps; VP8 480p encode ≈ 50 fps; x264 `ultrafast` ≈ 39 fps at 720p and ≈ 22 fps at 1080p (`veryfast` ≈ 12 fps at
+720p). A 60-minute 720p film therefore takes about 40 minutes with the ffmpeg engine, which is why
+rendering also offers the hardware-accelerated WebCodecs engine and why analysis runs on a downscaled
+stream.
 
-## Server render (ffmpeg)
+## Media preparation (uploads)
 
-`server/src/media/render.ts` turns the timeline into one ffmpeg invocation. Every video item becomes a
-normalized stream:
+Before a file is uploaded, the browser:
+
+1. probes it: `ffmpeg -hide_banner -i <file>` (the command fails without an output, which is fine) and
+   `parseProbe()` reads format, duration, streams, codecs, size, frame rate, sample rate, channels and
+   rotation from the banner;
+2. makes a poster for videos: `ffmpeg -ss <min(1, d/2)> -i <file> -frames:v 1 -vf
+   scale='min(640,iw)':-2 -q:v 4 poster.jpg`.
+
+`POST /uploads` then carries the file, the poster and the probe (`meta`). The server validates the probe
+against `ProbeSchema`, stores the original and the poster, and the resource is `ready` at once. A resource
+added without a probe (MCP `resource_add`, the WebDAV inbox, or a browser that could not load ffmpeg.wasm)
+is created as `processing` with a `media.process` editor job.
+
+## Playback compatibility (local proxies)
+
+There are no server-side proxies. For each video the preview needs, the browser decides:
+
+1. WebCodecs can decode the original codec (`VideoDecoder.isConfigSupported`, checked once per codec) →
+   use the original (HTTP Range reads through mediabunny);
+2. otherwise → a **local proxy**: `ffmpeg -i <original> -vf "scale=-2:'min(480,ih)'" -c:v libvpx
+   -deadline realtime -cpu-used 8 -b:v 1M -g 12 -c:a libopus -b:a 64k proxy.webm`, stored in the Origin
+   Private File System under `proxies/<hash>-v1.webm` (LRU, 2 GB cap) and reused across sessions.
+
+Proxies share timestamps with the originals, so every edit applies unchanged to the originals when
+rendering. `<video>` previews in the clip and export lists play the original; when it fails to load they
+show the poster and build the proxy only when the user presses play. Browsers without an H.264 decoder (open-source Chromium builds,
+some Linux distributions) take the proxy path; Chrome, Edge and Safari play originals directly.
+
+## Footage analysis
+
+`analysis.signals` (an editor job, started by *Analyze footage* or MCP `footage_analyze`) runs one
+ffmpeg.wasm pass over the source video:
+
+```
+ffmpeg -i <source> -vf "scale=320:-2,blackdetect=d=0.3:pix_th=0.10,select='gt(scene\,0.3)',showinfo" \
+       -af "silencedetect=noise=-35dB:d=0.6,ebur128=framelog=verbose" -f null -
+```
+
+`parseAnalysisLog()` (`shared/media/analysis.ts`) turns the log into scene cuts (showinfo `pts_time` after a
+scene change), black segments, silences and integrated loudness (the last `Summary:` block; FFmpeg 5 also
+prints an empty summary when the graph is reconfigured). Scenes shorter than 0.5 s merge into the previous
+one. Then the browser takes one 320 px JPEG per scene (at most 12) and, when the server has speech-to-text
+configured, a mono 16 kHz speech track (`-vn -ac 1 -ar 16000 -b:a 48k speech.mp3`). The results are
+uploaded, and the server's `analysis.suggest` job runs the AI part: transcript (STT via the proxy), the
+vision LLM's summary and suggestions from the signals and thumbnails, plus the deterministic rule-based
+suggestions (`ruleSuggestions` in `shared/src/story/normalize.ts`: cut black, tighten long silences, fade
+in/out), which exist even without an LLM.
+
+## Rendering
+
+Rendering is planned once in `packages/shared/src/media/render-plan.ts` and executed in the browser.
+
+### Chunks
+
+`planChunks(timeline, {targetSec})` splits the output into windows of about `targetSec` (default 30 s):
+
+- boundaries are frame-aligned (`round(t·fps)/fps`);
+- a boundary never falls inside a transition overlap, so both sides of every `xfade` are in one chunk;
+- boundaries prefer hard cuts; an item longer than the target is split inside the item (only `in`/`out`
+  change).
+
+Each chunk is rendered independently, so memory stays bounded for 40–60 minute films, progress is
+exact, and a failed or interrupted render resumes at the first missing chunk.
+
+### Video graph (per chunk)
+
+Every video segment overlapping the chunk becomes a normalized stream (input seeking with `-ss` on each
+source keeps chunks independent):
 
 ```
 [k:v]trim=start=IN:end=OUT,setpts=(PTS-STARTPTS)/SPEED,scale=W:H:force_original_aspect_ratio=decrease,
@@ -130,19 +216,38 @@ normalized stream:
      eq=brightness=B:contrast=C:saturation=S,fade=t=in:st=0:d=FI,fade=t=out:st=D-FO:d=FO[vk]
 ```
 
-Every stream is put on `AV_TIME_BASE` (`settb=AVTB`) because `concat` outputs that timebase and `xfade`
-rejects inputs whose timebases differ (a cut followed by a transition would otherwise fail). The end of the
-graph snaps timestamps back onto the frame grid, `fps=FPS,trim=duration=LEN`, so exactly
-`round(LEN·FPS)` frames reach the watermark pipeline.
+Segments are chained left to right: `xfade` (`fade`, `wipeleft`, `fadeblack`) at `offset = accumulated − d`
+for transitions, `concat` for cuts. Every stream is on `AV_TIME_BASE` (`settb=AVTB`) because `concat`
+outputs that timebase and `xfade` rejects inputs whose timebases differ. Text items overlapping the chunk
+become `drawtext` (bundled DejaVu Sans, `fonts/DejaVuSans.ttf`) with `enable='between(t,a,b)'` in chunk
+time. The chunk ends with `fps=FPS,trim=duration=LEN`, which snaps timestamps back onto the frame grid,
+so every chunk has exactly `round(LEN·FPS)` frames and the chunks join without gaps.
 
-Items are then chained left to right: `xfade` (`fade`, `wipeleft`, `fadeblack`) at
-`offset = accumulated − d` for transitions, `concat` for cuts. Text items become `drawtext` with
-`enable='between(t,a,b)'`. Audio comes from item audio (when `hasAudio`, not muted) and audio tracks:
-`atrim → asetpts → atempo chain → volume → afade → adelay`, then `amix=normalize=0`, then `apad` and trim to
-the length (`anullsrc` when silent).
+### Soundtrack
 
-Video is rendered to raw frames and piped through the watermark `FramePipeline` (single final encode).
-Audio is rendered to AAC in parallel, and the two are muxed with `+faststart`. Quality presets:
+The audio is planned for the whole film (audio is cheap, and one continuous encode avoids AAC priming gaps
+at chunk joins): item audio (when `hasAudio`, not muted) and audio tracks,
+`atrim → asetpts → atempo chain → volume → afade → adelay`, then `amix=normalize=0`, `apad`, and trim to the
+length (`anullsrc` when silent). ffmpeg.wasm renders it to AAC (`soundtrack.m4a`, 192 kb/s).
+
+### Engines
+
+| Engine | Video path | Use |
+|---|---|---|
+| `ffmpeg` (ffmpeg.wasm) | the chunk graph above → libx264 (`ultrafast`; CRF 18 draft / 16 standard / 14 high) in MP4 | reference output; decodes any source codec in wasm; ≈ 20–40 fps |
+| `webcodecs` | the canvas compositor (`activeAt` → frames → alpha, wipe, fades, `ctx.filter` effects, text) → hardware `VideoEncoder` (H.264 in MP4, else VP9/AV1/VP8 in WebM) via mediabunny | fast (GPU); needs every source decodable by WebCodecs (originals or local proxies) |
+| `auto` (default) | `webcodecs` when the browser can encode video and decode every source original with WebCodecs; otherwise `ffmpeg` | |
+
+Both engines produce video-only chunk files (`part-0001.mp4`, …) plus the soundtrack, uploaded as they
+finish. Chunks are intermediates: the server's finishing pass re-encodes the final export, so they favour
+speed and quality over size.
+
+### Finishing (server)
+
+When the last part arrives, the `export.finish` job concatenates the chunks (concat demuxer), runs the
+watermark frame pipeline (decode → `embedLuma` → x264 at the export quality), muxes the soundtrack
+(`-c:a copy`), writes provenance metadata, registers the watermark, publishes
+`media/exports/<exportId>-<hash12>.mp4` and tags the commit. The final encode follows the quality presets:
 
 | Preset | Video | Max size |
 |---|---|---|
@@ -150,16 +255,46 @@ Audio is rendered to AAC in parallel, and the two are muxed with `+faststart`. Q
 | `standard` (default) | x264 medium CRF 20 | project size |
 | `high` | x264 slow CRF 17 | project size |
 
-Progress is reported from frames through the pipeline divided by expected frames.
+## Editor jobs
+
+An editor job is a job in the `client` lane. The server never runs it; a browser tab does.
+
+| Kind | Params | The tab… | Result → server |
+|---|---|---|---|
+| `media.process` | `resourceId` | fetches the original, probes it, makes the poster | probe + poster → resource `ready` |
+| `analysis.signals` | `analysisId`, `resourceId`, `speech` | runs the analysis pass, thumbnails, speech audio | signals + files → `analysis.suggest` job |
+| `export.render` | `exportId`, `quality`, `engine`, `chunkSec` | renders the soundtrack and every chunk | parts + manifest → `export.finish` job |
+
+Protocol (REST, see [api/rest.md](../api/rest.md#editor-jobs)):
+
+1. **Claim.** A tab with a project open asks `POST /api/editor/claim {sessionId, projectId}` when it is
+   idle, on every `job` event for a queued `client` job, and every 10 s. The server hands out the oldest
+   queued editor job of that project, sets `status: running` and a lease (`sessionId`, `expiresAt`, 60 s).
+2. **Heartbeat.** Every 10 s the tab reports progress and extends the lease. The reply tells it when the
+   job was cancelled.
+3. **Files.** Outputs are uploaded one by one (`PUT /api/editor/jobs/:jobId/files/:name`) into a staging
+   folder on the server's disk (`RIDEO_DATA_DIR/staging/<jobId>/`). The job lists them in `staged`.
+4. **Complete / fail.** The tab posts the result (validated per kind); the server applies it and starts the
+   follow-up job. Failures are reported with a code.
+5. **Recovery.** When a lease expires or the tab's live session closes, the job returns to `queued`
+   (up to `maxAttempts`), keeping its staged files: the next tab resumes an export at the first missing
+   part.
+
+A tab that is running an editor job shows it in the jobs panel ("in this tab") and asks for confirmation
+before it is closed. Without an open tab, editor jobs wait in `queued`; MCP results say so
+(`waitingFor: "editor"`), and `ui_sessions` lists which tabs have an engine available.
 
 ## Editor UI
 
 - Preview canvas with transport (play/pause, frame step, timecode) and a WebCodecs capability badge.
 - Timeline with zoom, a ruler (click to seek), a playhead, and labelled item blocks (a ⤫ marks a
   transition). Drag to reorder the primary track, drag item edges to trim, `S` to split at the playhead,
-  `Delete` to remove, arrow keys to step frames, `Space` to play; video, audio and text lanes.
+  `Delete` to remove, arrow keys to step frames, `Space` to play; video, audio and text lanes. Edits apply
+  locally at once (optimistic) and are confirmed by the server.
 - Inspector for the selected item (in/out, speed, volume, fades, effects, transition, text and timing).
 - Undo restores `timeline.json` from the previous timeline commit (a new commit; history is never rewritten).
-- Export dialog: *Render on server* (recommended for long movies) or *Render in browser (WebCodecs)* with
-  the detected codecs shown; failures stay visible in the dialog.
+- Export dialog: quality and engine (*Auto*, *ffmpeg.wasm*, *WebCodecs*) with the detected capabilities,
+  chunk progress, and failures that stay visible in the dialog. The render runs in this tab; the export
+  appears in Exports once the server has watermarked it.
+- An engine indicator in the header shows whether ffmpeg.wasm is loaded and what this tab is working on.
 - On phones the timeline collapses into a vertical list and the inspector sits under the preview.

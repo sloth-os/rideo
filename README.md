@@ -13,7 +13,7 @@ can also upload existing footage and let the AI suggest and apply an edit.
 | Generation | Images, video and music go through the [`@sloth-os/mm-gateway-js`](https://github.com/sloth-os/mm-gateway-js) SDK for [mm-gateway](https://github.com/sloth-os/mm-gateway). All other AI calls (LLM, vision, speech-to-text) go through the gateway's `/proxy/{domain}/{path}` reverse proxy. |
 | Agent control | A built-in **MCP** server (`/mcp`) lets Claude Code or any MCP client drive the backend and the open browser UI. Every change appears live in the frontend. |
 | Copyright | Every generated clip and export carries an **invisible watermark** (keyed DCT-domain payload) and provenance metadata. A detector recovers the brand and asset record. |
-| Editing | Timeline editor with **WebCodecs** preview and export in the browser (via [mediabunny](https://mediabunny.dev)), and an ffmpeg server renderer for long movies. |
+| Editing | The editor runs **in the browser**: [ffmpeg.wasm](https://ffmpegwasm.netlify.app) probes, analyzes, transcodes and renders, and **WebCodecs** (via [mediabunny](https://mediabunny.dev)) plays back and encodes in hardware. The server only watermarks and publishes the result. |
 
 ## Workflows
 
@@ -31,8 +31,8 @@ REST API and MCP tools all drive them. See [docs/design/workflows.md](docs/desig
 
 ## Quick start
 
-Requirements: Node.js 24+, npm 11+, ffmpeg/ffprobe 4.4+ (with libx264,
-libvpx-vp9, libopus).
+Requirements: Node.js 24+, npm 11+, ffmpeg/ffprobe 4.4+ with libx264 (server side: generation and
+watermarking), and a Chromium-, Firefox- or Safari-based browser with WebAssembly (the editor engine).
 
 ```bash
 npm install

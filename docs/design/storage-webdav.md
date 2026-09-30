@@ -69,8 +69,7 @@ All paths are under `RIDEO_WEBDAV_ROOT` (default `/rideo`).
 │   │   ├── refs/<character>-<view>-<hash12>.png
 │   │   ├── keyframes/c<clip>-s<shot>-<hash12>.png
 │   │   ├── takes/c<clip>-s<shot>-<hash12>.mp4        watermarked originals
-│   │   ├── proxies/<hash12>.webm                     VP9/Opus preview proxies
-│   │   ├── posters/<hash12>.jpg
+│   │   ├── posters/<hash12>.jpg                       posters (generated takes: server; uploads: browser)
 │   │   ├── frames/<hash12>.png                       sampled frames (judge evidence, last frames)
 │   │   ├── music/<slug>-<hash12>.<ext>
 │   │   ├── uploads/<slug>-<hash12>.<ext>
@@ -96,21 +95,30 @@ type MediaRef = {
   hash: string;        // sha256 hex of the stored bytes
   mime: string;
   size: number;
-  width?: number; height?: number; durationSec?: number; hasAudio?: boolean;
-  proxy?: { path: string; mime: string };   // browser-decodable preview (video only)
+  width?: number; height?: number; durationSec?: number; fps?: number; hasAudio?: boolean;
+  videoCodec?: string; audioCodec?: string;   // ffmpeg codec names, e.g. "h264", "aac"
   poster?: { path: string; mime: string };
 };
 ```
+
+There are no proxy files on the server: a browser that cannot decode an original builds a local proxy in
+its own storage ([editor](editor.md#playback-compatibility-local-proxies)). Older documents with a `proxy`
+field still parse; the field is dropped.
 
 Media files are **write-once**: the filename embeds the hash, so a new version is always a new file, and
 every commit in the history still resolves its media. Unreferenced media can be removed with
 `POST /api/projects/:id/gc`, which keeps anything reachable from any branch or tag.
 
-### Local cache
+### Local cache and staging
 
-ffmpeg needs local files. `MediaStore.localPath(ref)` downloads a media file once into
+The server's ffmpeg (generation and watermarking) needs local files. `MediaStore.localPath(ref)` downloads a media file once into
 `${RIDEO_DATA_DIR}/cache/media/<hash>.<ext>`, verifies the hash, and serves it from there. The cache is an
 LRU bounded by `RIDEO_CACHE_MAX_BYTES` (default 5 GiB). It is only a cache: deleting it loses nothing.
+
+Files uploaded by editor jobs (render parts, soundtrack, analysis thumbnails, speech audio) are staged in
+`${RIDEO_DATA_DIR}/staging/<jobId>/` until the job's follow-up has consumed them; only the published
+results (export, thumbnails) are written to WebDAV. Staging folders of finished jobs are removed after the
+follow-up job completes, and orphans after 24 h.
 
 ### Serving media to the browser
 

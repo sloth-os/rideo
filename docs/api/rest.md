@@ -25,6 +25,7 @@ Errors are RFC 9457 problem details (`application/problem+json`) with a stable `
 | `gateway_error` | 502 | mm-gateway returned an error |
 | `llm_invalid_output` | 502 | the LLM output failed validation after repair |
 | `storage_error` | 503 | the WebDAV backend failed |
+| `lease_lost` | 409 | an editor job is no longer leased to this session (expired, cancelled or reassigned) |
 | `unauthorized` | 401 | missing or wrong token |
 
 ## System
@@ -49,8 +50,8 @@ Errors are RFC 9457 problem details (`application/problem+json`) with a stable `
 | POST | `/api/projects/:id/gc` | – | GC report |
 | GET | `/api/projects/:id/docs/*path` | `?at=<commit>` | document |
 | GET | `/api/projects/:id/media/*path` | `Range` supported | bytes |
-| POST | `/api/projects/:id/uploads` | multipart `file`, fields `kind?`, `role?`, `name?` | `Resource` (+ `resource.process` job) |
-| POST | `/api/projects/:id/resources` | `{uri, kind?, role?, name?}` | `Resource` |
+| POST | `/api/projects/:id/uploads` | multipart `file`, optional `poster` (JPEG) and `meta` JSON `{probe, kind?, role?, name?}` (`probe`: `ProbeSchema`, made by the browser) | `Resource`: `ready` with a probe; otherwise `processing` + a `media.process` editor job |
+| POST | `/api/projects/:id/resources` | `{uri, kind?, role?, name?}` | `Resource` (`processing` + `media.process` editor job for audio/video) |
 
 ## Workflow
 
@@ -99,11 +100,10 @@ Errors are RFC 9457 problem details (`application/problem+json`) with a stable `
 | GET | `/api/projects/:id/timeline` | – | `Timeline` |
 | POST | `/api/projects/:id/timeline/ops` | `{ops[]}` | `{timeline, commit}` |
 | POST | `/api/projects/:id/timeline/assemble` | `{captions?, musicResourceId?}` | `{timeline, commit}` |
-| POST | `/api/projects/:id/analyses` | `{resourceId}` | `Job` |
+| POST | `/api/projects/:id/analyses` | `{resourceId}` | `{analysis, job}` (`analysis.signals` editor job) |
 | PATCH | `/api/projects/:id/analyses/:aid/suggestions` | `{decisions: [{id, status}]}` | `Analysis` |
 | POST | `/api/projects/:id/analyses/:aid/auto-edit` | – | `{timeline, commit}` |
-| POST | `/api/projects/:id/exports` | `{quality?}` | `Job` |
-| POST | `/api/projects/:id/exports/upload` | multipart `file` + `meta` JSON | `Export` (+ finishing job) |
+| POST | `/api/projects/:id/exports` | `{quality?, engine?: "auto" \| "ffmpeg" \| "webcodecs"}` | `{export, job}` (`export.render` editor job) |
 | GET | `/api/projects/:id/exports` | – | `Export[]` |
 
 ## History
@@ -126,6 +126,20 @@ Errors are RFC 9457 problem details (`application/problem+json`) with a stable `
 | GET | `/api/projects/:id/jobs?status=` | `Job[]` |
 | GET | `/api/projects/:id/jobs/:jobId` | `Job` |
 | POST | `/api/projects/:id/jobs/:jobId/cancel` | `Job` |
+
+## Editor jobs
+
+Browser tabs run editor jobs (`client` lane) with their editor engine; see
+[editor](../design/editor.md#editor-jobs). `sessionId` is the tab's live-channel session.
+
+| Method | Path | Body | Result |
+|---|---|---|---|
+| POST | `/api/editor/claim` | `{sessionId, projectId, kinds?[]}` | `{job}` (leased to the session) or `{job: null}` |
+| GET | `/api/editor/jobs/:jobId` | – | `Job` (with `staged` file names, for resuming) |
+| POST | `/api/editor/jobs/:jobId/heartbeat` | `{sessionId, progress?: {done, total, message?}}` | `{cancelled, leaseExpiresAt}` or `lease_lost` |
+| PUT | `/api/editor/jobs/:jobId/files/:name` | raw bytes (`?sessionId=`) | `{name, size}` (staged; names `[a-z0-9._-]`) |
+| POST | `/api/editor/jobs/:jobId/complete` | `{sessionId, result}` (per-kind `EditorResultSchema`) | `Job` (succeeded; follow-up job started) |
+| POST | `/api/editor/jobs/:jobId/fail` | `{sessionId, error: {code, message}}` | `Job` (queued again while attempts remain, else failed) |
 
 ## Watermark
 

@@ -28,24 +28,36 @@ RIDEO_TEST_WEBDAV_URL=http://rideo:rideo@localhost:8080/ npx vitest run --projec
   invariants, invalid ops); `activeAt` for transitions; story assembly; suggestion application; workflow
   evaluator for every requirement; prompt compiler determinism and reference selection under
   `max_input_images`; watermark core (DCT orthonormality, CRC, layout determinism, embed/extract round trip
-  on synthetic frames, PSNR ≥ 45 dB, no false positive on unmarked frames); JSON diff; canonical JSON.
+  on synthetic frames, PSNR ≥ 45 dB, no false positive on unmarked frames); JSON diff; canonical JSON;
+  media planners and parsers (probe banners from FFmpeg 4.4 and the 5.1 wasm core, analysis logs including
+  the empty ebur128 summary, rule suggestions, chunk planning: frame alignment, transitions kept whole,
+  long items split, text/audio shifted into chunk time; per-chunk filtergraphs and the soundtrack graph).
 - **server**: repository commit, log, diff, restore, branches, tags, coalescing and GC on `MemoryBackend`;
-  job queue (lanes, priorities, dedupe, retry classification, cancel propagation, restart recovery);
+  job queue (lanes, priorities, dedupe, retry classification, cancel propagation, restart recovery; the
+  `client` lane: claim order, leases, heartbeats, expiry and session release, cancel, staged files);
   consistency gate scoring, preconditions R1/R2, stale detection R6, override rules R8, fail-closed R9; LLM
-  adapters' request shapes and JSON repair; render planner filtergraphs; live hub sequencing, replay and
-  resync; config parsing.
-- **web**: live-event store reducer, live client (sequence dedupe, UI-command acks, restart resync), UI
-  command dispatch, WebCodecs codec/container selection, timeline edge-drag ops, and rendering of the
-  workflow stepper, consistency badge and job rows.
+  adapters' request shapes and JSON repair; live hub sequencing, replay and resync; config parsing.
+- **web**: live-event store reducer and optimistic timeline edits (apply, confirm, roll back), live client
+  (sequence dedupe, UI-command acks, restart resync), UI command dispatch, WebCodecs codec/container
+  selection, render engine choice, the editor-job worker against a fake API (claims only with a project and a
+  session, one job at a time, progress heartbeats, failures reported with their code, cancellations and
+  lost leases not reported, claim retry when the claim overtakes the live subscription), timeline edge-drag
+  ops, and rendering of the workflow stepper, consistency badge and job rows. Resuming an interrupted render
+  is covered by the editor-jobs integration test, local proxies by the story e2e spec.
 
 ### Integration
 
 - **Storage conformance** (`storage.test.ts`): one suite against `MemoryBackend`, the embedded WebDAV server
   and (optionally) an external server: read/write/stat/list/move/delete, nested MKCOL, streaming, ranges,
   conditional writes when advertised.
-- **Server render** (`render.test.ts`): generated filtergraphs run through real ffmpeg (a cut followed by a
-  crossfade; a split and trimmed clip before a wipe, with speed and fades) and must produce exactly the
-  planned number of frames.
+- **Render plan** (`render.test.ts`): the shared chunk graphs and soundtrack graph run through native ffmpeg
+  (a cut followed by a crossfade; a split and trimmed clip before a wipe, with speed and fades; text) and
+  every chunk must have exactly its planned frame count; the concatenated chunks must equal the planned
+  length.
+- **Editor jobs** (`editor-jobs.test.ts`): the REST protocol with a Node **reference editor worker**
+  (`test/helpers/editor-worker.ts`) that implements the browser's jobs with native ffmpeg and the same shared
+  planners: claim/lease/heartbeat, staged uploads, resume after a lost lease, cancel, and the follow-up
+  jobs.
 - **Watermark robustness** (`watermark.test.ts`): embed into an ffmpeg-generated textured clip, then detect
   after x264 CRF 23 and 28, VP9, a 2 s trim, a metadata strip, and a downscale/upscale. Assert no detection
   on the unmarked source.
@@ -53,9 +65,9 @@ RIDEO_TEST_WEBDAV_URL=http://rideo:rideo@localhost:8080/ npx vitest run --projec
   mock. Responses are validated against the vendored gateway `openapi.json`.
 - **Story workflow** (`story.test.ts`): REST from brief to export on the mock gateway, including a
   consistency failure and retry (`MOCK_FLAKY_EVERY`), R1 rejection, approval gates, batch to a 60 s target,
-  timeline assembly, server render, watermark detection of the export.
-- **Footage workflow** (`footage.test.ts`): upload, analysis (rule-based and AI suggestions), review, auto
-  edit, render.
+  timeline assembly, an export rendered by the reference editor worker, watermark detection of the export.
+- **Footage workflow** (`footage.test.ts`): upload with a browser-style probe, an inbox/URL import processed
+  by the worker, analysis signals from the worker then AI and rule suggestions, review, auto edit, export.
 - **MCP** (`mcp.test.ts`): the official MCP client over Streamable HTTP. Lists tools, runs a production
   through tools, and asserts that a WebSocket subscriber received the matching `commit`, `job` and
   `activity` events and that `ui_*` commands reach a fake browser session with acks.
@@ -71,15 +83,18 @@ Projects: `desktop` (1440×900) runs every spec except `responsive`; `mobile` (4
 
 | Spec | Flow |
 |---|---|
-| `story.spec.ts` | brief → screenplay → cast (generate, approve, lock) → pilot → approve → batch (30 s target) → approve → editor (assemble, split, inspector trim, edge-drag trim) → server export → verify watermark |
-| `mcp-sync.spec.ts` | page open; the test drives MCP tools as “Claude Code” (create character, add reference, lock, `ui_navigate`, `ui_focus`, `ui_notify`) and asserts the page updates live, attributed to the agent, without a reload |
-| `footage.spec.ts` | upload → analysis → accept suggestions → auto edit → timeline → browser export with WebCodecs → export listed |
+| `story.spec.ts` | brief → screenplay → cast (generate, approve, lock) → pilot → approve → batch (30 s target) → approve → editor (assemble, split, inspector trim, edge-drag trim; the preview plays local proxies because H.264 is hidden from WebCodecs) → export rendered in the tab (`auto` → ffmpeg.wasm) → verify watermark |
+| `mcp-sync.spec.ts` | page open; the test drives MCP tools as “Claude Code” (create character, add reference, lock, `ui_navigate`, `ui_focus`, `ui_notify`) and asserts the page updates live, attributed to the agent, without a reload; an agent's `export_render` is claimed and rendered by the open tab (`auto` → WebCodecs) and watermarked by the server |
+| `footage.spec.ts` | upload (probe + poster in the browser) → analysis signals in the browser → AI suggestions → accept → auto edit → exports with the ffmpeg.wasm and WebCodecs engines → both listed and verified |
 | `history.spec.ts` | edit → history → diff → restore → UI updates |
 | `responsive.spec.ts` | every main view on mobile: no horizontal overflow, navigation reachable, primary actions visible |
 
 The e2e stack starts through Playwright's `webServer`: mock gateway, Rideo server with the embedded
 WebDAV (temporary data dir), and the built web app served by the Rideo server. Tiny media sizes (320×180)
-and short durations keep the suite fast.
+and short durations keep the suite fast. Playwright's Chromium decodes H.264 with WebCodecs, so the story
+spec emulates a browser without an H.264 decoder (an init script hides AVC from `VideoDecoder`): the preview
+must play through local proxies and `auto` must pick the ffmpeg.wasm engine. The footage spec renders with
+both engines explicitly, and the MCP spec checks that `auto` picks WebCodecs when every source decodes.
 
 ## CI (`.github/workflows/ci.yml`)
 

@@ -18,9 +18,11 @@ The image runs as the `node` user under `tini`, keeps its data on the `/data` vo
 reports health through `/api/health`. CI publishes `ghcr.io/sloth-os/rideo:latest` and `:<sha>` from
 `main`.
 
-The image contains ffmpeg (x264, libvpx, opus, freetype) and the DejaVu fonts used by `drawtext`. All state
-lives on the WebDAV store. `RIDEO_DATA_DIR` (`/data`) holds only the embedded WebDAV root (when used) and
-the media cache.
+The image contains ffmpeg (used by the server only for generated takes and the watermark) and the built web
+app, including the ffmpeg.wasm core (31 MB, served from `/assets/` with immutable caching; no cross-origin
+isolation headers are needed for the single-threaded core). All state lives on the WebDAV store.
+`RIDEO_DATA_DIR` (`/data`) holds only the embedded WebDAV root (when used), the media cache and the
+editor-job staging area.
 
 ## Environment
 
@@ -77,8 +79,14 @@ the media cache.
 | `RIDEO_WATERMARK_KEYS_OLD` | – | comma-separated retired keys still tried by detection |
 | `RIDEO_WATERMARK_STRENGTH` | `16` | embedding strength `T` |
 | `RIDEO_BRAND_NAME` / `RIDEO_BRAND_OWNER` / `RIDEO_BRAND_URL` | `Rideo` / – / – | brand written into provenance and metadata |
-| `RIDEO_FFMPEG_PATH` / `RIDEO_FFPROBE_PATH` | `ffmpeg` / `ffprobe` | binaries |
-| `RIDEO_FONT_FILE` | auto-detected DejaVu Sans | `drawtext` font |
+| `RIDEO_FFMPEG_PATH` / `RIDEO_FFPROBE_PATH` | `ffmpeg` / `ffprobe` | binaries (generation and watermark) |
+
+### Editor jobs
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `RIDEO_EDITOR_LEASE_SEC` | `60` | how long a tab holds an editor job without a heartbeat |
+| `RIDEO_EDITOR_FILE_MAX_BYTES` | `4294967296` | largest file an editor job may stage (a render part, the soundtrack) |
 
 ## Connecting mm-gateway
 

@@ -40,7 +40,7 @@ type StageDef = {
 | 5 | `pilot` | Plan clip 1 (shots sized to model limits) and generate it. The user edits shot prompts, regenerates shots or picks takes, and approves. The approved pilot fixes the look for the rest of the production. | `pilot_approved`: `clips.pilotApproved` | `clip.plan` + `clip.generate` for clip 1 |
 | 6 | `production` | A `batch.generate` job writes the remaining scenes from the outline, plans the clips and generates them in order until the planned length reaches the target. The user reviews, regenerates any shot or clip, and approves clips. | `production_approved`: `clips.allApproved`, `duration.targetReached` | `batch.generate` |
 | 7 | `edit` | The timeline is assembled from approved clips (selected takes, scene transitions, music bed, optional dialogue captions). The user edits it in the WebCodecs editor. | `cut_approved`: `timeline.nonEmpty`, `timeline.consistencyVerified` | `timeline.assemble` |
-| 8 | `export` | Server render (ffmpeg) or browser render (WebCodecs). Both are watermarked server-side. | – (terminal; done when `exports.anySucceeded`) | – |
+| 8 | `export` | The browser renders the timeline (ffmpeg.wasm or WebCodecs, in chunks) and uploads it; the server watermarks and publishes it. | – (terminal; done when `exports.anySucceeded`) | – |
 
 "Go on…" after production means editing and exporting. At any point you can reopen an earlier stage, or
 tag and branch the history to try an alternative.
@@ -82,10 +82,10 @@ sequenceDiagram
 
 | # | Stage | What happens | Gate | Auto on enter |
 |---|---|---|---|---|
-| 1 | `ingest` | Upload one or more source videos (UI upload, the WebDAV inbox, or MCP `resource_add`). Each gets a proxy and a poster. The UI's *Analyze footage* approves the gate and starts `analysis.run` on the source video. | `source_ready`: `resources.hasSourceVideo` | – |
-| 2 | `analysis` | An `analysis.run` job probes the video and detects scenes (`scdet`), silences (`silencedetect`), black segments (`blackdetect`) and loudness (`ebur128`), takes scene thumbnails, optionally transcribes, then asks the vision LLM for a summary and suggestions. Deterministic rule-based suggestions (cut black, tighten long silences, fade in/out) are always produced, even without an LLM. The user accepts or rejects each suggestion. | `suggestions_reviewed`: `analysis.completed` | `analysis.run` |
+| 1 | `ingest` | Upload one or more source videos (UI upload, the WebDAV inbox, or MCP `resource_add`). The uploading browser probes each file and makes its poster with ffmpeg.wasm; inbox and MCP imports get a `media.process` editor job. The UI's *Analyze footage* approves the gate and starts the analysis of the source video. | `source_ready`: `resources.hasSourceVideo` | – |
+| 2 | `analysis` | The browser runs `analysis.signals` with ffmpeg.wasm: scenes (`select='gt(scene,0.3)'` + `showinfo`), silences (`silencedetect`), black segments (`blackdetect`), loudness (`ebur128`), scene thumbnails and, when speech-to-text is configured, a speech track. The server's `analysis.suggest` job then transcribes (optional) and asks the vision LLM for a summary and suggestions. Deterministic rule-based suggestions (cut black, tighten long silences, fade in/out) are always produced, even without an LLM. The user accepts or rejects each suggestion. | `suggestions_reviewed`: `analysis.completed` | `analysis.start` |
 | 3 | `edit` | **Auto edit** applies the accepted suggestions to build the timeline (kept segments, transitions, titles, captions, speed, music). The user fine-tunes it in the editor. | `cut_approved`: `timeline.nonEmpty` | `edit.auto` |
-| 4 | `export` | Server or browser render, watermarked. | – | – |
+| 4 | `export` | Browser render (ffmpeg.wasm or WebCodecs), watermarked by the server. | – | – |
 
 ## Requirement catalogue
 
@@ -115,7 +115,7 @@ sequenceDiagram
 | `clip.plan` / `clip.generate` | plan clip 0 from scene 0 if missing, then enqueue its generation |
 | `batch.generate` | enqueue `batch.generate` if none is active |
 | `timeline.assemble` | assemble the timeline from approved clips if the timeline is empty |
-| `analysis.run` | enqueue `analysis.run` for the newest source video without an analysis |
+| `analysis.start` | start an analysis (an `analysis.signals` editor job) for the newest source video without one |
 | `edit.auto` | build the timeline from accepted suggestions if the timeline is empty |
 
 Auto actions are idempotent. They check the snapshot before enqueueing and use deterministic job dedupe

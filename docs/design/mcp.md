@@ -36,6 +36,12 @@ the REST API (`validation_error`, `not_found`, `character_not_locked`, `characte
 Long-running tools (`*_generate`, `batch_generate`, `export_render`, `footage_analyze`) enqueue a job and
 return it immediately. Agents poll with `job_get` or block with `job_wait` (up to 120 s per call).
 
+Media editing runs in the browser, so `export_render`, `footage_analyze` and `resource_add` (for audio and
+video) create **editor jobs** that an open studio tab of the project runs
+([editor](editor.md#editor-jobs)). Their results include `editorSessions` (tabs with an editor engine on
+the project) and `waitingFor: "editor"` when there is none; an agent can ask the user to open the project
+or keep going and `job_wait` until a tab picks the job up.
+
 ## Tool catalogue
 
 ### Projects, documents, workflow
@@ -90,10 +96,10 @@ return it immediately. Agents poll with `job_get` or block with `job_wait` (up t
 | `timeline_get` | `projectId` |
 | `timeline_apply` | `projectId`, `ops[]` (the [timeline op](editor.md#operations) union) |
 | `timeline_assemble` | `projectId`, `captions?`, `musicResourceId?` |
-| `footage_analyze` | `projectId`, `resourceId` → job |
+| `footage_analyze` | `projectId`, `resourceId` → `{analysis, job}` (editor job) |
 | `suggestions_review` | `projectId`, `analysisId`, `decisions[{id, status}]` |
 | `edit_auto` | `projectId`, `analysisId` |
-| `export_render` | `projectId`, `quality?` (`draft`, `standard`, `high`) → job |
+| `export_render` | `projectId`, `quality?` (`draft`, `standard`, `high`), `engine?` (`auto`, `ffmpeg`, `webcodecs`) → `{export, job}` (editor job) |
 | `export_list` | `projectId` |
 | `watermark_detect` | `uri` or `projectId` + `mediaPath` |
 
@@ -117,7 +123,7 @@ project. The result lists which sessions acknowledged it within 3 s.
 
 | Tool | Arguments | Browser effect |
 |---|---|---|
-| `ui_sessions` | `projectId?` | – (lists sessions with route, selection, viewport) |
+| `ui_sessions` | `projectId?` | – (lists sessions with route, selection, viewport, editor engine and current editor job) |
 | `ui_navigate` | `projectId`, `view` (`overview`, `story`, `cast`, `resources`, `clips`, `editor`, `analysis`, `history`, `exports`), `params?` | route change |
 | `ui_focus` | `projectId`, `target {kind: scene, character, clip, shot, take, timeline-item, commit, job; id}` | scrolls to and highlights the entity |
 | `ui_notify` | `message`, `level?`, `projectId?` | toast |

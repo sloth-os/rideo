@@ -107,7 +107,7 @@ flowchart TD
   S --> JV{judge frames}
   JV -- fail & attempts left --> V
   JV -- fail, exhausted --> NR
-  JV -- pass --> W[watermark + proxy + commit take, auto-select]
+  JV -- pass --> W[watermark + poster + commit take, auto-select]
 ```
 
 Scoring:
