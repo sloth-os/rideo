@@ -3,12 +3,20 @@
 ## Docker Compose
 
 ```bash
-cp .env.example .env        # fill in the values below
+cp .env.example .env                                 # fill in the values below
+cp deploy/mm-gateway.example.yaml mm-gateway.yaml    # gateway backends, proxies and keys
 docker compose up -d        # rideo on :8787 (UI, API, /mcp, /dav) + mm-gateway
 ```
 
-`docker-compose.yml` runs `ghcr.io/sloth-os/rideo` next to `ghcr.io/sloth-os/mm-gateway`. For a fully
-offline demo, `docker compose -f docker-compose.demo.yml up` swaps mm-gateway for the mock gateway.
+`docker-compose.yml` runs `ghcr.io/sloth-os/rideo` next to `ghcr.io/sloth-os/mm-gateway` (config mounted at
+`/etc/mm-gateway/config.yaml`). For a fully offline demo, `docker compose -f docker-compose.demo.yml up`
+swaps mm-gateway for the mock gateway, which ships in the same image
+(`node packages/mock-gateway/dist/main.js`). Both services build from the `Dockerfile` when the image is
+not available locally or on GHCR.
+
+The image runs as the `node` user under `tini`, keeps its data on the `/data` volume, logs JSON (pino) and
+reports health through `/api/health`. CI publishes `ghcr.io/sloth-os/rideo:latest` and `:<sha>` from
+`main`.
 
 The image contains ffmpeg (x264, libvpx, opus, freetype) and the DejaVu fonts used by `drawtext`. All state
 lives on the WebDAV store. `RIDEO_DATA_DIR` (`/data`) holds only the embedded WebDAV root (when used) and

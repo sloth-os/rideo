@@ -108,8 +108,9 @@ the server render.
 | `media-pool.ts` | One mediabunny `Input(UrlSource(proxyUrl))` per media hash, with a `CanvasSink` (preview size, `fit: contain`, pooled canvases) and an `AudioBufferSink`. Lazy and reference-counted. |
 | `compositor.ts` | `render(ctx, time)`: `activeAt` → frames → draw with alpha (crossfade), clip rect (wipe), black fades; effects via `ctx.filter`; text presets. |
 | `player.ts` | Playback clocked by `AudioContext.currentTime`. Per-item `canvases()` iterators give sequential decode, `getCanvas()` handles scrubbing, and audio buffers are scheduled on the audio graph with gain automation. |
-| `exporter.ts` | Offline render: fixed-step frames to an `OffscreenCanvas` → `CanvasSource`; audio mixdown in an `OfflineAudioContext` → `AudioBufferSource`; `Output(Mp4OutputFormat)` → `BufferTarget`. |
-| `capabilities.ts` | `VideoDecoder` presence and encodable codecs (`getFirstEncodableVideoCodec(['avc', 'vp9', 'av1', 'vp8'])`, `getFirstEncodableAudioCodec(['aac', 'opus'])`). |
+| `exporter.ts` | Offline render: fixed-step frames to an `OffscreenCanvas` → `CanvasSource`; audio mixdown in an `OfflineAudioContext` → `AudioBufferSource`; `Output(Mp4OutputFormat \| WebMOutputFormat)` → `BufferTarget`. |
+| `capabilities.ts` | WebCodecs presence and a valid container/codec pair: MP4 with H.264 + AAC, else WebM with VP9/AV1/VP8 + Opus, else MP4 with H.264 + Opus (WebM never carries H.264). Without an audio encoder the export is video-only. |
+| `trim.ts` | Edge-drag trimming → `trim` ops (scaled by speed, clamped to the media); on free tracks a left-edge drag also `move`s the item so its right edge stays put. |
 
 When WebCodecs is missing, the preview falls back to `<video>` elements per item, with a banner, and
 browser export is disabled (server render remains).
@@ -125,9 +126,14 @@ normalized stream:
 
 ```
 [k:v]trim=start=IN:end=OUT,setpts=(PTS-STARTPTS)/SPEED,scale=W:H:force_original_aspect_ratio=decrease,
-     pad=W:H:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=FPS,format=yuv420p,eq=brightness=B:contrast=C:saturation=S,
-     fade=t=in:st=0:d=FI,fade=t=out:st=D-FO:d=FO[vk]
+     pad=W:H:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=FPS,format=yuv420p,settb=AVTB,
+     eq=brightness=B:contrast=C:saturation=S,fade=t=in:st=0:d=FI,fade=t=out:st=D-FO:d=FO[vk]
 ```
+
+Every stream is put on `AV_TIME_BASE` (`settb=AVTB`) because `concat` outputs that timebase and `xfade`
+rejects inputs whose timebases differ (a cut followed by a transition would otherwise fail). The end of the
+graph snaps timestamps back onto the frame grid, `fps=FPS,trim=duration=LEN`, so exactly
+`round(LEN·FPS)` frames reach the watermark pipeline.
 
 Items are then chained left to right: `xfade` (`fade`, `wipeleft`, `fadeblack`) at
 `offset = accumulated − d` for transitions, `concat` for cuts. Text items become `drawtext` with
@@ -149,9 +155,11 @@ Progress is reported from frames through the pipeline divided by expected frames
 ## Editor UI
 
 - Preview canvas with transport (play/pause, frame step, timecode) and a WebCodecs capability badge.
-- Timeline with zoom, a playhead, and item blocks (poster thumbnails, consistency badge for takes).
-  Drag to reorder the primary track, drag edges to trim, `S` to split at the playhead, `Delete` to remove,
-  a transition picker between items, and text and audio lanes.
-- Inspector for the selected item (in/out, speed, volume, fades, effects, transition).
-- Export dialog: *Render on server* (recommended for long movies) or *Render in browser (WebCodecs)*.
-- On phones the timeline collapses into a vertical list with trim steppers under the preview.
+- Timeline with zoom, a ruler (click to seek), a playhead, and labelled item blocks (a ⤫ marks a
+  transition). Drag to reorder the primary track, drag item edges to trim, `S` to split at the playhead,
+  `Delete` to remove, arrow keys to step frames, `Space` to play; video, audio and text lanes.
+- Inspector for the selected item (in/out, speed, volume, fades, effects, transition, text and timing).
+- Undo restores `timeline.json` from the previous timeline commit (a new commit; history is never rewritten).
+- Export dialog: *Render on server* (recommended for long movies) or *Render in browser (WebCodecs)* with
+  the detected codecs shown; failures stay visible in the dialog.
+- On phones the timeline collapses into a vertical list and the inspector sits under the preview.

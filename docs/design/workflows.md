@@ -82,7 +82,7 @@ sequenceDiagram
 
 | # | Stage | What happens | Gate | Auto on enter |
 |---|---|---|---|---|
-| 1 | `ingest` | Upload one or more source videos (UI upload, the WebDAV inbox, or MCP `resource_add`). Each gets a proxy and a poster. | `source_ready`: `resources.hasSourceVideo` | – |
+| 1 | `ingest` | Upload one or more source videos (UI upload, the WebDAV inbox, or MCP `resource_add`). Each gets a proxy and a poster. The UI's *Analyze footage* approves the gate and starts `analysis.run` on the source video. | `source_ready`: `resources.hasSourceVideo` | – |
 | 2 | `analysis` | An `analysis.run` job probes the video and detects scenes (`scdet`), silences (`silencedetect`), black segments (`blackdetect`) and loudness (`ebur128`), takes scene thumbnails, optionally transcribes, then asks the vision LLM for a summary and suggestions. Deterministic rule-based suggestions (cut black, tighten long silences, fade in/out) are always produced, even without an LLM. The user accepts or rejects each suggestion. | `suggestions_reviewed`: `analysis.completed` | `analysis.run` |
 | 3 | `edit` | **Auto edit** applies the accepted suggestions to build the timeline (kept segments, transitions, titles, captions, speed, music). The user fine-tunes it in the editor. | `cut_approved`: `timeline.nonEmpty` | `edit.auto` |
 | 4 | `export` | Server or browser render, watermarked. | – | – |

@@ -12,8 +12,12 @@ Three layers, all runnable locally and in CI. Tests never call real AI providers
 ```bash
 npm run test:unit
 npm run test:integration          # needs ffmpeg/ffprobe on PATH
+npx playwright install chromium   # once
 npm run test:e2e                  # builds the web app, starts the stack, runs Playwright
-RIDEO_TEST_WEBDAV_URL=http://user:pass@localhost:8080/ npm run test:integration -- storage   # external WebDAV conformance
+
+# external WebDAV conformance against Apache httpd + mod_dav (Docker)
+scripts/webdav/run.sh
+RIDEO_TEST_WEBDAV_URL=http://rideo:rideo@localhost:8080/ npx vitest run --project server-integration packages/server/test/integration/storage.test.ts
 ```
 
 ## What each layer proves
@@ -30,14 +34,18 @@ RIDEO_TEST_WEBDAV_URL=http://user:pass@localhost:8080/ npm run test:integration 
   consistency gate scoring, preconditions R1/R2, stale detection R6, override rules R8, fail-closed R9; LLM
   adapters' request shapes and JSON repair; render planner filtergraphs; live hub sequencing, replay and
   resync; config parsing.
-- **web**: live-event store reducer, API client error mapping, UI command dispatch, workflow stepper and
-  consistency badge rendering.
+- **web**: live-event store reducer, live client (sequence dedupe, UI-command acks, restart resync), UI
+  command dispatch, WebCodecs codec/container selection, timeline edge-drag ops, and rendering of the
+  workflow stepper, consistency badge and job rows.
 
 ### Integration
 
 - **Storage conformance** (`storage.test.ts`): one suite against `MemoryBackend`, the embedded WebDAV server
   and (optionally) an external server: read/write/stat/list/move/delete, nested MKCOL, streaming, ranges,
   conditional writes when advertised.
+- **Server render** (`render.test.ts`): generated filtergraphs run through real ffmpeg (a cut followed by a
+  crossfade; a split and trimmed clip before a wipe, with speed and fades) and must produce exactly the
+  planned number of frames.
 - **Watermark robustness** (`watermark.test.ts`): embed into an ffmpeg-generated textured clip, then detect
   after x264 CRF 23 and 28, VP9, a 2 s trim, a metadata strip, and a downscale/upscale. Assert no detection
   on the unmarked source.
@@ -58,12 +66,13 @@ RIDEO_TEST_WEBDAV_URL=http://user:pass@localhost:8080/ npm run test:integration 
 
 ### End-to-end (Playwright)
 
-Projects: `desktop` (1440×900) and `mobile` (412×915, touch). Specs:
+Projects: `desktop` (1440×900) runs every spec except `responsive`; `mobile` (412×915, touch) runs
+`responsive` and `mcp-sync`. Specs:
 
 | Spec | Flow |
 |---|---|
-| `story.spec.ts` | brief → screenplay → cast (generate, approve, lock) → pilot → approve → batch (60 s target) → approve → editor (split, trim) → server export → verify watermark |
-| `mcp-sync.spec.ts` | page open; the test drives MCP tools (create character, lock, `ui_navigate`, `ui_focus`, `ui_notify`) and asserts the page updates live, without reload |
+| `story.spec.ts` | brief → screenplay → cast (generate, approve, lock) → pilot → approve → batch (30 s target) → approve → editor (assemble, split, inspector trim, edge-drag trim) → server export → verify watermark |
+| `mcp-sync.spec.ts` | page open; the test drives MCP tools as “Claude Code” (create character, add reference, lock, `ui_navigate`, `ui_focus`, `ui_notify`) and asserts the page updates live, attributed to the agent, without a reload |
 | `footage.spec.ts` | upload → analysis → accept suggestions → auto edit → timeline → browser export with WebCodecs → export listed |
 | `history.spec.ts` | edit → history → diff → restore → UI updates |
 | `responsive.spec.ts` | every main view on mobile: no horizontal overflow, navigation reachable, primary actions visible |
@@ -79,6 +88,6 @@ and short durations keep the suite fast.
 | `lint` | Biome + `tsc --noEmit` for every package |
 | `unit` | unit suites with coverage |
 | `integration` | integration suites (ffmpeg installed via apt) |
-| `webdav-compat` | storage conformance against an Apache `mod_dav` service container |
+| `webdav-compat` | storage conformance against Apache httpd 2.4 + `mod_dav` (`scripts/webdav/run.sh`) |
 | `e2e` | Playwright desktop + mobile; traces and screenshots uploaded on failure |
 | `docker` | builds the production image (pushed to GHCR on `main`) |

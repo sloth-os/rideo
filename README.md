@@ -72,11 +72,15 @@ Start at [docs/README.md](docs/README.md).
 
 ```bash
 npm run lint          # biome
-npm run typecheck     # tsc --noEmit for every package
+npm run typecheck     # tsc --noEmit for every package and the e2e suite
 npm run test:unit     # vitest unit suites
 npm run test:integration   # server + embedded WebDAV + mock gateway + ffmpeg
-npm run test:e2e      # Playwright (desktop + mobile viewports)
+npx playwright install chromium && npm run test:e2e   # Playwright (desktop + mobile viewports)
+npm run build         # web app + bundled server and mock gateway (scripts/bundle.mjs)
 ```
+
+Docker: `docker compose -f docker-compose.demo.yml up` runs the offline demo on http://localhost:8787;
+see [docs/deployment.md](docs/deployment.md) for production with mm-gateway.
 
 CI runs the same stages on GitHub Actions (`.github/workflows/ci.yml`).
 
