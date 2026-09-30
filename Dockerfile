@@ -1,5 +1,6 @@
 # syntax=docker/dockerfile:1
-# Rideo: the studio server (UI, REST, /mcp, /dav) with ffmpeg; the same image runs the mock gateway.
+# Rideo: the studio server (UI with the ffmpeg.wasm editor engine, REST, /mcp, /dav) with native ffmpeg for
+# generation and watermarking; the same image runs the mock gateway.
 
 ARG NODE_VERSION=24
 
@@ -36,7 +37,7 @@ RUN npm ci --omit=dev --workspace @rideo/server --workspace @rideo/mock-gateway 
 # ---- runtime ----------------------------------------------------------------------------------
 FROM node:${NODE_VERSION}-bookworm-slim
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends ffmpeg fonts-dejavu-core tini ca-certificates \
+  && apt-get install -y --no-install-recommends ffmpeg tini ca-certificates \
   && rm -rf /var/lib/apt/lists/*
 ENV NODE_ENV=production \
   RIDEO_HOST=0.0.0.0 \
