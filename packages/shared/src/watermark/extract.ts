@@ -5,6 +5,9 @@ import { decodePayload, PAYLOAD_BITS } from './payload';
 
 export const DETECTION_MIN_MEAN_MARGIN = 2.5;
 
+/** CRC-aided list decoding search (docs/design/watermark.md#extraction): 4 flips among the 24 weakest bits. */
+export const LIST_DECODE = { maxFlips: 4, pool: 24 } as const;
+
 export interface ExtractionResult {
   frames: number;
   bits: Uint8Array;
@@ -103,8 +106,8 @@ export function listDecode(
   margins: Float64Array,
   opts: { maxFlips?: number; pool?: number } = {},
 ): ListCandidate[] {
-  const maxFlips = opts.maxFlips ?? 3;
-  const pool = Math.min(opts.pool ?? 16, PAYLOAD_BITS);
+  const maxFlips = opts.maxFlips ?? LIST_DECODE.maxFlips;
+  const pool = Math.min(opts.pool ?? LIST_DECODE.pool, PAYLOAD_BITS);
   const order = [...Array(PAYLOAD_BITS).keys()].sort((a, b) => margins[a]! - margins[b]!).slice(0, pool);
   const out: ListCandidate[] = [];
   const work = bits.slice();

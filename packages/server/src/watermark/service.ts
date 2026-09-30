@@ -346,7 +346,7 @@ export class WatermarkService {
         if (r.detected) return hit(r.id, 0, await this.lookup(r.id));
         if (r.meanMargin >= DETECTION_MIN_MEAN_MARGIN) {
           // A marked video whose CRC failed on a few weak bits: accept only registry-verified corrections.
-          for (const c of listDecode(r.bits, r.margins, { maxFlips: 3, pool: 16 }).slice(0, 64)) {
+          for (const c of listDecode(r.bits, r.margins).slice(0, 64)) {
             const provenance = await this.lookup(c.id);
             if (provenance) return hit(c.id, c.flips, provenance);
           }
