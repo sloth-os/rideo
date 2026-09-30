@@ -1,0 +1,24 @@
+{
+  "name": "@rideo/mock-gateway",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "start": "tsx src/main.ts",
+    "build": "node ../../scripts/bundle.mjs src/main.ts dist/main.js"
+  },
+  "dependencies": {
+    "fastify": "5.12.5",
+    "pngjs": "7.0.0",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@sloth-os/mm-gateway-js": "github:sloth-os/mm-gateway-js#2308c1f0e22a48c02a936ae0e0f6a2acc95ae2f9",
+    "@types/pngjs": "6.0.5",
+    "ajv": "8.20.0",
+    "ajv-formats": "3.0.1"
+  }
+}

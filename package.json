@@ -1,0 +1,40 @@
+{
+  "name": "rideo",
+  "version": "0.1.0",
+  "private": true,
+  "description": "All-in-one AI video generation and editing studio",
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=24"
+  },
+  "workspaces": [
+    "packages/shared",
+    "packages/mock-gateway",
+    "packages/server",
+    "packages/web"
+  ],
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "dev:demo": "node scripts/dev.mjs --demo",
+    "build": "npm run build -w @rideo/web && npm run build -w @rideo/server && npm run build -w @rideo/mock-gateway",
+    "start": "node packages/server/dist/index.js",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "typecheck": "tsc -p packages/shared && tsc -p packages/mock-gateway && tsc -p packages/server && tsc -p packages/web",
+    "test": "npm run test:unit && npm run test:integration",
+    "test:unit": "vitest run --project shared --project server-unit --project web",
+    "test:integration": "vitest run --project server-integration --project mock-gateway",
+    "test:e2e": "npm run build -w @rideo/web && playwright test",
+    "test:coverage": "vitest run --project shared --project server-unit --project web --coverage"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.14",
+    "@playwright/test": "1.63.0",
+    "@types/node": "26.6.3",
+    "@vitest/coverage-v8": "5.0.2",
+    "tsx": "4.23.15",
+    "typescript": "6.0.3",
+    "vitest": "5.0.2"
+  }
+}

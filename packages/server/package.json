@@ -1,0 +1,33 @@
+{
+  "name": "@rideo/server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "dev": "tsx watch src/main.ts",
+    "start": "node dist/main.js",
+    "build": "node ../../scripts/bundle.mjs src/main.ts dist/main.js"
+  },
+  "dependencies": {
+    "@fastify/multipart": "10.1.2",
+    "@fastify/static": "10.1.5",
+    "@fastify/websocket": "11.3.1",
+    "@modelcontextprotocol/sdk": "1.31.0",
+    "@rideo/shared": "*",
+    "@sloth-os/mm-gateway-js": "github:sloth-os/mm-gateway-js#2308c1f0e22a48c02a936ae0e0f6a2acc95ae2f9",
+    "fastify": "5.12.5",
+    "mime-types": "3.0.2",
+    "webdav": "5.11.0",
+    "webdav-server": "2.6.3",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@rideo/mock-gateway": "*",
+    "@types/mime-types": "3.0.1",
+    "esbuild": "0.28.2",
+    "pino-pretty": "13.1.3"
+  }
+}
