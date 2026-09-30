@@ -1,0 +1,285 @@
+import { randomBytes } from 'node:crypto';
+import { writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { synthesizeFrame, synthesizeMusic, synthesizeVideo } from './media';
+import type { Modality } from './models';
+import { decodePng, encodePng, isPng, parseDataUri } from './png';
+import { allSignatures, type Rgb, signatureColor } from './signature';
+import { type RunResult, TaskError } from './tasks';
+
+export interface GenerateContext {
+  dir: string;
+  fileUrl: (name: string) => string;
+  /** True when this generation should drift (identity lost) — MOCK_FLAKY_EVERY / metadata.mock_flaky. */
+  flaky: boolean;
+}
+
+export interface ValidationIssue {
+  loc: string;
+  msg: string;
+}
+
+const ENVELOPE = new Set(['model', 'input', 'parameters', 'routing', 'metadata']);
+
+const PARAMS: Record<Modality, Set<string>> = {
+  image: new Set([
+    'background',
+    'compression',
+    'delivery',
+    'dimensions',
+    'file_format',
+    'guidance_scale',
+    'inference_steps',
+    'negative_prompt',
+    'output_count',
+    'quality',
+    'seed',
+    'strength',
+    'style',
+    'watermark',
+  ]),
+  video: new Set([
+    'camera_motion',
+    'dimensions',
+    'duration_seconds',
+    'enhance_prompt',
+    'file_format',
+    'fps',
+    'frame_count',
+    'guidance_scale',
+    'include_audio',
+    'include_last_frame',
+    'motion_intensity',
+    'negative_prompt',
+    'seed',
+    'watermark',
+  ]),
+  music: new Set([
+    'bitrate_kbps',
+    'bpm',
+    'duration_seconds',
+    'enhance_lyrics',
+    'file_format',
+    'guidance_scale',
+    'inference_steps',
+    'instrumental',
+    'key',
+    'negative_prompt',
+    'novelty',
+    'output_count',
+    'provenance',
+    'reference_audio_strength',
+    'respect_section_durations',
+    'sample_rate_hz',
+    'scale',
+    'seed',
+    'style',
+    'style_strength',
+    'time_signature',
+    'title',
+    'vocal_gender',
+    'vocal_language',
+    'voice',
+  ]),
+};
+
+const PART_TYPES: Record<Modality, Set<string>> = {
+  image: new Set(['text', 'image']),
+  video: new Set(['text', 'image', 'audio', 'video']),
+  music: new Set(['text', 'lyrics', 'image', 'audio']),
+};
+
+const ROLES: Record<string, Set<string>> = {
+  'video:image': new Set(['first_frame', 'last_frame', 'reference_image']),
+  'video:audio': new Set(['reference_audio']),
+  'video:video': new Set(['reference_video']),
+  'music:audio': new Set(['reference_audio', 'continuation_audio']),
+};
+
+export interface Part {
+  type: string;
+  text?: string;
+  uri?: string;
+  role?: string;
+}
+
+/** Strict request validation, mirroring the gateway: unknown envelope or parameter fields are 422s. */
+export function validateRequest(modality: Modality, body: unknown): ValidationIssue[] {
+  const issues: ValidationIssue[] = [];
+  if (!body || typeof body !== 'object' || Array.isArray(body))
+    return [{ loc: 'body', msg: 'must be an object' }];
+  const b = body as Record<string, unknown>;
+  for (const k of Object.keys(b))
+    if (!ENVELOPE.has(k)) issues.push({ loc: k, msg: 'extra fields not permitted' });
+  if (!Array.isArray(b.input) || b.input.length === 0) {
+    issues.push({ loc: 'input', msg: 'must be a non-empty list' });
+  } else {
+    (b.input as Part[]).forEach((p, i) => {
+      if (!p || typeof p !== 'object' || !PART_TYPES[modality].has(p.type)) {
+        issues.push({ loc: `input.${i}.type`, msg: `unsupported part type for ${modality}` });
+        return;
+      }
+      if (p.type === 'text' || p.type === 'lyrics') {
+        if (typeof p.text !== 'string' || p.text.length === 0)
+          issues.push({ loc: `input.${i}.text`, msg: 'required' });
+      } else {
+        if (typeof p.uri !== 'string' || !/^(https?:\/\/|data:)/.test(p.uri)) {
+          issues.push({ loc: `input.${i}.uri`, msg: 'must be an absolute http(s) or data URI' });
+        }
+        const allowed = ROLES[`${modality}:${p.type}`];
+        if (p.role !== undefined && !allowed?.has(p.role)) {
+          issues.push({ loc: `input.${i}.role`, msg: `invalid role ${p.role}` });
+        }
+      }
+    });
+  }
+  if (b.parameters !== undefined) {
+    if (!b.parameters || typeof b.parameters !== 'object')
+      issues.push({ loc: 'parameters', msg: 'must be an object' });
+    else
+      for (const k of Object.keys(b.parameters))
+        if (!PARAMS[modality].has(k))
+          issues.push({ loc: `parameters.${k}`, msg: 'extra fields not permitted' });
+  }
+  return issues;
+}
+
+async function loadUri(uri: string): Promise<Buffer> {
+  const data = parseDataUri(uri);
+  if (data) return data.data;
+  const res = await fetch(uri);
+  if (!res.ok) throw new TaskError('invalid_input', `could not fetch ${uri}: ${res.status}`);
+  return Buffer.from(await res.arrayBuffer());
+}
+
+function hash(text: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 16777619);
+  return h >>> 0;
+}
+
+function promptOf(parts: Part[]): string {
+  return parts
+    .filter((p) => p.type === 'text')
+    .map((p) => p.text ?? '')
+    .join('\n');
+}
+
+function referenceSheetName(prompt: string): string | null {
+  if (!/Character reference sheet/i.test(prompt)) return null;
+  const m = /no text\.\s+([^:]{1,80}):/.exec(prompt);
+  return m ? m[1]!.trim() : null;
+}
+
+async function signaturesFromImages(parts: Part[]): Promise<Rgb[]> {
+  const sigs: Rgb[] = [];
+  for (const p of parts) {
+    if (p.type !== 'image' || !p.uri || p.role === 'first_frame' || p.role === 'last_frame') continue;
+    const buf = await loadUri(p.uri);
+    if (!isPng(buf)) continue;
+    for (const s of allSignatures(decodePng(buf)))
+      if (!sigs.some((x) => x.every((v, i) => Math.abs(v - s[i]!) < 30))) sigs.push(s);
+  }
+  return sigs;
+}
+
+function dims(params: Record<string, unknown> | undefined, fallback: { width: number; height: number }) {
+  const d = params?.dimensions as { width?: number; height?: number } | undefined;
+  const width = Math.max(64, Math.min(2048, Math.round(d?.width ?? fallback.width)));
+  const height = Math.max(64, Math.min(2048, Math.round(d?.height ?? fallback.height)));
+  return { width, height };
+}
+
+export async function runImage(body: Record<string, any>, ctx: GenerateContext): Promise<RunResult> {
+  const parts = body.input as Part[];
+  const params = (body.parameters ?? {}) as Record<string, unknown>;
+  const prompt = promptOf(parts);
+  const { width, height } = dims(params, { width: 1024, height: 1024 });
+  const count = Math.max(1, Math.min(4, Number(params.output_count ?? 1)));
+  const sheetName = referenceSheetName(prompt);
+  let sigs = await signaturesFromImages(parts);
+  if (sheetName && sigs.length === 0) sigs = [signatureColor(sheetName)];
+  if (sheetName && sigs.length > 1) sigs = sigs.slice(0, 1);
+  if (ctx.flaky) sigs = [];
+  const outputs = [];
+  for (let i = 0; i < count; i++) {
+    const seed = hash(prompt) ^ Number(params.seed ?? 0) ^ i;
+    const png = encodePng(synthesizeFrame(width, height, seed, sigs));
+    const name = `${randomBytes(8).toString('hex')}.png`;
+    if (params.delivery === 'inline') {
+      outputs.push({ uri: `data:image/png;base64,${png.toString('base64')}`, mime_type: 'image/png' });
+    } else {
+      await writeFile(join(ctx.dir, name), png);
+      outputs.push({ uri: ctx.fileUrl(name), mime_type: 'image/png', revised_prompt: prompt.slice(0, 200) });
+    }
+  }
+  return { outputs, usage: { output_count: count } };
+}
+
+export async function runVideo(body: Record<string, any>, ctx: GenerateContext): Promise<RunResult> {
+  const parts = body.input as Part[];
+  const params = (body.parameters ?? {}) as Record<string, unknown>;
+  const prompt = promptOf(parts);
+  const { width, height } = dims(params, { width: 1280, height: 720 });
+  const durationSec = Math.max(2, Math.min(10, Number(params.duration_seconds ?? 5)));
+  const first = parts.find((p) => p.type === 'image' && p.role === 'first_frame');
+  const name = randomBytes(8).toString('hex');
+  if (first?.uri && !ctx.flaky) {
+    await synthesizeVideo({
+      dir: ctx.dir,
+      name,
+      width,
+      height,
+      durationSec,
+      firstFrame: await loadUri(first.uri),
+      includeAudio: !!params.include_audio,
+    });
+  } else {
+    const sigs = ctx.flaky ? [] : await signaturesFromImages(parts);
+    const frame = synthesizeFrame(
+      width - (width % 2),
+      height - (height % 2),
+      hash(prompt) ^ Number(params.seed ?? 0),
+      sigs,
+    );
+    await synthesizeVideo({
+      dir: ctx.dir,
+      name,
+      width,
+      height,
+      durationSec,
+      frame,
+      includeAudio: !!params.include_audio,
+    });
+  }
+  return {
+    outputs: [
+      {
+        uri: ctx.fileUrl(`${name}.mp4`),
+        mime_type: 'video/mp4',
+        cover_uri: ctx.fileUrl(`${name}-frame.png`),
+      },
+    ],
+    usage: { output_count: 1, duration_seconds: durationSec },
+  };
+}
+
+export async function runMusic(body: Record<string, any>, ctx: GenerateContext): Promise<RunResult> {
+  const parts = body.input as Part[];
+  const params = (body.parameters ?? {}) as Record<string, unknown>;
+  const durationSec = Math.max(5, Math.min(300, Number(params.duration_seconds ?? 30)));
+  const format = params.file_format === 'wav' ? 'wav' : 'mp3';
+  const name = randomBytes(8).toString('hex');
+  await synthesizeMusic({ dir: ctx.dir, name, durationSec, seed: hash(promptOf(parts)), format });
+  const lyrics =
+    params.instrumental === false
+      ? `[Verse]\n${promptOf(parts).slice(0, 80)}\n[Chorus]\nLa la la`
+      : undefined;
+  return {
+    outputs: [
+      { uri: ctx.fileUrl(`${name}.${format}`), mime_type: format === 'wav' ? 'audio/wav' : 'audio/mpeg' },
+    ],
+    usage: { output_count: 1, duration_seconds: durationSec },
+    lyrics,
+  };
+}

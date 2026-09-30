@@ -11,6 +11,7 @@ export * from './schemas/documents';
 export * from './schemas/gateway';
 export * from './schemas/job';
 export * from './schemas/live';
+export * from './schemas/llm';
 export * from './schemas/project';
 export * from './schemas/resource';
 export * from './schemas/screenplay';
