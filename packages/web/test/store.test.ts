@@ -1,7 +1,7 @@
 import { docPath, evaluateWorkflow, type Job } from '@rideo/shared';
 import * as f from '@rideo/shared/testing';
 import { describe, expect, it } from 'vitest';
-import { emptySlice, type ProjectSlice, reduceEvent } from '../src/store/project';
+import { emptySlice, type ProjectSlice, reduceEvent, useProject } from '../src/store/project';
 
 const agent = { kind: 'agent' as const, id: 'claude-code', name: 'Claude Code' };
 
@@ -88,5 +88,40 @@ describe('reduceEvent', () => {
     const again = reduceEvent(issue, 4, { kind: 'sync-issue', path: 'screenplay.json', error: 'worse' }).next;
     expect(again.syncIssues).toEqual([{ path: 'screenplay.json', error: 'worse' }]);
     expect(reduceEvent(again, 5, { kind: 'head', branch: 'alt', commit: 'z' }).refetch).toBe(true);
+  });
+});
+
+describe('optimistic timeline edits', () => {
+  it('apply locally, confirm with the server result, roll back on rejection', () => {
+    const docs = f.docs();
+    useProject.setState({ ...slice(), docs, loading: false });
+    const media = f.media({ durationSec: 8 });
+    const track = 'trk_primaryvideo01';
+    const rollback = useProject.getState().applyLocalOps([
+      {
+        op: 'insert',
+        trackId: track,
+        item: { kind: 'video', source: { type: 'media', media }, in: 0, out: 8 },
+      },
+    ]);
+    const local = useProject.getState().docs!.timeline!;
+    expect(local.tracks[0]!.items).toHaveLength(1);
+    rollback();
+    expect(useProject.getState().docs!.timeline ?? null).toBeNull();
+    const again = useProject.getState().applyLocalOps([
+      {
+        op: 'insert',
+        trackId: track,
+        item: { kind: 'video', source: { type: 'media', media }, in: 0, out: 4 },
+      },
+    ]);
+    const server = { ...useProject.getState().docs!.timeline!, fps: 25 };
+    useProject.getState().confirmTimeline(server);
+    again(); // a late rollback must not undo the confirmed server state
+    expect(useProject.getState().docs!.timeline!.fps).toBe(25);
+    expect(() =>
+      useProject.getState().applyLocalOps([{ op: 'remove', itemId: 'itm_doesnotexist0000' }]),
+    ).toThrow();
+    useProject.getState().clear();
   });
 });

@@ -1,5 +1,6 @@
 import { isTerminalJob, type Job } from '@rideo/shared';
-import { Ban, CheckCircle2, Loader2, XCircle } from 'lucide-react';
+import { Ban, CheckCircle2, Cpu, Loader2, XCircle } from 'lucide-react';
+import { useEngine } from '../engine/state';
 import { api } from '../lib/api';
 import { reportError } from '../store/ui';
 import { Button, cx, Progress } from './ui';
@@ -14,8 +15,9 @@ const LABEL: Record<string, string> = {
   'shot.generate': 'Generating shot',
   'batch.generate': 'Generating the film',
   'music.generate': 'Composing music',
-  'resource.process': 'Processing media',
-  'analysis.run': 'Analyzing footage',
+  'media.process': 'Preparing media',
+  'analysis.signals': 'Analyzing footage',
+  'analysis.suggest': 'Suggesting edits',
   'edit.auto': 'Auto editing',
   'timeline.assemble': 'Assembling timeline',
   'export.render': 'Rendering export',
@@ -27,8 +29,19 @@ export function jobLabel(job: Job): string {
 }
 
 export function JobRow({ job, projectId, compact }: { job: Job; projectId: string; compact?: boolean }) {
+  // Editor jobs run in a studio tab: show this tab's live progress, or who is (not yet) running it.
+  const here = useEngine((s) => (s.busy?.jobId === job.id ? s.busy : null));
   const done = isTerminalJob(job);
-  const ratio = job.progress.total > 0 ? job.progress.done / job.progress.total : 0;
+  const progress = here?.progress ?? job.progress;
+  const ratio = progress.total > 0 ? progress.done / progress.total : 0;
+  const where =
+    job.lane !== 'client' || done
+      ? null
+      : here
+        ? 'in this tab'
+        : job.status === 'running'
+          ? 'in another tab'
+          : 'waiting for an editor tab';
   return (
     <div
       data-entity={`job:${job.id}`}
@@ -50,6 +63,12 @@ export function JobRow({ job, projectId, compact }: { job: Job; projectId: strin
           />
         )}
         <span className="min-w-0 flex-1 truncate font-medium">{jobLabel(job)}</span>
+        {where ? (
+          <span className="flex shrink-0 items-center gap-1 text-[11px] text-info" data-testid="job-where">
+            <Cpu className="size-3" />
+            {where}
+          </span>
+        ) : null}
         <span className="text-[11px] text-muted">
           {job.status === 'queued' && job.attempts > 0 ? `retry ${job.attempts + 1}` : job.status}
         </span>
@@ -68,8 +87,8 @@ export function JobRow({ job, projectId, compact }: { job: Job; projectId: strin
       {!done ? (
         <div className="mt-1.5">
           <Progress value={ratio} label={jobLabel(job)} />
-          {job.progress.message && !compact ? (
-            <div className="mt-1 truncate text-[11px] text-muted">{job.progress.message}</div>
+          {progress.message && !compact ? (
+            <div className="mt-1 truncate text-[11px] text-muted">{progress.message}</div>
           ) : null}
         </div>
       ) : job.error && job.status === 'failed' ? (

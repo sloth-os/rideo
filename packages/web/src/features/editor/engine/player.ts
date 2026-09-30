@@ -14,6 +14,7 @@ export class Player {
   private startedAt = 0;
   private from = 0;
   private drawing = false;
+  private pending = false;
   playing = false;
   time = 0;
   onTime?: (t: number) => void;
@@ -41,17 +42,28 @@ export class Player {
     else void this.draw();
   }
 
+  /**
+   * Draws the frame at `time`. A request that arrives while a draw is in flight (a seek while the first frame is
+   * still loading, e.g. a local proxy being built) is not dropped: the latest time is drawn once the current
+   * draw finishes.
+   */
   async draw(): Promise<void> {
-    if (this.drawing) return;
+    if (this.drawing) {
+      this.pending = true;
+      return;
+    }
     this.drawing = true;
     try {
-      await this.compositor.render(
-        this.ctx,
-        Math.min(this.time, Math.max(0, this.duration - 1e-3)),
-        this.canvas.width,
-        this.canvas.height,
-        false,
-      );
+      do {
+        this.pending = false;
+        await this.compositor.render(
+          this.ctx,
+          Math.min(this.time, Math.max(0, this.duration - 1e-3)),
+          this.canvas.width,
+          this.canvas.height,
+          false,
+        );
+      } while (this.pending && !this.playing);
     } finally {
       this.drawing = false;
     }

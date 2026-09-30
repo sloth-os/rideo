@@ -1,12 +1,16 @@
 import {
   type Actor,
   applyDocChanges,
+  applyOps,
   type CommitSummary,
+  emptyTimeline,
   evaluateWorkflow,
   type FocusKind,
   type Job,
   type ProjectDocs,
   type ProjectEvent,
+  type Timeline,
+  type TimelineOp,
   type WorkflowEvaluation,
 } from '@rideo/shared';
 import { create } from 'zustand';
@@ -141,6 +145,13 @@ interface ProjectStore extends ProjectSlice {
   load(projectId: string): Promise<ProjectSlice>;
   refresh(): Promise<void>;
   applyEvent(seq: number, event: ProjectEvent): boolean;
+  /**
+   * Optimistic timeline edit (docs/design/editor.md#operations): applies the ops with the shared reducer and
+   * returns a rollback. Throws `TimelineOpError` for invalid ops, before anything is sent.
+   */
+  applyLocalOps(ops: TimelineOp[]): () => void;
+  /** The server's timeline replaces the local one. */
+  confirmTimeline(timeline: Timeline): void;
   focus(kind: FocusKind, id: string): void;
   player(action: 'play' | 'pause' | 'seek', time?: number): void;
   clear(): void;
@@ -190,6 +201,25 @@ export const useProject = create<ProjectStore>((set, get) => ({
     const { next, refetch } = reduceEvent(get(), seq, event);
     set(next);
     return refetch;
+  },
+  applyLocalOps(ops) {
+    const docs = get().docs;
+    if (!docs) return () => undefined;
+    const s = docs.project.settings;
+    const before = docs.timeline;
+    const next = applyOps(
+      before ?? emptyTimeline({ fps: s.fps, width: s.resolution.width, height: s.resolution.height }),
+      ops,
+    );
+    set({ docs: { ...docs, timeline: next } });
+    return () => {
+      const d = get().docs;
+      if (d && d.timeline === next) set({ docs: { ...d, timeline: before } });
+    };
+  },
+  confirmTimeline(timeline) {
+    const d = get().docs;
+    if (d) set({ docs: { ...d, timeline } });
   },
   focus(kind, id) {
     set({ highlight: { kind, id, at: Date.now() } });

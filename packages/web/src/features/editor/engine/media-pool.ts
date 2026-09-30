@@ -1,16 +1,39 @@
 import type { MediaRef } from '@rideo/shared';
-import { ALL_FORMATS, AudioBufferSink, CanvasSink, Input, UrlSource } from 'mediabunny';
+import {
+  ALL_FORMATS,
+  AudioBufferSink,
+  BlobSource,
+  CanvasSink,
+  Input,
+  type InputAudioTrack,
+  type InputVideoTrack,
+  UrlSource,
+} from 'mediabunny';
+import { localProxy } from '../../../engine/local-proxy';
 import { mediaUrl } from '../../../lib/api';
 
 export interface PoolEntry {
   input: Input;
   video: CanvasSink | null;
   audio: AudioBufferSink | null;
+  /** Reading a local proxy (the original is not decodable with WebCodecs here). */
+  proxied: boolean;
+}
+
+async function tracksOf(input: Input): Promise<[InputVideoTrack | null, InputAudioTrack | null]> {
+  return Promise.all([input.getPrimaryVideoTrack(), input.getPrimaryAudioTrack()]);
+}
+
+async function decodable([video, audio]: [InputVideoTrack | null, InputAudioTrack | null]): Promise<boolean> {
+  if (video && !(await video.canDecode())) return false;
+  if (audio && !(await audio.canDecode())) return false;
+  return true;
 }
 
 /**
- * One mediabunny Input per media file, reading the browser-safe proxy when there is one (VP9/Opus),
- * with pooled canvases sized for the preview/export surface.
+ * One mediabunny Input per media file with pooled canvases sized for the preview/export surface. Originals are
+ * read over HTTP ranges when WebCodecs decodes them; otherwise a local proxy is built with ffmpeg.wasm
+ * (docs/design/editor.md#playback-compatibility-local-proxies).
  */
 export class MediaPool {
   private readonly entries = new Map<string, Promise<PoolEntry>>();
@@ -18,7 +41,6 @@ export class MediaPool {
   constructor(
     private readonly projectId: string,
     private readonly size: { width: number; height: number },
-    private readonly preferOriginal = false,
   ) {}
 
   get(media: MediaRef): Promise<PoolEntry> {
@@ -32,12 +54,22 @@ export class MediaPool {
   }
 
   private async open(media: MediaRef): Promise<PoolEntry> {
-    const path = !this.preferOriginal && media.proxy ? media.proxy.path : media.path;
-    const input = new Input({ source: new UrlSource(mediaUrl(this.projectId, path)), formats: ALL_FORMATS });
-    const [videoTrack, audioTrack] = await Promise.all([
-      input.getPrimaryVideoTrack(),
-      input.getPrimaryAudioTrack(),
-    ]);
+    let input: Input = new Input({
+      source: new UrlSource(mediaUrl(this.projectId, media.path)),
+      formats: ALL_FORMATS,
+    });
+    let tracks = await tracksOf(input);
+    let proxied = false;
+    if (!(await decodable(tracks))) {
+      input.dispose();
+      input = new Input({
+        source: new BlobSource(await localProxy(this.projectId, media)),
+        formats: ALL_FORMATS,
+      });
+      tracks = await tracksOf(input);
+      proxied = true;
+    }
+    const [videoTrack, audioTrack] = tracks;
     const video =
       videoTrack && (await videoTrack.canDecode())
         ? new CanvasSink(videoTrack, {
@@ -48,7 +80,7 @@ export class MediaPool {
           })
         : null;
     const audio = audioTrack && (await audioTrack.canDecode()) ? new AudioBufferSink(audioTrack) : null;
-    return { input, video, audio };
+    return { input, video, audio, proxied };
   }
 
   dispose(): void {

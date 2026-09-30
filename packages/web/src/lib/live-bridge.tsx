@@ -1,6 +1,8 @@
 import { actorLabel } from '@rideo/shared';
 import { useEffect, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router';
+import { detectEngineCaps, editorWorker, useEngine } from '../engine';
+import { enginePresence } from '../engine/state';
 import { useProject } from '../store/project';
 import { useUi } from '../store/ui';
 import { LiveClient } from './live';
@@ -28,6 +30,9 @@ export function LiveBridge() {
         if (event.kind === 'activity' && event.actor.kind === 'agent' && event.action.startsWith('tool:')) {
           useUi.getState().toast(event.summary.replace(/^.*? → /, ''), 'info', event.actor);
         }
+        // A queued editor job of this project: this tab may claim it (docs/design/editor.md#editor-jobs).
+        if (event.kind === 'job' && event.job.lane === 'client' && event.job.status === 'queued')
+          void editorWorker.poke();
         if (event.kind === 'job' && event.job.status === 'failed' && !event.job.parentId) {
           useUi.getState().toast(`${event.job.kind} failed: ${event.job.error?.message ?? ''}`, 'error');
         }
@@ -49,16 +54,32 @@ export function LiveBridge() {
           void store.load(projectId).then((s) => c.resetSeq(projectId, s.seq));
       },
       onUi: (cmd) => handleUiCommand(cmd, (to) => nav.current.navigate(to), nav.current.path),
-      onStatus: (s) => useUi.getState().setLive(s),
+      onStatus: (s) => {
+        useUi.getState().setLive(s);
+        if (s === 'live') void editorWorker.poke();
+      },
     });
     client = c;
+    editorWorker.setSession(() => c.sessionId);
     c.connect();
+    detectEngineCaps();
+    // Leaving mid-render would drop the job back into the queue: ask first.
+    const guard = (e: BeforeUnloadEvent) => {
+      if (editorWorker.busy) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+    window.addEventListener('beforeunload', guard);
     return () => {
+      window.removeEventListener('beforeunload', guard);
       c.close();
       client = null;
     };
   }, []);
 
+  const engine = useEngine();
+  const busyJobId = engine.busy?.jobId ?? null;
   useEffect(() => {
     const projectId = /^\/p\/(prj_[0-9a-z]+)/.exec(location.pathname)?.[1] ?? null;
     const sel = useProject.getState().highlight;
@@ -67,7 +88,8 @@ export function LiveBridge() {
       route: location.pathname + location.search,
       selection: sel ? { kind: sel.kind, id: sel.id } : null,
       viewport: { width: window.innerWidth, height: window.innerHeight },
+      engine: enginePresence(useEngine.getState()),
     });
-  }, [location]);
+  }, [location, engine.ffmpeg, engine.webcodecs, busyJobId]);
   return null;
 }

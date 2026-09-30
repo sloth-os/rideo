@@ -80,7 +80,9 @@ export function AnalysisView() {
   const videos = Object.values(docs.resources).filter((r) => r.kind === 'video' && r.status === 'ready');
   const analyses = Object.values(docs.analyses).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   const current = analyses[0];
-  const running = Object.values(jobs).find((j) => j.kind === 'analysis.run' && !isTerminalJob(j));
+  const running = Object.values(jobs).find(
+    (j) => (j.kind === 'analysis.signals' || j.kind === 'analysis.suggest') && !isTerminalJob(j),
+  );
   const decide = (decisions: { id: string; status: EditSuggestion['status'] }[]) =>
     current && api.reviewSuggestions(projectId, current.id, decisions).catch(reportError);
   const run = async () => {

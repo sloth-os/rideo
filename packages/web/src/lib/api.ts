@@ -5,12 +5,17 @@ import type {
   Clip,
   CommitSummary,
   Diff,
+  EditorJobKind,
   Export,
+  ExportQuality,
   Job,
+  Probe,
   Project,
   ProjectDocs,
   ProjectSummary,
+  RenderEngineChoice,
   Resource,
+  ResourceRole,
   Screenplay,
   TagInfo,
   Timeline,
@@ -93,14 +98,18 @@ async function request<T>(
 ): Promise<T> {
   const token = getToken();
   const isForm = typeof FormData !== 'undefined' && body instanceof FormData;
+  const isBlob = typeof Blob !== 'undefined' && body instanceof Blob;
   const res = await fetch(`/api${path}`, {
     method,
     headers: {
-      ...(body !== undefined && !isForm ? { 'content-type': 'application/json' } : {}),
+      ...(body !== undefined && !isForm
+        ? { 'content-type': isBlob ? 'application/octet-stream' : 'application/json' }
+        : {}),
       ...(token ? { authorization: `Bearer ${token}` } : {}),
       ...headers,
     },
-    body: body === undefined ? undefined : isForm ? (body as FormData) : JSON.stringify(body),
+    body:
+      body === undefined ? undefined : isForm || isBlob ? (body as FormData | Blob) : JSON.stringify(body),
   });
   if (res.status === 204) return undefined as T;
   const text = await res.text();
@@ -159,12 +168,26 @@ export const api = {
     request<WorkflowEvaluation>('POST', `${p(id)}/workflow/approve`, { gate }),
   reopen: (id: string, stage: string) =>
     request<WorkflowEvaluation>('POST', `${p(id)}/workflow/reopen`, { stage }),
-  upload: (id: string, file: File, fields: Record<string, string> = {}) => {
+  /** Uploads a file with the browser's probe and poster (docs/design/editor.md#media-preparation-uploads). */
+  upload: (
+    id: string,
+    file: File,
+    opts: { role?: ResourceRole; probe?: Probe | null; poster?: Blob | null } = {},
+  ) => {
     const form = new FormData();
-    for (const [k, v] of Object.entries(fields)) form.set(k, v);
+    form.set(
+      'meta',
+      JSON.stringify({
+        ...(opts.role ? { role: opts.role } : {}),
+        ...(opts.probe ? { probe: opts.probe } : {}),
+      }),
+    );
     form.set('file', file, file.name);
+    if (opts.poster) form.set('poster', opts.poster, 'poster.jpg');
     return request<Resource>('POST', `${p(id)}/uploads`, form);
   },
+  doc: <T>(id: string, path: string, at?: string) =>
+    request<T>('GET', `${p(id)}/docs/${path}${at ? `?at=${encodeURIComponent(at)}` : ''}`),
   generateScreenplay: (id: string, body: { prompt?: string; attachmentResourceIds?: string[] } = {}) =>
     request<Job>('POST', `${p(id)}/screenplay/generate`, body),
   patchScreenplay: (id: string, body: Record<string, unknown>, coalesce?: string) =>
@@ -237,14 +260,9 @@ export const api = {
   ) => request<Analysis>('PATCH', `${p(id)}/analyses/${aid}/suggestions`, { decisions }),
   autoEdit: (id: string, aid: string) =>
     request<{ timeline: Timeline }>('POST', `${p(id)}/analyses/${aid}/auto-edit`),
-  exportServer: (id: string, quality: 'draft' | 'standard' | 'high') =>
-    request<{ export: Export; job: Job }>('POST', `${p(id)}/exports`, { quality }),
-  exportUpload: (id: string, blob: Blob, meta: Record<string, unknown>, filename = 'browser-export.mp4') => {
-    const form = new FormData();
-    form.set('meta', JSON.stringify(meta));
-    form.set('file', blob, filename);
-    return request<{ export: Export; job: Job }>('POST', `${p(id)}/exports/upload`, form);
-  },
+  /** Queues an export; an editor tab renders it and the server watermarks it. */
+  createExport: (id: string, body: { quality: ExportQuality; engine: RenderEngineChoice }) =>
+    request<{ export: Export; job: Job }>('POST', `${p(id)}/exports`, body),
   history: (id: string, q: { path?: string; limit?: number; before?: string } = {}) => {
     const qs = new URLSearchParams(
       Object.entries(q)
@@ -266,6 +284,33 @@ export const api = {
   createTag: (id: string, name: string, commit?: string, message?: string) =>
     request<TagInfo>('POST', `${p(id)}/tags`, { name, commit, message }),
   cancelJob: (id: string, jobId: string) => request<Job>('POST', `${p(id)}/jobs/${jobId}/cancel`),
+  // Editor jobs (docs/api/rest.md#editor-jobs)
+  editorClaim: (sessionId: string, projectId: string, kinds?: EditorJobKind[]) =>
+    request<{ job: Job | null }>('POST', '/editor/claim', {
+      sessionId,
+      projectId,
+      ...(kinds ? { kinds } : {}),
+    }),
+  editorJob: (jobId: string) => request<Job>('GET', `/editor/jobs/${jobId}`),
+  editorHeartbeat: (jobId: string, sessionId: string, progress?: Job['progress']) =>
+    request<{ cancelled: boolean; leaseExpiresAt: string | null }>(
+      'POST',
+      `/editor/jobs/${jobId}/heartbeat`,
+      {
+        sessionId,
+        ...(progress ? { progress } : {}),
+      },
+    ),
+  editorUpload: (jobId: string, sessionId: string, name: string, data: Blob) =>
+    request<{ name: string; size: number }>(
+      'PUT',
+      `/editor/jobs/${jobId}/files/${name}?sessionId=${encodeURIComponent(sessionId)}`,
+      data,
+    ),
+  editorComplete: (jobId: string, sessionId: string, result: unknown) =>
+    request<Job>('POST', `/editor/jobs/${jobId}/complete`, { sessionId, result }),
+  editorFail: (jobId: string, sessionId: string, error: { code: string; message: string }) =>
+    request<Job>('POST', `/editor/jobs/${jobId}/fail`, { sessionId, error }),
   detectMedia: (projectId: string, mediaPath: string) =>
     request<WatermarkDetection>('POST', '/watermark/detect', { projectId, mediaPath }),
   detectWatermark: (file: File) => {

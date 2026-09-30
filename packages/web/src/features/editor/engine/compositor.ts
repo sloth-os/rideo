@@ -1,5 +1,6 @@
 import { activeAt, type Effects, type TextItem, type Timeline, type VideoItem } from '@rideo/shared';
 import type { CanvasSink, WrappedCanvas } from 'mediabunny';
+import { VIDEO_FONT } from '../../../engine/fonts';
 import type { MediaPool } from './media-pool';
 
 type Ctx2D = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
@@ -69,7 +70,8 @@ export function drawText(ctx: Ctx2D, item: TextItem, w: number, h: number): void
     item.style.size ??
     Math.round(h / (item.style.preset === 'title' ? 10 : item.style.preset === 'lower_third' ? 18 : 22));
   ctx.save();
-  ctx.font = `600 ${size}px Inter, system-ui, sans-serif`;
+  // The bundled DejaVu Sans, the font the ffmpeg engine's drawtext uses (engine/fonts.ts)
+  ctx.font = `${size}px "${VIDEO_FONT}", sans-serif`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   const pos = item.style.position ?? (item.style.preset === 'title' ? 'center' : 'bottom');

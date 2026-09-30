@@ -43,6 +43,7 @@ function ExportCard({ e, projectId }: { e: Export; projectId: string }) {
             {e.status}
           </Badge>
           <Badge>{e.method}</Badge>
+          {e.engine ? <Badge tone="info">{e.engine}</Badge> : null}
           <Badge>{e.quality}</Badge>
           {e.codec ? <Badge>{e.codec}</Badge> : null}
           {e.durationSec ? <Badge>{formatDuration(e.durationSec)}</Badge> : null}

@@ -16,6 +16,8 @@ import {
   SectionHeader,
   Select,
 } from '../../components/ui';
+import { rememberUpload } from '../../engine/media-files';
+import { prepareMedia } from '../../engine/prepare';
 import { api, mediaUrl } from '../../lib/api';
 import { useProject } from '../../store/project';
 import { reportError, useUi } from '../../store/ui';
@@ -66,6 +68,7 @@ export function ResourcesView() {
   const [role, setRole] = useState<ResourceRole | ''>('');
   const [dragging, setDragging] = useState(false);
   const [uploading, setUploading] = useState(0);
+  const [uploadStep, setUploadStep] = useState<string | null>(null);
   const [music, setMusic] = useState({ prompt: '', durationSec: 60 });
   const navigate = useNavigate();
   if (!docs || !projectId) return null;
@@ -77,11 +80,25 @@ export function ResourcesView() {
     setUploading((n) => n + files.length);
     for (const f of Array.from(files)) {
       try {
-        await api.upload(projectId, f, role ? { role } : {});
+        // Probe and poster in this browser (docs/design/editor.md#media-preparation-uploads); if the engine
+        // cannot load, the plain upload becomes a media.process editor job.
+        setUploadStep(`Preparing ${f.name} with ffmpeg.wasm…`);
+        const prepared = await prepareMedia(f, { poster: f.type.startsWith('video/') }).catch(() => ({
+          probe: null,
+          poster: null,
+        }));
+        setUploadStep(`Uploading ${f.name}…`);
+        const resource = await api.upload(projectId, f, {
+          ...(role ? { role } : {}),
+          probe: prepared.probe,
+          poster: prepared.poster,
+        });
+        rememberUpload(resource.media, f);
       } catch (err) {
         reportError(err);
       } finally {
         setUploading((n) => n - 1);
+        setUploadStep(null);
       }
     }
   };
@@ -178,6 +195,11 @@ export function ResourcesView() {
             data-testid="resource-upload"
           />
         </div>
+        {uploadStep ? (
+          <p className="mt-2 text-[12px] text-muted" data-testid="upload-status">
+            {uploadStep}
+          </p>
+        ) : null}
       </Card>
       {!isEdit ? (
         <Card className="p-4">

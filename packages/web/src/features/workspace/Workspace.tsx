@@ -17,6 +17,7 @@ import { NavLink, useParams } from 'react-router';
 import { ActivityFeed } from '../../components/ActivityFeed';
 import { JobRow } from '../../components/JobProgress';
 import { Badge, cx, Spinner } from '../../components/ui';
+import { editorWorker } from '../../engine';
 import { liveClient } from '../../lib/live-bridge';
 import { useProject } from '../../store/project';
 import { AnalysisView } from '../analysis/AnalysisView';
@@ -110,8 +111,11 @@ export function Workspace() {
         if (!cancelled) liveClient()?.subscribe(projectId, s.seq);
       })
       .catch(() => undefined);
+    // This tab runs the project's editor jobs while it is open (docs/design/editor.md#editor-jobs).
+    editorWorker.setProject(projectId);
     return () => {
       cancelled = true;
+      editorWorker.setProject(null);
       liveClient()?.unsubscribe(projectId);
     };
   }, [projectId, load]);

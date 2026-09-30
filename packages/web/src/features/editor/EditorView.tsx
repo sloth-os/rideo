@@ -1,4 +1,5 @@
 import {
+  type ExportQuality,
   emptyTimeline,
   formatDuration,
   formatTimecode,
@@ -7,6 +8,7 @@ import {
   itemDuration,
   itemEnd,
   primaryTrack,
+  type RenderEngineChoice,
   type TextItem,
   type Timeline,
   type TimelineOp,
@@ -45,11 +47,11 @@ import {
   SectionHeader,
   Select,
 } from '../../components/ui';
+import { useEngine } from '../../engine/state';
 import { api } from '../../lib/api';
 import { useProject } from '../../store/project';
 import { reportError, useUi } from '../../store/ui';
 import { detectCaps, type EngineCaps } from './engine/capabilities';
-import { renderInBrowser } from './engine/exporter';
 import { MediaPool } from './engine/media-pool';
 import { Player } from './engine/player';
 import { trimOps } from './trim';
@@ -367,149 +369,150 @@ function Inspector({
   );
 }
 
+const ENGINE_LABEL: Record<RenderEngineChoice, string> = {
+  auto: 'Auto (WebCodecs when every source decodes, else ffmpeg.wasm)',
+  ffmpeg: 'ffmpeg.wasm (exact filtergraph, any codec)',
+  webcodecs: 'WebCodecs (hardware encoder, fastest)',
+};
+
+/**
+ * Export (docs/design/editor.md#rendering): queues an `export.render` editor job that a studio tab (usually
+ * this one) renders in chunks; the server then watermarks and publishes it.
+ */
 function ExportDialog({
   open,
   onClose,
   timeline,
   projectId,
-  title,
 }: {
   open: boolean;
   onClose: () => void;
   timeline: Timeline;
   projectId: string;
-  title: string;
 }) {
-  const [quality, setQuality] = useState<'draft' | 'standard' | 'high'>('standard');
+  const [quality, setQuality] = useState<ExportQuality>('standard');
+  const [engine, setEngine] = useState<RenderEngineChoice>('auto');
   const [caps, setCaps] = useState<EngineCaps | null>(null);
-  const [progress, setProgress] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const abort = useRef<AbortController | null>(null);
-  const fail = (err: unknown) => {
-    setError(err instanceof Error ? err.message : String(err));
-    reportError(err);
-  };
+  const [queued, setQueued] = useState<{ exportId: string; jobId: string } | null>(null);
+  const job = useProject((s) => (queued ? s.jobs[queued.jobId] : undefined));
+  const exp = useProject((s) => (queued ? s.docs?.exports[queued.exportId] : undefined));
+  const here = useEngine((s) => (queued && s.busy?.jobId === queued.jobId ? s.busy : null));
   useEffect(() => {
-    if (open) void detectCaps(timeline.width, timeline.height).then(setCaps);
+    if (!open) return;
+    setError(null);
+    void detectCaps(timeline.width, timeline.height).then(setCaps);
   }, [open, timeline.width, timeline.height]);
-  const server = async () => {
+  useEffect(() => {
+    if (exp?.status === 'succeeded')
+      useUi.getState().toast('Export ready (watermarked) — see Exports', 'success');
+    if (exp?.status === 'failed') setError(exp.error ?? 'the export failed');
+  }, [exp?.status, exp?.error]);
+  const start = async () => {
     setBusy(true);
     setError(null);
     try {
-      await api.exportServer(projectId, quality);
-      useUi.getState().toast('Server render queued — see Exports', 'success');
-      onClose();
+      const r = await api.createExport(projectId, { quality, engine });
+      setQueued({ exportId: r.export.id, jobId: r.job.id });
     } catch (err) {
-      fail(err);
+      setError(err instanceof Error ? err.message : String(err));
+      reportError(err);
     } finally {
       setBusy(false);
     }
   };
-  const browser = async () => {
-    if (!caps) return;
-    setBusy(true);
-    setError(null);
-    setProgress(0);
-    abort.current = new AbortController();
-    try {
-      const out = await renderInBrowser({
-        projectId,
-        timeline,
-        caps,
-        title,
-        signal: abort.current.signal,
-        onProgress: (d, t) => setProgress(d / t),
-      });
-      setProgress(1);
-      await api.exportUpload(
-        projectId,
-        out.blob,
-        { codec: out.codec, width: out.width, height: out.height, durationSec: out.durationSec },
-        out.filename,
-      );
-      useUi
-        .getState()
-        .toast(
-          `Browser render uploaded (${out.codec}${out.draft ? ', draft from proxies' : ''}); the server is watermarking it`,
-          'success',
-        );
-      onClose();
-    } catch (err) {
-      fail(err);
-    } finally {
-      setBusy(false);
-      setProgress(null);
-    }
-  };
+  const progress = here?.progress ?? job?.progress;
+  const status = !queued
+    ? null
+    : exp?.status === 'succeeded'
+      ? 'Ready: watermarked and published in Exports.'
+      : exp?.status === 'failed'
+        ? null
+        : exp?.status === 'finishing'
+          ? 'Rendered. The server is adding the invisible watermark…'
+          : here
+            ? `Rendering in this tab — ${here.progress.message ?? 'starting'}. Keep this tab open.`
+            : job?.status === 'running'
+              ? 'Rendering in another studio tab…'
+              : 'Waiting for an editor tab to pick up the render…';
   return (
-    <Dialog open={open} onClose={() => (busy ? abort.current?.abort() : onClose())} title="Export">
+    <Dialog open={open} onClose={onClose} title="Export">
       <div className="space-y-4">
-        <Card className="p-3">
-          <div className="mb-2 font-medium">Render on the server</div>
-          <p className="mb-3 text-[13px] text-muted">
-            ffmpeg renders the original media with the invisible watermark in a single encode. Best for long
-            films.
-          </p>
-          <div className="flex flex-wrap items-end gap-2">
-            <Field label="Quality" className="w-40">
-              <Select
-                value={quality}
-                onChange={(e) => setQuality(e.target.value as typeof quality)}
-                name="quality"
-              >
-                <option value="draft">Draft (720p)</option>
-                <option value="standard">Standard</option>
-                <option value="high">High</option>
-              </Select>
-            </Field>
-            <Button
-              variant="primary"
-              loading={busy && progress === null}
-              onClick={server}
-              data-testid="export-server"
+        <p className="text-[13px] text-muted">
+          The film is rendered in this browser in chunks — with ffmpeg.wasm or WebCodecs — then the server
+          adds the invisible watermark and publishes it.
+        </p>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <Field label="Quality">
+            <Select
+              value={quality}
+              onChange={(e) => setQuality(e.target.value as ExportQuality)}
+              name="quality"
             >
-              Render on server
-            </Button>
+              <option value="draft">Draft (720p)</option>
+              <option value="standard">Standard</option>
+              <option value="high">High</option>
+            </Select>
+          </Field>
+          <Field label="Engine">
+            <Select
+              value={engine}
+              onChange={(e) => setEngine(e.target.value as RenderEngineChoice)}
+              name="engine"
+              data-testid="export-engine"
+            >
+              {(Object.keys(ENGINE_LABEL) as RenderEngineChoice[]).map((k) => (
+                <option key={k} value={k} disabled={k === 'webcodecs' && !caps?.video}>
+                  {ENGINE_LABEL[k]}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        </div>
+        <div className="flex flex-wrap gap-1.5 text-[12px]" data-testid="webcodecs-caps">
+          <Badge tone="success">
+            <Cpu className="size-3" /> ffmpeg.wasm
+          </Badge>
+          {caps === null ? (
+            <Badge>detecting WebCodecs…</Badge>
+          ) : caps.webcodecs && caps.video ? (
+            <>
+              <Badge tone="success">WebCodecs</Badge>
+              <Badge>video {caps.video}</Badge>
+              <Badge>{caps.container}</Badge>
+            </>
+          ) : (
+            <Badge tone="warning">WebCodecs encoding unavailable</Badge>
+          )}
+        </div>
+        {status ? (
+          <div className="space-y-2" data-testid="export-status">
+            <p className="text-[13px]">{status}</p>
+            {progress && exp?.status !== 'succeeded' ? (
+              <Progress value={progress.total ? progress.done / progress.total : 0} label="export" />
+            ) : null}
           </div>
-        </Card>
-        <Card className="p-3">
-          <div className="mb-2 flex items-center gap-2 font-medium">
-            <Cpu className="size-4" /> Render in this browser (WebCodecs)
-          </div>
-          <p className="mb-2 text-[13px] text-muted">
-            Encodes on your GPU; the server adds the watermark before publishing.
-          </p>
-          <div className="mb-3 flex flex-wrap gap-1.5 text-[12px]" data-testid="webcodecs-caps">
-            {caps === null ? (
-              <Badge>detecting…</Badge>
-            ) : caps.webcodecs && caps.video ? (
-              <>
-                <Badge tone="success">WebCodecs</Badge>
-                <Badge>video {caps.video}</Badge>
-                <Badge>audio {caps.audio ?? 'none'}</Badge>
-                <Badge>{caps.container}</Badge>
-              </>
-            ) : (
-              <Badge tone="warning">WebCodecs encoding unavailable</Badge>
-            )}
-          </div>
-          {progress !== null ? <Progress value={progress} label="browser render" /> : null}
-          <Button
-            className="mt-2"
-            loading={busy && progress !== null}
-            disabled={!caps?.video || busy}
-            onClick={browser}
-            data-testid="export-browser"
-          >
-            Render in browser
-          </Button>
-        </Card>
+        ) : null}
         {error ? (
           <p className="text-[12px] break-words text-danger" role="alert" data-testid="export-error">
             {error}
           </p>
         ) : null}
+        <div className="flex justify-end gap-2">
+          <Button variant="ghost" onClick={onClose} data-testid="export-close">
+            Close
+          </Button>
+          <Button
+            variant="primary"
+            loading={busy}
+            disabled={!!queued && exp?.status !== 'succeeded' && exp?.status !== 'failed'}
+            onClick={start}
+            data-testid="export-start"
+          >
+            {queued ? 'Export again' : 'Export'}
+          </Button>
+        </div>
       </div>
     </Dialog>
   );
@@ -528,9 +531,24 @@ export function EditorView() {
   const [exportOpen, setExportOpen] = useState(false);
   const trimming = useRef(false);
   const [webcodecs] = useState(() => typeof globalThis.VideoDecoder !== 'undefined');
+  // Optimistic: the shared reducer updates the timeline at once; the server's result is authoritative.
   const apply = useCallback(
     (ops: TimelineOp[]) => {
-      if (projectId) api.applyOps(projectId, ops).catch(reportError);
+      if (!projectId) return;
+      let rollback: () => void;
+      try {
+        rollback = useProject.getState().applyLocalOps(ops);
+      } catch (err) {
+        reportError(err);
+        return;
+      }
+      api
+        .applyOps(projectId, ops)
+        .then((r) => useProject.getState().confirmTimeline(r.timeline))
+        .catch((err) => {
+          rollback();
+          reportError(err);
+        });
     },
     [projectId],
   );
@@ -880,7 +898,6 @@ export function EditorView() {
         onClose={() => setExportOpen(false)}
         timeline={timeline}
         projectId={projectId}
-        title={docs.screenplay?.title ?? docs.project.title}
       />
     </div>
   );
