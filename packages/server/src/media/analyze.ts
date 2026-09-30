@@ -27,7 +27,7 @@ export async function analyzeMedia(
   } else {
     args.push('-vn');
   }
-  if (probe.hasAudio) args.push('-af', 'silencedetect=noise=-35dB:d=0.6,ebur128=framelog=quiet');
+  if (probe.hasAudio) args.push('-af', 'silencedetect=noise=-35dB:d=0.6,ebur128=framelog=verbose');
   else args.push('-an');
   args.push('-f', 'null', '-');
   const log = await ff.run(args, { signal: opts.signal, logLevel: 'info' });

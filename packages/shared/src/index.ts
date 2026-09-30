@@ -27,3 +27,4 @@ export * from './util/hash';
 export * from './util/time';
 export * from './watermark';
 export * from './workflow';
+export * from './story/normalize';

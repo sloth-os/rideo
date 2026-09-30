@@ -76,7 +76,8 @@ export class Histogram implements Metric {
     const out: string[] = [];
     for (const [k, s] of this.series) {
       const sep = k ? `${k},` : '';
-      this.bounds.forEach((b, i) => out.push(`${this.name}_bucket{${sep}le="${b}"} ${s.buckets[i]}`));
+      for (const [i, b] of this.bounds.entries())
+        out.push(`${this.name}_bucket{${sep}le="${b}"} ${s.buckets[i]}`);
       out.push(`${this.name}_bucket{${sep}le="+Inf"} ${s.count}`);
       out.push(`${this.name}_sum${k ? `{${k}}` : ''} ${s.sum}`);
       out.push(`${this.name}_count${k ? `{${k}}` : ''} ${s.count}`);

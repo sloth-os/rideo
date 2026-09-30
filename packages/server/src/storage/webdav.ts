@@ -34,19 +34,31 @@ export class StorageError extends Error {
 /** Production backend: any WebDAV server (external or the embedded /dav). */
 export class WebDavBackend implements StorageBackend {
   readonly kind = 'webdav' as const;
-  private readonly client: WebDAVClient;
+  private clientInstance?: WebDAVClient;
   private readonly knownDirs = new Set<string>(['/']);
   private caps?: Promise<{ conditionalWrites: boolean }>;
 
+  /** `url` may be a function: the embedded /dav server's port is only known after listen. */
   constructor(
-    private readonly opts: { url: string; username?: string; password?: string; metrics?: Metrics },
-  ) {
-    this.client = createClient(opts.url, {
-      username: opts.username,
-      password: opts.password,
-      maxBodyLength: Number.POSITIVE_INFINITY,
-      maxContentLength: Number.POSITIVE_INFINITY,
-    });
+    private readonly opts: {
+      url: string | (() => string);
+      username?: string;
+      password?: string;
+      metrics?: Metrics;
+    },
+  ) {}
+
+  private get client(): WebDAVClient {
+    this.clientInstance ??= createClient(
+      typeof this.opts.url === 'function' ? this.opts.url() : this.opts.url,
+      {
+        username: this.opts.username,
+        password: this.opts.password,
+        maxBodyLength: Number.POSITIVE_INFINITY,
+        maxContentLength: Number.POSITIVE_INFINITY,
+      },
+    );
+    return this.clientInstance;
   }
 
   private async timed<T>(op: string, fn: () => Promise<T>): Promise<T> {

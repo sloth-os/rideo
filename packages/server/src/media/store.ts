@@ -17,7 +17,6 @@ export type MediaKind =
   | 'refs'
   | 'keyframes'
   | 'takes'
-  | 'raw'
   | 'proxies'
   | 'posters'
   | 'frames'
@@ -223,6 +222,25 @@ export class MediaStore {
     } finally {
       await rm(tmp, { force: true });
     }
+  }
+
+  /** Downloads a URI to a local path without storing it (raw, unwatermarked generations never reach WebDAV). */
+  async downloadTo(uri: string, path: string, signal?: AbortSignal): Promise<{ mime: string; size: number }> {
+    const data = parseDataUri(uri);
+    if (data) {
+      await writeFile(path, data.data);
+      return { mime: data.mime, size: data.data.length };
+    }
+    if (!/^https?:\/\//.test(uri))
+      throw new AppError('validation_error', 'uri must be http(s) or a data URI');
+    const res = await fetch(uri, { signal });
+    if (!res.ok || !res.body)
+      throw new AppError('gateway_error', `download failed (${res.status})`, [], res.status >= 500);
+    await pipeline(Readable.fromWeb(res.body as never), createWriteStream(path));
+    return {
+      mime: res.headers.get('content-type')?.split(';')[0]?.trim() ?? mimeFor(new URL(uri).pathname),
+      size: (await stat(path)).size,
+    };
   }
 
   /** Local, hash-verified copy of a media file (downloaded once into the cache). */
