@@ -33,6 +33,16 @@ function bearer(header: string | undefined): string | undefined {
 }
 
 /** Builds the Rideo HTTP server: REST, live WebSocket, MCP, embedded /dav and the web UI. */
+/** pino-pretty is a dev dependency; production images log JSON without it. */
+function prettyLogsAvailable(): boolean {
+  try {
+    import.meta.resolve('pino-pretty');
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function buildServer(
   config: Config,
   opts: { storage?: StorageBackend; logger?: boolean | object } = {},
@@ -47,7 +57,7 @@ export async function buildServer(
   const app = Fastify({
     logger:
       opts.logger ??
-      (config.production
+      (config.production || !prettyLogsAvailable()
         ? { level: config.logLevel }
         : {
             level: config.logLevel,
@@ -185,10 +195,14 @@ export async function buildServer(
   registerRoutes(app, studio);
   registerMcp(app, studio);
 
+  // Default: packages/web/dist, found from the source tree (src/http) or the bundle (dist/main.js).
   const webDist = config.webDist
     ? resolve(config.webDist)
-    : resolve(import.meta.dirname, '../../../web/dist');
-  if (existsSync(join(webDist, 'index.html'))) {
+    : ([
+        resolve(import.meta.dirname, '../../../web/dist'),
+        resolve(import.meta.dirname, '../../web/dist'),
+      ].find((dir) => existsSync(join(dir, 'index.html'))) ?? '');
+  if (webDist && existsSync(join(webDist, 'index.html'))) {
     await app.register(fastifyStatic, { root: webDist, wildcard: false, index: ['index.html'] });
     app.setNotFoundHandler((req, reply) => {
       const url = req.url.split('?')[0]!;

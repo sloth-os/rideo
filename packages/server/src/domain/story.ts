@@ -237,7 +237,7 @@ export class StoryService extends Service {
     actor: Actor,
     projectId: string,
     id: string,
-    message: string,
+    message: string | ((c: Character) => string),
     fn: (c: Character) => Character,
     coalesce?: string,
   ): Promise<Character> {
@@ -251,7 +251,7 @@ export class StoryService extends Service {
         return next;
       },
       {
-        message: typeof message === 'string' ? message : message,
+        message,
         coalesce: coalesce ? { key: coalesce } : undefined,
       },
     );
@@ -269,7 +269,7 @@ export class StoryService extends Service {
       actor,
       projectId,
       id,
-      `Edit character ${input.name ?? ''}`.trim(),
+      (c) => `Edit character ${c.name}`,
       (c) => {
         const touchesIdentity = IDENTITY_KEYS.some((k) => input[k] !== undefined);
         if (c.lock.locked && touchesIdentity) {
@@ -321,34 +321,49 @@ export class StoryService extends Service {
 
   /** Lock (R1/R2): needs an approved reference; relocking an unchanged identity keeps the version (no stale takes). */
   async lockCharacter(actor: Actor, projectId: string, id: string): Promise<Character> {
-    return this.updateCharacterDoc(actor, projectId, id, 'Lock character', (c) => {
-      if (c.lock.locked) return c;
-      if (approvedReferences(c).length === 0)
-        throw new AppError('validation_error', `Approve at least one reference of ${c.name} before locking`);
-      const hash = identityHash(c);
-      const version =
-        c.lock.identityHash === hash && c.lock.version > 0 ? c.lock.version : c.lock.version + 1;
-      return {
-        ...c,
-        lock: {
-          locked: true,
-          version,
-          lockedAt: new Date().toISOString(),
-          lockedBy: actor,
-          identityHash: hash,
-        },
-      };
-    }).then(async (c) => {
+    return this.updateCharacterDoc(
+      actor,
+      projectId,
+      id,
+      (c) => `Lock character ${c.name}`,
+      (c) => {
+        if (c.lock.locked) return c;
+        if (approvedReferences(c).length === 0)
+          throw new AppError(
+            'validation_error',
+            `Approve at least one reference of ${c.name} before locking`,
+          );
+        const hash = identityHash(c);
+        const version =
+          c.lock.identityHash === hash && c.lock.version > 0 ? c.lock.version : c.lock.version + 1;
+        return {
+          ...c,
+          lock: {
+            locked: true,
+            version,
+            lockedAt: new Date().toISOString(),
+            lockedBy: actor,
+            identityHash: hash,
+          },
+        };
+      },
+    ).then(async (c) => {
       this.activity(projectId, actor, 'character.lock', `Locked ${c.name} (v${c.lock.version})`);
       return c;
     });
   }
 
   async unlockCharacter(actor: Actor, projectId: string, id: string): Promise<Character> {
-    return this.updateCharacterDoc(actor, projectId, id, 'Unlock character', (c) => ({
-      ...c,
-      lock: { ...c.lock, locked: false },
-    }));
+    return this.updateCharacterDoc(
+      actor,
+      projectId,
+      id,
+      (c) => `Unlock character ${c.name}`,
+      (c) => ({
+        ...c,
+        lock: { ...c.lock, locked: false },
+      }),
+    );
   }
 
   async importMedia(
@@ -423,7 +438,7 @@ export class StoryService extends Service {
       actor,
       projectId,
       id,
-      `${approved ? 'Approve' : 'Unapprove'} reference`,
+      (c) => `${approved ? 'Approve' : 'Unapprove'} reference of ${c.name}`,
       (c) => {
         if (c.lock.locked) throw new AppError('character_locked', `${c.name} is locked`);
         if (!c.references.some((r) => r.id === refId)) throw notFound(`reference ${refId}`);
@@ -433,11 +448,17 @@ export class StoryService extends Service {
   }
 
   async deleteReference(actor: Actor, projectId: string, id: string, refId: string): Promise<Character> {
-    return this.updateCharacterDoc(actor, projectId, id, 'Remove reference', (c) => {
-      if (c.lock.locked) throw new AppError('character_locked', `${c.name} is locked`);
-      if (!c.references.some((r) => r.id === refId)) throw notFound(`reference ${refId}`);
-      return { ...c, references: c.references.filter((r) => r.id !== refId) };
-    });
+    return this.updateCharacterDoc(
+      actor,
+      projectId,
+      id,
+      (c) => `Remove reference of ${c.name}`,
+      (c) => {
+        if (c.lock.locked) throw new AppError('character_locked', `${c.name} is locked`);
+        if (!c.references.some((r) => r.id === refId)) throw notFound(`reference ${refId}`);
+        return { ...c, references: c.references.filter((r) => r.id !== refId) };
+      },
+    );
   }
 
   async generateReferences(

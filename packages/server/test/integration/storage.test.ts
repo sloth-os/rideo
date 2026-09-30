@@ -29,8 +29,16 @@ afterAll(async () => {
   await rm(dir, { recursive: true, force: true });
 });
 
+// e.g. http://user:pass@localhost:8080/ — fetch rejects credentials in URLs, so pass them separately
 const external = process.env.RIDEO_TEST_WEBDAV_URL;
-if (external) backends.push(['external webdav', () => new WebDavBackend({ url: external })]);
+if (external) {
+  const u = new URL(external);
+  const username = decodeURIComponent(u.username) || undefined;
+  const password = decodeURIComponent(u.password) || undefined;
+  u.username = '';
+  u.password = '';
+  backends.push(['external webdav', () => new WebDavBackend({ url: u.toString(), username, password })]);
+}
 
 describe.each([0, 1, 2])('storage conformance #%s', (i) => {
   it('satisfies the backend contract', async () => {
