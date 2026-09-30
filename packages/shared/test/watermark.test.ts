@@ -125,3 +125,20 @@ describe('embed / extract', () => {
     expect(acc.result().id).toBe(id);
   });
 });
+
+describe('list decoding', () => {
+  it('recovers ids with a few unreliable bit errors', async () => {
+    const { listDecode } = await import('../src');
+    const id = 'wm_a1b2c3d4e5f6';
+    const bits = encodePayload(id);
+    const margins = new Float64Array(64).fill(8);
+    for (const i of [3, 17, 40]) {
+      bits[i] = bits[i]! ^ 1;
+      margins[i] = 0.2 + i / 100;
+    }
+    expect(decodePayload(bits).crcOk).toBe(false);
+    const candidates = listDecode(bits, margins, { maxFlips: 3, pool: 12 });
+    expect(candidates[0]).toMatchObject({ id, flips: 3 });
+    expect(listDecode(bits, margins, { maxFlips: 2, pool: 12 }).some((c) => c.id === id)).toBe(false);
+  });
+});

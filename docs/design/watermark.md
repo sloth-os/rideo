@@ -35,8 +35,10 @@ DCT-II (default pair `(2,1)/(1,2)`). The symbol for position `j` is `s = bit ⊕
 
 - Target: `d = |A| − |B| ≥ +T_blk` for `s = 1`, `d ≤ −T_blk` for `s = 0`.
 - Perceptual masking: `T_blk = T · clamp(σ_blk / 12, 0.5, 2.0)`, where `σ_blk` is the block's luma standard
-  deviation. Textured blocks get more energy and flat blocks less. The default `T` is set in
-  `RIDEO_WATERMARK_STRENGTH`.
+  deviation. Textured blocks get more energy and flat blocks less. The default `T = 16`
+  (`RIDEO_WATERMARK_STRENGTH`) was chosen by measurement: about 44 dB PSNR, and at most 2 bit errors after
+  x264 CRF 28 at 360p. The lowest-frequency pair `(1,0)/(0,1)` was also measured; it has a strong natural
+  bias and lower PSNR, so it was rejected.
 - If the target is not met, the gap is split between the two magnitudes (`|A| += g/2`, `|B| −= g/2`, with
   `|B|` floored at 0), signs are preserved, and each change is capped at `3·T_blk`. A block that cannot be
   fixed within the cap just becomes a weak wrong vote.
@@ -45,13 +47,14 @@ DCT-II (default pair `(2,1)/(1,2)`). The symbol for position `j` is `s = bit ⊕
   rounded and clamped to `[0,255]`.
 
 Cost is about 350 multiply-adds per block (two projections, variance, two basis updates), about 5 ms per
-720p frame in V8. Chroma is untouched, and PSNR stays above 45 dB at the default strength (asserted in
-tests).
+720p frame in V8. Chroma is untouched, and PSNR stays above 42 dB at the default strength (about 44 dB
+typical, asserted in tests).
 
 ## Extraction
 
 For each sampled frame (up to `N = 48`, spread across the video) and each position `j`:
-`soft_j = c_j · clamp(|A| − |B|, −3T, 3T)` is accumulated into `S[bit(j)]`, and `Σ soft²` is tracked per bit.
+`soft_j = c_j · clamp(|A| − |B|, −1.5T, 1.5T)` is accumulated into `S[bit(j)]`, and `Σ soft²` is tracked per
+bit. The soft clamp limits the influence of strong natural edges (host interference).
 
 - Each bit is `S_k > 0`.
 - Per-bit margin `m_k = |S_k| / sqrt(Σ soft_k²)`. It is about `|N(0,1)|` on unmarked content and large on
@@ -59,6 +62,11 @@ For each sampled frame (up to `N = 48`, spread across the video) and each positi
 - **Detected** iff the CRC matches **and** the mean margin is at least 2.5. The CRC alone gives a 2⁻¹⁶
   false-positive rate, and the margin test pushes it far lower. The reported `confidence` is
   `min(1, meanMargin / 6)`.
+- **CRC-aided list decoding.** When the margin shows a watermark but the CRC fails (heavy compression flips a
+  few weak bits), up to 3 of the 16 least reliable bits (lowest margins) are flipped. A CRC-valid candidate
+  is accepted only if its id **exists in the provenance registry**. That verification makes a wrong
+  acceptance negligible: roughly 700 candidates × 2⁻¹⁶ CRC collisions, each of which must also hit a
+  registered 48-bit id. The result reports `corrected: <flips>`.
 - Resolution: extraction first runs at the native size. If nothing is found, it rescales the frames (ffmpeg
   `scale`) to each candidate embedding size (the registry's known sizes plus 1920×1080, 1280×720,
   854×480, 640×360, 1080×1920, 720×1280, 1024×1024) and tries again.
@@ -90,7 +98,7 @@ downloadable.
   "brand": { "name": "Rideo Studio", "owner": "Acme Films", "url": "https://acme.example" },
   "projectId": "prj_…", "asset": { "kind": "take", "id": "tk_…", "clipId": "clp_…", "shotId": "sht_…" },
   "media": { "path": "media/takes/c0-s1-9ab3c1d2e4f5.mp4", "hash": "…" },
-  "embed": { "width": 1280, "height": 720, "strength": 10, "pair": [[2,1],[1,2]] },
+  "embed": { "width": 1280, "height": 720, "strength": 16, "pair": [[2,1],[1,2]] },
   "createdAt": "2026-09-30T10:00:00.000Z"
 }
 ```

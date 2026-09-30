@@ -35,7 +35,7 @@ export class WatermarkAccumulator {
 
   addFrame(y: Uint8Array | Uint8ClampedArray, stride: number): void {
     const { layout } = this;
-    const limit = this.params.capFactor * this.params.strength;
+    const limit = this.params.softClamp * this.params.strength;
     for (let j = 0; j < layout.count; j++) {
       const b = layout.blockIndex[j]!;
       const x0 = (b % layout.blocksX) * 8;
@@ -83,4 +83,44 @@ export class WatermarkAccumulator {
       confidence: detected ? Math.min(1, meanMargin / 6) : 0,
     };
   }
+}
+
+export interface ListCandidate {
+  id: string;
+  /** Number of flipped bits. */
+  flips: number;
+  /** Sum of the margins of the flipped bits (lower = more likely). */
+  cost: number;
+}
+
+/**
+ * CRC-aided list decoding: flips up to `maxFlips` of the `pool` least reliable bits and returns every
+ * CRC-valid candidate, most likely first. Callers must verify candidates (the provenance registry) —
+ * a random flip pattern passes CRC-16 with probability 2^-16.
+ */
+export function listDecode(
+  bits: Uint8Array,
+  margins: Float64Array,
+  opts: { maxFlips?: number; pool?: number } = {},
+): ListCandidate[] {
+  const maxFlips = opts.maxFlips ?? 3;
+  const pool = Math.min(opts.pool ?? 16, PAYLOAD_BITS);
+  const order = [...Array(PAYLOAD_BITS).keys()].sort((a, b) => margins[a]! - margins[b]!).slice(0, pool);
+  const out: ListCandidate[] = [];
+  const work = bits.slice();
+  const visit = (start: number, depth: number, cost: number) => {
+    if (depth > 0) {
+      const d = decodePayload(work);
+      if (d.crcOk) out.push({ id: d.id, flips: depth, cost });
+    }
+    if (depth === maxFlips) return;
+    for (let k = start; k < order.length; k++) {
+      const i = order[k]!;
+      work[i] = work[i]! ^ 1;
+      visit(k + 1, depth + 1, cost + margins[i]!);
+      work[i] = work[i]! ^ 1;
+    }
+  };
+  visit(0, 0, 0);
+  return out.sort((a, b) => a.cost - b.cost);
 }

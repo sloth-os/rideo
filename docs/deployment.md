@@ -64,10 +64,10 @@ the media cache.
 | `RIDEO_CONSISTENCY_JUDGE` | `vision-llm` | `vision-llm` or `off` (fail closed: takes become `unverified`) |
 | `RIDEO_CONSISTENCY_THRESHOLD` | `0.75` | default threshold for new projects |
 | `RIDEO_CONSISTENCY_MAX_ATTEMPTS` | `3` | default attempts per step |
-| `RIDEO_LANES` | `control=4,llm=2,image=2,video=2,music=1,media=1` | job lane concurrency |
+| `RIDEO_LANES` | `control=16,llm=2,image=2,video=2,music=1,media=1` | job lane concurrency |
 | `RIDEO_WATERMARK_KEY` | – (required in production; dev generates and stores one in `RIDEO_DATA_DIR`) | secret key for the invisible watermark |
 | `RIDEO_WATERMARK_KEYS_OLD` | – | comma-separated retired keys still tried by detection |
-| `RIDEO_WATERMARK_STRENGTH` | `10` | embedding strength `T` |
+| `RIDEO_WATERMARK_STRENGTH` | `16` | embedding strength `T` |
 | `RIDEO_BRAND_NAME` / `RIDEO_BRAND_OWNER` / `RIDEO_BRAND_URL` | `Rideo` / – / – | brand written into provenance and metadata |
 | `RIDEO_FFMPEG_PATH` / `RIDEO_FFPROBE_PATH` | `ffmpeg` / `ffprobe` | binaries |
 | `RIDEO_FONT_FILE` | auto-detected DejaVu Sans | `drawtext` font |

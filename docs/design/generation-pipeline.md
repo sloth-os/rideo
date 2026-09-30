@@ -38,9 +38,11 @@ type Job = {
 | `timeline.assemble` | control | approved clips → timeline |
 | `export.render` | media | ffmpeg render + watermark (+ browser-render finishing) |
 
-Lane concurrency defaults: `control=4, llm=2, image=2, video=2, music=1, media=1`. Override with
-`RIDEO_LANES="video=3,image=2"`. Within a lane jobs run by priority (user-initiated regenerate = 10,
-pilot = 5, batch = 1), then FIFO.
+Lane concurrency defaults: `control=16, llm=2, image=2, video=2, music=1, media=1`. Override with
+`RIDEO_LANES="video=3,image=2"`. Within a lane, jobs run by priority (user-initiated regenerate = 10,
+pilot = 5, batch = 1), then FIFO. A job that waits for its children (`clip.generate` → `shot.generate`,
+`batch.generate` → `clip.generate`) releases its lane slot while waiting, so orchestration can never
+deadlock a lane.
 
 ## Semantics
 

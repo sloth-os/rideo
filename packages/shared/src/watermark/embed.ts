@@ -11,12 +11,14 @@ export interface WatermarkParams {
   maskRef: number;
   maskMin: number;
   maskMax: number;
-  /** Per-coefficient change cap, in multiples of T_blk. */
+  /** Per-coefficient change cap when embedding, in multiples of T_blk. */
   capFactor: number;
+  /** Extraction soft-vote clamp, in multiples of T (limits host interference from strong edges). */
+  softClamp: number;
 }
 
 export const DEFAULT_WATERMARK_PARAMS: WatermarkParams = {
-  strength: 10,
+  strength: 16,
   pair: [
     [2, 1],
     [1, 2],
@@ -25,6 +27,7 @@ export const DEFAULT_WATERMARK_PARAMS: WatermarkParams = {
   maskMin: 0.5,
   maskMax: 2,
   capFactor: 3,
+  softClamp: 1.5,
 };
 
 export interface EmbedStats {
