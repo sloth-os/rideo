@@ -19,6 +19,7 @@ const STATUS: Record<ErrorCode, number> = {
   forbidden: 403,
   cancelled: 409,
   lease_lost: 409,
+  consent_required: 422,
   internal_error: 500,
 };
 

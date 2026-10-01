@@ -4,11 +4,14 @@ import {
   type Character,
   type CharacterInput,
   type CharacterUpdateInput,
+  type Consent,
+  type ConsentInput,
   canonicalJson,
   characterSeed,
   docPath,
   type Job,
   kindFromMime,
+  missingConsentFields,
   newId,
   type OutlineBeat,
   type Probe,
@@ -42,6 +45,29 @@ export function identityHash(c: Character): string {
 }
 
 export type UploadSource = { uri: string } | { file: string; filename: string; mime?: string };
+
+/**
+ * The consent record of an uploaded likeness (docs/design/provenance.md#consent-records): the uploader must state
+ * whether it shows a real person, and a real person needs the subject, who consented and when.
+ */
+export function consentRecord(actor: Actor, input: ConsentInput | undefined, what: string): Consent {
+  if (!input) {
+    throw new AppError(
+      'consent_required',
+      `State whether the ${what} depicts a real person (consent.depictsRealPerson)`,
+      ['depictsRealPerson'],
+    );
+  }
+  const missing = missingConsentFields(input);
+  if (missing.length) {
+    throw new AppError(
+      'consent_required',
+      `The ${what} depicts a real person: record the consent (${missing.join(', ')})`,
+      missing,
+    );
+  }
+  return { ...input, recordedBy: actor, recordedAt: new Date().toISOString() };
+}
 
 export class StoryService extends Service {
   /** Sets the brief (optional), passes the brief gate and enqueues screenplay generation. */
@@ -397,13 +423,14 @@ export class StoryService extends Service {
     projectId: string,
     id: string,
     source: UploadSource,
-    opts: { view?: ReferenceView; approved?: boolean } = {},
+    opts: { view?: ReferenceView; approved?: boolean; consent?: ConsentInput } = {},
   ): Promise<Character> {
     const docs = await this.deps.projects.docs(projectId);
     const c = docs.characters[id];
     if (!c) throw notFound(`character ${id}`);
     if (c.lock.locked)
       throw new AppError('character_locked', `${c.name} is locked; unlock before changing references`);
+    const consent = consentRecord(actor, opts.consent, 'reference image');
     const media = await this.importMedia(projectId, source, {
       kind: 'refs',
       name: `${c.name}-${opts.view ?? 'custom'}`,
@@ -428,6 +455,7 @@ export class StoryService extends Service {
               source: 'uploaded',
               approved: opts.approved ?? true,
               createdAt: new Date().toISOString(),
+              consent,
             },
           ],
         };
@@ -491,17 +519,25 @@ export class StoryService extends Service {
     });
   }
 
-  async describeCharacter(actor: Actor, projectId: string, id: string, resourceId: string): Promise<Job> {
+  async describeCharacter(
+    actor: Actor,
+    projectId: string,
+    id: string,
+    resourceId: string,
+    consentInput?: ConsentInput,
+  ): Promise<Job> {
     const docs = await this.deps.projects.docs(projectId);
     const c = docs.characters[id];
     if (!c) throw notFound(`character ${id}`);
     if (c.lock.locked) throw new AppError('character_locked', `${c.name} is locked`);
     const r = docs.resources[resourceId];
     if (r?.kind !== 'image') throw invalid('describe needs an image resource');
+    // The photo becomes an uploaded reference of the character, so it needs a consent record too.
+    const consent = consentRecord(actor, consentInput, 'photo');
     return this.deps.jobs.enqueue({
       projectId,
       kind: 'character.describe',
-      params: { characterId: id, resourceId },
+      params: { characterId: id, resourceId, consent },
       actor,
       branch: await this.branchOf(projectId),
       dedupeKey: `describe:${id}`,

@@ -127,17 +127,31 @@ export interface ChunkGraphOptions extends GraphInput {
 
 function textY(item: TextItem): string {
   const pos = item.style.position ?? (item.style.preset === 'title' ? 'center' : 'bottom');
+  if (item.style.preset === 'label') return pos === 'top' ? 'h*0.04' : 'h-text_h-h*0.04';
   if (item.style.preset === 'lower_third') return 'h*0.72';
   if (pos === 'top') return 'h*0.08';
   if (pos === 'center') return '(h-text_h)/2';
   return 'h-text_h-h*0.08';
 }
 
-function textSize(item: TextItem, height: number): number {
+/** Horizontal placement: centred, or a corner with a 3% margin (the `label` preset; docs/design/editor.md). */
+function textX(item: TextItem): string {
+  const align = item.style.align ?? (item.style.preset === 'label' ? 'right' : 'center');
+  if (align === 'left') return 'w*0.03';
+  if (align === 'right') return 'w-text_w-w*0.03';
+  return '(w-text_w)/2';
+}
+
+/** Font size in pixels; shared with the WebCodecs compositor's `drawText`. */
+export function textSize(item: TextItem, height: number): number {
   if (item.style.size) return item.style.size;
-  return Math.round(
-    height / (item.style.preset === 'title' ? 10 : item.style.preset === 'lower_third' ? 18 : 22),
-  );
+  const divisor = { title: 10, lower_third: 18, caption: 22, label: 32 }[item.style.preset];
+  return Math.round(height / divisor);
+}
+
+/** Padding of the text box in pixels (smaller for corner labels). */
+export function textPad(item: TextItem, height: number): number {
+  return Math.max(1, Math.round(height / (item.style.preset === 'label' ? 100 : 60)));
 }
 
 /** Escapes a value for use inside an ffmpeg filter option. */
@@ -229,7 +243,7 @@ export function chunkGraph(t: Timeline, chunk: RenderChunk, opts: ChunkGraphOpti
     const color = item.style.color ?? '#ffffff';
     filters.push(
       `[${acc}]drawtext=${font}textfile='${escapeFilterValue(path)}':fontsize=${textSize(item, height)}:fontcolor=${color}:` +
-        `x=(w-text_w)/2:y=${textY(item)}:box=1:boxcolor=black@0.45:boxborderw=${Math.round(height / 60)}:` +
+        `x=${textX(item)}:y=${textY(item)}:box=1:boxcolor=black@0.45:boxborderw=${textPad(item, height)}:` +
         `enable='between(t\\,${n(a)}\\,${n(b)})'[t${i}]`,
     );
     acc = `t${i}`;

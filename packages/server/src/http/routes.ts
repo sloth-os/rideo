@@ -8,7 +8,9 @@ import {
   AssembleInputSchema,
   CharacterInputSchema,
   CharacterUpdateInputSchema,
+  ConsentInputSchema,
   CreateProjectInputSchema,
+  DescribeCharacterInputSchema,
   ExportInputSchema,
   GenerateRefsInputSchema,
   JobStatusSchema,
@@ -27,7 +29,7 @@ import {
 } from '@rideo/shared';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import type { Studio } from '../domain/studio';
+import type { Detection, Studio } from '../domain/studio';
 import { AppError, invalid } from '../errors';
 
 const IdParam = z.object({ id: z.string().regex(/^prj_[0-9a-z]{10,32}$/) });
@@ -46,6 +48,7 @@ interface UploadedFile {
 async function receiveUpload(
   studio: Studio,
   req: FastifyRequest,
+  limits?: { fileSize: number },
 ): Promise<{
   file: UploadedFile | null;
   files: Record<string, UploadedFile>;
@@ -55,7 +58,7 @@ async function receiveUpload(
   const fields: Record<string, string> = {};
   const files: Record<string, UploadedFile> = {};
   try {
-    for await (const part of req.parts()) {
+    for await (const part of req.parts(limits ? { limits } : undefined)) {
       if (part.type === 'file') {
         if (files[part.fieldname]) {
           part.file.resume();
@@ -74,6 +77,17 @@ async function receiveUpload(
     throw err;
   }
   return { file: files.file ?? null, files, fields };
+}
+
+/** What a caller without the API token learns from a detection: no project ids, asset ids or media paths. */
+function publicDetection(d: Detection) {
+  const { provenance, ...rest } = d;
+  return {
+    ...rest,
+    provenance: provenance
+      ? { brand: provenance.brand, asset: { kind: provenance.asset.kind }, createdAt: provenance.createdAt }
+      : null,
+  };
 }
 
 function coalesceHeader(req: FastifyRequest): string | undefined {
@@ -244,6 +258,7 @@ export function registerRoutes(app: FastifyInstance, studio: Studio): void {
       if (!file) throw invalid('multipart field "file" is required');
       try {
         const view = fields.view ? ReferenceViewSchema.parse(fields.view) : undefined;
+        const consent = fields.consent ? ConsentInputSchema.parse(JSON.parse(fields.consent)) : undefined;
         return reply
           .code(201)
           .send(
@@ -252,7 +267,7 @@ export function registerRoutes(app: FastifyInstance, studio: Studio): void {
               pid(req),
               p(req, 'cid'),
               { file: file.path, filename: file.filename, mime: file.mime },
-              { view },
+              { view, consent },
             ),
           );
       } finally {
@@ -276,18 +291,14 @@ export function registerRoutes(app: FastifyInstance, studio: Studio): void {
   app.delete('/api/projects/:id/characters/:cid/references/:rid', async (req) =>
     studio.story.deleteReference(actor(), pid(req), p(req, 'cid'), p(req, 'rid')),
   );
-  app.post('/api/projects/:id/characters/:cid/describe', async (req, reply) =>
-    reply
+  app.post('/api/projects/:id/characters/:cid/describe', async (req, reply) => {
+    const body = parse(DescribeCharacterInputSchema, req.body);
+    return reply
       .code(202)
       .send(
-        await studio.story.describeCharacter(
-          actor(),
-          pid(req),
-          p(req, 'cid'),
-          parse(z.object({ resourceId: z.string() }), req.body).resourceId,
-        ),
-      ),
-  );
+        await studio.story.describeCharacter(actor(), pid(req), p(req, 'cid'), body.resourceId, body.consent),
+      );
+  });
   app.post('/api/projects/:id/characters/:cid/lock', async (req) =>
     studio.story.lockCharacter(actor(), pid(req), p(req, 'cid')),
   );
@@ -482,17 +493,24 @@ export function registerRoutes(app: FastifyInstance, studio: Studio): void {
     studio.deps.jobs.cancel(pid(req), p(req, 'jobId')),
   );
 
-  // Watermark
+  // Watermark and Content Credentials (docs/design/provenance.md#verification)
   app.post('/api/watermark/detect', async (req) => {
+    const isPublic = (req as { publicCaller?: boolean }).publicCaller === true;
     if (req.isMultipart()) {
-      const { file } = await receiveUpload(studio, req);
+      const { file } = await receiveUpload(
+        studio,
+        req,
+        isPublic ? { fileSize: studio.config.publicDetectMaxBytes } : undefined,
+      );
       if (!file) throw invalid('multipart field "file" is required');
       try {
-        return await studio.detectWatermark(file.path);
+        const detection = await studio.detectWatermark(file.path);
+        return isPublic ? publicDetection(detection) : detection;
       } finally {
         await rm(file.path, { force: true });
       }
     }
+    if (isPublic) throw new AppError('unauthorized', 'Upload the file; fetching media needs the API token');
     const b = parse(
       z.union([z.object({ uri: z.string() }), z.object({ projectId: z.string(), mediaPath: z.string() })]),
       req.body,

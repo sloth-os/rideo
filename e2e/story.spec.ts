@@ -141,4 +141,8 @@ test('idea → screenplay → locked cast → pilot → production → edit → 
   await expect(card.getByTestId('download-export')).toBeVisible({ timeout: 120_000 });
   await card.getByTestId('verify-export').click();
   await expect(card.getByTestId('verify-result')).toContainText('found');
+  // C2PA Content Credentials: an AI-generated composite of the takes, bound to the watermark
+  const credentials = card.getByTestId('content-credentials');
+  await expect(credentials).toContainText('AI-generated');
+  await expect(credentials).toContainText('bound to the watermark');
 });

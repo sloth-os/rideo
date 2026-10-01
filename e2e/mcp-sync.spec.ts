@@ -42,6 +42,7 @@ test('an agent drives the studio over MCP and the open page follows live', async
       characterId: nova.id,
       uri: PNG,
       view: 'front',
+      consent: { depictsRealPerson: false },
     });
     await expect(card.getByTestId('reference')).toHaveCount(1);
     await agent.call('character_lock', { projectId: pid, characterId: nova.id });
@@ -101,6 +102,7 @@ test('an export requested by an agent is rendered by the open tab and watermarke
     // every source decodes with WebCodecs in this browser, so `auto` renders with WebCodecs
     expect(exp).toMatchObject({ method: 'browser', engine: 'webcodecs' });
     expect(exp.watermarkId).toMatch(/^wm_/);
+    expect(exp.contentCredentials.manifest).toMatch(/^urn:c2pa:/);
     await agent.call('ui_navigate', { projectId: pid, view: 'exports' });
     await expect(
       page.locator(`[data-entity="export:${exp.id}"]`).getByTestId('download-export'),

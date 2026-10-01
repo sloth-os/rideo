@@ -2,16 +2,20 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
   type Analysis,
+  type ContentCredentialsStamp,
   docPath,
   type EditSuggestion,
   type Export,
   ExportRenderResultSchema,
+  type ProjectDocs,
   ruleSuggestions,
   suggestionFromLlm,
+  type Timeline,
 } from '@rideo/shared';
 import { z } from 'zod';
 import type { LabelledImage } from '../../ai/tasks';
 import { AppError, notFound } from '../../errors';
+import type { ExportIngredient } from '../../provenance/c2pa';
 import { runFramePipeline } from '../../watermark/pipeline';
 import type { JobContext } from '../queue';
 import { commitAs, docsFor, type HandlerDeps } from './common';
@@ -156,6 +160,38 @@ async function setExport(
   );
 }
 
+/**
+ * The C2PA ingredients of an export (docs/design/provenance.md#exports): every distinct take and resource on the
+ * rendered timeline, as local files so their own manifests are carried over.
+ */
+async function exportIngredients(
+  deps: HandlerDeps,
+  projectId: string,
+  docs: ProjectDocs,
+  timeline: Timeline,
+): Promise<ExportIngredient[]> {
+  const seen = new Set<string>();
+  const out: ExportIngredient[] = [];
+  for (const track of timeline.tracks) {
+    for (const item of track.items) {
+      if (item.kind === 'text' || seen.has(item.source.media.hash)) continue;
+      seen.add(item.source.media.hash);
+      const media = item.source.media;
+      const resource =
+        item.source.type === 'media' && item.source.resourceId
+          ? docs.resources[item.source.resourceId]
+          : undefined;
+      out.push({
+        path: await deps.media.localPath(projectId, media),
+        mime: media.mime,
+        title: media.path.split('/').pop() ?? media.path,
+        generated: item.source.type === 'take' || resource?.origin === 'generated',
+      });
+    }
+  }
+  return out;
+}
+
 async function publishExport(
   deps: HandlerDeps,
   ctx: JobContext,
@@ -163,6 +199,7 @@ async function publishExport(
   file: string,
   watermarkId: string | null,
   codec: string,
+  contentCredentials: ContentCredentialsStamp | null = null,
 ) {
   const projectId = ctx.job.projectId;
   const media = await deps.media.putFile(projectId, file, {
@@ -192,6 +229,7 @@ async function publishExport(
       status: 'succeeded',
       media,
       watermarkId,
+      contentCredentials,
       durationSec: media.durationSec,
       width: media.width,
       height: media.height,
@@ -291,7 +329,38 @@ export async function exportFinish(deps: HandlerDeps, ctx: JobContext) {
         onProgress: (frames) => ctx.progress(frames, total, `watermarking ${frames}/${total} frames`),
       });
       if (watermarkId) deps.metrics.watermark.inc({ op: 'embed' });
-      const media = await publishExport(deps, ctx, exp, out, watermarkId, `h264/aac (browser ${p.engine})`);
+      // C2PA Content Credentials: a composite of its takes and resources (docs/design/provenance.md#exports).
+      let published = out;
+      let contentCredentials: ContentCredentialsStamp | null = null;
+      if (deps.c2pa.enabled) {
+        ctx.progress(total, total, 'signing Content Credentials');
+        const timeline = (await deps.services.projects.getDoc(
+          ctx.job.projectId,
+          'timeline.json',
+          exp.timelineCommit ?? undefined,
+        )) as Timeline;
+        published = join(dir, 'export-signed.mp4');
+        contentCredentials = await deps.c2pa.signExport({
+          input: out,
+          output: published,
+          title: `${docs.project.title}.mp4`,
+          projectId: ctx.job.projectId,
+          exportId: exp.id,
+          timelineCommit: exp.timelineCommit,
+          watermarkId,
+          ingredients: await exportIngredients(deps, ctx.job.projectId, docs, timeline),
+          disclosure: exp.disclosure,
+        });
+      }
+      const media = await publishExport(
+        deps,
+        ctx,
+        exp,
+        published,
+        watermarkId,
+        `h264/aac (browser ${p.engine})`,
+        contentCredentials,
+      );
       await deps.staging.remove(p.renderJobId);
       return { exportId: p.exportId, path: media.path, watermarkId, psnr: embed?.stats().psnr };
     });

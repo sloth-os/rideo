@@ -1,4 +1,5 @@
 import {
+  disclosureFor,
   type ExportQuality,
   emptyTimeline,
   formatDuration,
@@ -15,6 +16,7 @@ import {
   type TransitionType,
   timelineDuration,
   type VideoItem,
+  withDisclosure,
 } from '@rideo/shared';
 import {
   Clapperboard,
@@ -522,6 +524,12 @@ export function EditorView() {
   const { docs, projectId, jobs, commits } = useProject();
   const playerCommand = useProject((s) => s.playerCommand);
   const timeline = useTimeline();
+  // The preview shows the export's disclosure label (docs/design/provenance.md#disclosure-label).
+  const preview = useMemo(() => {
+    if (!timeline || !docs) return timeline;
+    const d = disclosureFor(docs, timeline);
+    return withDisclosure(timeline, d.label ? { text: d.text, position: d.position } : null);
+  }, [timeline, docs]);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const playerRef = useRef<Player | null>(null);
   const [time, setTime] = useState(0);
@@ -562,9 +570,9 @@ export function EditorView() {
   }, [timeline?.width, timeline?.height]);
 
   useEffect(() => {
-    if (!projectId || !canvasRef.current || !timeline || !webcodecs) return;
+    if (!projectId || !canvasRef.current || !preview || !webcodecs) return;
     const pool = new MediaPool(projectId, previewSize);
-    const player = new Player(canvasRef.current, pool, timeline);
+    const player = new Player(canvasRef.current, pool, preview);
     player.onTime = setTime;
     player.onPlaying = setPlaying;
     playerRef.current = player;
@@ -577,8 +585,8 @@ export function EditorView() {
   }, [projectId, previewSize.width, previewSize.height, webcodecs]);
 
   useEffect(() => {
-    if (timeline) playerRef.current?.setTimeline(timeline);
-  }, [timeline]);
+    if (preview) playerRef.current?.setTimeline(preview);
+  }, [preview]);
 
   useEffect(() => {
     if (!playerCommand || !playerRef.current) return;

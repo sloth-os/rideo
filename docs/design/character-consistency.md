@@ -39,6 +39,7 @@ type Character = {
   references: {
     id: string; view: 'front' | 'three_quarter' | 'profile' | 'full_body' | 'expression' | 'custom';
     media: MediaRef; source: 'generated' | 'uploaded'; approved: boolean; wardrobeId?: string; createdAt: string;
+    consent?: Consent;          // uploaded references: does it depict a real person, and who consented
   }[];
   seed: number;                 // uint32, fixed at creation (fnv1a of the id)
   lock: { locked: boolean; version: number; lockedAt?: string; lockedBy?: Actor; identityHash?: string };

@@ -26,8 +26,10 @@ import { Ffmpeg } from '../media/ffmpeg';
 import { Staging } from '../media/staging';
 import { MediaStore } from '../media/store';
 import { Metrics } from '../metrics';
+import { C2paService } from '../provenance/c2pa';
 import type { StorageBackend } from '../storage/backend';
 import { Layout } from '../storage/layout';
+import { VERSION } from '../version';
 import { WatermarkService } from '../watermark/service';
 import { ClipService } from './clips';
 import type { Deps, Logger } from './deps';
@@ -54,8 +56,13 @@ export interface Studio {
   start(): Promise<void>;
   stop(): Promise<void>;
   userActor(): Actor;
-  detectWatermark(file: string): ReturnType<WatermarkService['detectVideo']>;
+  /** Both detectors on a file: the invisible watermark and the C2PA manifest (docs/design/provenance.md#verification). */
+  detectWatermark(file: string): Promise<Detection>;
 }
+
+export type Detection = Awaited<ReturnType<WatermarkService['detectVideo']>> & {
+  contentCredentials: Awaited<ReturnType<C2paService['read']>> & { bound?: boolean };
+};
 
 /** Composition root: builds every service, registers job handlers and autopilot actions. */
 export function createStudio(
@@ -102,6 +109,14 @@ export function createStudio(
     brand: config.brand,
     log,
   });
+  const c2pa = new C2paService(
+    {
+      ...config.c2pa,
+      dataDir: config.dataDir,
+      generator: { name: config.brand.name || 'Rideo', version: VERSION },
+    },
+    { log: log.child({ component: 'c2pa' }), metrics },
+  );
   const jobs = new JobQueue({
     storage,
     layout,
@@ -134,6 +149,7 @@ export function createStudio(
     judge: config.consistency.judge === 'off' ? new OffJudge() : new VisionLlmJudge(llm),
     offJudge: new OffJudge(),
     watermark,
+    c2pa,
     hub,
     jobs,
     staging,
@@ -252,11 +268,21 @@ export function createStudio(
     history: new HistoryService(deps),
     ui: new UiService(hub),
     userActor: () => ({ kind: 'user', id: config.user.id, name: config.user.name }),
-    detectWatermark: (file) => watermark.detectVideo(file),
+    async detectWatermark(file) {
+      const [mark, credentials] = await Promise.all([watermark.detectVideo(file), c2pa.read(file)]);
+      return {
+        ...mark,
+        contentCredentials: {
+          ...credentials,
+          ...(credentials.present ? { bound: !!mark.id && credentials.watermarkId === mark.id } : {}),
+        },
+      };
+    },
     async start() {
       await mkdir(join(config.dataDir), { recursive: true });
       await media.init();
       await watermark.init();
+      await c2pa.init();
       let recovered = 0;
       for (const id of await projectsRegistry.listIds()) {
         try {

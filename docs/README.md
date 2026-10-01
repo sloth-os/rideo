@@ -12,6 +12,7 @@
 | [design/mcp.md](design/mcp.md) | MCP server, transport, tool catalogue, UI control, agent attribution |
 | [design/realtime-sync.md](design/realtime-sync.md) | Live WebSocket protocol, events, sequence/replay, presence, UI commands |
 | [design/watermark.md](design/watermark.md) | Invisible watermark algorithm, payload, registry, detection, robustness |
+| [design/provenance.md](design/provenance.md) | C2PA Content Credentials, the public detection tool, the disclosure label, consent records (EU AI Act Article 50) |
 | [design/editor.md](design/editor.md) | Timeline model and ops, the browser media engine (ffmpeg.wasm + WebCodecs), local proxies, analysis, chunked rendering, editor jobs |
 | [api/rest.md](api/rest.md) | REST API reference |
 | [testing.md](testing.md) | Test pyramid, suites, fixtures, CI jobs |

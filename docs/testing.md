@@ -31,7 +31,9 @@ RIDEO_TEST_WEBDAV_URL=http://rideo:rideo@localhost:8080/ npx vitest run --projec
   on synthetic frames, PSNR ≥ 45 dB, no false positive on unmarked frames); JSON diff; canonical JSON;
   media planners and parsers (probe banners from FFmpeg 4.4 and the 5.1 wasm core, analysis logs including
   the empty ebur128 summary, rule suggestions, chunk planning: frame alignment, transitions kept whole,
-  long items split, text/audio shifted into chunk time; per-chunk filtergraphs and the soundtrack graph).
+  long items split, text/audio shifted into chunk time; per-chunk filtergraphs and the soundtrack graph);
+  provenance (consent validation, real-person characters, the disclosure rule for every `label` × real-person
+  case, `withDisclosure` over and beyond an hour, the corner `label` drawtext).
 - **server**: repository commit, log, diff, restore, branches, tags, coalescing and GC on `MemoryBackend`;
   job queue (lanes, priorities, dedupe, retry classification, cancel propagation, restart recovery; the
   `client` lane: claim order, leases, heartbeats, expiry and session release, cancel, staged files);
@@ -58,6 +60,11 @@ RIDEO_TEST_WEBDAV_URL=http://rideo:rideo@localhost:8080/ npx vitest run --projec
   (`test/helpers/editor-worker.ts`) that implements the browser's jobs with native ffmpeg and the same shared
   planners: claim/lease/heartbeat, staged uploads, resume after a lost lease, cancel, and the follow-up
   jobs.
+- **Provenance** (`provenance.test.ts`): the development signer's certificate chain verifies with
+  `node:crypto`; a footage export is signed as a C2PA composite of its source, with the policy label burned in
+  and recorded, bound to its watermark, and trusted by the C2PA SDK given the dev CA; uploaded likenesses need
+  a consent record (`consent_required`); with `RIDEO_API_TOKEN` set, the public detection endpoint accepts
+  uploads without the token (reduced response, size cap) while `{uri}` and every other route still need it.
 - **Watermark robustness** (`watermark.test.ts`): embed into an ffmpeg-generated textured clip, then detect
   after x264 CRF 23 and 28, VP9, a 2 s trim, a metadata strip, and a downscale/upscale. Assert no detection
   on the unmarked source.
@@ -65,7 +72,8 @@ RIDEO_TEST_WEBDAV_URL=http://rideo:rideo@localhost:8080/ npx vitest run --projec
   mock. Responses are validated against the vendored gateway `openapi.json`.
 - **Story workflow** (`story.test.ts`): REST from brief to export on the mock gateway, including a
   consistency failure and retry (`MOCK_FLAKY_EVERY`), R1 rejection, approval gates, batch to a 60 s target,
-  timeline assembly, an export rendered by the reference editor worker, watermark detection of the export.
+  timeline assembly, an export rendered by the reference editor worker, watermark detection of the export,
+  and C2PA Content Credentials on every take and on the export (every take and the music as ingredients).
 - **Footage workflow** (`footage.test.ts`): upload with a browser-style probe, an inbox/URL import processed
   by the worker, analysis signals from the worker then AI and rule suggestions, review, auto edit, export.
 - **MCP** (`mcp.test.ts`): the official MCP client over Streamable HTTP. Lists tools, runs a production
@@ -79,7 +87,7 @@ RIDEO_TEST_WEBDAV_URL=http://rideo:rideo@localhost:8080/ npx vitest run --projec
 ### End-to-end (Playwright)
 
 Projects: `desktop` (1440×900) runs every spec except `responsive`; `mobile` (412×915, touch) runs
-`responsive` and `mcp-sync`. Specs:
+`responsive`, `mcp-sync` and `provenance`. Specs:
 
 | Spec | Flow |
 |---|---|
@@ -87,6 +95,7 @@ Projects: `desktop` (1440×900) runs every spec except `responsive`; `mobile` (4
 | `mcp-sync.spec.ts` | page open; the test drives MCP tools as “Claude Code” (create character, add reference, lock, `ui_navigate`, `ui_focus`, `ui_notify`) and asserts the page updates live, attributed to the agent, without a reload; an agent's `export_render` is claimed and rendered by the open tab (`auto` → WebCodecs) and watermarked by the server |
 | `footage.spec.ts` | upload (probe + poster in the browser) → analysis signals in the browser → AI suggestions → accept → auto edit → exports with the ffmpeg.wasm and WebCodecs engines → both listed and verified |
 | `history.spec.ts` | edit → history → diff → restore → UI updates |
+| `provenance.spec.ts` | (desktop and mobile) uploading a likeness opens the consent dialog; a real person needs subject, grantor and date and marks the character; the disclosure setting labels the export; the export card and the public Verify page show the Content Credentials |
 | `responsive.spec.ts` | every main view on mobile: no horizontal overflow, navigation reachable, primary actions visible |
 
 The e2e stack starts through Playwright's `webServer`: mock gateway, Rideo server with the embedded

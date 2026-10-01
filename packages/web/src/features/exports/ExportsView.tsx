@@ -1,6 +1,7 @@
 import { type Export, formatDuration, isTerminalJob } from '@rideo/shared';
 import { Download, ShieldCheck } from 'lucide-react';
 import { useState } from 'react';
+import { ContentCredentialsPanel } from '../../components/ContentCredentials';
 import { Entity } from '../../components/Entity';
 import { JobRow } from '../../components/JobProgress';
 import { MediaVideo } from '../../components/Media';
@@ -47,6 +48,19 @@ function ExportCard({ e, projectId }: { e: Export; projectId: string }) {
           <Badge>{e.quality}</Badge>
           {e.codec ? <Badge>{e.codec}</Badge> : null}
           {e.durationSec ? <Badge>{formatDuration(e.durationSec)}</Badge> : null}
+          {e.contentCredentials ? (
+            <Badge tone="success" title={`C2PA manifest ${e.contentCredentials.manifest}`}>
+              Content Credentials
+            </Badge>
+          ) : null}
+          {e.disclosure?.label ? (
+            <Badge
+              tone="info"
+              title={e.disclosure.reason === 'real_person' ? 'Shows a real person' : 'Project policy'}
+            >
+              label “{e.disclosure.text}”
+            </Badge>
+          ) : null}
         </div>
         <div className="text-[11px] text-muted">{new Date(e.createdAt).toLocaleString()}</div>
         {e.error ? <p className="text-[12px] break-words text-danger">{e.error}</p> : null}
@@ -77,14 +91,17 @@ function ExportCard({ e, projectId }: { e: Export; projectId: string }) {
           </div>
         ) : null}
         {check ? (
-          <p
-            className={check.found ? 'text-[12px] text-success' : 'text-[12px] text-warning'}
-            data-testid="verify-result"
-          >
-            {check.found
-              ? `Watermark ${check.id} found (confidence ${Math.round(check.confidence * 100)}%) — ${check.provenance?.brand.name ?? ''} ${check.provenance?.asset.kind ?? ''}`
-              : 'No watermark detected'}
-          </p>
+          <div className="space-y-2">
+            <p
+              className={check.found ? 'text-[12px] text-success' : 'text-[12px] text-warning'}
+              data-testid="verify-result"
+            >
+              {check.found
+                ? `Watermark ${check.id} found (confidence ${Math.round(check.confidence * 100)}%) — ${check.provenance?.brand.name ?? ''} ${check.provenance?.asset.kind ?? ''}`
+                : 'No watermark detected'}
+            </p>
+            <ContentCredentialsPanel cc={check.contentCredentials} />
+          </div>
         ) : null}
       </div>
     </Entity>
@@ -102,7 +119,7 @@ export function ExportsView() {
     <div className="mx-auto max-w-5xl space-y-4">
       <SectionHeader
         title="Exports"
-        subtitle="Every export carries an invisible, keyed watermark and provenance metadata."
+        subtitle="Every export carries C2PA Content Credentials, an invisible keyed watermark and provenance metadata."
       />
       {running.map((j) => (
         <JobRow key={j.id} job={j} projectId={projectId} />

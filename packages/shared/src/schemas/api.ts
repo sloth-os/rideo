@@ -1,10 +1,10 @@
 import { z } from 'zod';
 import { EditSuggestionSchema } from './analysis';
-import { CharacterRoleSchema, IdentitySchema, ReferenceViewSchema } from './character';
+import { CharacterRoleSchema, ConsentInputSchema, IdentitySchema, ReferenceViewSchema } from './character';
 import { CameraSchema } from './clip';
 import { AspectRatioSchema, IdSchema } from './common';
 import { ExportQualitySchema, RenderEngineChoiceSchema } from './job';
-import { ProjectKindSchema } from './project';
+import { DisclosurePositionSchema, ProjectKindSchema } from './project';
 import { ResourceKindSchema, ResourceRoleSchema } from './resource';
 import { DialogueLineSchema, StyleBibleSchema } from './screenplay';
 import { TimelineOpSchema } from './timeline';
@@ -34,6 +34,13 @@ export const ProjectSettingsPatchSchema = z
     generation: z.object({ includeAudio: z.boolean(), keyframes: z.boolean() }).partial(),
     batch: z.object({ maxGenerations: z.number().int().min(1).max(100000) }).partial(),
     watermark: z.object({ enabled: z.boolean() }).partial(),
+    disclosure: z
+      .object({
+        label: z.enum(['auto', 'always', 'off']),
+        text: z.string().trim().min(1).max(60),
+        position: DisclosurePositionSchema,
+      })
+      .partial(),
     autopilot: z.boolean(),
     approvals: z.object({ allowAgents: z.boolean(), allowAgentOverrides: z.boolean() }).partial(),
   })
@@ -126,6 +133,13 @@ export const AddReferenceInputSchema = z.object({
   uri: z.string().min(1).max(50_000_000),
   view: ReferenceViewSchema.optional(),
   approved: z.boolean().optional(),
+  /** Required for uploads: does the image show a real person, and who consented (docs/design/provenance.md). */
+  consent: ConsentInputSchema.optional(),
+});
+
+export const DescribeCharacterInputSchema = z.object({
+  resourceId: IdSchema,
+  consent: ConsentInputSchema.optional(),
 });
 
 export const GenerateRefsInputSchema = z.object({

@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { ActorSchema, IdSchema, IsoDateSchema, MediaRefSchema } from './common';
+import { ContentCredentialsStampSchema, DisclosureStampSchema } from './provenance';
 
 export const JOB_KINDS = [
   'screenplay.generate',
@@ -123,6 +124,8 @@ export const ExportSchema = z.object({
   quality: ExportQualitySchema.default('standard'),
   media: MediaRefSchema.nullable().default(null),
   watermarkId: z.string().nullable().default(null),
+  contentCredentials: ContentCredentialsStampSchema.nullable().default(null),
+  disclosure: DisclosureStampSchema.nullable().default(null),
   timelineCommit: z.string().nullable().default(null),
   durationSec: z.number().nonnegative().optional(),
   width: z.number().int().positive().optional(),

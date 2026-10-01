@@ -1,4 +1,12 @@
-import { activeAt, type Effects, type TextItem, type Timeline, type VideoItem } from '@rideo/shared';
+import {
+  activeAt,
+  type Effects,
+  type TextItem,
+  type Timeline,
+  textPad,
+  textSize,
+  type VideoItem,
+} from '@rideo/shared';
 import type { CanvasSink, WrappedCanvas } from 'mediabunny';
 import { VIDEO_FONT } from '../../../engine/fonts';
 import type { MediaPool } from './media-pool';
@@ -66,29 +74,35 @@ function drawContain(
 }
 
 export function drawText(ctx: Ctx2D, item: TextItem, w: number, h: number): void {
-  const size =
-    item.style.size ??
-    Math.round(h / (item.style.preset === 'title' ? 10 : item.style.preset === 'lower_third' ? 18 : 22));
+  // Same size, padding and placement as the ffmpeg engine's drawtext (shared render plan).
+  const size = textSize(item, h);
+  const pad = textPad(item, h);
   ctx.save();
   // The bundled DejaVu Sans, the font the ffmpeg engine's drawtext uses (engine/fonts.ts)
   ctx.font = `${size}px "${VIDEO_FONT}", sans-serif`;
-  ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
+  const metrics = ctx.measureText(item.text);
+  const label = item.style.preset === 'label';
   const pos = item.style.position ?? (item.style.preset === 'title' ? 'center' : 'bottom');
-  const y =
-    item.style.preset === 'lower_third'
+  const y = label
+    ? pos === 'top'
+      ? h * 0.04 + size / 2
+      : h - h * 0.04 - size / 2
+    : item.style.preset === 'lower_third'
       ? h * 0.72 + size / 2
       : pos === 'top'
         ? h * 0.08 + size / 2
         : pos === 'center'
           ? h / 2
           : h - h * 0.08 - size / 2;
-  const metrics = ctx.measureText(item.text);
-  const pad = Math.round(h / 60);
+  const align = item.style.align ?? (label ? 'right' : 'center');
+  const x =
+    align === 'left' ? w * 0.03 : align === 'right' ? w - w * 0.03 - metrics.width : (w - metrics.width) / 2;
   ctx.fillStyle = 'rgba(0,0,0,0.45)';
-  ctx.fillRect(w / 2 - metrics.width / 2 - pad, y - size / 2 - pad, metrics.width + pad * 2, size + pad * 2);
+  ctx.fillRect(x - pad, y - size / 2 - pad, metrics.width + pad * 2, size + pad * 2);
   ctx.fillStyle = item.style.color ?? '#ffffff';
-  ctx.fillText(item.text, w / 2, y);
+  ctx.textAlign = 'left';
+  ctx.fillText(item.text, x, y);
   ctx.restore();
 }
 

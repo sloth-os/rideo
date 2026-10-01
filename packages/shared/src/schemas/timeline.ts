@@ -60,8 +60,10 @@ export const AudioItemSchema = z.object({
 export type AudioItem = z.infer<typeof AudioItemSchema>;
 
 export const TextStyleSchema = z.object({
-  preset: z.enum(['title', 'lower_third', 'caption']),
+  /** `label`: small boxed corner text (the disclosure label, docs/design/provenance.md#disclosure-label). */
+  preset: z.enum(['title', 'lower_third', 'caption', 'label']),
   position: z.enum(['top', 'center', 'bottom']).optional(),
+  align: z.enum(['left', 'center', 'right']).optional(),
   color: z
     .string()
     .regex(/^#[0-9a-fA-F]{6}$/)

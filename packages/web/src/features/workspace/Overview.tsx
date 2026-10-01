@@ -44,6 +44,7 @@ function SettingsDialog({
           approvals: s.approvals,
           generation: s.generation,
           watermark: s.watermark,
+          disclosure: s.disclosure,
         },
       });
       useUi.getState().toast('Settings saved', 'success');
@@ -149,6 +150,61 @@ function SettingsDialog({
           (v) => setS({ ...s, watermark: { enabled: v } }),
           'watermark',
         )}
+        <div className="rounded-[var(--radius-control)] border border-border p-3">
+          <p className="mb-2 text-[13px] font-medium">Disclosure label</p>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <Field label="Show">
+              <Select
+                value={s.disclosure.label}
+                onChange={(e) =>
+                  setS({
+                    ...s,
+                    disclosure: {
+                      ...s.disclosure,
+                      label: e.target.value as ProjectSettings['disclosure']['label'],
+                    },
+                  })
+                }
+                data-testid="disclosure-label"
+              >
+                <option value="auto">When real people appear</option>
+                <option value="always">Always</option>
+                <option value="off">Never (except real people)</option>
+              </Select>
+            </Field>
+            <Field label="Text">
+              <Input
+                value={s.disclosure.text}
+                maxLength={60}
+                onChange={(e) => setS({ ...s, disclosure: { ...s.disclosure, text: e.target.value } })}
+                data-testid="disclosure-text"
+              />
+            </Field>
+            <Field label="Corner">
+              <Select
+                value={s.disclosure.position}
+                onChange={(e) =>
+                  setS({
+                    ...s,
+                    disclosure: {
+                      ...s.disclosure,
+                      position: e.target.value as ProjectSettings['disclosure']['position'],
+                    },
+                  })
+                }
+              >
+                <option value="top_left">Top left</option>
+                <option value="top_right">Top right</option>
+                <option value="bottom_left">Bottom left</option>
+                <option value="bottom_right">Bottom right</option>
+              </Select>
+            </Field>
+          </div>
+          <p className="mt-2 text-[12px] text-muted">
+            Exports always carry C2PA Content Credentials. A visible label is added for the whole film; it
+            cannot be turned off when a character's likeness is a real person (EU AI Act Article 50).
+          </p>
+        </div>
         {toggle(
           'Agents may approve gates and clips',
           s.approvals.allowAgents,

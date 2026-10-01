@@ -10,6 +10,21 @@ export const ConsistencySettingsSchema = z.object({
   judge: z.enum(['vision-llm', 'off']).default('vision-llm'),
 });
 
+/** The visible "AI-generated" label (docs/design/provenance.md#disclosure-label). */
+export const DisclosurePositionSchema = z.enum(['top_left', 'top_right', 'bottom_left', 'bottom_right']);
+export type DisclosurePosition = z.infer<typeof DisclosurePositionSchema>;
+export const DisclosureSettingsSchema = z.object({
+  label: z.enum(['auto', 'always', 'off']).default('auto'),
+  text: z.string().trim().min(1).max(60).default('AI-generated'),
+  position: DisclosurePositionSchema.default('top_right'),
+});
+export type DisclosureSettings = z.infer<typeof DisclosureSettingsSchema>;
+export const DEFAULT_DISCLOSURE: DisclosureSettings = {
+  label: 'auto',
+  text: 'AI-generated',
+  position: 'top_right',
+};
+
 export const ProjectSettingsSchema = z.object({
   aspectRatio: AspectRatioSchema.default('16:9'),
   resolution: z
@@ -34,6 +49,7 @@ export const ProjectSettingsSchema = z.object({
     .object({ maxGenerations: z.number().int().min(1).max(100000).default(2000) })
     .default({ maxGenerations: 2000 }),
   watermark: z.object({ enabled: z.boolean().default(true) }).default({ enabled: true }),
+  disclosure: DisclosureSettingsSchema.default(DEFAULT_DISCLOSURE),
   autopilot: z.boolean().default(false),
   approvals: z
     .object({ allowAgents: z.boolean().default(true), allowAgentOverrides: z.boolean().default(false) })

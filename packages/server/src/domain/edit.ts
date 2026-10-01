@@ -8,6 +8,7 @@ import {
   type Clip,
   type CommitSummary,
   checkRequirement,
+  disclosureFor,
   docPath,
   docsFromEntries,
   type EditSuggestion,
@@ -254,6 +255,8 @@ export class EditService extends Service {
     const engine = opts.engine ?? 'auto';
     const h = await this.deps.projects.existing(projectId);
     const timelineCommit = (await h.repo.snapshot()).commit;
+    // The visible disclosure label (docs/design/provenance.md#disclosure-label): resolved here, drawn by the tab.
+    const disclosure = disclosureFor(await this.deps.projects.docs(projectId));
     const exp: Export = {
       id: newId('export'),
       createdAt: new Date().toISOString(),
@@ -262,6 +265,8 @@ export class EditService extends Service {
       quality,
       media: null,
       watermarkId: null,
+      contentCredentials: null,
+      disclosure,
       timelineCommit,
     };
     await this.mutate(actor, projectId, (tx) => tx.set(docPath.export(exp.id), exp), {
@@ -270,7 +275,14 @@ export class EditService extends Service {
     const job = await this.deps.jobs.enqueue({
       projectId,
       kind: 'export.render',
-      params: { exportId: exp.id, quality, engine, chunkSec: 30, timelineCommit },
+      params: {
+        exportId: exp.id,
+        quality,
+        engine,
+        chunkSec: 30,
+        timelineCommit,
+        disclosure: disclosure.label ? { text: disclosure.text, position: disclosure.position } : null,
+      },
       actor,
       branch: await this.branchOf(projectId),
       dedupeKey: `export:${exp.id}`,

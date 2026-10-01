@@ -6,6 +6,7 @@ import {
   renderSize,
   type Timeline,
   totalFrames,
+  withDisclosure,
 } from '@rideo/shared';
 import { detectCaps } from '../../features/editor/engine/capabilities';
 import { MediaPool } from '../../features/editor/engine/media-pool';
@@ -24,9 +25,13 @@ import { renderChunkWebCodecs } from './webcodecs-engine';
  */
 export async function exportRenderJob(ctx: EditorJobContext): Promise<ExportRenderResult> {
   const params = ExportRenderParamsSchema.parse(ctx.job.params);
-  const timeline = params.timelineCommit
-    ? await api.doc<Timeline>(ctx.projectId, 'timeline.json', params.timelineCommit)
-    : await api.timeline(ctx.projectId);
+  // The disclosure label is drawn into the picture (docs/design/provenance.md#disclosure-label).
+  const timeline = withDisclosure(
+    params.timelineCommit
+      ? await api.doc<Timeline>(ctx.projectId, 'timeline.json', params.timelineCommit)
+      : await api.timeline(ctx.projectId),
+    params.disclosure,
+  );
   const size = renderSize(timeline, params.quality);
   const sources = renderInputs(timeline);
   const caps = await detectCaps(size.width, size.height);

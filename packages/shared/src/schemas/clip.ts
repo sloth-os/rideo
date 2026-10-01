@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { ActorSchema, IdSchema, IsoDateSchema, MediaRefSchema } from './common';
+import { ContentCredentialsStampSchema } from './provenance';
 
 export const ConsistencyStatusSchema = z.enum(['passed', 'failed', 'unverified']);
 export type ConsistencyStatus = z.infer<typeof ConsistencyStatusSchema>;
@@ -76,6 +77,8 @@ export const TakeSchema = z.object({
   consistency: ConsistencyReportSchema,
   characterLocks: z.record(z.string(), z.number().int().nonnegative()).default({}),
   watermarkId: z.string().nullable().default(null),
+  /** C2PA manifest embedded in the take's video (docs/design/provenance.md#takes). */
+  contentCredentials: ContentCredentialsStampSchema.nullable().default(null),
   override: z
     .object({ actor: ActorSchema, reason: z.string().min(3).max(1000), at: IsoDateSchema })
     .nullable()

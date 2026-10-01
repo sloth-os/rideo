@@ -44,6 +44,34 @@ export const REFERENCE_VIEW_PRIORITY: ReferenceView[] = [
   'custom',
 ];
 
+/**
+ * Consent for media that may show a real person (docs/design/provenance.md#consent-records). Recorded on every
+ * uploaded reference and voice sample; never copied into C2PA manifests.
+ */
+export const ConsentSchema = z.object({
+  depictsRealPerson: z.boolean(),
+  subject: z.string().trim().min(1).max(200).optional(),
+  grantedBy: z.string().trim().min(1).max(200).optional(),
+  grantedAt: IsoDateSchema.optional(),
+  scope: z.string().max(1000).optional(),
+  evidence: z.string().max(1000).optional(),
+  recordedBy: ActorSchema,
+  recordedAt: IsoDateSchema,
+});
+export type Consent = z.infer<typeof ConsentSchema>;
+
+/** What a client states when it uploads a likeness or a voice (the server stamps who recorded it and when). */
+export const ConsentInputSchema = ConsentSchema.omit({ recordedBy: true, recordedAt: true });
+export type ConsentInput = z.infer<typeof ConsentInputSchema>;
+
+/** Missing fields of a consent record that depicts a real person (empty when complete). */
+export function missingConsentFields(
+  c: Pick<ConsentInput, 'depictsRealPerson' | 'subject' | 'grantedBy' | 'grantedAt'>,
+): string[] {
+  if (!c.depictsRealPerson) return [];
+  return (['subject', 'grantedBy', 'grantedAt'] as const).filter((k) => !c[k]?.trim());
+}
+
 export const CharacterReferenceSchema = z.object({
   id: IdSchema,
   view: ReferenceViewSchema,
@@ -52,6 +80,7 @@ export const CharacterReferenceSchema = z.object({
   approved: z.boolean(),
   wardrobeId: IdSchema.optional(),
   createdAt: IsoDateSchema,
+  consent: ConsentSchema.optional(),
 });
 export type CharacterReference = z.infer<typeof CharacterReferenceSchema>;
 
@@ -80,6 +109,11 @@ export type Character = z.infer<typeof CharacterSchema>;
 
 export function approvedReferences(c: Character): CharacterReference[] {
   return c.references.filter((r) => r.approved);
+}
+
+/** A character whose approved likeness is a real person: exports with it carry the disclosure label. */
+export function isRealPersonCharacter(c: Pick<Character, 'references'>): boolean {
+  return c.references.some((r) => r.approved && r.consent?.depictsRealPerson === true);
 }
 
 export function defaultWardrobe(c: Character): Wardrobe | undefined {

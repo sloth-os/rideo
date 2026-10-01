@@ -4,6 +4,7 @@ import type {
   Character,
   Clip,
   CommitSummary,
+  ConsentInput,
   Diff,
   EditorJobKind,
   Export,
@@ -210,9 +211,11 @@ export const api = {
   deleteCharacter: (id: string, cid: string) => request<void>('DELETE', `${p(id)}/characters/${cid}`),
   generateRefs: (id: string, cid: string, views?: string[]) =>
     request<Job>('POST', `${p(id)}/characters/${cid}/references/generate`, views ? { views } : {}),
-  uploadReference: (id: string, cid: string, file: File, view: string) => {
+  /** `consent` states whether the image shows a real person (docs/design/provenance.md#consent-records). */
+  uploadReference: (id: string, cid: string, file: File, view: string, consent: ConsentInput) => {
     const form = new FormData();
     form.set('view', view);
+    form.set('consent', JSON.stringify(consent));
     form.set('file', file, file.name);
     return request<Character>('POST', `${p(id)}/characters/${cid}/references`, form);
   },
@@ -220,8 +223,8 @@ export const api = {
     request<Character>('PATCH', `${p(id)}/characters/${cid}/references/${rid}`, { approved }),
   deleteReference: (id: string, cid: string, rid: string) =>
     request<Character>('DELETE', `${p(id)}/characters/${cid}/references/${rid}`),
-  describeCharacter: (id: string, cid: string, resourceId: string) =>
-    request<Job>('POST', `${p(id)}/characters/${cid}/describe`, { resourceId }),
+  describeCharacter: (id: string, cid: string, resourceId: string, consent: ConsentInput) =>
+    request<Job>('POST', `${p(id)}/characters/${cid}/describe`, { resourceId, consent }),
   lock: (id: string, cid: string) => request<Character>('POST', `${p(id)}/characters/${cid}/lock`),
   unlock: (id: string, cid: string) => request<Character>('POST', `${p(id)}/characters/${cid}/unlock`),
   generateMusic: (id: string, body: { prompt: string; durationSec?: number; instrumental?: boolean }) =>
@@ -327,12 +330,32 @@ export interface WatermarkDetection {
   confidence: number;
   meanMargin: number;
   framesAnalyzed: number;
+  /** Public callers (no token) get the brand, asset kind and creation time only. */
   provenance?: {
-    id: string;
+    id?: string;
     brand: { name: string; owner: string; url: string };
-    projectId: string;
-    asset: { kind: string; id: string; clipId?: string; shotId?: string };
+    projectId?: string;
+    asset: { kind: string; id?: string; clipId?: string; shotId?: string };
     createdAt: string;
   } | null;
   metadata: { comment?: string; copyright?: string; description?: string };
+  /** C2PA Content Credentials read from the file (docs/design/provenance.md#verification). */
+  contentCredentials?: ContentCredentials;
+}
+
+export interface ContentCredentials {
+  present: boolean;
+  state?: 'invalid' | 'valid' | 'trusted';
+  issues?: string[];
+  signer?: { commonName?: string; issuer?: string };
+  signedByThisStudio?: boolean;
+  claimGenerator?: string;
+  title?: string;
+  aiGenerated?: boolean;
+  digitalSourceType?: string;
+  actions?: string[];
+  ingredients?: number;
+  watermarkId?: string | null;
+  bound?: boolean;
+  disclosure?: { label: boolean; text?: string; reason?: string | null } | null;
 }

@@ -88,11 +88,27 @@ describe('MCP server', () => {
     await expect(call('character_lock', { projectId: project.id, characterId: c.id })).rejects.toThrow(
       /Approve at least one reference/,
     );
-    await call('character_add_reference', {
+    const png =
+      'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
+    // A real person's likeness needs a complete consent record (docs/design/provenance.md#consent-records).
+    await expect(
+      call('character_add_reference', {
+        projectId: project.id,
+        characterId: c.id,
+        uri: png,
+        consent: { depictsRealPerson: true, subject: 'Mira Vale' },
+      }),
+    ).rejects.toMatchObject({ body: { code: 'consent_required', errors: ['grantedBy', 'grantedAt'] } });
+    const withRef = await call('character_add_reference', {
       projectId: project.id,
       characterId: c.id,
-      uri: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=',
+      uri: png,
       view: 'front',
+      consent: { depictsRealPerson: false },
+    });
+    expect(withRef.references[0].consent).toMatchObject({
+      depictsRealPerson: false,
+      recordedBy: { kind: 'agent' },
     });
     const locked = await call('character_lock', { projectId: project.id, characterId: c.id });
     expect(locked.lock.locked).toBe(true);

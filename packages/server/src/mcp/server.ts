@@ -7,6 +7,7 @@ import {
   type Actor,
   CameraSchema,
   CharacterInputSchema,
+  ConsentInputSchema,
   CreateProjectInputSchema,
   clipBlockers,
   ExportQualitySchema,
@@ -384,10 +385,22 @@ function buildServer(studio: Studio): McpServer {
   );
   tool(
     'character_add_reference',
-    'Add a reference image from an https or data URI.',
-    { projectId: PROJECT, characterId: z.string(), uri: z.string(), view: ReferenceViewSchema.optional() },
+    'Add a reference image from an https or data URI. consent states whether it shows a real person (then subject, grantedBy and grantedAt are required, docs/design/provenance.md#consent-records).',
+    {
+      projectId: PROJECT,
+      characterId: z.string(),
+      uri: z.string(),
+      view: ReferenceViewSchema.optional(),
+      consent: ConsentInputSchema,
+    },
     (a, actor) =>
-      studio.story.addReference(actor, a.projectId, a.characterId, { uri: a.uri }, { view: a.view }),
+      studio.story.addReference(
+        actor,
+        a.projectId,
+        a.characterId,
+        { uri: a.uri },
+        { view: a.view, consent: a.consent },
+      ),
   );
   tool(
     'character_set_reference_approval',
@@ -398,9 +411,9 @@ function buildServer(studio: Studio): McpServer {
   );
   tool(
     'character_describe_from_image',
-    'Fill identity fields from an image resource (job).',
-    { projectId: PROJECT, characterId: z.string(), resourceId: z.string() },
-    (a, actor) => studio.story.describeCharacter(actor, a.projectId, a.characterId, a.resourceId),
+    'Fill identity fields from an image resource; the photo becomes a reference, so consent states whether it shows a real person (job).',
+    { projectId: PROJECT, characterId: z.string(), resourceId: z.string(), consent: ConsentInputSchema },
+    (a, actor) => studio.story.describeCharacter(actor, a.projectId, a.characterId, a.resourceId, a.consent),
   );
   tool(
     'character_lock',
@@ -587,7 +600,7 @@ function buildServer(studio: Studio): McpServer {
   tool('export_list', 'List exports.', { projectId: PROJECT }, (a) => studio.edit.exports(a.projectId), ro);
   tool(
     'watermark_detect',
-    'Detect the invisible watermark in a video (https/data URI, or a project media path).',
+    'Detect the invisible watermark and read the C2PA Content Credentials of a video (https/data URI, or a project media path).',
     { uri: z.string().optional(), projectId: z.string().optional(), mediaPath: z.string().optional() },
     async (a) => {
       const tmp = studio.deps.media.tmp('mp4');

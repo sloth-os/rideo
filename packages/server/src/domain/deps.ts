@@ -9,6 +9,7 @@ import type { Ffmpeg } from '../media/ffmpeg';
 import type { Staging } from '../media/staging';
 import type { MediaStore } from '../media/store';
 import type { Metrics } from '../metrics';
+import type { C2paService } from '../provenance/c2pa';
 import type { StorageBackend } from '../storage/backend';
 import type { Layout } from '../storage/layout';
 import type { WatermarkService } from '../watermark/service';
@@ -37,6 +38,8 @@ export interface Deps {
   judge: ConsistencyJudge;
   offJudge: ConsistencyJudge;
   watermark: WatermarkService;
+  /** C2PA Content Credentials for takes and exports. */
+  c2pa: C2paService;
   hub: LiveHub;
   jobs: JobQueue;
   /** Editor-job uploads on the server's disk. */

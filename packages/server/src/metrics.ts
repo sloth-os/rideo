@@ -116,6 +116,9 @@ export class Metrics {
     new Counter('rideo_editor_staged_bytes_total', 'Bytes staged by editor jobs'),
   );
   readonly commits = this.add(new Counter('rideo_commits_total', 'Commits by actor kind'));
+  readonly c2pa = this.add(
+    new Counter('rideo_c2pa_operations_total', 'C2PA Content Credentials signs and reads by result'),
+  );
 
   add<M extends Metric>(m: M): M {
     this.all.push(m);

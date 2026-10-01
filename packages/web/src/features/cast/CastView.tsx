@@ -2,11 +2,13 @@ import {
   approvedReferences,
   type Character,
   type Identity,
+  isRealPersonCharacter,
   isTerminalJob,
   type ReferenceView,
 } from '@rideo/shared';
-import { Check, ImagePlus, Lock, Sparkles, Trash2, Unlock, UserPlus, X } from 'lucide-react';
+import { Check, ImagePlus, Lock, Sparkles, Trash2, Unlock, UserCheck, UserPlus, X } from 'lucide-react';
 import { useRef, useState } from 'react';
+import { ConsentDialog } from '../../components/ConsentDialog';
 import { Editable } from '../../components/Editable';
 import { Entity } from '../../components/Entity';
 import { JobRow } from '../../components/JobProgress';
@@ -44,6 +46,7 @@ const VIEWS: ReferenceView[] = ['front', 'three_quarter', 'profile', 'full_body'
 function CharacterCard({ c }: { c: Character }) {
   const { projectId, jobs } = useProject();
   const [view, setView] = useState<ReferenceView>('front');
+  const [pending, setPending] = useState<File | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   if (!projectId) return null;
   const locked = c.lock.locked;
@@ -77,6 +80,14 @@ function CharacterCard({ c }: { c: Character }) {
             ) : (
               <Badge tone="warning">unlocked</Badge>
             )}
+            {isRealPersonCharacter(c) ? (
+              <Badge
+                tone="info"
+                title="A real person with recorded consent: exports carry the disclosure label"
+              >
+                <UserCheck className="size-3" /> real person
+              </Badge>
+            ) : null}
           </div>
           <p className="mt-0.5 truncate text-[12px] text-muted">{c.summary}</p>
         </div>
@@ -138,7 +149,16 @@ function CharacterCard({ c }: { c: Character }) {
                 />
                 <div className="absolute inset-x-0 bottom-0 flex items-center justify-between bg-black/60 px-1.5 py-0.5 text-[10px] text-white">
                   <span>{r.view.replace('_', ' ')}</span>
-                  {r.approved ? <Check className="size-3 text-success" /> : null}
+                  <span className="flex items-center gap-1">
+                    {r.consent?.depictsRealPerson ? (
+                      <span
+                        title={`Real person: ${r.consent.subject}, consent by ${r.consent.grantedBy} on ${r.consent.grantedAt}`}
+                      >
+                        <UserCheck className="size-3" aria-label="Real person with consent" />
+                      </span>
+                    ) : null}
+                    {r.approved ? <Check className="size-3 text-success" /> : null}
+                  </span>
                 </div>
                 {!locked ? (
                   <div className="absolute inset-0 flex items-center justify-center gap-1 bg-black/50 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
@@ -198,13 +218,28 @@ function CharacterCard({ c }: { c: Character }) {
                   data-testid="upload-reference"
                   onChange={(e) => {
                     const f = e.target.files?.[0];
-                    if (f) api.uploadReference(projectId, c.id, f, view).catch(reportError);
+                    if (f) setPending(f);
                     e.target.value = '';
                   }}
                 />
               </div>
             ) : null}
           </div>
+          <ConsentDialog
+            open={!!pending}
+            what="reference image"
+            fileName={pending?.name}
+            onCancel={() => setPending(null)}
+            onConfirm={async (consent) => {
+              if (!pending) return;
+              try {
+                await api.uploadReference(projectId, c.id, pending, view, consent);
+                setPending(null);
+              } catch (err) {
+                reportError(err);
+              }
+            }}
+          />
           {c.references.length > 0 && !locked && approved < c.references.length ? (
             <Button
               size="sm"

@@ -2,6 +2,7 @@ import {
   appendScenes,
   approvedReferences,
   type Character,
+  type Consent,
   compileReferenceRequest,
   docPath,
   identityFromLlm,
@@ -214,7 +215,11 @@ export async function characterRefs(deps: HandlerDeps, ctx: JobContext) {
 }
 
 export async function characterDescribe(deps: HandlerDeps, ctx: JobContext) {
-  const { characterId, resourceId } = ctx.job.params as { characterId: string; resourceId: string };
+  const { characterId, resourceId, consent } = ctx.job.params as {
+    characterId: string;
+    resourceId: string;
+    consent?: Consent;
+  };
   const docs = await docsFor(deps, ctx);
   const c = docs.characters[characterId];
   const r = docs.resources[resourceId] as Resource | undefined;
@@ -256,6 +261,7 @@ export async function characterDescribe(deps: HandlerDeps, ctx: JobContext) {
                 source: 'uploaded',
                 approved: true,
                 createdAt: new Date().toISOString(),
+                ...(consent ? { consent } : {}),
               },
             ],
       });

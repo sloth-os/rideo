@@ -104,6 +104,7 @@ export const ERROR_CODES = [
   'forbidden',
   'cancelled',
   'lease_lost',
+  'consent_required',
   'internal_error',
 ] as const;
 export const ErrorCodeSchema = z.enum(ERROR_CODES);

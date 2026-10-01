@@ -7,6 +7,7 @@ import {
   RenderEngineChoiceSchema,
   RenderEngineSchema,
 } from './job';
+import { DisclosurePositionSchema } from './project';
 import { ResourceKindSchema, ResourceRoleSchema } from './resource';
 
 /** Editor jobs: params, results and the REST bodies of the claim protocol (docs/design/editor.md#editor-jobs). */
@@ -29,6 +30,11 @@ export const ExportRenderParamsSchema = z.object({
   chunkSec: z.number().min(2).max(600).default(30),
   /** The timeline commit the render was requested at (the tab renders that version). */
   timelineCommit: z.string().nullable().default(null),
+  /** The disclosure label to burn in (docs/design/provenance.md#disclosure-label); null = none. */
+  disclosure: z
+    .object({ text: z.string().min(1).max(60), position: DisclosurePositionSchema })
+    .nullable()
+    .default(null),
 });
 
 export const EditorParamsSchemas = {

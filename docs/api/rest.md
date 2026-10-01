@@ -1,7 +1,8 @@
 # REST API
 
 Base path `/api`. JSON in and out, except uploads (multipart) and media (bytes). When `RIDEO_API_TOKEN` is
-set, every `/api` route except `/api/health` requires `Authorization: Bearer <token>`. REST calls are
+set, every `/api` route except `/api/health` and file uploads to `/api/watermark/detect` (the public detection
+tool) requires `Authorization: Bearer <token>`. REST calls are
 attributed to the configured user actor (`RIDEO_USER_ID`, `RIDEO_USER_NAME`).
 
 Errors are RFC 9457 problem details (`application/problem+json`) with a stable `code`:
@@ -26,6 +27,7 @@ Errors are RFC 9457 problem details (`application/problem+json`) with a stable `
 | `llm_invalid_output` | 502 | the LLM output failed validation after repair |
 | `storage_error` | 503 | the WebDAV backend failed |
 | `lease_lost` | 409 | an editor job is no longer leased to this session (expired, cancelled or reassigned) |
+| `consent_required` | 422 | an uploaded reference or voice sample of a real person lacks its consent record ([provenance](../design/provenance.md#consent-records)) |
 | `unauthorized` | 401 | missing or wrong token |
 
 ## System
@@ -72,10 +74,10 @@ Errors are RFC 9457 problem details (`application/problem+json`) with a stable `
 | PATCH | `/api/projects/:id/characters/:cid` | character fields | `Character` (`character_locked` while locked) |
 | DELETE | `/api/projects/:id/characters/:cid` | – | `204` |
 | POST | `/api/projects/:id/characters/:cid/references/generate` | `{views?}` | `Job` |
-| POST | `/api/projects/:id/characters/:cid/references` | multipart `file` + `view`, or `{uri, view?}` | `Character` |
+| POST | `/api/projects/:id/characters/:cid/references` | multipart `file` + `view` + `consent` (JSON), or `{uri, view?, consent}`; `consent: {depictsRealPerson, subject?, grantedBy?, grantedAt?, scope?, evidence?}` | `Character` (`consent_required` when a real person lacks subject, grantor or date) |
 | PATCH | `/api/projects/:id/characters/:cid/references/:rid` | `{approved}` | `Character` |
 | DELETE | `/api/projects/:id/characters/:cid/references/:rid` | – | `Character` |
-| POST | `/api/projects/:id/characters/:cid/describe` | `{resourceId}` | `Job` |
+| POST | `/api/projects/:id/characters/:cid/describe` | `{resourceId, consent}` (the photo becomes an uploaded reference) | `Job` |
 | POST | `/api/projects/:id/characters/:cid/lock` / `unlock` | – | `Character` |
 | POST | `/api/projects/:id/music` | `{prompt, durationSec?, instrumental?}` | `Job` |
 
@@ -141,11 +143,11 @@ Browser tabs run editor jobs (`client` lane) with their editor engine; see
 | POST | `/api/editor/jobs/:jobId/complete` | `{sessionId, result}` (per-kind `EditorResultSchema`) | `Job` (succeeded; follow-up job started) |
 | POST | `/api/editor/jobs/:jobId/fail` | `{sessionId, error: {code, message}}` | `Job` (queued again while attempts remain, else failed) |
 
-## Watermark
+## Watermark and Content Credentials
 
 | Method | Path | Body | Result |
 |---|---|---|---|
-| POST | `/api/watermark/detect` | multipart `file`, or `{uri}`, or `{projectId, mediaPath}` | `{found, id?, confidence, provenance?, metadata}` |
+| POST | `/api/watermark/detect` | multipart `file` (public, no token needed, ≤ `RIDEO_PUBLIC_DETECT_MAX_BYTES`), or with the token `{uri}` or `{projectId, mediaPath}` | `{found, id?, confidence, provenance?, metadata, contentCredentials}`; public callers get the brand, asset kind and creation time instead of the registry record ([provenance](../design/provenance.md#verification)) |
 | GET | `/api/watermark/:wmId` | – | registry record |
 
 ## Other surfaces

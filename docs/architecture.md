@@ -10,7 +10,9 @@
 4. Image, video and music generation uses the **mm-gateway JS SDK**. Every other AI request (LLM, vision
    judge, speech-to-text) goes through the **mm-gateway reverse proxy**.
 5. Agents control the studio through **MCP**, and every change shows up **live** in open browsers.
-6. Generated media carries an **invisible, keyed watermark** plus provenance metadata.
+6. Generated media carries **C2PA Content Credentials** and an **invisible, keyed watermark** plus
+   provenance metadata, so it is detectable as AI-generated (EU AI Act Article 50); real people need
+   consent records and force a visible disclosure label.
 7. **Editing runs in the browser**: ffmpeg.wasm probes, analyzes, transcodes and renders, and WebCodecs
    plays back and encodes in hardware. The server never edits media; it keeps native ffmpeg only for the
    generation pipeline and the keyed watermark.
@@ -35,6 +37,7 @@ flowchart LR
     JOBS[Job queue + handlers<br/>server lanes · client lane]
     CONS[Consistency engine]
     WM[Watermark service]
+    C2PA[Provenance: C2PA signer]
     MEDIA[Media toolkit ffmpeg<br/>generation + watermark only]
     VCS[Version store]
     STORE[Storage backend]
@@ -59,6 +62,7 @@ flowchart LR
   CONS --> PX --> MMG
   JOBS --> MEDIA
   JOBS --> WM
+  JOBS --> C2PA
   SVC -- events --> LIVE
   STORE -- WebDAV client --> WEBDAV
   STORE -. default .-> DAV
@@ -71,7 +75,7 @@ flowchart LR
 | Domain model | `packages/shared/src/schemas` | zod schemas for every document, event and API payload. They are the single source of truth for types. |
 | Pure logic | `packages/shared/src/{timeline,workflow,prompt,watermark,diff,media}` | Timeline reducers, workflow stage tables, the deterministic prompt compiler, the watermark core (DCT embed/extract), and the media planners and parsers (probe banner, analysis log, media commands, render chunks and filtergraphs). No I/O, unit-tested, used by server and browser. |
 | Application services | `packages/server/src/domain` | Use cases (create project, approve gate, generate clip…). Each takes an `Actor`, writes through the version store and emits live events. REST and MCP both call these. |
-| Infrastructure | `packages/server/src/{storage,vcs,media,gateway,ai,jobs,watermark,live}` | WebDAV I/O, commits, ffmpeg, SDK/proxy clients, job execution, watermarking, WebSocket fan-out. |
+| Infrastructure | `packages/server/src/{storage,vcs,media,gateway,ai,jobs,watermark,provenance,live}` | WebDAV I/O, commits, ffmpeg, SDK/proxy clients, job execution, watermarking, WebSocket fan-out. |
 | Surfaces | `packages/server/src/http`, `packages/server/src/mcp` | REST routes and MCP tools: thin adapters that validate input and call services. |
 | UI | `packages/web` | Studio UI. Its state is a projection of server documents, updated by live events (timeline edits apply optimistically). |
 | Editor engine | `packages/web/src/engine` | ffmpeg.wasm and WebCodecs media work: upload preparation, local proxies, analysis signals, chunked rendering, and the editor-job worker. |
@@ -124,6 +128,7 @@ uploads the outputs and completes it. See [editor](design/editor.md#editor-jobs)
 │   │   ├── workflow/       declarative stage tables + evaluator
 │   │   ├── prompt/         identity + shot prompt compiler
 │   │   ├── watermark/      dct, prng, crc, payload, embed/extract (luma + rgba)
+│   │   ├── provenance/     disclosure rule and label
 │   │   ├── media/          probe banner parser, analysis log parser, media commands, render chunk planner + filtergraphs
 │   │   └── diff/           json diff
 │   ├── server/src
@@ -134,6 +139,7 @@ uploads the outputs and completes it. See [editor](design/editor.md#editor-jobs)
 │   │   ├── ai/             LLM adapters (openai/gemini/anthropic via proxy), prompts, structured output
 │   │   ├── consistency/    judges + gate
 │   │   ├── watermark/      frame pipeline, registry, detection
+│   │   ├── provenance/     C2PA manifests (sign, read), development certificate
 │   │   ├── jobs/           queue (server lanes + client lane with leases), persistence, handlers
 │   │   ├── domain/         application services
 │   │   ├── live/           event hub, sessions, UI command relay

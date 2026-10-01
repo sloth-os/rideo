@@ -12,6 +12,7 @@
     "build": "node ../../scripts/bundle.mjs src/main.ts dist/main.js"
   },
   "dependencies": {
+    "@contentauth/c2pa-node": "0.9.9",
     "@fastify/multipart": "10.1.2",
     "@fastify/static": "10.1.5",
     "@fastify/websocket": "11.3.1",

@@ -68,9 +68,9 @@ or keep going and `job_wait` until a tab picks the job up.
 | `character_create` | `projectId`, `name`, `role?`, `summary?`, `identity?`, `wardrobe?[]` |
 | `character_update` | `projectId`, `characterId`, fields (rejected while locked) |
 | `character_generate_refs` | `projectId`, `characterId`, `views?[]` → job |
-| `character_add_reference` | `projectId`, `characterId`, `uri` (https or data URI), `view?` |
+| `character_add_reference` | `projectId`, `characterId`, `uri` (https or data URI), `view?`, `consent` (`{depictsRealPerson, subject?, grantedBy?, grantedAt?, scope?, evidence?}`) |
 | `character_set_reference_approval` | `projectId`, `characterId`, `referenceId`, `approved` |
-| `character_describe_from_image` | `projectId`, `characterId`, `resourceId` → job |
+| `character_describe_from_image` | `projectId`, `characterId`, `resourceId`, `consent` → job |
 | `character_lock` / `character_unlock` | `projectId`, `characterId` |
 | `resource_add` | `projectId`, `uri`, `kind?`, `role?`, `name?` |
 | `resource_list` | `projectId` |
@@ -101,7 +101,7 @@ or keep going and `job_wait` until a tab picks the job up.
 | `edit_auto` | `projectId`, `analysisId` |
 | `export_render` | `projectId`, `quality?` (`draft`, `standard`, `high`), `engine?` (`auto`, `ffmpeg`, `webcodecs`) → `{export, job}` (editor job) |
 | `export_list` | `projectId` |
-| `watermark_detect` | `uri` or `projectId` + `mediaPath` |
+| `watermark_detect` | `uri` or `projectId` + `mediaPath` → watermark, registry record and `contentCredentials` (C2PA) |
 
 ### History and jobs
 

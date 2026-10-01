@@ -4,6 +4,7 @@ import {
   type Character,
   type Clip,
   type ConsistencyReport,
+  type ContentCredentialsStamp,
   compileKeyframeRequest,
   compileVideoRequest,
   docPath,
@@ -278,12 +279,34 @@ export async function shotGenerate(deps: HandlerDeps, ctx: JobContext) {
       } else {
         await copyFile(final.local, marked);
       }
-      let video = await deps.media.putFile(projectId, marked, { kind: 'takes', name, mime: 'video/mp4' });
+      // C2PA Content Credentials (docs/design/provenance.md#takes): signed after the watermark, before storing.
+      let stored = marked;
+      let contentCredentials: ContentCredentialsStamp | null = null;
+      if (deps.c2pa.enabled) {
+        ctx.progress(0.93, 1, 'signing Content Credentials');
+        stored = join(dir, 'take-signed.mp4');
+        contentCredentials = await deps.c2pa.signTake({
+          input: marked,
+          output: stored,
+          title: `${docs.project.title} · ${name}`,
+          projectId,
+          asset: { clipId, shotId, takeId },
+          watermarkId,
+          models: { imageModel, videoModel: final.model || undefined },
+          consistency: {
+            status: final.report.status,
+            score: final.report.score,
+            judge: final.report.judge,
+          },
+          keyframe: keyframeRef ? await deps.media.localPath(projectId, keyframeRef) : null,
+        });
+      }
+      let video = await deps.media.putFile(projectId, stored, { kind: 'takes', name, mime: 'video/mp4' });
       ctx.progress(0.96, 1, 'making the poster');
-      video = await withPoster(deps, projectId, marked, video, ctx.signal);
+      video = await withPoster(deps, projectId, stored, video, ctx.signal);
       const lastPath = await extractLastFrame(
         deps.ff,
-        marked,
+        stored,
         video.durationSec ?? shot.durationSec,
         video.fps ?? 24,
         join(dir, 'last.png'),
@@ -335,6 +358,7 @@ export async function shotGenerate(deps: HandlerDeps, ctx: JobContext) {
         },
         taskIds,
         watermarkId,
+        contentCredentials,
         characters,
       });
       ctx.progress(1, 1, `take ${final.report.status}`);
@@ -377,6 +401,7 @@ async function commitTake(
     request: Take['request'];
     taskIds: string[];
     watermarkId?: string | null;
+    contentCredentials?: ContentCredentialsStamp | null;
     characters: Character[];
   },
 ): Promise<Take> {
@@ -392,6 +417,7 @@ async function commitTake(
     consistency: t.report,
     characterLocks: Object.fromEntries(t.characters.map((c) => [c.id, c.lock.version])),
     watermarkId: t.watermarkId ?? null,
+    contentCredentials: t.contentCredentials ?? null,
     override: null,
     ...(t.video?.durationSec ? { durationSec: t.video.durationSec } : {}),
   };

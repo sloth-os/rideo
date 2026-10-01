@@ -132,6 +132,7 @@ export function take(overrides: Partial<Take> = {}): Take {
     consistency: report(),
     characterLocks: {},
     watermarkId: null,
+    contentCredentials: null,
     override: null,
     durationSec: 5,
     ...overrides,

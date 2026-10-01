@@ -21,8 +21,8 @@ reports health through `/api/health`. CI publishes `ghcr.io/sloth-os/rideo:lates
 The image contains ffmpeg (used by the server only for generated takes and the watermark) and the built web
 app, including the ffmpeg.wasm core (31 MB, served from `/assets/` with immutable caching; no cross-origin
 isolation headers are needed for the single-threaded core). All state lives on the WebDAV store.
-`RIDEO_DATA_DIR` (`/data`) holds only the embedded WebDAV root (when used), the media cache and the
-editor-job staging area.
+`RIDEO_DATA_DIR` (`/data`) holds only the embedded WebDAV root (when used), the media cache, the
+editor-job staging area and, without a configured certificate, the development C2PA signer.
 
 ## Environment
 
@@ -81,6 +81,16 @@ editor-job staging area.
 | `RIDEO_BRAND_NAME` / `RIDEO_BRAND_OWNER` / `RIDEO_BRAND_URL` | `Rideo` / – / – | brand written into provenance and metadata |
 | `RIDEO_FFMPEG_PATH` / `RIDEO_FFPROBE_PATH` | `ffmpeg` / `ffprobe` | binaries (generation and watermark) |
 
+### Provenance (C2PA)
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `RIDEO_C2PA` | `on` | sign takes and exports with C2PA Content Credentials ([provenance](design/provenance.md)) |
+| `RIDEO_C2PA_CERT` / `RIDEO_C2PA_KEY` | – (development signer generated in `RIDEO_DATA_DIR/c2pa/`) | PEM certificate chain (leaf first) and private key, as file paths or PEM text |
+| `RIDEO_C2PA_TSA_URL` | – | RFC 3161 time-stamp authority for signatures |
+| `RIDEO_C2PA_TRUST_ANCHORS` | – | PEM bundle of CAs whose signatures the Verify page reports as `trusted` |
+| `RIDEO_PUBLIC_DETECT_MAX_BYTES` | `536870912` | largest file the public detection endpoint accepts |
+
 ### Editor jobs
 
 | Variable | Default | Meaning |
@@ -124,3 +134,6 @@ and set `RIDEO_LLM_PROXY_DOMAIN=api.openai.com`.
 - **Backups**: back up the WebDAV share. Everything, including version history, lives there.
 - **Watermark key**: keep it secret and stable. After rotating, list the old key in
   `RIDEO_WATERMARK_KEYS_OLD` so earlier media still verifies.
+- **C2PA certificate**: use a certificate from a CA on the C2PA trust list in production and set a
+  time-stamp authority, so signatures stay valid after the certificate expires. The development signer in
+  `RIDEO_DATA_DIR/c2pa/` is for local use only.

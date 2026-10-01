@@ -28,7 +28,8 @@ type VideoItem = {
 type AudioItem = { id: string; kind: 'audio'; source: Source; start: number; in: number; out: number;
                    volume: number; fadeIn?: number; fadeOut?: number };
 type TextItem  = { id: string; kind: 'text'; start: number; duration: number; text: string;
-                   style: { preset: 'title' | 'lower_third' | 'caption'; position?: 'top' | 'center' | 'bottom';
+                   style: { preset: 'title' | 'lower_third' | 'caption' | 'label';
+                            position?: 'top' | 'center' | 'bottom'; align?: 'left' | 'center' | 'right';
                             color?: string; size?: number } };
 ```
 
@@ -220,7 +221,9 @@ Segments are chained left to right: `xfade` (`fade`, `wipeleft`, `fadeblack`) at
 for transitions, `concat` for cuts. Every stream is on `AV_TIME_BASE` (`settb=AVTB`) because `concat`
 outputs that timebase and `xfade` rejects inputs whose timebases differ. Text items overlapping the chunk
 become `drawtext` (bundled DejaVu Sans, `fonts/DejaVuSans.ttf`) with `enable='between(t,a,b)'` in chunk
-time. The chunk ends with `fps=FPS,trim=duration=LEN`, which snaps timestamps back onto the frame grid,
+time. The `label` preset is small and boxed, aligned to a corner (`align` left or right, `position` top or
+bottom); the export's [disclosure label](provenance.md#disclosure-label) is such an item, added to the render
+timeline by `withDisclosure()` for the whole film. The chunk ends with `fps=FPS,trim=duration=LEN`, which snaps timestamps back onto the frame grid,
 so every chunk has exactly `round(LEN·FPS)` frames and the chunks join without gaps.
 
 ### Soundtrack

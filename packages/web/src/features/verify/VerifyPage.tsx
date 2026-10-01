@@ -1,5 +1,6 @@
 import { ShieldCheck, ShieldX, Upload } from 'lucide-react';
 import { useRef, useState } from 'react';
+import { ContentCredentialsPanel } from '../../components/ContentCredentials';
 import { Button, Card } from '../../components/ui';
 import { api, type WatermarkDetection } from '../../lib/api';
 import { reportError } from '../../store/ui';
@@ -29,8 +30,9 @@ export function VerifyPage() {
       <main className="mx-auto max-w-2xl space-y-4 px-3 py-8 sm:px-6">
         <h1 className="text-2xl font-semibold tracking-tight">Verify a video</h1>
         <p className="text-[13px] text-muted">
-          Rideo embeds an invisible, keyed watermark in every generated clip and export. Drop a video to
-          recover its brand and provenance — even after re-encoding, trimming or metadata stripping.
+          Rideo signs every generated clip and export with C2PA Content Credentials and embeds an invisible,
+          keyed watermark. Drop a video to read its credentials and recover its brand and provenance — the
+          watermark survives re-encoding, trimming and metadata stripping. Free to use, no account needed.
         </p>
         <Card className="p-6 text-center">
           <Upload className="mx-auto mb-2 size-6 text-muted" />
@@ -64,14 +66,18 @@ export function VerifyPage() {
                   <dd>{result.provenance?.brand.name ?? '—'}</dd>
                   <dt className="text-muted">Owner</dt>
                   <dd>{result.provenance?.brand.owner || '—'}</dd>
-                  <dt className="text-muted">Project</dt>
-                  <dd>
-                    <code>{result.provenance?.projectId ?? '—'}</code>
-                  </dd>
+                  {result.provenance?.projectId ? (
+                    <>
+                      <dt className="text-muted">Project</dt>
+                      <dd>
+                        <code>{result.provenance.projectId}</code>
+                      </dd>
+                    </>
+                  ) : null}
                   <dt className="text-muted">Asset</dt>
                   <dd>
                     {result.provenance
-                      ? `${result.provenance.asset.kind} ${result.provenance.asset.id}`
+                      ? `${result.provenance.asset.kind}${result.provenance.asset.id ? ` ${result.provenance.asset.id}` : ''}`
                       : 'not in this registry'}
                   </dd>
                   <dt className="text-muted">Created</dt>
@@ -88,6 +94,9 @@ export function VerifyPage() {
                 <ShieldX className="size-5" /> No Rideo watermark detected
               </div>
             )}
+            <div className="mt-4 border-t border-border pt-3">
+              <ContentCredentialsPanel cc={result.contentCredentials} />
+            </div>
             {result.metadata.copyright || result.metadata.comment ? (
               <p className="mt-3 text-[12px] text-muted">
                 Container metadata: {result.metadata.copyright} {result.metadata.comment}

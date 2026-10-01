@@ -15,9 +15,10 @@ import { Metrics } from '../metrics';
 import type { StorageBackend } from '../storage/backend';
 import { createEmbeddedDav, DAV_PREFIX } from '../storage/embedded-dav';
 import { WebDavBackend } from '../storage/webdav';
+import { VERSION } from '../version';
 import { registerRoutes } from './routes';
 
-export const VERSION = '0.1.0';
+export { VERSION };
 
 export interface RideoServer {
   app: FastifyInstance;
@@ -103,6 +104,15 @@ export async function buildServer(
       (url.startsWith('/api/') && url !== '/api/health') || url === '/mcp' || url === '/metrics';
     if (!guarded) return;
     const token = bearer(req.headers.authorization) ?? (req.query as { token?: string } | undefined)?.token;
+    // The free detection tool (docs/design/provenance.md#public-detection-tool): file uploads need no token.
+    const publicDetect =
+      req.method === 'POST' &&
+      url === '/api/watermark/detect' &&
+      String(req.headers['content-type'] ?? '').startsWith('multipart/form-data');
+    if (token !== config.apiToken && publicDetect) {
+      (req as { publicCaller?: boolean }).publicCaller = true;
+      return;
+    }
     if (token !== config.apiToken) {
       const err = new AppError('unauthorized', 'Missing or invalid bearer token');
       return reply.code(401).type('application/problem+json').send(problemDetails(err, url));

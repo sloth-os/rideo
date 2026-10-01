@@ -102,6 +102,11 @@ describe('story → movie workflow (REST, mock gateway)', () => {
       const take = shot.takes.find((t) => t.id === shot.selectedTakeId)!;
       expect(take.consistency.status).toBe('passed');
       expect(take.watermarkId).toMatch(/^wm_/);
+      // C2PA Content Credentials signed after the watermark (docs/design/provenance.md#takes)
+      expect(take.contentCredentials).toMatchObject({
+        manifest: expect.stringMatching(/^urn:c2pa:/),
+        signer: 'Rideo Studio (development)',
+      });
       expect(take.video?.poster?.mime).toBe('image/jpeg');
       expect(take.video?.videoCodec).toBe('h264');
       expect(Object.keys(take.characterLocks).length).toBe(shot.characterIds.length);
@@ -158,6 +163,26 @@ describe('story → movie workflow (REST, mock gateway)', () => {
     });
     expect(detect).toMatchObject({ found: true, id: done.watermarkId });
     expect(detect.provenance.asset).toMatchObject({ kind: 'export', id: done.id });
+    // The export's manifest places every take (each with its own manifest) and the generated music.
+    const takes = new Set(
+      assembled.timeline.tracks
+        .flatMap((t: { items: { source?: { type: string; media: { hash: string } } }[] }) => t.items)
+        .filter((i: { source?: { type: string } }) => i.source?.type === 'take')
+        .map((i: { source: { media: { hash: string } } }) => i.source.media.hash),
+    );
+    expect(done.disclosure).toMatchObject({ label: false, reason: null });
+    expect(done.contentCredentials.ingredients).toBe(takes.size + 1);
+    expect(detect.contentCredentials).toMatchObject({
+      present: true,
+      state: 'valid',
+      aiGenerated: true,
+      digitalSourceType:
+        'http://cv.iptc.org/newscodes/digitalsourcetype/compositeWithTrainedAlgorithmicMedia',
+      ingredients: takes.size + 1,
+      watermarkId: done.watermarkId,
+      bound: true,
+      disclosure: { label: false, reason: null },
+    });
 
     const media = await fetch(`${stack.url}/api/projects/${pid}/media/${done.media.path}`, {
       headers: { range: 'bytes=0-99' },

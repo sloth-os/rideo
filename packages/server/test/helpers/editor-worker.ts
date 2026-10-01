@@ -26,6 +26,7 @@ import {
   thumbnailCommand,
   thumbnailPicks,
   totalFrames,
+  withDisclosure,
 } from '@rideo/shared';
 import type { Stack } from './stack';
 
@@ -172,9 +173,16 @@ export async function startEditorWorker(
     },
     async 'export.render'(job, beat) {
       const params = ExportRenderParamsSchema.parse(job.params);
-      const t = params.timelineCommit
-        ? await json<Timeline>('GET', `/projects/${projectId}/docs/timeline.json?at=${params.timelineCommit}`)
-        : await json<Timeline>('GET', `/projects/${projectId}/timeline`);
+      // The disclosure label is part of the render, like in the browser (docs/design/provenance.md).
+      const t = withDisclosure(
+        params.timelineCommit
+          ? await json<Timeline>(
+              'GET',
+              `/projects/${projectId}/docs/timeline.json?at=${params.timelineCommit}`,
+            )
+          : await json<Timeline>('GET', `/projects/${projectId}/timeline`),
+        params.disclosure,
+      );
       const paths = new Map<string, string>();
       for (const m of renderInputs(t)) paths.set(m.hash, await download(m));
       const chunks = planChunks(t, { targetSec: params.chunkSec });

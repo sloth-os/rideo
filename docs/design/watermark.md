@@ -1,10 +1,12 @@
 # Invisible watermark
 
 Every video Rideo produces (each generated take and each export) carries brand and provenance information
-in three layers:
+in four layers. This document covers the watermark; the C2PA Content Credentials layer, the disclosure label
+and consent records are in [provenance](provenance.md).
 
 | Layer | Survives | Purpose |
 |---|---|---|
+| **C2PA Content Credentials** ([provenance](provenance.md)) | copying the file unchanged | signed, machine-readable "AI-generated" manifest; its soft binding names the watermark id |
 | **Invisible keyed watermark** in the luma DCT domain | re-encoding (H.264/VP9 at normal quality), trimming, container changes, metadata stripping, format conversion, rescaling back to a known size | proves origin; recovers the provenance record |
 | Container metadata (`copyright`, `comment=rideo-wm:v1:<id>`, `description`) | remux only | fast hint, human-readable |
 | Provenance registry (`/rideo/watermarks/<id>.json` on WebDAV) | – | maps the 48-bit id to brand, owner, project, asset, media hash |
@@ -110,7 +112,9 @@ published; the staged chunks stay on the server's local disk and are deleted aft
 ## Detection surfaces
 
 - `POST /api/watermark/detect` (multipart `file`, or JSON `{uri}` or `{projectId, mediaPath}`) →
-  `{found, id?, confidence, provenance?, metadata}`.
+  `{found, id?, confidence, provenance?, metadata, contentCredentials}`. It is public for file uploads (the
+  free detection tool, [provenance](provenance.md#public-detection-tool)); the registry record is only returned to
+  authenticated callers.
 - MCP `watermark_detect`.
 - The **Verify** page in the UI (drag a video in to see the brand, project, asset and creation time).
 

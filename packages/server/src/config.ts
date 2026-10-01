@@ -74,6 +74,12 @@ export const EnvSchema = z.object({
   RIDEO_BRAND_NAME: str('Rideo'),
   RIDEO_BRAND_OWNER: str(''),
   RIDEO_BRAND_URL: str(''),
+  RIDEO_C2PA: z.enum(['on', 'off']).optional().default('on'),
+  RIDEO_C2PA_CERT: str(),
+  RIDEO_C2PA_KEY: str(),
+  RIDEO_C2PA_TSA_URL: str(),
+  RIDEO_C2PA_TRUST_ANCHORS: str(),
+  RIDEO_PUBLIC_DETECT_MAX_BYTES: num(512 * 1024 ** 2),
   RIDEO_FFMPEG_PATH: str('ffmpeg'),
   RIDEO_FFPROBE_PATH: str('ffprobe'),
   RIDEO_EDITOR_LEASE_SEC: num(60),
@@ -128,6 +134,10 @@ export interface Config {
   lanes: Record<string, number>;
   watermark: { key?: string; oldKeys: string[]; strength: number };
   brand: { name: string; owner: string; url: string };
+  /** C2PA Content Credentials (docs/design/provenance.md#signing-credentials). */
+  c2pa: { enabled: boolean; cert?: string; key?: string; tsaUrl?: string; trustAnchors?: string };
+  /** Largest upload the public detection endpoint accepts. */
+  publicDetectMaxBytes: number;
   ffmpegPath: string;
   ffprobePath: string;
   /** Editor jobs (docs/design/editor.md#editor-jobs). */
@@ -230,6 +240,14 @@ export function loadConfig(
       strength: e.RIDEO_WATERMARK_STRENGTH,
     },
     brand: { name: e.RIDEO_BRAND_NAME!, owner: e.RIDEO_BRAND_OWNER ?? '', url: e.RIDEO_BRAND_URL ?? '' },
+    c2pa: {
+      enabled: e.RIDEO_C2PA === 'on',
+      cert: e.RIDEO_C2PA_CERT,
+      key: e.RIDEO_C2PA_KEY,
+      tsaUrl: e.RIDEO_C2PA_TSA_URL,
+      trustAnchors: e.RIDEO_C2PA_TRUST_ANCHORS,
+    },
+    publicDetectMaxBytes: e.RIDEO_PUBLIC_DETECT_MAX_BYTES,
     ffmpegPath: e.RIDEO_FFMPEG_PATH!,
     ffprobePath: e.RIDEO_FFPROBE_PATH!,
     editor: { leaseSec: e.RIDEO_EDITOR_LEASE_SEC, fileMaxBytes: e.RIDEO_EDITOR_FILE_MAX_BYTES },
