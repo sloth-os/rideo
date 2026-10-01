@@ -179,11 +179,12 @@ export async function startEditorWorker(
       const params = ExportRenderParamsSchema.parse(job.params);
       // The disclosure label is part of the render, like in the browser (docs/design/provenance.md).
       // The cut or the animatic (docs/design/storyboard.md#animatic), at the requested commit.
+      // A language variant renders its derived timeline (docs/design/localization.md#language-variants).
       const t = withDisclosure(
-        params.timelineCommit
+        params.timelineCommit || params.timelinePath !== 'timeline.json'
           ? await json<Timeline>(
               'GET',
-              `/projects/${projectId}/docs/${params.timelinePath}?at=${params.timelineCommit}`,
+              `/projects/${projectId}/docs/${params.timelinePath}${params.timelineCommit ? `?at=${params.timelineCommit}` : ''}`,
             )
           : await json<Timeline>('GET', `/projects/${projectId}/timeline`),
         params.disclosure,

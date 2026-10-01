@@ -12,6 +12,10 @@ export async function exportInThisTab(
     /** Loudness target and stems (docs/design/post-audio.md#loudness). */
     loudness?: 'streaming' | 'broadcast' | 'off';
     stems?: boolean;
+    /** A language variant (docs/design/localization.md#language-variants). */
+    language?: string;
+    dubbed?: boolean;
+    captions?: 'burn' | 'sidecar';
   } = {},
 ): Promise<void> {
   await page.getByTestId('open-export').click();
@@ -20,6 +24,9 @@ export async function exportInThisTab(
   if (opts.engine) await page.getByTestId('export-engine').selectOption(opts.engine);
   if (opts.loudness) await page.getByTestId('export-loudness').selectOption(opts.loudness);
   if (opts.stems) await page.getByTestId('export-stems').check();
+  if (opts.language) await page.getByTestId('export-language').selectOption(opts.language);
+  if (opts.dubbed) await page.getByTestId('export-dubbed').check();
+  if (opts.captions) await page.getByTestId('export-captions').selectOption(opts.captions);
   await page.getByTestId('export-start').click();
   const status = page.getByTestId('export-status');
   const failed = page.getByTestId('export-error');

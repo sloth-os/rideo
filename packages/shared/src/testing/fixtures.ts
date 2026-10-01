@@ -272,6 +272,7 @@ export function docs(overrides: Partial<ProjectDocs> = {}): ProjectDocs {
     resources: {},
     analyses: {},
     exports: {},
+    localizations: {},
     ...overrides,
   };
 }

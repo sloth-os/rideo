@@ -248,6 +248,12 @@ export const SfxPlanOutputSchema = z.object({
 });
 export type SfxPlanOutput = z.infer<typeof SfxPlanOutputSchema>;
 
+/** Translated dialogue lines (docs/design/localization.md#translation). */
+export const TranslateOutputSchema = z.object({
+  lines: z.array(z.object({ key: z.string().max(100), text: z.string().min(1).max(2000) })).max(2000),
+});
+export type TranslateOutput = z.infer<typeof TranslateOutputSchema>;
+
 export const LLM_TASKS = [
   'media.describe',
   'screenplay.generate',
@@ -259,6 +265,7 @@ export const LLM_TASKS = [
   'footage.analyze',
   'score.plan',
   'sfx.plan',
+  'dialogue.translate',
 ] as const;
 export type LlmTaskId = (typeof LLM_TASKS)[number];
 
@@ -370,6 +377,17 @@ export interface ScorePlanInput {
 export interface SfxPlanInput {
   maxPerShot: number;
   shots: { index: number; durationSec: number; description: string; action: string; location: string }[];
+}
+
+export interface TranslateInput {
+  /** BCP 47 code and English name of the target language. */
+  language: string;
+  languageName: string;
+  film: { title: string; logline: string; tone: string };
+  /** Names stay as they are. */
+  characters: { name: string; summary: string }[];
+  scene: string;
+  lines: { key: string; speaker: string; text: string }[];
 }
 
 export const INPUT_PREFIX = 'INPUT:\n';

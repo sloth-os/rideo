@@ -32,6 +32,9 @@ import {
   type SfxPlanOutput,
   SfxPlanOutputSchema,
   TAKE_AUDIO_LABEL,
+  type TranslateInput,
+  type TranslateOutput,
+  TranslateOutputSchema,
   VOICE_REFERENCE_LABEL,
   type VoiceJudgeInput,
   type VoiceJudgeOutput,
@@ -134,6 +137,13 @@ For every shot list at most maxPerShot effects that the action implies and a vie
 - "ambience": the room tone or environment under the whole shot (wind, rain, a busy street, a ticking clock): at 0, durationSec = the shot length.
 "description" says concretely what is heard, its material and acoustic space (e.g. "a heavy wooden door creaks open in a stone hallway"), at most 200 characters. "shot" is the shot's index.
 Return only JSON: {"effects":[{"shot":0,"description":"...","at":1.5,"durationSec":2,"kind":"spot"}]}`,
+
+  'dialogue.translate': `rideo-task: dialogue.translate
+You are a film translator writing dialogue for subtitles and dubbing. Translate every line into the target language (languageName, code "language").
+- Keep each line natural and speakable, about as long as the original so it fits the same time on screen; keep the speaker's voice and register, and the scene's tone.
+- Keep character names exactly as they are; do not translate or transliterate names.
+- Never add notes, quotes or speaker names to the text; one translation per line, same "key".
+Return only JSON: {"lines":[{"key":"...","text":"..."}]}`,
 };
 
 export interface LabelledImage {
@@ -372,6 +382,10 @@ export class LlmTasks {
 
   planSfx(input: SfxPlanInput, signal?: AbortSignal): Promise<SfxPlanOutput> {
     return this.run('sfx.plan', SfxPlanOutputSchema, input, { temperature: 0.4, signal });
+  }
+
+  translate(input: TranslateInput, signal?: AbortSignal): Promise<TranslateOutput> {
+    return this.run('dialogue.translate', TranslateOutputSchema, input, { temperature: 0.3, signal });
   }
 
   analyzeFootage(

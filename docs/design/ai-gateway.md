@@ -81,6 +81,7 @@ Every LLM use is a **task** with an id, a zod output schema, a system prompt and
 | `consistency.judge` | references per character (and per element when `judgeElements`), candidate frames | `{frames[{index, characters[{characterId, present, identityScore, outfitScore, issues}], elements?[{elementId, present, score, issues}]}]}` |
 | `footage.analyze` | probe stats, scenes, silences, thumbnails, transcript | `{summary, suggestions[]}` |
 | `score.plan` | the film (title, genre, tone, style), the direction, the cues (length, scene, dialogue or not) | `{cues[{index, prompt, bpm?}]}` ([post audio](post-audio.md)) |
+| `dialogue.translate` | the target language, the film (title, logline, tone), the cast names, the scene and its lines | `{lines[{key, text}]}` ([localization](localization.md#translation)) |
 | `sfx.plan` | the takes of the cut (length, description, action, location), `maxPerShot` | `{effects[{shot, description, at, durationSec, kind}]}` |
 
 `runTask()`:

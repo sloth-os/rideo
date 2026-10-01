@@ -22,6 +22,7 @@ export const JOB_KINDS = [
   'music.generate',
   'score.generate',
   'sfx.generate',
+  'localize.generate',
   'media.process',
   'analysis.signals',
   'analysis.suggest',
@@ -58,6 +59,7 @@ export const JOB_LANES: Record<JobKind, Lane> = {
   'music.generate': 'music',
   'score.generate': 'music',
   'sfx.generate': 'music',
+  'localize.generate': 'music',
   'media.process': 'client',
   'analysis.signals': 'client',
   'analysis.suggest': 'llm',
@@ -177,6 +179,15 @@ export const ExportSchema = z.object({
   /** Asked for with `stems`; null until published. */
   stemsRequested: z.boolean().default(false),
   stems: ExportStemsSchema.nullable().default(null),
+  /** A language variant (docs/design/localization.md#language-variants); null = the original. */
+  language: z.string().max(20).nullable().default(null),
+  dubbed: z.boolean().default(false),
+  /** Captions burned into the picture, or only as SRT/VTT sidecars. */
+  captions: z.enum(['burn', 'sidecar']).default('burn'),
+  subtitles: z
+    .object({ language: z.string().max(20).nullable(), srt: MediaRefSchema, vtt: MediaRefSchema })
+    .nullable()
+    .default(null),
   durationSec: z.number().nonnegative().optional(),
   width: z.number().int().positive().optional(),
   height: z.number().int().positive().optional(),

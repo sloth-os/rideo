@@ -23,6 +23,8 @@ import {
   GenerateRefsInputSchema,
   ImportScreenplayInputSchema,
   JobStatusSchema,
+  LanguageCodeSchema,
+  LocalizeInputSchema,
   MusicInputSchema,
   OverrideInputSchema,
   ReferenceViewSchema,
@@ -40,6 +42,7 @@ import {
   TakeExtendInputSchema,
   TimelineExtendInputSchema,
   TimelineOpsInputSchema,
+  TranslationUpdateInputSchema,
   UpdateProjectInputSchema,
   UploadMetaSchema,
   VariationsInputSchema,
@@ -653,6 +656,38 @@ export function registerRoutes(app: FastifyInstance, studio: Studio): void {
   app.post('/api/projects/:id/timeline/assemble', async (req) =>
     studio.edit.assemble(actor(), pid(req), parse(AssembleInputSchema, req.body)),
   );
+  // Subtitles and localization (docs/design/localization.md#surfaces)
+  const lang = (v: unknown) => parse(LanguageCodeSchema, v);
+  for (const format of ['srt', 'vtt'] as const)
+    app.get(`/api/projects/:id/subtitles.${format}`, async (req, reply) => {
+      const q = parse(z.object({ language: LanguageCodeSchema.optional() }), req.query ?? {});
+      const text = await studio.localization.subtitles(pid(req), { language: q.language, format });
+      return reply
+        .type(format === 'srt' ? 'application/x-subrip; charset=utf-8' : 'text/vtt; charset=utf-8')
+        .header(
+          'content-disposition',
+          `attachment; filename="subtitles${q.language ? `.${q.language}` : ''}.${format}"`,
+        )
+        .send(text);
+    });
+  app.get('/api/projects/:id/localizations', async (req) => studio.localization.list(pid(req)));
+  app.post('/api/projects/:id/localizations', async (req, reply) =>
+    reply
+      .code(202)
+      .send(await studio.localization.localize(actor(), pid(req), parse(LocalizeInputSchema, req.body))),
+  );
+  app.patch('/api/projects/:id/localizations/:lang/lines', async (req) =>
+    studio.localization.updateLine(
+      actor(),
+      pid(req),
+      lang(p(req, 'lang')),
+      parse(TranslationUpdateInputSchema, req.body),
+    ),
+  );
+  app.delete('/api/projects/:id/localizations/:lang', async (req, reply) => {
+    await studio.localization.remove(actor(), pid(req), lang(p(req, 'lang')));
+    return reply.code(204).send();
+  });
   // Post audio (docs/design/post-audio.md#surfaces)
   app.post('/api/projects/:id/timeline/score', async (req, reply) =>
     reply

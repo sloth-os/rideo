@@ -167,6 +167,17 @@ async function setExport(
  * The C2PA ingredients of an export (docs/design/provenance.md#exports): every distinct take and resource on the
  * rendered timeline, as local files so their own manifests are carried over.
  */
+/** The timeline an export rendered: its derived timeline (a language variant), else the cut or the animatic. */
+async function renderedTimeline(deps: HandlerDeps, projectId: string, exp: Export): Promise<Timeline> {
+  if (exp.language || exp.captions === 'sidecar')
+    return (await deps.services.projects.getDoc(projectId, docPath.render(exp.id))) as Timeline;
+  return (await deps.services.projects.getDoc(
+    projectId,
+    exp.source === 'animatic' ? 'animatic.json' : 'timeline.json',
+    exp.timelineCommit ?? undefined,
+  )) as Timeline;
+}
+
 async function exportIngredients(
   deps: HandlerDeps,
   projectId: string,
@@ -382,11 +393,7 @@ export async function exportFinish(deps: HandlerDeps, ctx: JobContext) {
       let contentCredentials: ContentCredentialsStamp | null = null;
       if (deps.c2pa.enabled) {
         ctx.progress(total, total, 'signing Content Credentials');
-        const timeline = (await deps.services.projects.getDoc(
-          ctx.job.projectId,
-          exp.source === 'animatic' ? 'animatic.json' : 'timeline.json',
-          exp.timelineCommit ?? undefined,
-        )) as Timeline;
+        const timeline = await renderedTimeline(deps, ctx.job.projectId, exp);
         published = join(dir, 'export-signed.mp4');
         contentCredentials = await deps.c2pa.signExport({
           input: out,
@@ -403,13 +410,7 @@ export async function exportFinish(deps: HandlerDeps, ctx: JobContext) {
       let stems: Export['stems'] = null;
       if (finished?.stems) {
         // Each stem carries Content Credentials placing its own sources (docs/design/post-audio.md#stems).
-        const timeline = deps.c2pa.enabled
-          ? ((await deps.services.projects.getDoc(
-              ctx.job.projectId,
-              exp.source === 'animatic' ? 'animatic.json' : 'timeline.json',
-              exp.timelineCommit ?? undefined,
-            )) as Timeline)
-          : null;
+        const timeline = deps.c2pa.enabled ? await renderedTimeline(deps, ctx.job.projectId, exp) : null;
         const put = async (role: AudioRole) => {
           let file = finished.stems![role];
           if (timeline) {

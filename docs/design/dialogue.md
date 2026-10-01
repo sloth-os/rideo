@@ -98,7 +98,10 @@ take.audio = {
 ```
 
 Line times are on the take's clock: the line's offset in the mix plus the provider's alignment (the first and
-last character) when it returns one. Native takes have no `lines` (their timing is the model's).
+last character) when it returns one. With an alignment, every line also carries its **words** (`lines[].words`,
+runs of non-space characters with their times), which time word-level captions ([localization](localization.md#captions-and-word-timing)).
+Native takes have no `lines` (their timing is the model's). Dubbing speaks translated lines the same way, with the
+same voices ([localization](localization.md#dubbing)).
 
 ## Timeline
 

@@ -1,3 +1,4 @@
+import { captionWords } from '../captions';
 import { newId } from '../ids';
 import type { Character } from '../schemas/character';
 import type { Clip, Shot, TakeAudio } from '../schemas/clip';
@@ -61,7 +62,13 @@ function assembleSegments(
   const speaker = (id: string | null) => (id ? (input.characters?.[id]?.name ?? '') : '');
   const captionSpans: {
     itemId: string;
-    lines: { speaker: string; line: string; start?: number; end?: number }[];
+    lines: {
+      speaker: string;
+      line: string;
+      start?: number;
+      end?: number;
+      words?: { text: string; start: number; end: number }[];
+    }[];
   }[] = [];
   const dialogueSpans: { itemId: string; media: MediaRef; speech: [number, number][] }[] = [];
   for (const seg of segments) {
@@ -97,6 +104,7 @@ function assembleSegments(
           line: l.text,
           start: l.start,
           end: l.end,
+          ...(l.words ? { words: l.words } : {}),
         })),
       });
     } else if (input.captions && seg.shot.dialogue.length > 0) {
@@ -187,13 +195,25 @@ function assembleSegments(
       const each = dur / span.lines.length;
       span.lines.forEach((l, k) => {
         const timed = l.start !== undefined && l.end !== undefined && l.start < dur;
+        const caption = (l.speaker ? `${l.speaker}: ${l.line}` : l.line).slice(0, 500);
+        const duration = timed ? Math.max(0.8, Math.min(l.end!, dur) - l.start!) : Math.max(0.5, each - 0.1);
+        // Word timings for animated captions (docs/design/localization.md#captions-and-word-timing).
+        const spoken = timed ? Math.max(0.05, Math.min(l.end!, dur) - l.start!) : duration;
+        const words = captionWords(caption, l.speaker ? l.speaker.length + 2 : 0, {
+          start: 0,
+          end: Math.min(spoken, duration),
+          words: timed
+            ? l.words?.map((w) => ({ ...w, start: w.start - l.start!, end: w.end - l.start! }))
+            : undefined,
+        });
         const text: TextItem = {
           id: gen('item'),
           kind: 'text',
           start: timed ? start + l.start! : start + k * each,
-          duration: timed ? Math.max(0.8, Math.min(l.end!, dur) - l.start!) : Math.max(0.5, each - 0.1),
-          text: (l.speaker ? `${l.speaker}: ${l.line}` : l.line).slice(0, 500),
+          duration,
+          text: caption,
           style: { preset: 'caption', position: 'bottom' },
+          ...(words.length ? { words } : {}),
         };
         textTrack.items.push(text);
       });

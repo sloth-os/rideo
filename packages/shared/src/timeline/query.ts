@@ -1,4 +1,5 @@
 import type { z } from 'zod';
+import { textAt } from '../captions';
 import type { MediaRef } from '../schemas/common';
 import type {
   AudioItem,
@@ -145,7 +146,10 @@ export function activeAt(t: Timeline, time: number): ActiveState {
       }
     } else if (track.kind === 'text') {
       for (const item of track.items as TextItem[]) {
-        if (time >= item.start && time < item.start + item.duration) text.push(item);
+        if (time < item.start || time >= item.start + item.duration) continue;
+        // Animated captions show their current word frame (docs/design/localization.md).
+        const shown = textAt(item, time - item.start);
+        if (shown !== null) text.push(shown === item.text ? item : { ...item, text: shown });
       }
     }
   }

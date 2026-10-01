@@ -21,6 +21,7 @@ import { GatewayClient } from '../gateway/gateway-client';
 import { ProxyClient } from '../gateway/proxy-client';
 import { batchGenerate, clipGenerate, clipPlan } from '../jobs/handlers/clips';
 import type { HandlerDeps } from '../jobs/handlers/common';
+import { localizeGenerate } from '../jobs/handlers/localize';
 import { analysisSuggest, editAuto, exportFinish, timelineAssemble } from '../jobs/handlers/media';
 import { scoreGenerate, sfxGenerate } from '../jobs/handlers/post-audio';
 import { shotGenerate } from '../jobs/handlers/shot';
@@ -53,6 +54,7 @@ import { EditService } from './edit';
 import { EditorService } from './editor';
 import { ElementService } from './elements';
 import { HistoryService } from './history';
+import { LocalizationService } from './localization';
 import { ProjectService } from './projects';
 import { ProjectRegistry } from './registry';
 import { StoryService } from './story';
@@ -72,6 +74,7 @@ export interface Studio {
   storyboard: StoryboardService;
   clips: ClipService;
   edit: EditService;
+  localization: LocalizationService;
   editor: EditorService;
   history: HistoryService;
   ui: UiService;
@@ -190,6 +193,7 @@ export function createStudio(
     storyboard: new StoryboardService(deps),
     clips: new ClipService(deps),
     edit: new EditService(deps),
+    localization: new LocalizationService(deps),
     editor: new EditorService(deps),
   } satisfies Record<string, unknown>;
   // Editor jobs: failures and cancellations are recorded on their documents; a closed tab releases its jobs.
@@ -214,6 +218,7 @@ export function createStudio(
   reg('music.generate', musicGenerate);
   reg('score.generate', scoreGenerate);
   reg('sfx.generate', sfxGenerate);
+  reg('localize.generate', localizeGenerate);
   reg('clip.plan', clipPlan);
   reg('clip.generate', clipGenerate);
   reg('shot.generate', shotGenerate);

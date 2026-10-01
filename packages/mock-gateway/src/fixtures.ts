@@ -19,6 +19,8 @@ import type {
   ScreenplayGenerateOutput,
   SfxPlanInput,
   SfxPlanOutput,
+  TranslateInput,
+  TranslateOutput,
 } from '@rideo/shared';
 import { decodePng, isPng } from './png';
 import { allSignatures, colorDistance, presenceRatio, type Rgb } from './signature';
@@ -425,4 +427,9 @@ export function sfxPlan(input: SfxPlanInput): SfxPlanOutput {
       };
     }),
   };
+}
+
+/** Translation (docs/design/localization.md#mock-gateway): `«<lang>» <line>`, so tests hear which language speaks. */
+export function translate(input: TranslateInput): TranslateOutput {
+  return { lines: input.lines.map((l) => ({ key: l.key, text: `«${input.language}» ${l.text}` })) };
 }

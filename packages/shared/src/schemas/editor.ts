@@ -30,8 +30,11 @@ export const ExportRenderParamsSchema = z.object({
   chunkSec: z.number().min(2).max(600).default(30),
   /** The timeline commit the render was requested at (the tab renders that version). */
   timelineCommit: z.string().nullable().default(null),
-  /** The document rendered: the cut or the animatic. */
-  timelinePath: z.enum(['timeline.json', 'animatic.json']).default('timeline.json'),
+  /** The document rendered: the cut, the animatic or a derived render timeline (a language variant). */
+  timelinePath: z
+    .string()
+    .regex(/^(timeline\.json|animatic\.json|renders\/[a-z]{3}_[0-9a-z]{10,32}\.json)$/)
+    .default('timeline.json'),
   /** The disclosure label to burn in (docs/design/provenance.md#disclosure-label); null = none. */
   disclosure: z
     .object({ text: z.string().min(1).max(60), position: DisclosurePositionSchema })

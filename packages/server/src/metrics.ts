@@ -133,6 +133,10 @@ export class Metrics {
   readonly voiceChecks = this.add(
     new Counter('rideo_voice_checks_total', 'Speaker checks of native-audio takes by result'),
   );
+  /** Localization (docs/design/localization.md): translated lines, dubbed takes and lip-sync passes. */
+  readonly localization = this.add(
+    new Counter('rideo_localization_total', 'Localization operations (translate, dub, lipsync) by outcome'),
+  );
   /** Post audio (docs/design/post-audio.md): score cues, sound effects and loudness passes by outcome. */
   readonly postAudio = this.add(
     new Counter('rideo_post_audio_total', 'Post-audio operations (score_cue, sfx, loudness) by outcome'),

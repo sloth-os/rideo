@@ -183,7 +183,7 @@ Better continuity and fewer calls. *Fits:* `clip.generate` chooses single- vs mu
 plans); sound effects generated from the action lines. *Why:* Resolve Audio Assistant, Firefly Generate Soundtrack,
 ElevenLabs SFX/Music, Runway Seed Audio. *Fits:* `shared/media/render-plan.ts` soundtrack graph, `music.generate`.
 
-**10. Subtitles and localization** (M–L) — SRT/VTT export, burn-in styles including word-level animated captions;
+**10. Subtitles and localization** (M–L) — *done:* [design/localization.md](design/localization.md) — SRT/VTT export, burn-in styles including word-level animated captions;
 dialogue translation; dubbed audio tracks per language with the character's voice and lip-sync re-render of
 close-ups. *Why:* Resolve animated subtitles, Premiere caption translation, ElevenLabs Dubbing v2, HeyGen.
 *Fits:* timeline text items from dialogue timing; exports gain language variants.

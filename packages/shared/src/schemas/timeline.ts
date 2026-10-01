@@ -94,8 +94,19 @@ export const TextStyleSchema = z.object({
     .regex(/^#[0-9a-fA-F]{6}$/)
     .optional(),
   size: z.number().int().min(8).max(200).optional(),
+  /** Captions revealed word by word or one word at a time (docs/design/localization.md#captions-and-word-timing). */
+  animate: z.enum(['none', 'build', 'pop']).optional(),
 });
 export type TextStyle = z.infer<typeof TextStyleSchema>;
+
+/** A word of a caption: its character range in the text and its time relative to the item. */
+export const CaptionWordSchema = z.object({
+  from: z.number().int().nonnegative(),
+  to: z.number().int().positive(),
+  start: z.number().nonnegative(),
+  end: z.number().nonnegative(),
+});
+export type CaptionWord = z.infer<typeof CaptionWordSchema>;
 
 export const TextItemSchema = z.object({
   id: IdSchema,
@@ -104,6 +115,7 @@ export const TextItemSchema = z.object({
   duration: z.number().positive().max(3600),
   text: z.string().min(1).max(500),
   style: TextStyleSchema,
+  words: z.array(CaptionWordSchema).max(200).optional(),
 });
 export type TextItem = z.infer<typeof TextItemSchema>;
 
@@ -201,6 +213,10 @@ export const TimelineOpSchema = z.discriminatedUnion('op', [
     role: AudioRoleSchema.optional(),
   }),
   z.object({ op: z.literal('set_mix'), ducking: DuckingSchema.partial() }),
+  z.object({
+    op: z.literal('set_caption_style'),
+    style: TextStyleSchema.pick({ animate: true, position: true, size: true, color: true }),
+  }),
   z.object({ op: z.literal('replace_source'), itemId: IdSchema, source: SourceSchema }),
   z.object({
     op: z.literal('set_output'),

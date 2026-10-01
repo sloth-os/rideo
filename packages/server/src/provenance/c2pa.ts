@@ -51,7 +51,8 @@ export interface TakeManifest {
   /** A derived take: its parent take (a local MP4 with its own manifest) and the operation (take-editing.md). */
   parent?: {
     path: string;
-    op: 'edit' | 'extend';
+    /** `dub`: lip-synced to a dubbed line (docs/design/localization.md#dubbing). */
+    op: 'edit' | 'extend' | 'dub';
     kind?: string;
     instruction?: string;
     seconds?: number;

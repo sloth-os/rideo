@@ -1,4 +1,5 @@
 import { duckEnvelope, duckExpression } from '../audio/mix';
+import { textFrames } from '../captions';
 import type { MediaRef } from '../schemas/common';
 import type { ExportQuality } from '../schemas/job';
 import { AUDIO_ROLES, type AudioRole, type TextItem, type Timeline } from '../schemas/timeline';
@@ -123,7 +124,7 @@ export interface ChunkGraphOptions extends GraphInput {
   quality: ExportQuality;
   /** Path of the TTF used by drawtext (bundled DejaVu Sans). */
   fontFile?: string;
-  /** Where the text of text item `i` is written. */
+  /** Where the `i`-th drawn text (a text item, or a word frame of an animated caption) is written. */
   textPath: (i: number) => string;
 }
 
@@ -147,6 +148,8 @@ function textX(item: TextItem): string {
 /** Font size in pixels; shared with the WebCodecs compositor's `drawText`. */
 export function textSize(item: TextItem, height: number): number {
   if (item.style.size) return item.style.size;
+  // One word at a time is read at a glance: large (docs/design/localization.md#captions-and-word-timing).
+  if (item.style.animate === 'pop') return Math.round(height / 12);
   const divisor = { title: 10, lower_third: 18, caption: 22, label: 32 }[item.style.preset];
   return Math.round(height / divisor);
 }
@@ -243,21 +246,26 @@ export function chunkGraph(t: Timeline, chunk: RenderChunk, opts: ChunkGraphOpti
     acc = 'padded';
   }
   const textFiles: ChunkGraph['textFiles'] = [];
-  textItems(t).forEach((item, i) => {
-    const a = Math.max(0, item.start - chunk.start);
-    const b = Math.min(len, item.start + item.duration - chunk.start);
-    if (b <= a + EPS) return;
-    const path = opts.textPath(i);
-    textFiles.push({ path, content: item.text });
-    const font = opts.fontFile ? `fontfile='${escapeFilterValue(opts.fontFile)}':` : '';
-    const color = item.style.color ?? '#ffffff';
-    filters.push(
-      `[${acc}]drawtext=${font}textfile='${escapeFilterValue(path)}':fontsize=${textSize(item, height)}:fontcolor=${color}:` +
-        `x=${textX(item)}:y=${textY(item)}:box=1:boxcolor=black@0.45:boxborderw=${textPad(item, height)}:` +
-        `enable='between(t\\,${n(a)}\\,${n(b)})'[t${i}]`,
-    );
-    acc = `t${i}`;
-  });
+  let drawn = 0;
+  for (const item of textItems(t)) {
+    // One drawtext per frame of the item: the whole text, or each word of an animated caption.
+    for (const frame of textFrames(item)) {
+      const a = Math.max(0, item.start + frame.start - chunk.start);
+      const b = Math.min(len, item.start + frame.end - chunk.start);
+      if (b <= a + EPS) continue;
+      const k = drawn++;
+      const path = opts.textPath(k);
+      textFiles.push({ path, content: frame.text });
+      const font = opts.fontFile ? `fontfile='${escapeFilterValue(opts.fontFile)}':` : '';
+      const color = item.style.color ?? '#ffffff';
+      filters.push(
+        `[${acc}]drawtext=${font}textfile='${escapeFilterValue(path)}':fontsize=${textSize(item, height)}:fontcolor=${color}:` +
+          `x=${textX(item)}:y=${textY(item)}:box=1:boxcolor=black@0.45:boxborderw=${textPad(item, height)}:` +
+          `enable='between(t\\,${n(a)}\\,${n(b)})'[t${k}]`,
+      );
+      acc = `t${k}`;
+    }
+  }
   // Exactly `frames` frames: pad two clones (rounding can leave a chunk a frame short), renumber the timestamps
   // by frame index (an fps filter here would drop the last frame at EOF), and cut by frame count.
   filters.push(

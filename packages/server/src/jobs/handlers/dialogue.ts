@@ -175,10 +175,14 @@ export async function speakLines(
     settings: ProjectSettings;
     dir: string;
     name: string;
+    /** Other words for the shot's voiced lines, e.g. a translation (docs/design/localization.md#dubbing). */
+    lines?: { index: number; characterId: string; text: string }[];
+    /** The language spoken, when not the project's. */
+    language?: string;
   },
 ): Promise<SpokenDialogue | null> {
   const { shot, characters, settings, dir, name } = input;
-  const lines = voicedLines(shot, characters);
+  const lines = input.lines ?? voicedLines(shot, characters);
   if (!lines.length || !deps.tts) return null;
   if (lines.some((l) => !voiceOf(characters[l.characterId]!).voiceId)) return null;
   const tts = deps.tts;
@@ -189,6 +193,7 @@ export async function speakLines(
     path: string;
     durationSec: number;
     span?: { start: number; end: number };
+    words?: { text: string; start: number; end: number }[];
     ref: MediaRef;
   }[] = [];
   for (const line of lines) {
@@ -199,7 +204,7 @@ export async function speakLines(
       text: line.text,
       seed: lineSeed(shot.id, line),
       description: v.description,
-      language: settings.language,
+      language: input.language ?? settings.language,
       signal: ctx.signal,
     });
     const path = join(dir, `line-${line.index}.${extFor(speech.mime)}`);
@@ -215,6 +220,7 @@ export async function speakLines(
       path,
       durationSec: probe.durationSec || ref.durationSec || 1,
       span: speech.span,
+      words: speech.words,
       ref,
     });
   }
@@ -260,6 +266,15 @@ export async function speakLines(
       start: Math.round((at + (s.span?.start ?? 0)) * 1000) / 1000,
       end: Math.round((at + (s.span?.end ?? s.durationSec)) * 1000) / 1000,
       media: s.ref,
+      ...(s.words?.length
+        ? {
+            words: s.words.map((w) => ({
+              text: w.text,
+              start: Math.round((at + w.start) * 1000) / 1000,
+              end: Math.round((at + w.end) * 1000) / 1000,
+            })),
+          }
+        : {}),
     };
   });
   const speakers = [...new Set(lines.map((l) => l.characterId))];
@@ -298,7 +313,15 @@ const LIPSYNC_PROMPT =
 export async function lipSyncPass(
   deps: HandlerDeps,
   ctx: JobContext,
-  input: { video: string; mixUri: string; settings: ProjectSettings; dir: string; attempt: number },
+  input: {
+    video: string;
+    mixUri: string;
+    settings: ProjectSettings;
+    dir: string;
+    attempt: number;
+    /** The gateway step (idempotency) when one job runs several passes, e.g. one per dubbed take. */
+    step?: string;
+  },
 ): Promise<{ path: string; taskId: string } | null> {
   try {
     const videoUri = `data:video/mp4;base64,${(await readFile(input.video)).toString('base64')}`;
@@ -313,9 +336,9 @@ export async function lipSyncPass(
         ],
         parameters: { include_audio: true },
       },
-      gatewayOptions(ctx, 'video', 'lipsync', input.attempt),
+      gatewayOptions(ctx, 'video', input.step ?? 'lipsync', input.attempt),
     );
-    const out = join(input.dir, `lipsync-${input.attempt}.mp4`);
+    const out = join(input.dir, `${input.step ?? 'lipsync'}-${input.attempt}.mp4`);
     await deps.media.downloadTo(task.outputs![0]!.uri, out, ctx.signal);
     deps.metrics.lipSync.inc({ outcome: 'ok' });
     return { path: out, taskId: task.id };

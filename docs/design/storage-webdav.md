@@ -64,7 +64,9 @@ All paths are under `RIDEO_WEBDAV_ROOT` (default `/rideo`).
 │   ├── timeline.json             │
 │   ├── resources/<id>.json       │
 │   ├── analyses/<id>.json        │
-│   ├── exports/<id>.json         ┘
+│   ├── exports/<id>.json         │
+│   ├── localizations/<lang>.json │  translations and dubs of the cut (docs/design/localization.md)
+│   ├── renders/<exportId>.json   ┘  the timeline a language-variant export rendered
 │   ├── screenplay.md             derived rendering, regenerated on every screenplay change (read-only)
 │   ├── media/                    immutable, content-addressed media
 │   │   ├── refs/<character>-<view>-<hash12>.png
@@ -77,6 +79,7 @@ All paths are under `RIDEO_WEBDAV_ROOT` (default `/rideo`).
 │   │   ├── sfx/<slug>-<hash12>.mp3                    generated sound effects
 │   │   ├── uploads/<slug>-<hash12>.<ext>
 │   │   ├── stems/<exportId>-<role>-<hash12>.wav       export stems (dialogue, music, effects)
+│   │   ├── subtitles/<exportId>[-<lang>]-<hash12>.srt|.vtt  export subtitles
 │   │   └── exports/<exportId>-<hash12>.mp4
 │   ├── inbox/                    drop files here over WebDAV → imported as resources
 │   └── .rideo/

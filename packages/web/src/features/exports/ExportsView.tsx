@@ -1,4 +1,4 @@
-import { type Export, formatDuration, isTerminalJob } from '@rideo/shared';
+import { type Export, formatDuration, isTerminalJob, languageName } from '@rideo/shared';
 import { Download, ShieldCheck } from 'lucide-react';
 import { useState } from 'react';
 import { ContentCredentialsPanel } from '../../components/ContentCredentials';
@@ -52,6 +52,13 @@ function ExportCard({ e, projectId }: { e: Export; projectId: string }) {
             </Badge>
           ) : null}
           {e.codec ? <Badge>{e.codec}</Badge> : null}
+          {e.language ? (
+            <Badge tone="accent" testid="export-language-badge">
+              {languageName(e.language)}
+              {e.dubbed ? ' · dubbed' : ''}
+            </Badge>
+          ) : null}
+          {e.captions === 'sidecar' ? <Badge>captions: files</Badge> : null}
           {e.loudness && e.loudness.integratedLufs !== null ? (
             <Badge
               tone="info"
@@ -102,6 +109,22 @@ function ExportCard({ e, projectId }: { e: Export; projectId: string }) {
             >
               Verify
             </Button>
+          </div>
+        ) : null}
+        {e.subtitles ? (
+          <div className="flex flex-wrap items-center gap-2 text-[12px]" data-testid="export-subtitles">
+            <span className="text-muted">Subtitles</span>
+            {(['srt', 'vtt'] as const).map((f) => (
+              <a
+                key={f}
+                href={mediaUrl(projectId, e.subtitles![f].path)}
+                download
+                className="inline-flex h-7 items-center gap-1 rounded-[var(--radius-control)] border border-border px-2"
+                data-testid={`download-export-${f}`}
+              >
+                <Download className="size-3" /> {f.toUpperCase()}
+              </a>
+            ))}
           </div>
         ) : null}
         {e.stems ? (

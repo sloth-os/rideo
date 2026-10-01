@@ -19,16 +19,22 @@ import {
   isStillMedia,
   type Job,
   type LoudnessTarget,
+  type MediaRef,
   newId,
   type Project,
   type RenderEngineChoice,
   type Resource,
   sortedClips,
+  subtitleCues,
   type Timeline,
   type TimelineOp,
+  toSrt,
+  toVtt,
+  withoutCaptions,
 } from '@rideo/shared';
 import { AppError, invalid, notFound } from '../errors';
 import { Service } from './base';
+import { cutVariant } from './variants';
 
 function opSummary(ops: TimelineOp[]): string {
   const counts = new Map<string, number>();
@@ -335,20 +341,39 @@ export class EditService extends Service {
       source?: 'timeline' | 'animatic';
       loudness?: LoudnessTarget;
       stems?: boolean;
+      language?: string;
+      dubbed?: boolean;
+      captions?: 'burn' | 'sidecar';
     } = {},
   ): Promise<{ export: Export; job: Job }> {
     const source = opts.source ?? 'timeline';
     const loudness = opts.loudness ?? 'streaming';
     const stems = !!opts.stems;
+    const language = opts.language ?? null;
+    const dubbed = !!opts.dubbed;
+    const captions = opts.captions ?? 'burn';
+    if (source === 'animatic' && (language || dubbed || captions === 'sidecar'))
+      throw invalid('language variants and sidecar captions are made from the cut');
     await this.exportPrecheck(projectId, source);
     const quality = opts.quality ?? 'standard';
     const engine = opts.engine ?? 'auto';
     const h = await this.deps.projects.existing(projectId);
     const timelineCommit = (await h.repo.snapshot()).commit;
+    const docs = await this.deps.projects.docs(projectId);
     // The visible disclosure label (docs/design/provenance.md#disclosure-label): resolved here, drawn by the tab.
-    const disclosure = disclosureFor(await this.deps.projects.docs(projectId));
+    const disclosure = disclosureFor(docs);
+    // A language variant or sidecar captions render a derived timeline (docs/design/localization.md).
+    const shown = source === 'animatic' ? docs.animatic! : cutVariant(docs, { language, dubbed });
+    const derived = language || captions === 'sidecar';
+    const render = derived ? (captions === 'sidecar' ? withoutCaptions(shown) : shown) : null;
+    const exportId = newId('export');
+    const subtitles = await this.subtitleFiles(
+      projectId,
+      shown,
+      `${exportId}${language ? `-${language}` : ''}`,
+    );
     const exp: Export = {
-      id: newId('export'),
+      id: exportId,
       createdAt: new Date().toISOString(),
       method: 'browser',
       status: 'queued',
@@ -365,10 +390,22 @@ export class EditService extends Service {
       }),
       stemsRequested: stems,
       stems: null,
+      language,
+      dubbed,
+      captions,
+      subtitles: subtitles ? { language, ...subtitles } : null,
     };
-    await this.mutate(actor, projectId, (tx) => tx.set(docPath.export(exp.id), exp), {
-      message: `Queue ${quality} ${source === 'animatic' ? 'animatic ' : ''}export`,
-    });
+    await this.mutate(
+      actor,
+      projectId,
+      (tx) => {
+        tx.set(docPath.export(exp.id), exp);
+        if (render) tx.set(docPath.render(exp.id), render);
+      },
+      {
+        message: `Queue ${quality} ${source === 'animatic' ? 'animatic ' : ''}export${language ? ` (${language}${dubbed ? ', dubbed' : ''})` : ''}`,
+      },
+    );
     const job = await this.deps.jobs.enqueue({
       projectId,
       kind: 'export.render',
@@ -377,8 +414,13 @@ export class EditService extends Service {
         quality,
         engine,
         chunkSec: 30,
-        timelineCommit,
-        timelinePath: source === 'animatic' ? 'animatic.json' : 'timeline.json',
+        // A derived timeline is never rewritten: the tab reads it as it is.
+        timelineCommit: render ? null : timelineCommit,
+        timelinePath: render
+          ? docPath.render(exp.id)
+          : source === 'animatic'
+            ? 'animatic.json'
+            : 'timeline.json',
         disclosure: disclosure.label ? { text: disclosure.text, position: disclosure.position } : null,
         stems,
       },
@@ -388,6 +430,24 @@ export class EditService extends Service {
       maxAttempts: 5,
     });
     return { export: exp, job };
+  }
+
+  /** SRT and WebVTT of a timeline's captions as project media (null without captions). */
+  async subtitleFiles(
+    projectId: string,
+    t: Timeline,
+    name: string,
+  ): Promise<{ srt: MediaRef; vtt: MediaRef } | null> {
+    const cues = subtitleCues(t);
+    if (!cues.length) return null;
+    const put = (text: string, mime: string) =>
+      this.deps.media.putBuffer(projectId, Buffer.from(text, 'utf8'), {
+        kind: 'subtitles',
+        name,
+        mime,
+        probe: false,
+      });
+    return { srt: await put(toSrt(cues), 'application/x-subrip'), vtt: await put(toVtt(cues), 'text/vtt') };
   }
 
   async exports(projectId: string): Promise<Export[]> {

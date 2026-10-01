@@ -11,6 +11,7 @@ import {
 import { AspectRatioSchema, IdSchema } from './common';
 import { ElementKindSchema, ElementReferenceViewSchema } from './element';
 import { ExportQualitySchema, LoudnessTargetSchema, RenderEngineChoiceSchema } from './job';
+import { LanguageCodeSchema } from './localization';
 import { DialogueModeSchema, DisclosurePositionSchema, ProjectKindSchema } from './project';
 import { ResourceKindSchema, ResourceRoleSchema } from './resource';
 import { DialogueLineSchema, StyleBibleSchema } from './screenplay';
@@ -273,6 +274,22 @@ export const ExportInputSchema = z.object({
   loudness: LoudnessTargetSchema.optional(),
   /** Also deliver the dialogue, music and effects stems. */
   stems: z.boolean().optional(),
+  /** A language variant (docs/design/localization.md#language-variants). */
+  language: LanguageCodeSchema.optional(),
+  dubbed: z.boolean().optional(),
+  captions: z.enum(['burn', 'sidecar']).optional(),
+});
+
+/** Localization (docs/design/localization.md#surfaces). */
+export const LocalizeInputSchema = z.object({
+  language: LanguageCodeSchema,
+  dub: z.boolean().optional(),
+  lipSync: z.boolean().optional(),
+});
+export const TranslationUpdateInputSchema = z.object({
+  shotId: IdSchema,
+  index: z.number().int().nonnegative(),
+  text: z.string().min(1).max(2000),
 });
 
 /** Post audio (docs/design/post-audio.md#surfaces). */

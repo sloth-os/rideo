@@ -60,6 +60,7 @@ import { detectCaps, type EngineCaps } from './engine/capabilities';
 import { MediaPool } from './engine/media-pool';
 import { Player } from './engine/player';
 import { GenerativeExtend } from './GenerativeExtend';
+import { LocalizationPanel } from './LocalizationPanel';
 import { MixPanel } from './MixPanel';
 import { trimOps } from './trim';
 
@@ -402,6 +403,11 @@ function ExportDialog({
   const [engine, setEngine] = useState<RenderEngineChoice>('auto');
   const [loudness, setLoudness] = useState<LoudnessTarget>('streaming');
   const [stems, setStems] = useState(false);
+  // Language variants (docs/design/localization.md#language-variants).
+  const [language, setLanguage] = useState('');
+  const [dubbed, setDubbed] = useState(false);
+  const [captions, setCaptions] = useState<'burn' | 'sidecar'>('burn');
+  const localizations = useProject((s) => s.docs?.localizations);
   const [caps, setCaps] = useState<EngineCaps | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -423,7 +429,14 @@ function ExportDialog({
     setBusy(true);
     setError(null);
     try {
-      const r = await api.createExport(projectId, { quality, engine, loudness, stems });
+      const r = await api.createExport(projectId, {
+        quality,
+        engine,
+        loudness,
+        stems,
+        ...(language ? { language, dubbed } : {}),
+        captions,
+      });
       setQueued({ exportId: r.export.id, jobId: r.job.id });
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -505,6 +518,46 @@ function ExportDialog({
               data-testid="export-stems"
             />
           </label>
+        </div>
+        <div className="grid grid-cols-1 items-end gap-3 sm:grid-cols-3">
+          <Field label="Language">
+            <Select
+              value={language}
+              onChange={(e) => {
+                setLanguage(e.target.value);
+                if (!e.target.value) setDubbed(false);
+              }}
+              data-testid="export-language"
+            >
+              <option value="">Original</option>
+              {Object.values(localizations ?? {}).map((l) => (
+                <option key={l.id} value={l.id}>
+                  {l.name}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          <label className="flex h-9 items-center justify-between gap-2 rounded-[var(--radius-control)] border border-border bg-surface-2 px-2.5 text-[13px]">
+            Dubbed voices
+            <input
+              type="checkbox"
+              checked={dubbed}
+              disabled={!language}
+              onChange={(e) => setDubbed(e.target.checked)}
+              className="size-4 accent-[var(--color-accent)]"
+              data-testid="export-dubbed"
+            />
+          </label>
+          <Field label="Captions">
+            <Select
+              value={captions}
+              onChange={(e) => setCaptions(e.target.value as 'burn' | 'sidecar')}
+              data-testid="export-captions"
+            >
+              <option value="burn">Burned in (+ SRT/VTT)</option>
+              <option value="sidecar">SRT/VTT files only</option>
+            </Select>
+          </Field>
         </div>
         <div className="flex flex-wrap gap-1.5 text-[12px]" data-testid="webcodecs-caps">
           <Badge tone="success">
@@ -938,6 +991,7 @@ export function EditorView() {
               )}
             </Card>
             <MixPanel timeline={timeline} apply={apply} />
+            <LocalizationPanel timeline={timeline} apply={apply} />
           </div>
         </div>
       )}

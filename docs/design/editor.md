@@ -33,7 +33,8 @@ type AudioItem = { id: string; kind: 'audio'; source: Source; start: number; in:
 type TextItem  = { id: string; kind: 'text'; start: number; duration: number; text: string;
                    style: { preset: 'title' | 'lower_third' | 'caption' | 'label';
                             position?: 'top' | 'center' | 'bottom'; align?: 'left' | 'center' | 'right';
-                            color?: string; size?: number } };
+                            color?: string; size?: number; animate?: 'none' | 'build' | 'pop' };
+                   words?: { from: number; to: number; start: number; end: number }[] };  // timed caption words
 ```
 
 - The **primary video track is magnetic**. Items are ordered and contiguous, and `start` is recomputed by
@@ -66,6 +67,7 @@ committed.
 | `add_text` / `update_text` | text item fields | |
 | `add_track` / `remove_track` / `set_track` | track fields (`role`: the stem of an audio track or of the primary track's sound) | the primary track cannot be removed |
 | `set_mix` | `ducking: {enabled?, depthDb?, attackSec?, releaseSec?}` | the music ducks under speech ([post audio](post-audio.md#ducking)) |
+| `set_caption_style` | `style: {animate?, position?, size?, color?}` | every caption of the cut ([localization](localization.md#captions-and-word-timing)); `update_text` with new text drops a caption's words |
 | `replace_source` | `itemId`, `source` | swap to a regenerated take, keeping in/out when possible |
 | `set_output` | `fps?`, `width?`, `height?` | |
 
@@ -230,7 +232,8 @@ Segments are chained left to right: `xfade` (`fade`, `wipeleft`, `fadeblack`) at
 for transitions, `concat` for cuts. Every stream is on `AV_TIME_BASE` (`settb=AVTB`) because `concat`
 outputs that timebase and `xfade` rejects inputs whose timebases differ. Text items overlapping the chunk
 become `drawtext` (bundled DejaVu Sans, `fonts/DejaVuSans.ttf`) with `enable='between(t,a,b)'` in chunk
-time. The `label` preset is small and boxed, aligned to a corner (`align` left or right, `position` top or
+time; an animated caption draws one `drawtext` per word frame (`textFrames`), and `activeAt` gives the compositor and
+the preview the same frames ([localization](localization.md#captions-and-word-timing)). The `label` preset is small and boxed, aligned to a corner (`align` left or right, `position` top or
 bottom); the export's [disclosure label](provenance.md#disclosure-label) is such an item, added to the render
 timeline by `withDisclosure()` for the whole film. The chunk ends with `fps=FPS,trim=duration=LEN`, which snaps timestamps back onto the frame grid,
 so every chunk has exactly `round(LEN·FPS)` frames and the chunks join without gaps.
@@ -279,7 +282,7 @@ An editor job is a job in the `client` lane. The server never runs it; a browser
 |---|---|---|---|
 | `media.process` | `resourceId` | fetches the original, probes it, makes the poster | probe + poster → resource `ready` |
 | `analysis.signals` | `analysisId`, `resourceId`, `speech` | runs the analysis pass, thumbnails, speech audio | signals + files → `analysis.suggest` job |
-| `export.render` | `exportId`, `quality`, `engine`, `chunkSec` | renders the soundtrack and every chunk | parts + manifest → `export.finish` job |
+| `export.render` | `exportId`, `quality`, `engine`, `chunkSec`, `timelinePath` (the cut, the animatic or `renders/<exportId>.json`), `stems` | renders the soundtrack (and stems) and every chunk | parts + manifest → `export.finish` job |
 
 Protocol (REST, see [api/rest.md](../api/rest.md#editor-jobs)):
 
@@ -311,8 +314,12 @@ before it is closed. Without an open tab, editor jobs wait in `queued`; MCP resu
 - Undo restores `timeline.json` from the previous timeline commit (a new commit; history is never rewritten).
 - Mix card ([post audio](post-audio.md#surfaces)): ducking on/off and depth, every audio track's stem,
   *Score the cut* (with an optional direction) and *Add sound effects*. Lanes carry `data-track-role`.
+- Captions & languages card ([localization](localization.md#surfaces)): the caption style, SRT/VTT downloads,
+  every language with its progress (lines, dubs, lip-synced close-ups) and actions (translate, dub, edit), and
+  adding a language.
 - Export dialog: quality and engine (*Auto*, *ffmpeg.wasm*, *WebCodecs*) with the detected capabilities,
-  the loudness target and *Stems*, chunk progress, and failures that stay visible in the dialog. The render runs in this tab; the export
+  the loudness target and *Stems*, the language (with dubbed voices) and burned-in or sidecar captions, chunk
+  progress, and failures that stay visible in the dialog. The render runs in this tab; the export
   appears in Exports once the server has watermarked it.
 - An engine indicator in the header shows whether ffmpeg.wasm is loaded and what this tab is working on.
 - On phones the timeline collapses into a vertical list; the inspector and the Mix card sit under it.

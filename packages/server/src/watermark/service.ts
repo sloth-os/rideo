@@ -30,11 +30,13 @@ export const ProvenanceSchema = z.object({
   brand: z.object({ name: z.string(), owner: z.string(), url: z.string() }),
   projectId: z.string(),
   asset: z.object({
-    // `resource`: frames generated for the cut (generative extend, docs/design/take-editing.md).
-    kind: z.enum(['take', 'export', 'resource']),
+    // `resource`: frames generated for the cut (generative extend, docs/design/take-editing.md);
+    // `dub`: a take lip-synced to its dub (docs/design/localization.md#dubbing), `id` is the take.
+    kind: z.enum(['take', 'export', 'resource', 'dub']),
     id: z.string(),
     clipId: z.string().optional(),
     shotId: z.string().optional(),
+    language: z.string().optional(),
   }),
   media: z.object({ path: z.string(), hash: z.string() }).nullable(),
   embed: z.object({

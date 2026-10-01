@@ -113,6 +113,13 @@ export const TakeLineSchema = z.object({
   start: z.number().nonnegative(),
   end: z.number().nonnegative(),
   media: MediaRefSchema.nullable().default(null),
+  /** The spoken words (seconds in the mix) when the speech was aligned (docs/design/localization.md). */
+  words: z
+    .array(
+      z.object({ text: z.string().max(200), start: z.number().nonnegative(), end: z.number().nonnegative() }),
+    )
+    .max(400)
+    .optional(),
 });
 export type TakeLine = z.infer<typeof TakeLineSchema>;
 

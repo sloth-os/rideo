@@ -58,6 +58,10 @@ Signed by `export.finish` after watermarking, encoding and muxing, before the ex
 | `org.rideo.provenance` | `{project, asset: {kind: "export", exportId}, timelineCommit}` |
 | `org.rideo.disclosure` | `{label: boolean, text, reason: "policy" \| "real_person" \| null}` |
 
+**Lip-synced dubs** ([localization](localization.md#dubbing)) are signed like derived takes: `c2pa.opened` and
+`c2pa.edited` (`operation: "dub"`) with the take as parent ingredient; their watermark is registered as a `dub`
+asset of the take, with its language.
+
 **Stems** of an export ([post audio](post-audio.md#stems)) are signed the same way as WAV files: `c2pa.created`
 (composite, AI when a source is generated), `c2pa.placed` with that stem's own sources as ingredients, and
 `org.rideo.provenance` `{project, asset: {kind: "stem", exportId, stem}, timelineCommit}`. They carry no watermark.

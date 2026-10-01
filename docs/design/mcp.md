@@ -121,12 +121,16 @@ or keep going and `job_wait` until a tab picks the job up.
 | `timeline_get` | `projectId` |
 | `timeline_apply` | `projectId`, `ops[]` (the [timeline op](editor.md#operations) union) |
 | `timeline_assemble` | `projectId`, `captions?`, `musicResourceId?` |
+| `localize` | `projectId`, `language` (BCP 47), `dub?`, `lipSync?` → job ([localization](localization.md)) |
+| `localization_get` | `projectId` → every language with its lines, dubs and progress for the cut |
+| `translation_update` | `projectId`, `language`, `shotId`, `index`, `text` (kept when translating again) |
+| `subtitles_get` | `projectId`, `format` (`srt`, `vtt`), `language?` → `{format, text}` |
 | `score_generate` | `projectId`, `direction?` → job (a cue per scene on the Music track, [post audio](post-audio.md)) |
 | `effects_generate` | `projectId` → job (effects from the action lines on the Effects track; `sfx_unavailable` without a provider) |
 | `footage_analyze` | `projectId`, `resourceId` → `{analysis, job}` (editor job) |
 | `suggestions_review` | `projectId`, `analysisId`, `decisions[{id, status}]` |
 | `edit_auto` | `projectId`, `analysisId` |
-| `export_render` | `projectId`, `quality?` (`draft`, `standard`, `high`), `engine?` (`auto`, `ffmpeg`, `webcodecs`), `source?` (`timeline`, `animatic`), `loudness?` (`streaming`, `broadcast`, `off`), `stems?` → `{export, job}` (editor job) |
+| `export_render` | `projectId`, `quality?` (`draft`, `standard`, `high`), `engine?` (`auto`, `ffmpeg`, `webcodecs`), `source?` (`timeline`, `animatic`), `loudness?` (`streaming`, `broadcast`, `off`), `stems?`, `language?`, `dubbed?`, `captions?` (`burn`, `sidecar`) → `{export, job}` (editor job) |
 | `export_list` | `projectId` |
 | `watermark_detect` | `uri` or `projectId` + `mediaPath` → watermark, registry record and `contentCredentials` (C2PA) |
 

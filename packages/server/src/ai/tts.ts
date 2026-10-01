@@ -15,6 +15,34 @@ export interface Speech {
   mime: string;
   /** Where the words are within the audio (seconds), when the provider aligns them. */
   span?: { start: number; end: number };
+  /** Every word with its time in the audio, when aligned (animated captions, docs/design/localization.md). */
+  words?: { text: string; start: number; end: number }[];
+}
+
+/** Words from a per-character alignment: runs of non-space characters. */
+export function alignedWords(
+  chars: readonly string[],
+  starts: readonly number[],
+  ends: readonly number[],
+): { text: string; start: number; end: number }[] {
+  const words: { text: string; start: number; end: number }[] = [];
+  let cur: { text: string; start: number; end: number } | null = null;
+  chars.forEach((ch, i) => {
+    if (/\s/.test(ch)) {
+      if (cur) words.push(cur);
+      cur = null;
+      return;
+    }
+    if (!cur) cur = { text: '', start: starts[i] ?? 0, end: ends[i] ?? starts[i] ?? 0 };
+    cur.text += ch;
+    cur.end = ends[i] ?? cur.end;
+  });
+  if (cur) words.push(cur);
+  return words.map((w) => ({
+    ...w,
+    start: Math.round(w.start * 1000) / 1000,
+    end: Math.round(w.end * 1000) / 1000,
+  }));
 }
 
 /**
@@ -187,7 +215,11 @@ export class ElevenLabsTts extends ProxiedTts implements TtsClient {
     const forceLanguage = !!req.language && /turbo|flash/.test(this.model);
     const json = await this.json<{
       audio_base64?: string;
-      alignment?: { character_start_times_seconds?: number[]; character_end_times_seconds?: number[] } | null;
+      alignment?: {
+        characters?: string[];
+        character_start_times_seconds?: number[];
+        character_end_times_seconds?: number[];
+      } | null;
     }>(
       'speak',
       `v1/text-to-speech/${encodeURIComponent(req.voiceId)}/with-timestamps?output_format=mp3_44100_128`,
@@ -203,10 +235,12 @@ export class ElevenLabsTts extends ProxiedTts implements TtsClient {
     this.metrics?.ttsCharacters.inc({ provider: this.provider }, req.text.length);
     const starts = json.alignment?.character_start_times_seconds ?? [];
     const ends = json.alignment?.character_end_times_seconds ?? [];
+    const chars = json.alignment?.characters ?? [];
     return {
       audio: Buffer.from(json.audio_base64, 'base64'),
       mime: 'audio/mpeg',
       ...(starts.length && ends.length ? { span: { start: starts[0]!, end: ends[ends.length - 1]! } } : {}),
+      ...(chars.length === starts.length && chars.length ? { words: alignedWords(chars, starts, ends) } : {}),
     };
   }
 }

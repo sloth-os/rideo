@@ -2,7 +2,7 @@ import type { ConsistencyReport } from '@rideo/shared';
 import { describe, expect, it } from 'vitest';
 import { AnthropicAdapter, GeminiAdapter, type LlmRequest, OpenAiAdapter } from '../../src/ai/llm';
 import { SfxClient } from '../../src/ai/sfx';
-import { ElevenLabsTts, OpenAiTts } from '../../src/ai/tts';
+import { alignedWords, ElevenLabsTts, OpenAiTts } from '../../src/ai/tts';
 import { type VoiceJudge, verifyVoices } from '../../src/consistency/voice';
 import type { ProxyClient } from '../../src/gateway/proxy-client';
 import { Metrics } from '../../src/metrics';
@@ -84,7 +84,23 @@ describe('ElevenLabs through the gateway proxy', () => {
     expect(form.get('name')).toBe('Ada');
     expect((form.get('files') as File).name).toBe('ada.wav');
     const speech = await tts.speak({ voiceId: 'v 1', text: 'Hi', seed: 42, description: '', language: 'en' });
-    expect(speech).toEqual({ audio, mime: 'audio/mpeg', span: { start: 0.12, end: 0.55 } });
+    expect(speech).toEqual({
+      audio,
+      mime: 'audio/mpeg',
+      span: { start: 0.12, end: 0.55 },
+      // words for animated captions (docs/design/localization.md)
+      words: [{ text: 'Hi', start: 0.12, end: 0.55 }],
+    });
+    expect(
+      alignedWords(
+        [' ', 'N', 'o', ',', ' ', 'y', 'o', 'u', '.'],
+        [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8],
+        [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9],
+      ),
+    ).toEqual([
+      { text: 'No,', start: 0.1, end: 0.4 },
+      { text: 'you.', start: 0.5, end: 0.9 },
+    ]);
     const call = proxy.calls.at(-1)!;
     expect(call.path).toBe('v1/text-to-speech/v%201/with-timestamps?output_format=mp3_44100_128');
     // multilingual v2 detects the language itself; only turbo/flash take language_code

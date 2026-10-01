@@ -45,7 +45,8 @@ export type MediaKind =
   | 'voices'
   | 'dialogue'
   | 'sfx'
-  | 'stems';
+  | 'stems'
+  | 'subtitles';
 
 export interface PutOptions {
   kind: MediaKind;

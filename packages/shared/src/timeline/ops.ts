@@ -351,7 +351,11 @@ function applyOne(t: Timeline, op: TimelineOp, i: number, gen: (k: 'item' | 'tra
     case 'update_text': {
       const found = findItem(t, op.itemId, i);
       if (found.item.kind !== 'text') throw new TimelineOpError('update_text applies to text items', i);
-      if (op.text !== undefined) found.item.text = op.text;
+      if (op.text !== undefined && op.text !== found.item.text) {
+        found.item.text = op.text;
+        // The words timed the old text: the caption shows statically (docs/design/localization.md).
+        delete found.item.words;
+      }
       if (op.style !== undefined) found.item.style = op.style;
       if (op.start !== undefined) found.item.start = op.start;
       if (op.duration !== undefined) found.item.duration = op.duration;
@@ -385,6 +389,17 @@ function applyOne(t: Timeline, op: TimelineOp, i: number, gen: (k: 'item' | 'tra
         if (track.kind === 'text') throw new TimelineOpError('text tracks have no sound', i);
         track.role = op.role;
       }
+      return;
+    }
+    case 'set_caption_style': {
+      for (const track of t.tracks)
+        for (const item of track.items)
+          if (item.kind === 'text' && item.style.preset === 'caption') {
+            const style = { ...item.style };
+            for (const [k, v] of Object.entries(op.style))
+              if (v !== undefined) (style as Record<string, unknown>)[k] = v;
+            item.style = style;
+          }
       return;
     }
     case 'set_mix': {

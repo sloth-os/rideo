@@ -22,6 +22,7 @@ import {
   FocusKindSchema,
   IdentitySchema,
   isTerminalJob,
+  LanguageCodeSchema,
   LENS_PRESETS,
   LoudnessTargetSchema,
   MotionReferenceSchema,
@@ -842,7 +843,7 @@ function buildServer(studio: Studio): McpServer {
   );
   tool(
     'timeline_apply',
-    'Apply timeline operations atomically (insert, remove, move, trim, split, set_transition, set_speed, set_volume, set_fades, set_effects, add_text, update_text, add_track, remove_track, set_track (name, mute, volume, stem role), set_mix (ducking), replace_source, set_output).',
+    'Apply timeline operations atomically (insert, remove, move, trim, split, set_transition, set_speed, set_volume, set_fades, set_effects, add_text, update_text, add_track, remove_track, set_track (name, mute, volume, stem role), set_mix (ducking), set_caption_style (animate: none, build or pop for word-level captions), replace_source, set_output).',
     { projectId: PROJECT, ops: z.array(TimelineOpSchema).min(1) },
     (a, actor) => studio.edit.applyOps(actor, a.projectId, a.ops),
   );
@@ -851,6 +852,48 @@ function buildServer(studio: Studio): McpServer {
     'Build the timeline from approved clips (optional captions and music bed).',
     { projectId: PROJECT, captions: z.boolean().optional(), musicResourceId: z.string().optional() },
     (a, actor) => studio.edit.assemble(actor, a.projectId, a),
+  );
+  tool(
+    'localize',
+    'Translate the cut’s dialogue into a language (BCP 47 code like es or pt-BR); with dub, speak it with the characters’ locked voices; with lipSync, re-render close-ups to the dub (job).',
+    {
+      projectId: PROJECT,
+      language: LanguageCodeSchema,
+      dub: z.boolean().optional(),
+      lipSync: z.boolean().optional(),
+    },
+    (a, actor) => studio.localization.localize(actor, a.projectId, a),
+  );
+  tool(
+    'localization_get',
+    'The languages of the project: translated lines, dubs and how far each is for the current cut.',
+    { projectId: PROJECT },
+    (a) => studio.localization.list(a.projectId),
+    ro,
+  );
+  tool(
+    'translation_update',
+    'Correct the translation of one line (kept when the cut is translated again).',
+    {
+      projectId: PROJECT,
+      language: LanguageCodeSchema,
+      shotId: z.string(),
+      index: z.number().int().nonnegative(),
+      text: z.string().min(1).max(2000),
+    },
+    (a, actor) =>
+      studio.localization.updateLine(actor, a.projectId, a.language, {
+        shotId: a.shotId,
+        index: a.index,
+        text: a.text,
+      }),
+  );
+  tool(
+    'subtitles_get',
+    'The cut’s subtitles as SRT or WebVTT text, in the original or a translated language.',
+    { projectId: PROJECT, format: z.enum(['srt', 'vtt']), language: LanguageCodeSchema.optional() },
+    async (a) => ({ format: a.format, text: await studio.localization.subtitles(a.projectId, a) }),
+    ro,
   );
   tool(
     'score_generate',
@@ -903,6 +946,14 @@ function buildServer(studio: Studio): McpServer {
         'streaming (−14 LUFS, default), broadcast (EBU R128, −23 LUFS) or off',
       ),
       stems: z.boolean().optional().describe('also deliver dialogue, music and effects stems (WAV)'),
+      language: LanguageCodeSchema.optional().describe(
+        'a language variant: translated captions (see localize)',
+      ),
+      dubbed: z.boolean().optional().describe('with language: the dubbed voices and lip-synced close-ups'),
+      captions: z
+        .enum(['burn', 'sidecar'])
+        .optional()
+        .describe('captions burned in (default) or only as SRT/VTT'),
     },
     async (a, actor) => ({
       ...(await studio.edit.createExport(actor, a.projectId, a)),

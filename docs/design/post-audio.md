@@ -24,7 +24,7 @@ An audio source's stem is its track's `role`:
 | any other audio track without a role | `effects` |
 
 Production sound counts as dialogue because it carries the native lines: the music and effects stems together are
-then an M&E mix, which [localization](roadmap.md) dubs over. `add_track` and `set_track` take a `role`.
+then an M&E mix, which [localization](localization.md#dubbing) dubs over. `add_track` and `set_track` take a `role`.
 
 The soundtrack graph mixes each stem on its own bus and then the buses (`amix normalize=0` all the way, so the stems
 sum to the mix):

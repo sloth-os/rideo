@@ -9,6 +9,7 @@ import {
   ScorePlanOutputSchema,
   ScreenplayGenerateOutputSchema,
   SfxPlanOutputSchema,
+  TranslateOutputSchema,
 } from '@rideo/shared';
 import MmGateway from '@sloth-os/mm-gateway-js';
 import Ajv2020 from 'ajv/dist/2020.js';
@@ -338,6 +339,20 @@ describe('post audio (docs/design/post-audio.md#mock-gateway)', () => {
     expect(sfx.effects).toEqual([
       { shot: 0, description: 'the sound of the door slams shut', at: 1.5, durationSec: 2, kind: 'spot' },
     ]);
+  });
+
+  it('translates every line with the language marker (docs/design/localization.md#mock-gateway)', async () => {
+    const out = TranslateOutputSchema.parse(
+      await chat('dialogue.translate', {
+        language: 'es',
+        languageName: 'Spanish',
+        film: { title: 'T', logline: '', tone: '' },
+        characters: [{ name: 'Mira', summary: '' }],
+        scene: 'INT. LIGHTHOUSE - NIGHT',
+        lines: [{ key: 'sht_0000000001:0', speaker: 'Mira', text: 'Who writes?' }],
+      }),
+    );
+    expect(out.lines).toEqual([{ key: 'sht_0000000001:0', text: '«es» Who writes?' }]);
   });
 
   it('generates a sound effect of the asked length through the ElevenLabs proxy', async () => {

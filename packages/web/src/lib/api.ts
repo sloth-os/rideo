@@ -154,6 +154,16 @@ export function mediaUrl(projectId: string, path: string): string {
   return `/api/projects/${projectId}/media/${path}${token ? `?token=${encodeURIComponent(token)}` : ''}`;
 }
 
+/** The cut's subtitles, in a language when given (docs/design/localization.md#subtitle-files). */
+export function subtitlesUrl(projectId: string, format: 'srt' | 'vtt', language?: string): string {
+  const q = new URLSearchParams();
+  if (language) q.set('language', language);
+  const token = getToken();
+  if (token) q.set('token', token);
+  const qs = q.toString();
+  return `/api/projects/${projectId}/subtitles.${format}${qs ? `?${qs}` : ''}`;
+}
+
 const p = (id: string) => `/projects/${id}`;
 
 /** Typed REST client (docs/api/rest.md). */
@@ -341,6 +351,13 @@ export const api = {
   scoreCut: (id: string, body: { direction?: string }) =>
     request<Job>('POST', `${p(id)}/timeline/score`, body),
   generateEffects: (id: string) => request<Job>('POST', `${p(id)}/timeline/effects`, {}),
+  /** Localization (docs/design/localization.md#surfaces). */
+  localize: (id: string, body: { language: string; dub?: boolean; lipSync?: boolean }) =>
+    request<Job>('POST', `${p(id)}/localizations`, body),
+  updateTranslation: (id: string, language: string, body: { shotId: string; index: number; text: string }) =>
+    request<unknown>('PATCH', `${p(id)}/localizations/${language}/lines`, body),
+  removeLocalization: (id: string, language: string) =>
+    request<void>('DELETE', `${p(id)}/localizations/${language}`),
   analyze: (id: string, resourceId: string) =>
     request<{ analysis: Analysis; job: Job }>('POST', `${p(id)}/analyses`, { resourceId }),
   reviewSuggestions: (
@@ -359,6 +376,9 @@ export const api = {
       source?: 'timeline' | 'animatic';
       loudness?: LoudnessTarget;
       stems?: boolean;
+      language?: string;
+      dubbed?: boolean;
+      captions?: 'burn' | 'sidecar';
     },
   ) => request<{ export: Export; job: Job }>('POST', `${p(id)}/exports`, body),
   // Storyboard and animatic (docs/design/storyboard.md#surfaces)
