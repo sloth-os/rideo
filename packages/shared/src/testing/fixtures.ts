@@ -170,6 +170,7 @@ export function take(overrides: Partial<Take> = {}): Take {
     gatewayTaskIds: [],
     endKeyframe: null,
     variation: 0,
+    derivedFrom: null,
     consistency: report(),
     characterLocks: {},
     elementLocks: {},

@@ -16,6 +16,24 @@ export async function extractFrame(
   return out;
 }
 
+/** The frame at `atSec`, or the nearest earlier one when the pictures end before (the sound can be longer). */
+export async function extractFrameNear(
+  ff: Ffmpeg,
+  input: string,
+  atSec: number,
+  out: string,
+  maxWidth?: number,
+  signal?: AbortSignal,
+): Promise<string> {
+  for (let at = atSec; at >= 0; at -= 0.25) {
+    await extractFrame(ff, input, at, out, maxWidth, signal);
+    if (existsSync(out)) return out;
+  }
+  await extractFrame(ff, input, 0, out, maxWidth, signal);
+  if (!existsSync(out)) throw new MediaError(`no video frame in ${input}`);
+  return out;
+}
+
 /** The last decodable frame at full resolution (continuity chaining). */
 export async function extractLastFrame(
   ff: Ffmpeg,

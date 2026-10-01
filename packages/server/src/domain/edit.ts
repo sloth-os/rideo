@@ -15,6 +15,7 @@ import {
   type Export,
   type ExportQuality,
   emptyTimeline,
+  isStillMedia,
   type Job,
   newId,
   type Project,
@@ -248,6 +249,36 @@ export class EditService extends Service {
     if (docs.project.kind === 'story' && !verified.ok) {
       throw new AppError('consistency_gate', `Export blocked: ${verified.message}`, verified.details ?? []);
     }
+  }
+
+  /**
+   * Generative extend (docs/design/take-editing.md#generative-extend-in-the-editor): frames generated from the edge
+   * of a video item, inserted next to it.
+   */
+  async extendItem(
+    actor: Actor,
+    projectId: string,
+    itemId: string,
+    input: { edge: 'start' | 'end'; seconds: number; prompt?: string },
+  ): Promise<Job> {
+    const docs = await this.deps.projects.docs(projectId);
+    const item = docs.timeline?.tracks.find((t) => t.kind === 'video')?.items.find((i) => i.id === itemId);
+    if (item?.kind !== 'video') throw notFound(`video item ${itemId} on the primary track`);
+    if (isStillMedia(item.source.media)) throw invalid('stills cannot be extended');
+    if (input.edge === 'start') {
+      const limits = (await this.deps.gateway.limitsFor('video', docs.project.settings.models.video)).limits;
+      if (limits?.supports_last_frame === false)
+        throw invalid('the video model takes no last frame, so it cannot generate what leads into an item');
+    }
+    return this.deps.jobs.enqueue({
+      projectId,
+      kind: 'timeline.extend',
+      params: { itemId, ...input },
+      actor,
+      branch: await this.branchOf(projectId),
+      dedupeKey: `extend:${itemId}:${input.edge}`,
+      priority: 10,
+    });
   }
 
   /** Queues an export; a studio tab renders it (`export.render` editor job) and the server watermarks it. */

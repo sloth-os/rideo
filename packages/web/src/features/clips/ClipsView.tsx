@@ -48,6 +48,7 @@ import { api, mediaUrl } from '../../lib/api';
 import { NO_ELEMENTS, useProject } from '../../store/project';
 import { reportError, useUi } from '../../store/ui';
 import { CompareDialog, DirectPanel } from './DirectPanel';
+import { LineageBadge, TakeActions } from './TakeActions';
 
 const LIP_SYNC = { conditioned: 'lips from the mix', pass: 'lip-synced', none: 'no lip sync' } as const;
 
@@ -301,6 +302,7 @@ function TakeTile({
           <ConsistencyBadge take={take} shot={shot} characters={characters} />
           {selected ? <Badge tone="accent">selected</Badge> : null}
           {take.variation ? <Badge testid="take-variation">v{take.variation}</Badge> : null}
+          <LineageBadge take={take} />
           {take.request.lastFrameSource ? (
             <Badge title="Ends on the chosen last frame">end frame</Badge>
           ) : null}
@@ -334,6 +336,7 @@ function TakeTile({
               compare
             </label>
           ) : null}
+          <TakeActions projectId={projectId} clip={clip} shot={shot} take={take} />
           {!selected && take.video ? (
             <Button
               size="sm"
@@ -388,7 +391,10 @@ function ShotRow({
 }) {
   const job = useProject((s) =>
     Object.values(s.jobs).find(
-      (j) => j.kind === 'shot.generate' && j.params.shotId === shot.id && !isTerminalJob(j),
+      (j) =>
+        (j.kind === 'shot.generate' || j.kind === 'take.edit' || j.kind === 'take.extend') &&
+        j.params.shotId === shot.id &&
+        !isTerminalJob(j),
     ),
   );
   const [directing, setDirecting] = useState(false);

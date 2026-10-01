@@ -7,7 +7,7 @@ import {
   REFERENCE_VIEW_PRIORITY,
   type ReferenceView,
 } from '../schemas/character';
-import type { Shot } from '../schemas/clip';
+import type { EditKind, Shot } from '../schemas/clip';
 import {
   approvedElementReferences,
   ELEMENT_VIEW_PRIORITY,
@@ -434,6 +434,89 @@ export function compileVideoRequest(
         cameraMove(shot.camera.move)?.cameraMotion ?? (shot.camera.movement === 'static' ? 'fixed' : 'auto'),
     },
   };
+}
+
+const EDIT_PHRASE: Record<EditKind, (instruction: string) => string> = {
+  restyle: (i) =>
+    `Restyle the video: ${i}. Keep the people, their faces, the action and the camera move unchanged.`,
+  relight: (i) =>
+    `Relight the video: ${i}. Keep the people, their faces, the action and the camera move unchanged.`,
+  replace: (i) => `Replace ${i}. Keep the people, their faces, the action and the camera move unchanged.`,
+  angle: (i) =>
+    `Show the same moment from a new camera angle: ${i}. Keep the people, their faces and the action.`,
+  remove: (i) =>
+    `Remove ${i} from the video and fill the background naturally. Keep everything else unchanged.`,
+};
+
+/**
+ * A video-to-video edit of a take (docs/design/take-editing.md#edits-takeedit): the take as `reference_video`, the
+ * characters' references to keep the faces, and the instruction.
+ */
+export function compileEditRequest(
+  ctx: ShotContext,
+  opts: {
+    kind: EditKind;
+    instruction: string;
+    takeUri: string;
+    referenceUris: string[];
+    durationSec: number;
+    attempt: number;
+    model?: string;
+    limits?: ModelLimits | null;
+  },
+): GatewayVideoRequest {
+  const { shot, settings } = ctx;
+  const refs = opts.limits?.supports_reference_image === false ? [] : opts.referenceUris;
+  return {
+    ...(opts.model && opts.model !== 'auto' ? { model: opts.model } : {}),
+    input: [
+      { type: 'text', text: EDIT_PHRASE[opts.kind](clean(opts.instruction)) },
+      { type: 'video', uri: opts.takeUri, role: 'reference_video' },
+      ...refs.map((uri) => ({ type: 'image' as const, uri, role: 'reference_image' as const })),
+    ],
+    parameters: {
+      duration_seconds: clampDuration(opts.durationSec, opts.limits),
+      dimensions: { width: settings.resolution.width, height: settings.resolution.height },
+      seed: shotSeed(shot, ctx.characters, opts.attempt, 0) ^ 0x5eed,
+      negative_prompt: BASE_NEGATIVE,
+      include_audio: false,
+    },
+  };
+}
+
+/** A continuation of a take or an item (docs/design/take-editing.md#extensions-takeextend). */
+export function compileExtendRequest(
+  ctx: ShotContext,
+  opts: {
+    seconds: number;
+    prompt?: string;
+    firstFrameUri?: string;
+    lastFrameUri?: string;
+    referenceUris: string[];
+    attempt: number;
+    model?: string;
+    limits?: ModelLimits | null;
+  },
+): GatewayVideoRequest {
+  const req = compileVideoRequest(ctx, {
+    firstFrameUri: opts.firstFrameUri,
+    lastFrameUri: opts.lastFrameUri,
+    referenceUris: opts.referenceUris,
+    attempt: opts.attempt,
+    model: opts.model,
+    limits: opts.limits,
+    durationSec: opts.seconds,
+    variation: 7,
+    includeAudio: false,
+  });
+  const text = req.input[0] as { type: 'text'; text: string };
+  const what = clean(opts.prompt ?? '');
+  text.text = `${text.text} ${
+    opts.lastFrameUri
+      ? `Lead into the last frame seamlessly${what ? `: ${what}` : ''}.`
+      : `Continue the action seamlessly from the first frame${what ? `: ${what}` : ''}.`
+  }`;
+  return req;
 }
 
 const VIEW_PHRASE: Record<ReferenceView, string> = {

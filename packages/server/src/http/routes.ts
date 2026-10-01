@@ -35,6 +35,9 @@ import {
   ShotUpdateInputSchema,
   StoryboardGenerateInputSchema,
   SuggestionDecisionsInputSchema,
+  TakeEditInputSchema,
+  TakeExtendInputSchema,
+  TimelineExtendInputSchema,
   TimelineOpsInputSchema,
   UpdateProjectInputSchema,
   UploadMetaSchema,
@@ -527,6 +530,47 @@ export function registerRoutes(app: FastifyInstance, studio: Studio): void {
       p(req, 'shotId'),
       parse(ShotUpdateInputSchema, req.body),
     ),
+  );
+  // Take edits and extensions (docs/design/take-editing.md)
+  app.post('/api/projects/:id/clips/:clipId/shots/:shotId/takes/:takeId/edit', async (req, reply) =>
+    reply
+      .code(202)
+      .send(
+        await studio.clips.editTake(
+          actor(),
+          pid(req),
+          p(req, 'clipId'),
+          p(req, 'shotId'),
+          p(req, 'takeId'),
+          parse(TakeEditInputSchema, req.body),
+        ),
+      ),
+  );
+  app.post('/api/projects/:id/clips/:clipId/shots/:shotId/takes/:takeId/extend', async (req, reply) =>
+    reply
+      .code(202)
+      .send(
+        await studio.clips.extendTake(
+          actor(),
+          pid(req),
+          p(req, 'clipId'),
+          p(req, 'shotId'),
+          p(req, 'takeId'),
+          parse(TakeExtendInputSchema, req.body),
+        ),
+      ),
+  );
+  app.post('/api/projects/:id/timeline/items/:itemId/extend', async (req, reply) =>
+    reply
+      .code(202)
+      .send(
+        await studio.edit.extendItem(
+          actor(),
+          pid(req),
+          p(req, 'itemId'),
+          parse(TimelineExtendInputSchema, req.body),
+        ),
+      ),
   );
   app.post('/api/projects/:id/clips/:clipId/shots/:shotId/variations', async (req, reply) =>
     reply

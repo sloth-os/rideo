@@ -63,8 +63,10 @@ export const ProjectSettingsSchema = z.object({
       music: z.string().min(1).default('auto'),
       /** The video model of the lip-sync pass (docs/design/dialogue.md#from-lines-to-audio). */
       lipSync: z.string().min(1).default('auto'),
+      /** The video-to-video model of take edits (docs/design/take-editing.md). */
+      edit: z.string().min(1).default('auto'),
     })
-    .default({ image: 'auto', video: 'auto', music: 'auto', lipSync: 'auto' }),
+    .default({ image: 'auto', video: 'auto', music: 'auto', lipSync: 'auto', edit: 'auto' }),
   consistency: ConsistencySettingsSchema.default({
     threshold: 0.75,
     maxAttempts: 3,

@@ -30,7 +30,8 @@ export const ProvenanceSchema = z.object({
   brand: z.object({ name: z.string(), owner: z.string(), url: z.string() }),
   projectId: z.string(),
   asset: z.object({
-    kind: z.enum(['take', 'export']),
+    // `resource`: frames generated for the cut (generative extend, docs/design/take-editing.md).
+    kind: z.enum(['take', 'export', 'resource']),
     id: z.string(),
     clipId: z.string().optional(),
     shotId: z.string().optional(),

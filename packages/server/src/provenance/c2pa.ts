@@ -48,6 +48,14 @@ export interface TakeManifest {
   consistency: { status: string; score: number; judge: string };
   /** The verified keyframe the video started from (a local PNG). */
   keyframe?: string | null;
+  /** A derived take: its parent take (a local MP4 with its own manifest) and the operation (take-editing.md). */
+  parent?: {
+    path: string;
+    op: 'edit' | 'extend';
+    kind?: string;
+    instruction?: string;
+    seconds?: number;
+  } | null;
 }
 
 export interface ExportIngredient {
@@ -217,6 +225,20 @@ export class C2paService {
           },
         ]
       : [];
+    const parent = m.parent
+      ? [
+          {
+            json: {
+              title: 'parent take.mp4',
+              format: 'video/mp4',
+              relationship: 'parentOf',
+              label: 'parent',
+            },
+            path: m.parent.path,
+            mime: 'video/mp4',
+          },
+        ]
+      : [];
     return this.sign(
       {
         claim_generator_info: this.generatorInfo(),
@@ -227,17 +249,41 @@ export class C2paService {
             label: 'c2pa.actions.v2',
             data: {
               actions: [
-                {
-                  action: 'c2pa.created',
-                  digitalSourceType: TRAINED,
-                  softwareAgent: { name: m.models.videoModel || 'mm-gateway' },
-                  parameters: {
-                    gateway: 'mm-gateway',
-                    ...(m.models.imageModel ? { imageModel: m.models.imageModel } : {}),
-                    ...(m.models.videoModel ? { videoModel: m.models.videoModel } : {}),
-                    ...(keyframe.length ? { ingredientIds: ['keyframe'] } : {}),
-                  },
-                },
+                // A derived take (an edit or an extension) opens its parent and edits it with AI; a new take is
+                // created. A manifest has exactly one of the two.
+                ...(m.parent
+                  ? [
+                      {
+                        action: 'c2pa.opened',
+                        parameters: { ingredientIds: ['parent'] },
+                      },
+                      {
+                        action: 'c2pa.edited',
+                        digitalSourceType: TRAINED,
+                        softwareAgent: { name: m.models.videoModel || 'mm-gateway' },
+                        parameters: {
+                          gateway: 'mm-gateway',
+                          operation: m.parent.op,
+                          ...(m.parent.kind ? { kind: m.parent.kind } : {}),
+                          ...(m.parent.instruction ? { instruction: m.parent.instruction } : {}),
+                          ...(m.parent.seconds ? { seconds: m.parent.seconds } : {}),
+                          ...(m.models.videoModel ? { videoModel: m.models.videoModel } : {}),
+                        },
+                      },
+                    ]
+                  : [
+                      {
+                        action: 'c2pa.created',
+                        digitalSourceType: TRAINED,
+                        softwareAgent: { name: m.models.videoModel || 'mm-gateway' },
+                        parameters: {
+                          gateway: 'mm-gateway',
+                          ...(m.models.imageModel ? { imageModel: m.models.imageModel } : {}),
+                          ...(m.models.videoModel ? { videoModel: m.models.videoModel } : {}),
+                          ...(keyframe.length ? { ingredientIds: ['keyframe'] } : {}),
+                        },
+                      },
+                    ]),
                 ...wm.actions,
               ],
             },
@@ -255,7 +301,71 @@ export class C2paService {
       },
       m.input,
       m.output,
-      keyframe,
+      [...parent, ...keyframe],
+    );
+  }
+
+  /**
+   * Frames generated to extend an item of the cut (docs/design/take-editing.md#generative-extend-in-the-editor):
+   * created by AI from the edge frame of the item.
+   */
+  async signExtension(m: {
+    input: string;
+    output: string;
+    title: string;
+    projectId: string;
+    resourceId: string;
+    watermarkId: string | null;
+    videoModel?: string;
+    edgeFrame: string;
+  }): Promise<ContentCredentialsStamp> {
+    const wm = this.watermarkParts(m.watermarkId);
+    return this.sign(
+      {
+        claim_generator_info: this.generatorInfo(),
+        title: m.title,
+        format: 'video/mp4',
+        assertions: [
+          {
+            label: 'c2pa.actions.v2',
+            data: {
+              actions: [
+                {
+                  action: 'c2pa.created',
+                  digitalSourceType: TRAINED,
+                  softwareAgent: { name: m.videoModel || 'mm-gateway' },
+                  parameters: {
+                    gateway: 'mm-gateway',
+                    operation: 'extend',
+                    ...(m.videoModel ? { videoModel: m.videoModel } : {}),
+                    ingredientIds: ['edge-frame'],
+                  },
+                },
+                ...wm.actions,
+              ],
+            },
+          },
+          ...wm.assertions,
+          {
+            label: 'org.rideo.provenance',
+            data: { project: m.projectId, asset: { kind: 'extension', id: m.resourceId } },
+          },
+        ],
+      },
+      m.input,
+      m.output,
+      [
+        {
+          json: {
+            title: 'edge frame.png',
+            format: 'image/png',
+            relationship: 'inputTo',
+            label: 'edge-frame',
+          },
+          path: m.edgeFrame,
+          mime: 'image/png',
+        },
+      ],
     );
   }
 

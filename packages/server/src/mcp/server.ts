@@ -13,6 +13,7 @@ import {
   ConsentInputSchema,
   CreateProjectInputSchema,
   clipBlockers,
+  EditKindSchema,
   ElementInputSchema,
   ElementReferenceViewSchema,
   EndFrameSchema,
@@ -724,6 +725,58 @@ function buildServer(studio: Studio): McpServer {
       const { projectId, clipId, shotId, ...fields } = a;
       return studio.clips.updateShot(actor, projectId, clipId, shotId, fields);
     },
+  );
+  // Take edits and extensions (docs/design/take-editing.md)
+  tool(
+    'take_edit',
+    'Edit a take with a video-to-video model (job): restyle, relight, replace an object, a new angle, or remove an object. The result is a derived take, verified by the judge.',
+    {
+      projectId: PROJECT,
+      clipId: z.string(),
+      shotId: z.string(),
+      takeId: z.string(),
+      kind: EditKindSchema,
+      instruction: z.string().min(2).max(1000),
+    },
+    (a, actor) =>
+      studio.clips.editTake(actor, a.projectId, a.clipId, a.shotId, a.takeId, {
+        kind: a.kind,
+        instruction: a.instruction,
+      }),
+  );
+  tool(
+    'take_extend',
+    'Extend a take by 1–10 s continuing from its last frame (job); the derived take is the take followed by the continuation.',
+    {
+      projectId: PROJECT,
+      clipId: z.string(),
+      shotId: z.string(),
+      takeId: z.string(),
+      seconds: z.number().min(1).max(10),
+      prompt: z.string().max(1000).optional().describe('What happens next'),
+    },
+    (a, actor) =>
+      studio.clips.extendTake(actor, a.projectId, a.clipId, a.shotId, a.takeId, {
+        seconds: a.seconds,
+        prompt: a.prompt,
+      }),
+  );
+  tool(
+    'timeline_extend',
+    'Generative extend: generate 1–5 s before (start) or after (end) a video item of the cut from its edge frame and insert it next to the item (job).',
+    {
+      projectId: PROJECT,
+      itemId: z.string(),
+      edge: z.enum(['start', 'end']),
+      seconds: z.number().min(1).max(5),
+      prompt: z.string().max(1000).optional(),
+    },
+    (a, actor) =>
+      studio.edit.extendItem(actor, a.projectId, a.itemId, {
+        edge: a.edge,
+        seconds: a.seconds,
+        prompt: a.prompt,
+      }),
   );
   tool(
     'shot_variations',

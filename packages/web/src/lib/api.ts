@@ -6,6 +6,7 @@ import type {
   CommitSummary,
   ConsentInput,
   Diff,
+  EditKind,
   EditorJobKind,
   Element,
   ElementKind,
@@ -290,6 +291,26 @@ export const api = {
   generateClip: (id: string, clipId: string) => request<Job>('POST', `${p(id)}/clips/${clipId}/generate`),
   updateShot: (id: string, clipId: string, shotId: string, body: Record<string, unknown>) =>
     request<Clip>('PATCH', `${p(id)}/clips/${clipId}/shots/${shotId}`, body),
+  // Take edits and extensions (docs/design/take-editing.md)
+  editTake: (
+    id: string,
+    clipId: string,
+    shotId: string,
+    takeId: string,
+    body: { kind: EditKind; instruction: string },
+  ) => request<Job>('POST', `${p(id)}/clips/${clipId}/shots/${shotId}/takes/${takeId}/edit`, body),
+  extendTake: (
+    id: string,
+    clipId: string,
+    shotId: string,
+    takeId: string,
+    body: { seconds: number; prompt?: string },
+  ) => request<Job>('POST', `${p(id)}/clips/${clipId}/shots/${shotId}/takes/${takeId}/extend`, body),
+  extendItem: (
+    id: string,
+    itemId: string,
+    body: { edge: 'start' | 'end'; seconds: number; prompt?: string },
+  ) => request<Job>('POST', `${p(id)}/timeline/items/${itemId}/extend`, body),
   /** N takes with offset seeds (docs/design/directing.md#variations-and-comparison). */
   variations: (id: string, clipId: string, shotId: string, count: number) =>
     request<Job[]>('POST', `${p(id)}/clips/${clipId}/shots/${shotId}/variations`, { count }),

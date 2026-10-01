@@ -26,7 +26,8 @@ export default defineConfig({
     },
     {
       name: 'mobile',
-      testMatch: /(responsive|mcp-sync|provenance|elements|dialogue|storyboard|directing)\.spec\.ts/,
+      testMatch:
+        /(responsive|mcp-sync|provenance|elements|dialogue|storyboard|directing|take-editing)\.spec\.ts/,
       use: {
         browserName: 'chromium',
         viewport: { width: 412, height: 915 },
@@ -43,5 +44,7 @@ export default defineConfig({
     timeout: 120_000,
     stdout: 'pipe',
     env: { RIDEO_E2E_PORT: String(port) },
+    // SIGTERM lets the stack remove its data and the mock gateway's files (e2e/support/stack.ts).
+    gracefulShutdown: { signal: 'SIGTERM', timeout: 15_000 },
   },
 });

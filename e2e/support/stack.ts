@@ -1,12 +1,19 @@
 // Playwright webServer: the mock mm-gateway plus a Rideo server with the embedded WebDAV store in a
 // temporary data dir, serving the built web app (packages/web/dist).
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readdir, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { startMockGateway } from '@rideo/mock-gateway';
 import { buildServer, loadConfig } from '@rideo/server';
 
 const port = process.env.RIDEO_E2E_PORT ?? '8797';
+// Runs that were killed leave their data behind: remove what earlier stacks left more than an hour ago.
+for (const name of await readdir(tmpdir())) {
+  if (!/^rideo-(e2e|mock-gateway)-/.test(name)) continue;
+  const path = join(tmpdir(), name);
+  const info = await stat(path).catch(() => null);
+  if (info && Date.now() - info.mtimeMs > 3_600_000) await rm(path, { recursive: true, force: true });
+}
 const dataDir = await mkdtemp(join(tmpdir(), 'rideo-e2e-'));
 const gateway = await startMockGateway({ latencyMs: 30 });
 const server = await buildServer(

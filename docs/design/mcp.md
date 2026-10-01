@@ -72,6 +72,9 @@ or keep going and `job_wait` until a tab picks the job up.
 | `shot_board_approve` | `projectId`, `clipId`, `shotId`, `approved` |
 | `storyboard_approve_all` | `projectId` |
 | `shot_reorder` | `projectId`, `clipId`, `shotIds[]` |
+| `take_edit` | `projectId`, `clipId`, `shotId`, `takeId`, `kind`, `instruction` → job ([take editing](take-editing.md)) |
+| `take_extend` | `projectId`, `clipId`, `shotId`, `takeId`, `seconds`, `prompt?` → job |
+| `timeline_extend` | `projectId`, `itemId`, `edge` (`start`, `end`), `seconds`, `prompt?` → job |
 | `shot_variations` | `projectId`, `clipId`, `shotId`, `count` (2–4) → jobs ([directing](directing.md)) |
 | `camera_moves` | – → the move library, lens and aperture presets |
 | `animatic_build` | `projectId`, `musicResourceId?`, `captions?` → `{frames, durationSec}` |

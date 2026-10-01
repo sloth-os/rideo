@@ -1,7 +1,13 @@
 import { z } from 'zod';
 import { EditSuggestionSchema } from './analysis';
 import { CharacterRoleSchema, ConsentInputSchema, IdentitySchema, ReferenceViewSchema } from './character';
-import { CameraSchema, EndFrameSchema, MotionReferenceSchema, StartFrameSchema } from './clip';
+import {
+  CameraSchema,
+  EditKindSchema,
+  EndFrameSchema,
+  MotionReferenceSchema,
+  StartFrameSchema,
+} from './clip';
 import { AspectRatioSchema, IdSchema } from './common';
 import { ElementKindSchema, ElementReferenceViewSchema } from './element';
 import { ExportQualitySchema, RenderEngineChoiceSchema } from './job';
@@ -28,6 +34,7 @@ export const ProjectSettingsPatchSchema = z
         video: z.string().min(1),
         music: z.string().min(1),
         lipSync: z.string().min(1),
+        edit: z.string().min(1),
       })
       .partial(),
     consistency: z
@@ -225,6 +232,21 @@ export const ShotUpdateInputSchema = z
   })
   .partial();
 export type ShotUpdateInput = z.infer<typeof ShotUpdateInputSchema>;
+
+/** Take edits and extensions (docs/design/take-editing.md). */
+export const TakeEditInputSchema = z.object({
+  kind: EditKindSchema,
+  instruction: z.string().trim().min(2).max(1000),
+});
+export const TakeExtendInputSchema = z.object({
+  seconds: z.number().min(1).max(10),
+  prompt: z.string().max(1000).optional(),
+});
+export const TimelineExtendInputSchema = z.object({
+  edge: z.enum(['start', 'end']),
+  seconds: z.number().min(1).max(5),
+  prompt: z.string().max(1000).optional(),
+});
 
 /** N takes of one shot with offset seeds, to compare (docs/design/directing.md#variations-and-comparison). */
 export const VariationsInputSchema = z.object({ count: z.number().int().min(2).max(4) });

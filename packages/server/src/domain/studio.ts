@@ -31,6 +31,7 @@ import {
   screenplayGenerate,
 } from '../jobs/handlers/story';
 import { shotBoard, storyboardGenerate } from '../jobs/handlers/storyboard';
+import { takeEdit, takeExtend, timelineExtend } from '../jobs/handlers/take-edit';
 import { voiceDesign } from '../jobs/handlers/voice';
 import { JobQueue } from '../jobs/queue';
 import { LiveHub } from '../live/hub';
@@ -203,6 +204,9 @@ export function createStudio(
   reg('voice.design', voiceDesign);
   reg('storyboard.generate', storyboardGenerate);
   reg('shot.board', shotBoard);
+  reg('take.edit', takeEdit);
+  reg('take.extend', takeExtend);
+  reg('timeline.extend', timelineExtend);
   reg('music.generate', musicGenerate);
   reg('clip.plan', clipPlan);
   reg('clip.generate', clipGenerate);

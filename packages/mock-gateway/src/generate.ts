@@ -304,6 +304,12 @@ export async function runVideo(body: Record<string, any>, ctx: GenerateContext):
   // Audio-driven lip sync: a reference video and audio without a first frame (a motion reference has a prompt
   // and a first frame).
   if (isLipSyncRequest(parts)) return lipSync(parts, ctx, name);
+  // Video-to-video edit (docs/design/take-editing.md): a reference video and an instruction, no first frame.
+  if (
+    parts.some((p) => p.type === 'video' && p.role === 'reference_video') &&
+    !parts.some((p) => p.type === 'image' && p.role === 'first_frame')
+  )
+    return editVideo(parts, ctx, name, prompt);
   const last = parts.find((p) => p.type === 'image' && p.role === 'last_frame');
   // A drifting generation also loses the voices: its sound is the plain tone.
   const audioPath =
@@ -349,6 +355,43 @@ export async function runVideo(body: Record<string, any>, ctx: GenerateContext):
       },
     ],
     usage: { output_count: 1, duration_seconds: durationSec },
+  };
+}
+
+/**
+ * The mock edit model: the reference video mirrored for a new angle, otherwise slightly brighter; the colours that
+ * carry identities survive, so the judge can verify the result.
+ */
+async function editVideo(
+  parts: Part[],
+  ctx: GenerateContext,
+  name: string,
+  prompt: string,
+): Promise<RunResult> {
+  const video = parts.find((p) => p.type === 'video' && p.role === 'reference_video')!;
+  const src = join(ctx.dir, `${name}-src.mp4`);
+  await writeFile(src, await loadUri(video.uri!));
+  const out = join(ctx.dir, `${name}.mp4`);
+  const vf = /new camera angle/i.test(prompt) ? 'hflip' : 'eq=brightness=0.03';
+  await runFfmpeg([
+    '-i',
+    src,
+    '-vf',
+    `${vf},format=yuv420p`,
+    '-an',
+    '-c:v',
+    'libx264',
+    '-preset',
+    'ultrafast',
+    '-crf',
+    '20',
+    '-movflags',
+    '+faststart',
+    out,
+  ]);
+  return {
+    outputs: [{ uri: ctx.fileUrl(`${name}.mp4`), mime_type: 'video/mp4' }],
+    usage: { output_count: 1, duration_seconds: await videoDuration(src) },
   };
 }
 

@@ -1,18 +1,14 @@
-import { copyFile, readFile } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
   boardState,
-  type Character,
   type Clip,
   type ConsistencyReport,
-  type ContentCredentialsStamp,
   compileKeyframeRequest,
   compileVideoRequest,
   docPath,
-  type Element,
   isAcceptable,
   type MediaRef,
-  newId,
   orderedShotCharacters,
   orderedShotElements,
   type Shot,
@@ -30,12 +26,13 @@ import {
   clipStatusOf,
 } from '../../domain/clips';
 import { notFound } from '../../errors';
-import { extractLastFrame, sampleFrames } from '../../media/frames';
+import { sampleFrames } from '../../media/frames';
 import { throwIfAborted } from '../../util/abort';
 import type { JobContext } from '../queue';
-import { commitAs, docsFor, gatewayOptions, type HandlerDeps, withPoster } from './common';
+import { commitAs, docsFor, gatewayOptions, type HandlerDeps } from './common';
 import { lipSyncPass, prepareDialogue, takeAudio, takeAudioWav } from './dialogue';
 import { generateKeyframe, prepareShotReferences } from './keyframe';
+import { commitTake, finishTake } from './take-finish';
 
 interface Candidate {
   local: string;
@@ -440,84 +437,21 @@ export async function shotGenerate(deps: HandlerDeps, ctx: JobContext) {
         }
       }
 
-      // Watermark (single re-encode), proxy, last frame, evidence frames, provenance.
-      throwIfAborted(ctx.signal);
-      ctx.progress(0.9, 1, 'watermarking');
-      const takeId = newId('take');
-      const watermarkId = settings.watermark.enabled ? await deps.watermark.allocateId() : null;
-      const marked = join(dir, 'take.mp4');
-      if (watermarkId) {
-        await deps.watermark.embedVideo(final.local, marked, {
-          id: watermarkId,
-          title: `${docs.project.title} · ${name}`,
-          crf: 18,
-          preset: 'veryfast',
-          signal: ctx.signal,
-        });
-      } else {
-        await copyFile(final.local, marked);
-      }
-      // C2PA Content Credentials (docs/design/provenance.md#takes): signed after the watermark, before storing.
-      let stored = marked;
-      let contentCredentials: ContentCredentialsStamp | null = null;
-      if (deps.c2pa.enabled) {
-        ctx.progress(0.93, 1, 'signing Content Credentials');
-        stored = join(dir, 'take-signed.mp4');
-        contentCredentials = await deps.c2pa.signTake({
-          input: marked,
-          output: stored,
-          title: `${docs.project.title} · ${name}`,
-          projectId,
-          asset: { clipId, shotId, takeId },
-          watermarkId,
-          models: { imageModel, videoModel: final.model || undefined },
-          consistency: {
-            status: final.report.status,
-            score: final.report.score,
-            judge: final.report.judge,
-          },
-          keyframe: keyframeRef ? await deps.media.localPath(projectId, keyframeRef) : null,
-        });
-      }
-      let video = await deps.media.putFile(projectId, stored, { kind: 'takes', name, mime: 'video/mp4' });
-      ctx.progress(0.96, 1, 'making the poster');
-      video = await withPoster(deps, projectId, stored, video, ctx.signal);
-      const lastPath = await extractLastFrame(
-        deps.ff,
-        stored,
-        video.durationSec ?? shot.durationSec,
-        video.fps ?? 24,
-        join(dir, 'last.png'),
-        ctx.signal,
-      );
-      const lastFrame = await deps.media.putFile(projectId, lastPath, {
-        kind: 'frames',
-        name: `${name}-last`,
-        mime: 'image/png',
+      // Watermark (single re-encode), poster, last frame, evidence frames, provenance.
+      const done = await finishTake(deps, ctx, {
+        local: final.local,
+        frames: final.frames,
+        dir,
+        name,
+        title: docs.project.title,
+        clipId,
+        shotId,
+        models: { imageModel, videoModel: final.model || undefined },
+        report: final.report,
+        keyframe: keyframeRef,
+        fallbackDurationSec: shot.durationSec,
       });
-      const frames: MediaRef[] = [];
-      for (const [i, p] of final.frames.entries())
-        frames.push(
-          await deps.media.putFile(projectId, p, {
-            kind: 'frames',
-            name: `${name}-judge-${i}`,
-            mime: 'image/png',
-          }),
-        );
-      if (watermarkId) {
-        await deps.watermark.register({
-          id: watermarkId,
-          projectId,
-          asset: { kind: 'take', id: takeId, clipId, shotId },
-          media: { path: video.path, hash: video.hash },
-          embed: {
-            width: video.width ?? 0,
-            height: video.height ?? 0,
-            strength: deps.watermark.params.strength,
-            pair: deps.watermark.params.pair,
-          },
-        });
-      }
+      const { takeId, video, lastFrame, frames, watermarkId, contentCredentials } = done;
       const prompt = videoReq.input[0]?.type === 'text' ? (videoReq.input[0] as { text: string }).text : '';
       const take = await commitTake(deps, ctx, clipId, shotId, {
         id: takeId,
@@ -569,67 +503,4 @@ export async function shotGenerate(deps: HandlerDeps, ctx: JobContext) {
     ).catch(() => undefined);
     throw err;
   }
-}
-
-async function commitTake(
-  deps: HandlerDeps,
-  ctx: JobContext,
-  clipId: string,
-  shotId: string,
-  t: {
-    id?: string;
-    keyframe: MediaRef | null;
-    video: MediaRef | null;
-    lastFrame: MediaRef | null;
-    report: ConsistencyReport;
-    request: Take['request'];
-    taskIds: string[];
-    watermarkId?: string | null;
-    contentCredentials?: ContentCredentialsStamp | null;
-    characters: Character[];
-    elements: Element[];
-    audio: TakeAudio | null;
-    endKeyframe?: MediaRef | null;
-    variation: number;
-  },
-): Promise<Take> {
-  const take: Take = {
-    id: t.id ?? newId('take'),
-    createdAt: new Date().toISOString(),
-    jobId: ctx.job.id,
-    keyframe: t.keyframe,
-    video: t.video,
-    lastFrame: t.lastFrame,
-    request: t.request,
-    gatewayTaskIds: t.taskIds,
-    endKeyframe: t.endKeyframe ?? null,
-    variation: t.variation,
-    consistency: t.report,
-    characterLocks: Object.fromEntries(t.characters.map((c) => [c.id, c.lock.version])),
-    elementLocks: Object.fromEntries(t.elements.map((e) => [e.id, e.lock.version])),
-    audio: t.audio,
-    watermarkId: t.watermarkId ?? null,
-    contentCredentials: t.contentCredentials ?? null,
-    override: null,
-    ...(t.video?.durationSec ? { durationSec: t.video.durationSec } : {}),
-  };
-  await commitAs(
-    deps,
-    ctx,
-    (tx) => {
-      const clip = structuredClone(tx.require<Clip>(docPath.clip(clipId), `clip ${clipId}`));
-      const shot = clip.shots.find((s) => s.id === shotId);
-      if (!shot) throw notFound(`shot ${shotId}`);
-      shot.takes.push(take);
-      const selectable = !!take.video && take.consistency.status !== 'failed';
-      if (selectable || (!shot.selectedTakeId && take.video)) shot.selectedTakeId = take.id;
-      shot.status = take.video && take.consistency.status === 'passed' ? 'ready' : 'needs_review';
-      shot.lastError = null;
-      clip.status = clipStatusOf(clip);
-      tx.set(docPath.clip(clipId), clip);
-    },
-    `Add take ${take.id.slice(-4)} to shot ${clipId.slice(-4)}/${shotId.slice(-4)} (${t.report.status}${t.report.characters.length ? ` ${t.report.score.toFixed(2)}` : ''})`,
-    { takeId: take.id },
-  );
-  return take;
 }

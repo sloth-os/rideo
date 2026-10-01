@@ -194,6 +194,9 @@ in/out), which exist even without an LLM.
 
 Rendering is planned once in `packages/shared/src/media/render-plan.ts` and executed in the browser.
 
+The inspector of a video item also offers **generative extend** (frames generated before or after the item from its
+edge frame, inserted next to it; [take editing](take-editing.md#generative-extend-in-the-editor)).
+
 ### Chunks
 
 `planChunks(timeline, {targetSec})` splits the output into windows of about `targetSec` (default 30 s):

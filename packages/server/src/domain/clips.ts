@@ -7,6 +7,7 @@ import {
   clipBlockers,
   dialogueMode,
   docPath,
+  type EditKind,
   type Element,
   isAcceptable,
   type Job,
@@ -207,6 +208,60 @@ export class ClipService extends Service {
       { message: `Edit shot ${clipId.slice(-4)}/${shotId.slice(-4)}`, coalesce: { key: `shot:${shotId}` } },
     );
     return result;
+  }
+
+  /** The take a derived generation starts from (docs/design/take-editing.md). */
+  private async derivable(projectId: string, clipId: string, shotId: string, takeId: string) {
+    const docs = await this.docs(projectId);
+    const clip = docs.clips[clipId];
+    if (!clip) throw notFound(`clip ${clipId}`);
+    const shot = this.requireShot(clip, shotId);
+    const take = shot.takes.find((t) => t.id === takeId);
+    if (!take) throw notFound(`take ${takeId}`);
+    if (!take.video) throw invalid('the take has no video to derive from');
+    assertCastReady([shot], docs.characters, docs.elements);
+    return { docs, clip, shot, take };
+  }
+
+  /** A video-to-video edit of a take (`take.edit`). */
+  async editTake(
+    actor: Actor,
+    projectId: string,
+    clipId: string,
+    shotId: string,
+    takeId: string,
+    input: { kind: EditKind; instruction: string },
+  ): Promise<Job> {
+    await this.derivable(projectId, clipId, shotId, takeId);
+    return this.deps.jobs.enqueue({
+      projectId,
+      kind: 'take.edit',
+      params: { clipId, shotId, takeId, ...input },
+      actor,
+      branch: await this.branchOf(projectId),
+      priority: 10,
+    });
+  }
+
+  /** `+N s` continuing a take from its last frame (`take.extend`). */
+  async extendTake(
+    actor: Actor,
+    projectId: string,
+    clipId: string,
+    shotId: string,
+    takeId: string,
+    input: { seconds: number; prompt?: string },
+  ): Promise<Job> {
+    const { take } = await this.derivable(projectId, clipId, shotId, takeId);
+    if (!take.lastFrame) throw invalid('the take has no last frame to continue from');
+    return this.deps.jobs.enqueue({
+      projectId,
+      kind: 'take.extend',
+      params: { clipId, shotId, takeId, ...input },
+      actor,
+      branch: await this.branchOf(projectId),
+      priority: 10,
+    });
   }
 
   /** N takes with offset seeds to compare (docs/design/directing.md#variations-and-comparison). */

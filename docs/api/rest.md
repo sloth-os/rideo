@@ -121,6 +121,9 @@ Errors are RFC 9457 problem details (`application/problem+json`) with a stable `
 | POST | `/api/projects/:id/clips/:clipId/generate` | – | `Job` |
 | PATCH | `/api/projects/:id/clips/:clipId/shots/:shotId` | shot fields, including `camera.{lensMm, aperture, move}`, `startFrame`, `endFrame`, `motionReference`, `seed` ([directing](../design/directing.md)) | `Clip` |
 | POST | `/api/projects/:id/clips/:clipId/shots/:shotId/variations` | `{count: 2–4}` | `Job[]` (`shot.generate` with `variation`) |
+| POST | `/api/projects/:id/clips/:clipId/shots/:shotId/takes/:takeId/edit` | `{kind: "restyle" \| "relight" \| "replace" \| "angle" \| "remove", instruction}` | `Job` (`take.edit`, [take editing](../design/take-editing.md)) |
+| POST | `/api/projects/:id/clips/:clipId/shots/:shotId/takes/:takeId/extend` | `{seconds: 1–10, prompt?}` | `Job` (`take.extend`) |
+| POST | `/api/projects/:id/timeline/items/:itemId/extend` | `{edge: "start" \| "end", seconds: 1–5, prompt?}` | `Job` (`timeline.extend`) |
 | POST | `/api/projects/:id/clips/:clipId/shots/:shotId/regenerate` | – | `Job` |
 | POST | `/api/projects/:id/clips/:clipId/shots/reorder` | `{shotIds}` (every shot once) | `Clip` |
 | POST | `/api/projects/:id/clips/:clipId/shots/:shotId/board/generate` | – | `Job` (`shot.board`) |

@@ -56,6 +56,7 @@ import { reportError, useUi } from '../../store/ui';
 import { detectCaps, type EngineCaps } from './engine/capabilities';
 import { MediaPool } from './engine/media-pool';
 import { Player } from './engine/player';
+import { GenerativeExtend } from './GenerativeExtend';
 import { trimOps } from './trim';
 
 const TRACK_COLORS = {
@@ -224,6 +225,7 @@ function Inspector({
           </Field>
         </div>
       ) : null}
+      {item.kind === 'video' && index >= 0 ? <GenerativeExtend item={item} /> : null}
       {item.kind === 'video' ? (
         <>
           <div className="grid grid-cols-2 gap-2">

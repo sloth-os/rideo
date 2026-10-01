@@ -10,7 +10,13 @@ describe('config', () => {
     expect(c.vision.model).toBe('gpt-4.1-mini');
     expect(c.watermark.strength).toBe(16);
     expect(c.lanes).toMatchObject({ control: 16, video: 2, media: 1 });
-    expect(c.gateway.models).toEqual({ image: 'auto', video: 'auto', music: 'auto', lipSync: 'auto' });
+    expect(c.gateway.models).toEqual({
+      image: 'auto',
+      video: 'auto',
+      music: 'auto',
+      lipSync: 'auto',
+      edit: 'auto',
+    });
     // Dialogue (docs/design/dialogue.md): no TTS until a provider is chosen; the speaker check follows vision.
     expect(c.tts).toBeUndefined();
     expect(c.voiceJudge).toEqual({

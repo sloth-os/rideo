@@ -4,7 +4,16 @@ import { IdSchema, IsoDateSchema, MediaRefSchema } from './common';
 export const ResourceKindSchema = z.enum(['image', 'video', 'audio']);
 export type ResourceKind = z.infer<typeof ResourceKindSchema>;
 
-export const ResourceRoleSchema = z.enum(['reference', 'source', 'music', 'voiceover', 'sfx', 'other']);
+/** `extension`: frames generated to extend an item of the cut (docs/design/take-editing.md). */
+export const ResourceRoleSchema = z.enum([
+  'reference',
+  'source',
+  'music',
+  'voiceover',
+  'sfx',
+  'extension',
+  'other',
+]);
 export type ResourceRole = z.infer<typeof ResourceRoleSchema>;
 
 export const ResourceSchema = z.object({

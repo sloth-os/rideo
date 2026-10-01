@@ -168,7 +168,7 @@ presets (lens, focal length, aperture, move library mapped to `camera_motion`), 
 from a video (`reference_video`), seeds and N variations per shot with an A/B compare view. *Why:* Veo 3.1, Ray3,
 Higgsfield, Marey. *Fits:* `ShotSchema`, prompt compiler, clips view.
 
-**7. Editing takes and extending them** (L) — video-to-video edits of a take (restyle, relight, replace
+**7. Editing takes and extending them** (L) — *done:* [design/take-editing.md](design/take-editing.md) — video-to-video edits of a take (restyle, relight, replace
 object/background, new angle) re-verified by the judge; "extend take" (+N s continuation keeping audio);
 **generative extend** in the editor to fill a trim gap; object removal. *Why:* Aleph 2.0, Ray3 Modify, Flow object
 insertion/removal, Veo extend, Premiere Generative Extend. *Fits:* new job `take.edit`, takes keep lineage

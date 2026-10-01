@@ -129,6 +129,20 @@ export const TakeAudioSchema = z.object({
 });
 export type TakeAudio = z.infer<typeof TakeAudioSchema>;
 
+/** Video-to-video edits of a take (docs/design/take-editing.md#edits-takeedit). */
+export const EditKindSchema = z.enum(['restyle', 'relight', 'replace', 'angle', 'remove']);
+export type EditKind = z.infer<typeof EditKindSchema>;
+
+/** The parent of a derived take: an edit or an extension of another take of the shot. */
+export const TakeDerivationSchema = z.object({
+  takeId: IdSchema,
+  op: z.enum(['edit', 'extend']),
+  kind: EditKindSchema.optional(),
+  instruction: z.string().max(1000).optional(),
+  seconds: z.number().positive().max(10).optional(),
+});
+export type TakeDerivation = z.infer<typeof TakeDerivationSchema>;
+
 export const TakeSchema = z.object({
   id: IdSchema,
   createdAt: IsoDateSchema,
@@ -154,6 +168,7 @@ export const TakeSchema = z.object({
   endKeyframe: MediaRefSchema.nullable().default(null),
   /** 0 for a single take; 1… for the takes of a variations request. */
   variation: z.number().int().nonnegative().default(0),
+  derivedFrom: TakeDerivationSchema.nullable().default(null),
   consistency: ConsistencyReportSchema,
   characterLocks: z.record(z.string(), z.number().int().nonnegative()).default({}),
   /** Lock versions of the shot's elements at generation time (rule E6). */

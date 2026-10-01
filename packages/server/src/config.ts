@@ -68,6 +68,7 @@ export const EnvSchema = z.object({
   RIDEO_TTS_PROXY_DOMAIN: str(),
   RIDEO_TTS_MODEL: str(),
   RIDEO_LIPSYNC_MODEL: str('auto'),
+  RIDEO_EDIT_MODEL: str('auto'),
   RIDEO_VOICE_JUDGE_PROVIDER: z.enum(['openai', 'gemini', 'off']).optional(),
   RIDEO_VOICE_JUDGE_PROXY_DOMAIN: str(),
   RIDEO_VOICE_JUDGE_MODEL: str(),
@@ -144,7 +145,7 @@ export interface Config {
     url: string;
     apiKey?: string;
     routingProfile?: string;
-    models: { image: string; video: string; music: string; lipSync: string };
+    models: { image: string; video: string; music: string; lipSync: string; edit: string };
     pollMs: number;
     timeoutsSec: { image: number; video: number; music: number };
   };
@@ -230,6 +231,7 @@ export function loadConfig(
         video: e.RIDEO_VIDEO_MODEL!,
         music: e.RIDEO_MUSIC_MODEL!,
         lipSync: e.RIDEO_LIPSYNC_MODEL!,
+        edit: e.RIDEO_EDIT_MODEL!,
       },
       pollMs: e.RIDEO_GATEWAY_POLL_MS,
       timeoutsSec: {

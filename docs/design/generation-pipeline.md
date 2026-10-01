@@ -31,6 +31,8 @@ type Job = {
 | `voice.design` | music | design three voice previews for one character ([dialogue](dialogue.md)) |
 | `storyboard.generate` | control | plan the storyboarded scenes and draw their missing or outdated frames ([storyboard](storyboard.md)) |
 | `shot.board` | image | the storyboard frame of one shot: the keyframe step plus its TTS dialogue |
+| `take.edit` / `take.extend` | video | a derived take: a video-to-video edit, or a continuation from the last frame ([take editing](take-editing.md)) |
+| `timeline.extend` | video | generative extend: frames before or after an item of the cut, inserted as a resource |
 | `clip.plan` | llm | break a scene into shots sized to model limits |
 | `clip.generate` | control | enqueue `shot.generate` for every shot without a passing take and wait |
 | `shot.generate` | video | the shot pipeline below |

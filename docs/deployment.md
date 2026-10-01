@@ -68,6 +68,7 @@ editor-job staging area and, without a configured certificate, the development C
 | `RIDEO_STT_PROXY_DOMAIN` / `RIDEO_STT_MODEL` | – / `whisper-1` | optional speech-to-text |
 | `RIDEO_TTS_PROVIDER` | `off` | dialogue voices ([dialogue](design/dialogue.md)): `elevenlabs` (design, clone, speech with timings), `openai` (preset voices) or `off`; new projects speak their dialogue when set |
 | `RIDEO_TTS_PROXY_DOMAIN` / `RIDEO_TTS_MODEL` | provider default (`api.elevenlabs.io` / `eleven_multilingual_v2`, `api.openai.com` / `gpt-4o-mini-tts`) | TTS endpoint behind the gateway proxy |
+| `RIDEO_EDIT_MODEL` | `auto` | video-to-video model of take edits ([take editing](design/take-editing.md)); projects can override `models.edit` |
 | `RIDEO_LIPSYNC_MODEL` | `auto` | video model of the lip-sync pass (projects can override `models.lipSync`) |
 | `RIDEO_VOICE_JUDGE_PROVIDER` / `_PROXY_DOMAIN` / `_MODEL` | the vision provider (none for Anthropic) / provider domain / `gpt-4o-audio-preview` or `gemini-2.5-flash` | audio-capable model of the speaker check (rule V4); `off` disables it |
 
