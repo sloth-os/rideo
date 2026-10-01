@@ -1,7 +1,9 @@
 import type { SttClient } from '../ai/llm';
 import type { LlmTasks } from '../ai/tasks';
+import type { TtsClient } from '../ai/tts';
 import type { Config } from '../config';
 import type { ConsistencyJudge } from '../consistency/judge';
+import type { VoiceJudge } from '../consistency/voice';
 import type { GatewayClient } from '../gateway/gateway-client';
 import type { JobQueue } from '../jobs/queue';
 import type { LiveHub } from '../live/hub';
@@ -45,4 +47,8 @@ export interface Deps {
   /** Editor-job uploads on the server's disk. */
   staging: Staging;
   stt?: SttClient;
+  /** Dialogue voices through the gateway proxy (docs/design/dialogue.md); absent when TTS is off. */
+  tts?: TtsClient;
+  /** Speaker check of native-audio takes (rule V4); null when no audio-capable model is configured. */
+  voiceJudge: VoiceJudge | null;
 }

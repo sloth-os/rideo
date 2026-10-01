@@ -222,6 +222,7 @@ export const LLM_TASKS = [
   'clip.plan',
   'character.describe',
   'consistency.judge',
+  'voice.judge',
   'footage.analyze',
 ] as const;
 export type LlmTaskId = (typeof LLM_TASKS)[number];
@@ -298,7 +299,27 @@ export interface FootageAnalyzeInput {
   thumbnailCount: number;
 }
 
+/** Speaker check of a native-audio take (rule V4, docs/design/dialogue.md#rules). */
+export const VoiceJudgeOutputSchema = z.object({
+  speakers: z.array(
+    z.object({
+      characterId: z.string(),
+      present: z.boolean().catch(false),
+      score: z.coerce.number().min(0).max(1).catch(0),
+      issues: z.array(z.string().max(500)).catch([]).default([]),
+    }),
+  ),
+});
+export type VoiceJudgeOutput = z.infer<typeof VoiceJudgeOutputSchema>;
+
+export interface VoiceJudgeInput {
+  speakers: { characterId: string; name: string; description: string }[];
+  lines: { speaker: string; text: string }[];
+}
+
 export const INPUT_PREFIX = 'INPUT:\n';
+export const VOICE_REFERENCE_LABEL = 'Reference voice for character';
+export const TAKE_AUDIO_LABEL = 'Take audio';
 export const JUDGE_REFERENCE_LABEL = 'Reference images for character';
 export const JUDGE_ELEMENT_REFERENCE_LABEL = 'Reference images for element';
 export const JUDGE_FRAME_LABEL = 'Candidate frame';

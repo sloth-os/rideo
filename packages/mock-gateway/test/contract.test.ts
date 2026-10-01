@@ -80,7 +80,11 @@ describe('public contract', () => {
       await fetch(`${gw.url}/v1/models?modality=video`, { headers: auth })
     ).json()) as any;
     expectSchema('ModelListResponse', models);
-    expect(models.data.map((m: any) => m.id)).toEqual(['mock-video-v1']);
+    expect(models.data.map((m: any) => m.id)).toEqual([
+      'mock-video-v1',
+      'mock-video-lite-v1',
+      'mock-lipsync-v1',
+    ]);
     const limits = (await (await fetch(`${gw.url}/v1/models/limits`, { headers: auth })).json()) as any;
     expectSchema('ModelLimitsListResponse', limits);
     expect(limits.data.find((m: any) => m.id === 'mock-video-v1').limits.max_duration_seconds).toBe(10);

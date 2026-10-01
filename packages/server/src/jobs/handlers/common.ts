@@ -6,6 +6,7 @@ import type { EditService } from '../../domain/edit';
 import type { ElementService } from '../../domain/elements';
 import type { ProjectService } from '../../domain/projects';
 import type { StoryService } from '../../domain/story';
+import type { VoiceService } from '../../domain/voices';
 import type { WorkflowService } from '../../domain/workflow';
 import type { GenerateOptions } from '../../gateway/gateway-client';
 import { makePoster } from '../../media/poster';
@@ -18,6 +19,7 @@ export interface HandlerDeps extends Deps {
     workflow: WorkflowService;
     story: StoryService;
     elements: ElementService;
+    voices: VoiceService;
     clips: ClipService;
     edit: EditService;
   };

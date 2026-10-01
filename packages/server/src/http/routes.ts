@@ -9,6 +9,7 @@ import {
   AssembleInputSchema,
   CharacterInputSchema,
   CharacterUpdateInputSchema,
+  CloneVoiceInputSchema,
   ConsentInputSchema,
   CreateProjectInputSchema,
   DescribeCharacterInputSchema,
@@ -26,6 +27,7 @@ import {
   ResourceInputSchema,
   RestoreInputSchema,
   ScreenplayPatchInputSchema,
+  SelectVoiceInputSchema,
   ShotUpdateInputSchema,
   SuggestionDecisionsInputSchema,
   TimelineOpsInputSchema,
@@ -309,6 +311,50 @@ export function registerRoutes(app: FastifyInstance, studio: Studio): void {
   );
   app.post('/api/projects/:id/characters/:cid/unlock', async (req) =>
     studio.story.unlockCharacter(actor(), pid(req), p(req, 'cid')),
+  );
+  // Voices (docs/design/dialogue.md#surfaces)
+  app.post('/api/projects/:id/characters/:cid/voice/design', async (req, reply) =>
+    reply.code(202).send(await studio.voices.design(actor(), pid(req), p(req, 'cid'))),
+  );
+  app.post('/api/projects/:id/characters/:cid/voice/select', async (req) =>
+    studio.voices.select(
+      actor(),
+      pid(req),
+      p(req, 'cid'),
+      parse(SelectVoiceInputSchema, req.body).candidateId,
+    ),
+  );
+  app.post('/api/projects/:id/characters/:cid/voice/clone', async (req, reply) => {
+    if (req.isMultipart()) {
+      const { file, fields } = await receiveUpload(studio, req);
+      if (!file) throw invalid('multipart field "file" is required');
+      try {
+        const consent = fields.consent ? ConsentInputSchema.parse(JSON.parse(fields.consent)) : undefined;
+        return reply
+          .code(201)
+          .send(
+            await studio.voices.clone(
+              actor(),
+              pid(req),
+              p(req, 'cid'),
+              { file: file.path, filename: file.filename, mime: file.mime },
+              consent,
+            ),
+          );
+      } finally {
+        await rm(file.path, { force: true });
+      }
+    }
+    const body = parse(CloneVoiceInputSchema, req.body);
+    return reply
+      .code(201)
+      .send(await studio.voices.clone(actor(), pid(req), p(req, 'cid'), { uri: body.uri }, body.consent));
+  });
+  app.post('/api/projects/:id/characters/:cid/voice/lock', async (req) =>
+    studio.voices.lock(actor(), pid(req), p(req, 'cid')),
+  );
+  app.post('/api/projects/:id/characters/:cid/voice/unlock', async (req) =>
+    studio.voices.unlock(actor(), pid(req), p(req, 'cid')),
   );
   // Elements: locations, props and styles (docs/design/elements.md)
   app.post('/api/projects/:id/elements', async (req, reply) =>

@@ -19,16 +19,19 @@ import {
   type ShotContext,
   selectReferences,
   type Take,
+  type TakeAudio,
   takeState,
 } from '@rideo/shared';
 import { verifyFrames } from '../../consistency/gate';
-import { assertCastReady, clipStatusOf } from '../../domain/clips';
+import { verifyVoices } from '../../consistency/voice';
+import { assertCastReady, assertVoicesReady, clipStatusOf } from '../../domain/clips';
 import { notFound } from '../../errors';
 import { extractLastFrame, sampleFrames } from '../../media/frames';
 import { makeCastSheet } from '../../media/sheet';
 import { throwIfAborted } from '../../util/abort';
 import type { JobContext } from '../queue';
 import { commitAs, docsFor, gatewayOptions, type HandlerDeps, withPoster } from './common';
+import { lipSyncPass, prepareDialogue, takeAudio, takeAudioWav } from './dialogue';
 
 interface Candidate {
   local: string;
@@ -57,6 +60,7 @@ export async function shotGenerate(deps: HandlerDeps, ctx: JobContext) {
   const existing = shot.takes.find((t) => t.jobId === ctx.job.id);
   if (existing) return { takeId: existing.id, status: existing.consistency.status, reused: true };
   assertCastReady([shot], docs.characters, docs.elements);
+  assertVoicesReady(deps, [shot], docs.characters, docs.project.settings);
 
   const characters = orderedShotCharacters(shot, docs.characters);
   // The shot's location, props and styles (docs/design/elements.md): conditioned always, judged when configured.
@@ -227,6 +231,7 @@ export async function shotGenerate(deps: HandlerDeps, ctx: JobContext) {
             taskIds,
             characters,
             elements,
+            audio: null,
           });
           return { takeId: take.id, status: 'failed', stage: 'keyframe' };
         }
@@ -235,24 +240,38 @@ export async function shotGenerate(deps: HandlerDeps, ctx: JobContext) {
           : null;
       }
 
-      let best: Candidate | null = null;
-      let videoReq = compileVideoRequest(shotCtx, {
+      // Dialogue (docs/design/dialogue.md): TTS lines and their mix, or the speakers' samples for native audio.
+      const dialogue = await prepareDialogue(deps, ctx, {
+        shot,
+        characters: docs.characters,
+        settings,
+        videoLimits: videoLimits.limits,
+        dir,
+        name,
+      });
+      const videoOpts = (attempt: number) => ({
         firstFrameUri: firstFrame?.uri,
         referenceUris,
-        attempt: 0,
+        attempt,
         model: settings.models.video,
         limits: videoLimits.limits,
+        ...(dialogue
+          ? {
+              referenceAudioUris: dialogue.referenceAudioUris,
+              // TTS takes are heard through the mix; the model renders sound only when the mix drives it.
+              includeAudio: dialogue.mode === 'native' || dialogue.conditioned,
+              durationSec: dialogue.durationSec,
+            }
+          : {}),
       });
+      const judgeVoices = dialogue?.mode === 'native' && settings.consistency.judgeVoices;
+
+      let best: Candidate | null = null;
+      let videoReq = compileVideoRequest(shotCtx, videoOpts(0));
       for (let attempt = 0; attempt < maxAttempts; attempt++) {
         throwIfAborted(ctx.signal);
         ctx.progress(0.35 + (0.45 * attempt) / maxAttempts, 1, `video attempt ${attempt + 1}/${maxAttempts}`);
-        videoReq = compileVideoRequest(shotCtx, {
-          firstFrameUri: firstFrame?.uri,
-          referenceUris,
-          attempt,
-          model: settings.models.video,
-          limits: videoLimits.limits,
-        });
+        videoReq = compileVideoRequest(shotCtx, videoOpts(attempt));
         const task = await deps.gateway.generateVideo(
           videoReq,
           gatewayOptions(ctx, 'video', 'video', attempt),
@@ -272,7 +291,7 @@ export async function shotGenerate(deps: HandlerDeps, ctx: JobContext) {
           { maxWidth: 512, signal: ctx.signal },
         );
         const frameBufs = await Promise.all(framePaths.map((p) => readFile(p)));
-        const report = await verifyFrames({
+        let report = await verifyFrames({
           judge,
           shot,
           characters,
@@ -287,6 +306,21 @@ export async function shotGenerate(deps: HandlerDeps, ctx: JobContext) {
           log: ctx.log,
           signal: ctx.signal,
         });
+        if (judgeVoices && dialogue) {
+          // Rule V4: the speakers must sound like their locked voices.
+          ctx.progress(0.82, 1, 'checking the voices');
+          report = await verifyVoices({
+            judge: deps.voiceJudge,
+            report,
+            speakers: dialogue.speakers,
+            audio: await takeAudioWav(deps, raw, dir, `a${attempt}`, ctx.signal),
+            lines: dialogue.judgeLines,
+            threshold,
+            metrics: deps.metrics,
+            log: ctx.log,
+            signal: ctx.signal,
+          });
+        }
         const candidate: Candidate = {
           local: raw,
           report,
@@ -298,7 +332,62 @@ export async function shotGenerate(deps: HandlerDeps, ctx: JobContext) {
         if (report.status !== 'failed') break;
         ctx.log.info({ attempt, score: report.score }, 'video failed the consistency gate');
       }
-      const final = best!;
+      let final = best!;
+      let lipSync: TakeAudio['lipSync'] = dialogue?.conditioned ? 'conditioned' : 'none';
+      if (
+        dialogue?.mode === 'tts' &&
+        dialogue.mix &&
+        !dialogue.conditioned &&
+        settings.dialogue.lipSync &&
+        final.report.status !== 'failed' &&
+        shot.characterIds.some((id) => dialogue.voiceLocks[id] !== undefined)
+      ) {
+        // The model could not take the mix: a lip-sync pass re-renders the take, judged again (R4).
+        ctx.progress(0.86, 1, 'lip sync');
+        const synced = await lipSyncPass(deps, ctx, {
+          video: final.local,
+          mixUri: dialogue.mix.uri,
+          settings,
+          dir,
+          attempt: 0,
+        });
+        if (synced) {
+          taskIds.push(synced.taskId);
+          const probe = await deps.ff.probe(synced.path);
+          const framePaths = await sampleFrames(
+            deps.ff,
+            synced.path,
+            probe.durationSec || shot.durationSec,
+            dir,
+            'lipsync',
+            { maxWidth: 512, signal: ctx.signal },
+          );
+          const report = await verifyFrames({
+            judge,
+            shot,
+            characters,
+            references: judgeRefs,
+            elements: judgedElements,
+            elementReferences: elementJudgeRefs,
+            frames: await Promise.all(framePaths.map((p) => readFile(p))),
+            frameRefs: [],
+            threshold,
+            attempts: final.report.attempts,
+            metrics: deps.metrics,
+            log: ctx.log,
+            signal: ctx.signal,
+          });
+          if (report.status !== 'failed') {
+            final = { ...final, local: synced.path, report, frames: framePaths };
+            lipSync = 'pass';
+          } else {
+            ctx.log.info(
+              { score: report.score },
+              'lip-synced take failed the consistency gate; keeping the first render',
+            );
+          }
+        }
+      }
 
       // Watermark (single re-encode), proxy, last frame, evidence frames, provenance.
       throwIfAborted(ctx.signal);
@@ -399,6 +488,7 @@ export async function shotGenerate(deps: HandlerDeps, ctx: JobContext) {
         contentCredentials,
         characters,
         elements,
+        audio: dialogue ? takeAudio(dialogue, lipSync) : null,
       });
       ctx.progress(1, 1, `take ${final.report.status}`);
       return { takeId: take.id, status: final.report.status, score: final.report.score };
@@ -443,6 +533,7 @@ async function commitTake(
     contentCredentials?: ContentCredentialsStamp | null;
     characters: Character[];
     elements: Element[];
+    audio: TakeAudio | null;
   },
 ): Promise<Take> {
   const take: Take = {
@@ -457,6 +548,7 @@ async function commitTake(
     consistency: t.report,
     characterLocks: Object.fromEntries(t.characters.map((c) => [c.id, c.lock.version])),
     elementLocks: Object.fromEntries(t.elements.map((e) => [e.id, e.lock.version])),
+    audio: t.audio,
     watermarkId: t.watermarkId ?? null,
     contentCredentials: t.contentCredentials ?? null,
     override: null,

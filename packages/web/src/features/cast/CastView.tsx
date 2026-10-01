@@ -28,6 +28,7 @@ import {
 import { api } from '../../lib/api';
 import { useProject } from '../../store/project';
 import { reportError, useUi } from '../../store/ui';
+import { VoicePanel } from './VoicePanel';
 
 const IDENTITY_FIELDS: [keyof Identity, string][] = [
   ['age', 'Age'],
@@ -313,6 +314,7 @@ function CharacterCard({ c }: { c: Character }) {
           ) : null}
         </div>
       </div>
+      <VoicePanel c={c} />
     </Entity>
   );
 }
@@ -332,7 +334,7 @@ export function CastView() {
     <div className="mx-auto max-w-5xl space-y-4">
       <SectionHeader
         title="Cast"
-        subtitle="Approve references and lock each character. Only locked identities can appear in generated shots."
+        subtitle="Approve references, lock each character and the voice of everyone who speaks. Only locked identities and voices appear in generated shots."
         actions={
           <>
             <Button

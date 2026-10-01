@@ -50,6 +50,7 @@ export async function verifyFrames(input: VerifyInput): Promise<ConsistencyRepor
       score: 1,
       characters: [],
       elements: [],
+      voices: [],
       note: 'no characters in shot',
     };
   }
@@ -87,6 +88,7 @@ export async function verifyFrames(input: VerifyInput): Promise<ConsistencyRepor
       score: 0,
       characters: input.characters.map((c) => ({ characterId: c.id, present: false, score: 0, issues: [] })),
       elements: elements.map((e) => ({ elementId: e.id, present: false, score: 0, issues: [] })),
+      voices: [],
       note: `judge unavailable: ${(err as Error).message.slice(0, 300)}`,
     };
   }
@@ -111,5 +113,6 @@ export async function verifyFrames(input: VerifyInput): Promise<ConsistencyRepor
     score: Math.min(agg.score, els.score),
     characters: agg.characters,
     elements: els.elements,
+    voices: [],
   };
 }

@@ -70,6 +70,8 @@ export interface PublicConfig {
     judge: string;
     stt: boolean;
     auth: boolean;
+    tts: { provider: string; clone: boolean } | null;
+    voiceJudge: boolean;
   };
   llm: { provider: string; model: string; vision: string };
   models: Record<'image' | 'video' | 'music', { id: string; limits?: Record<string, unknown> | null }[]>;
@@ -230,6 +232,21 @@ export const api = {
     request<Job>('POST', `${p(id)}/characters/${cid}/describe`, { resourceId, consent }),
   lock: (id: string, cid: string) => request<Character>('POST', `${p(id)}/characters/${cid}/lock`),
   unlock: (id: string, cid: string) => request<Character>('POST', `${p(id)}/characters/${cid}/unlock`),
+  // Voices (docs/design/dialogue.md#surfaces)
+  designVoice: (id: string, cid: string) =>
+    request<Job>('POST', `${p(id)}/characters/${cid}/voice/design`, {}),
+  selectVoice: (id: string, cid: string, candidateId: string) =>
+    request<Character>('POST', `${p(id)}/characters/${cid}/voice/select`, { candidateId }),
+  /** `consent` states whether the recording is a real person (docs/design/provenance.md#consent-records). */
+  cloneVoice: (id: string, cid: string, file: File, consent: ConsentInput) => {
+    const form = new FormData();
+    form.set('consent', JSON.stringify(consent));
+    form.set('file', file, file.name);
+    return request<Character>('POST', `${p(id)}/characters/${cid}/voice/clone`, form);
+  },
+  lockVoice: (id: string, cid: string) => request<Character>('POST', `${p(id)}/characters/${cid}/voice/lock`),
+  unlockVoice: (id: string, cid: string) =>
+    request<Character>('POST', `${p(id)}/characters/${cid}/voice/unlock`),
   // Elements: locations, props, styles (docs/design/elements.md)
   createElement: (id: string, body: { kind: ElementKind; name: string; description?: string }) =>
     request<Element>('POST', `${p(id)}/elements`, body),

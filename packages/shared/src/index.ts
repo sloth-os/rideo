@@ -1,4 +1,5 @@
 export * from './consistency';
+export * from './dialogue';
 export * from './diff/json-diff';
 export * from './ids';
 export * from './media';

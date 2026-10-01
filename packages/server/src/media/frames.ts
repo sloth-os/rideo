@@ -1,5 +1,6 @@
+import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import type { Ffmpeg } from './ffmpeg';
+import { type Ffmpeg, MediaError } from './ffmpeg';
 
 /** Single frame at `atSec`, scaled to at most `maxWidth` (PNG). */
 export async function extractFrame(
@@ -25,13 +26,35 @@ export async function extractLastFrame(
   signal?: AbortSignal,
 ): Promise<string> {
   const back = Math.max(0.05, 2 / Math.max(1, fps));
-  await ff
-    .run(['-sseof', `-${back.toFixed(3)}`, '-i', input, '-update', '1', '-q:v', '1', out], { signal })
-    .catch(async () => {
-      await ff.run(['-ss', Math.max(0, durationSec - back).toFixed(3), '-i', input, '-frames:v', '1', out], {
-        signal,
-      });
-    });
+  const tryRun = (args: string[]) =>
+    ff.run(args, { signal }).then(
+      () => existsSync(out),
+      () => false,
+    );
+  // The sound can outlast the pictures (dialogue, provider padding): widen the window until a frame is found.
+  for (const window of [back, 1, 3]) {
+    if (
+      await tryRun([
+        '-sseof',
+        `-${window.toFixed(3)}`,
+        '-i',
+        input,
+        '-map',
+        '0:v:0',
+        '-update',
+        '1',
+        '-q:v',
+        '1',
+        out,
+      ])
+    )
+      return out;
+  }
+  await ff.run(
+    ['-ss', Math.max(0, durationSec - back).toFixed(3), '-i', input, '-map', '0:v:0', '-frames:v', '1', out],
+    { signal },
+  );
+  if (!existsSync(out)) throw new MediaError(`no video frame near the end of ${input}`);
   return out;
 }
 
@@ -50,6 +73,10 @@ export async function sampleFrames(
   for (const [i, f] of fractions.entries()) {
     const path = join(dir, `${prefix}-${i}.png`);
     await extractFrame(ff, input, durationSec * f, path, opts.maxWidth ?? 512, opts.signal);
+    // Past the pictures (the sound can be longer): step back until a frame exists.
+    for (let at = durationSec * f - 0.5; !existsSync(path) && at >= 0; at -= 0.5)
+      await extractFrame(ff, input, at, path, opts.maxWidth ?? 512, opts.signal);
+    if (!existsSync(path)) throw new MediaError(`no video frame in ${input}`);
     out.push(path);
   }
   return out;

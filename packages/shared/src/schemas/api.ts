@@ -5,7 +5,7 @@ import { CameraSchema } from './clip';
 import { AspectRatioSchema, IdSchema } from './common';
 import { ElementKindSchema, ElementReferenceViewSchema } from './element';
 import { ExportQualitySchema, RenderEngineChoiceSchema } from './job';
-import { DisclosurePositionSchema, ProjectKindSchema } from './project';
+import { DialogueModeSchema, DisclosurePositionSchema, ProjectKindSchema } from './project';
 import { ResourceKindSchema, ResourceRoleSchema } from './resource';
 import { DialogueLineSchema, StyleBibleSchema } from './screenplay';
 import { TimelineOpSchema } from './timeline';
@@ -23,7 +23,12 @@ export const ProjectSettingsPatchSchema = z
     pilotDurationSec: z.number().min(10).max(180),
     language: z.string().min(2).max(16),
     models: z
-      .object({ image: z.string().min(1), video: z.string().min(1), music: z.string().min(1) })
+      .object({
+        image: z.string().min(1),
+        video: z.string().min(1),
+        music: z.string().min(1),
+        lipSync: z.string().min(1),
+      })
       .partial(),
     consistency: z
       .object({
@@ -31,8 +36,11 @@ export const ProjectSettingsPatchSchema = z
         maxAttempts: z.number().int().min(1).max(8),
         judge: z.enum(['vision-llm', 'off']),
         judgeElements: z.boolean(),
+        judgeVoices: z.boolean(),
       })
       .partial(),
+    /** Dialogue audio (docs/design/dialogue.md#from-lines-to-audio). */
+    dialogue: z.object({ mode: DialogueModeSchema, lipSync: z.boolean() }).partial(),
     generation: z.object({ includeAudio: z.boolean(), keyframes: z.boolean() }).partial(),
     batch: z.object({ maxGenerations: z.number().int().min(1).max(100000) }).partial(),
     watermark: z.object({ enabled: z.boolean() }).partial(),
@@ -138,6 +146,15 @@ export const AddReferenceInputSchema = z.object({
   view: ReferenceViewSchema.optional(),
   approved: z.boolean().optional(),
   /** Required for uploads: does the image show a real person, and who consented (docs/design/provenance.md). */
+  consent: ConsentInputSchema.optional(),
+});
+
+/** Pick a designed voice preview (docs/design/dialogue.md#surfaces). */
+export const SelectVoiceInputSchema = z.object({ candidateId: IdSchema });
+
+/** Clone a voice from a recording (JSON form; uploads use multipart `file` + `consent`). */
+export const CloneVoiceInputSchema = z.object({
+  uri: z.string().min(1).max(100_000_000),
   consent: ConsentInputSchema.optional(),
 });
 

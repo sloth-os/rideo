@@ -187,6 +187,11 @@ export async function buildServer(
         judge: config.consistency.judge,
         stt: !!config.stt,
         auth: !!config.apiToken,
+        /** Dialogue voices (docs/design/dialogue.md): the TTS provider, whether it clones, the speaker check. */
+        tts: config.tts
+          ? { provider: config.tts.provider, clone: config.tts.provider === 'elevenlabs' }
+          : null,
+        voiceJudge: !!config.voiceJudge,
       },
       llm: { provider: config.llm.provider, model: config.llm.model, vision: config.vision.model },
       defaults: studio.projects.defaultSettings(),

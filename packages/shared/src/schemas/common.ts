@@ -107,6 +107,9 @@ export const ERROR_CODES = [
   'cancelled',
   'lease_lost',
   'consent_required',
+  'voice_not_locked',
+  'voice_locked',
+  'tts_unavailable',
   'internal_error',
 ] as const;
 export const ErrorCodeSchema = z.enum(ERROR_CODES);

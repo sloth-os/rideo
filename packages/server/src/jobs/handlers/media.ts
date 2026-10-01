@@ -185,7 +185,11 @@ async function exportIngredients(
         path: await deps.media.localPath(projectId, media),
         mime: media.mime,
         title: media.path.split('/').pop() ?? media.path,
-        generated: item.source.type === 'take' || resource?.origin === 'generated',
+        // Takes, generated resources and the TTS dialogue of takes (docs/design/dialogue.md) are AI-generated.
+        generated:
+          item.source.type === 'take' ||
+          resource?.origin === 'generated' ||
+          media.path.startsWith('media/dialogue/'),
       });
     }
   }

@@ -1,11 +1,13 @@
 import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { Actor, AutoActionId, ProjectDocs } from '@rideo/shared';
-import { elementsInUse, sortedClips } from '@rideo/shared';
+import { dialogueMode, elementsInUse, sortedClips, speakingCharacters, voiceOf } from '@rideo/shared';
 import { createAdapter, SttClient } from '../ai/llm';
 import { LlmTasks } from '../ai/tasks';
+import { createTts } from '../ai/tts';
 import type { Config } from '../config';
 import { OffJudge, VisionLlmJudge } from '../consistency/judge';
+import { LlmVoiceJudge } from '../consistency/voice';
 import { AppError } from '../errors';
 import { GatewayClient } from '../gateway/gateway-client';
 import { ProxyClient } from '../gateway/proxy-client';
@@ -21,6 +23,7 @@ import {
   screenplayExtend,
   screenplayGenerate,
 } from '../jobs/handlers/story';
+import { voiceDesign } from '../jobs/handlers/voice';
 import { JobQueue } from '../jobs/queue';
 import { LiveHub } from '../live/hub';
 import { Ffmpeg } from '../media/ffmpeg';
@@ -42,6 +45,7 @@ import { ProjectService } from './projects';
 import { ProjectRegistry } from './registry';
 import { StoryService } from './story';
 import { UiService } from './ui';
+import { VoiceService } from './voices';
 import { WorkflowService } from './workflow';
 
 export interface Studio {
@@ -51,6 +55,7 @@ export interface Studio {
   workflow: WorkflowService;
   story: StoryService;
   elements: ElementService;
+  voices: VoiceService;
   clips: ClipService;
   edit: EditService;
   editor: EditorService;
@@ -90,6 +95,7 @@ export function createStudio(
   const llm = new LlmTasks(createAdapter(proxy, config.llm), createAdapter(proxy, config.vision), {
     metrics,
     log: log.child({ component: 'llm' }),
+    ...(config.voiceJudge ? { audio: createAdapter(proxy, config.voiceJudge) } : {}),
   });
   const gateway = new GatewayClient({
     url: config.gateway.url,
@@ -157,12 +163,15 @@ export function createStudio(
     jobs,
     staging,
     ...(config.stt ? { stt: new SttClient(proxy, config.stt.domain, config.stt.model) } : {}),
+    ...(config.tts ? { tts: createTts(proxy, config.tts, metrics) } : {}),
+    voiceJudge: config.voiceJudge ? new LlmVoiceJudge(llm) : null,
   };
   const services = {
     projects: new ProjectService(deps),
     workflow: new WorkflowService(deps),
     story: new StoryService(deps),
     elements: new ElementService(deps),
+    voices: new VoiceService(deps),
     clips: new ClipService(deps),
     edit: new EditService(deps),
     editor: new EditorService(deps),
@@ -180,6 +189,7 @@ export function createStudio(
   reg('character.refs', characterRefs);
   reg('character.describe', characterDescribe);
   reg('element.refs', elementRefs);
+  reg('voice.design', voiceDesign);
   reg('music.generate', musicGenerate);
   reg('clip.plan', clipPlan);
   reg('clip.generate', clipGenerate);
@@ -201,6 +211,15 @@ export function createStudio(
           for (const c of Object.values(docs.characters)) {
             if (!c.lock.locked && c.references.length === 0)
               await services.story.generateReferences(actor, projectId, c.id);
+          }
+          return;
+        case 'voices.design':
+          // Speaking characters without a voice get previews to pick from (docs/design/dialogue.md#workflow).
+          if (!config.tts || dialogueMode(docs.project.settings) === 'off') return;
+          for (const c of speakingCharacters(docs)) {
+            const v = voiceOf(c);
+            if (!v.lock.locked && !v.voiceId && !v.sample && v.candidates.length === 0)
+              await services.voices.design(actor, projectId, c.id);
           }
           return;
         case 'elements.generateRefs':

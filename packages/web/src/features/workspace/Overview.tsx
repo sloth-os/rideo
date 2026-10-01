@@ -1,4 +1,10 @@
-import { formatDuration, isTerminalJob, type ProjectSettings, workflowFor } from '@rideo/shared';
+import {
+  type DialogueMode,
+  formatDuration,
+  isTerminalJob,
+  type ProjectSettings,
+  workflowFor,
+} from '@rideo/shared';
 import { Bot, Check, CircleAlert, Copy, FolderSync, RotateCcw, Settings2, X } from 'lucide-react';
 import { useState } from 'react';
 import { JobRow } from '../../components/JobProgress';
@@ -45,6 +51,7 @@ function SettingsDialog({
           generation: s.generation,
           watermark: s.watermark,
           disclosure: s.disclosure,
+          dialogue: s.dialogue,
         },
       });
       useUi.getState().toast('Settings saved', 'success');
@@ -144,6 +151,42 @@ function SettingsDialog({
           (v) => setS({ ...s, generation: { ...s.generation, includeAudio: v } }),
           'includeAudio',
         )}
+        <div className="rounded-[var(--radius-control)] border border-border p-3">
+          <p className="mb-2 text-[13px] font-medium">Dialogue</p>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <Field label="Spoken lines">
+              <Select
+                value={s.dialogue.mode}
+                onChange={(e) =>
+                  setS({ ...s, dialogue: { ...s.dialogue, mode: e.target.value as DialogueMode } })
+                }
+                data-testid="dialogue-mode"
+              >
+                <option value="tts">Locked voices (TTS) + lip sync</option>
+                <option value="native">Model audio, checked against the voices</option>
+                <option value="off">Off (captions only)</option>
+              </Select>
+            </Field>
+          </div>
+          <div className="mt-2 space-y-1">
+            {toggle(
+              'Lip-sync pass when the video model cannot take the dialogue',
+              s.dialogue.lipSync,
+              (v) => setS({ ...s, dialogue: { ...s.dialogue, lipSync: v } }),
+              'lipSync',
+            )}
+            {toggle(
+              'Check speakers against their voices (model audio)',
+              s.consistency.judgeVoices,
+              (v) => setS({ ...s, consistency: { ...s.consistency, judgeVoices: v } }),
+              'judgeVoices',
+            )}
+          </div>
+          <p className="mt-2 text-[12px] text-muted">
+            Every character who speaks needs a locked voice (Cast). TTS dialogue plays on the timeline’s
+            Dialogue track.
+          </p>
+        </div>
         {toggle(
           'Invisible watermark on generated media',
           s.watermark.enabled,
@@ -455,6 +498,7 @@ export function Overview() {
           fps
         </Badge>
         <Badge>judge: {project.settings.consistency.judge}</Badge>
+        <Badge>dialogue: {project.settings.dialogue.mode}</Badge>
         <Badge>threshold {project.settings.consistency.threshold}</Badge>
         {project.settings.autopilot ? <Badge tone="accent">autopilot</Badge> : null}
         <Badge>

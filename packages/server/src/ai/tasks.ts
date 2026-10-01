@@ -25,6 +25,11 @@ import {
   type ScreenplayGenerateInput,
   type ScreenplayGenerateOutput,
   ScreenplayGenerateOutputSchema,
+  TAKE_AUDIO_LABEL,
+  VOICE_REFERENCE_LABEL,
+  type VoiceJudgeInput,
+  type VoiceJudgeOutput,
+  VoiceJudgeOutputSchema,
 } from '@rideo/shared';
 import type { z } from 'zod';
 import { AppError } from '../errors';
@@ -85,6 +90,15 @@ Be critical: different faces, age changes, or hair changes must score low.
 When the input lists "elements" (locations and props), also judge each one per frame against its reference images: present (is it visible?), score (0–1: the same place or object, same design, materials and colours), issues.
 Return only JSON: {"frames":[{"index":0,"characters":[{"characterId":"...","present":true,"identityScore":0.9,"outfitScore":0.9,"issues":[]}],"elements":[{"elementId":"...","present":true,"score":0.9,"issues":[]}]}]}`,
 
+  'voice.judge': `rideo-task: voice.judge
+You are a dialogue supervisor checking that every character in an AI-generated shot speaks with their approved voice.
+You get one reference recording per character and the take's audio. For every speaker:
+- present: do you hear this character's voice speaking in the take?
+- score (0–1): is it the same voice as the reference (timbre, pitch, accent, age, gender)? 1 = certainly the same voice, below 0.5 = a different voice.
+- issues: short concrete differences (e.g. "deeper and older than the reference", "no speech heard").
+Be critical: a different voice must score low even if the words are right.
+Return only JSON: {"speakers":[{"characterId":"...","present":true,"score":0.9,"issues":[]}]}`,
+
   'footage.analyze': `rideo-task: footage.analyze
 You are a senior film editor. From the footage statistics, scene thumbnails and transcript, summarize the footage and suggest concrete edits.
 Allowed suggestion kinds and fields (times in seconds of the source video):
@@ -105,6 +119,12 @@ export interface LabelledImage {
   label?: string;
   data: Buffer;
   mime: string;
+}
+
+export interface LabelledAudio {
+  label?: string;
+  data: Buffer;
+  format: 'wav' | 'mp3';
 }
 
 /** Extracts the JSON object from a model answer (tolerates code fences and prose). */
@@ -145,20 +165,44 @@ export class LlmTasks {
   constructor(
     readonly text: LlmAdapter,
     readonly vision: LlmAdapter,
-    private readonly deps: { metrics?: Metrics; log?: { info: (o: unknown, m?: string) => void } } = {},
+    private readonly deps: {
+      metrics?: Metrics;
+      log?: { info: (o: unknown, m?: string) => void };
+      /** An audio-capable model for the speaker check (rule V4); absent when none is configured. */
+      audio?: LlmAdapter;
+    } = {},
   ) {}
+
+  get audio(): LlmAdapter | undefined {
+    return this.deps.audio;
+  }
 
   async run<T>(
     task: LlmTaskId,
     schema: z.ZodType<T>,
     input: object,
-    opts: { images?: LabelledImage[]; temperature?: number; signal?: AbortSignal; maxTokens?: number } = {},
+    opts: {
+      images?: LabelledImage[];
+      audio?: LabelledAudio[];
+      temperature?: number;
+      signal?: AbortSignal;
+      maxTokens?: number;
+    } = {},
   ): Promise<T> {
-    const adapter = opts.images?.length ? this.vision : this.text;
+    let adapter = opts.images?.length ? this.vision : this.text;
+    if (opts.audio?.length) {
+      if (!this.deps.audio)
+        throw new AppError('llm_error', 'no audio-capable model is configured', [], false);
+      adapter = this.deps.audio;
+    }
     const parts: LlmPart[] = [{ type: 'text', text: `${INPUT_PREFIX}${JSON.stringify(input)}` }];
     for (const img of opts.images ?? []) {
       if (img.label) parts.push({ type: 'text', text: img.label });
       parts.push({ type: 'image', data: img.data, mime: img.mime });
+    }
+    for (const a of opts.audio ?? []) {
+      if (a.label) parts.push({ type: 'text', text: a.label });
+      parts.push({ type: 'audio', data: a.data, format: a.format });
     }
     const started = performance.now();
     const temperature = opts.temperature ?? 0.7;
@@ -278,6 +322,27 @@ export class LlmTasks {
     for (const [i, data] of frames.entries())
       images.push({ label: `${JUDGE_FRAME_LABEL} ${i}:`, data, mime: 'image/png' });
     return this.run('consistency.judge', JudgeOutputSchema, input, { images, temperature: 0, signal });
+  }
+
+  /** Rule V4: each speaker's reference voice, then the take's audio. */
+  judgeVoices(
+    input: VoiceJudgeInput,
+    references: Map<string, Buffer>,
+    takeAudio: Buffer,
+    signal?: AbortSignal,
+  ): Promise<VoiceJudgeOutput> {
+    const audio: LabelledAudio[] = [];
+    for (const s of input.speakers) {
+      const ref = references.get(s.characterId);
+      if (ref)
+        audio.push({
+          label: `${VOICE_REFERENCE_LABEL} ${s.characterId} (${s.name}):`,
+          data: ref,
+          format: 'wav',
+        });
+    }
+    audio.push({ label: `${TAKE_AUDIO_LABEL}:`, data: takeAudio, format: 'wav' });
+    return this.run('voice.judge', VoiceJudgeOutputSchema, input, { audio, temperature: 0, signal });
   }
 
   analyzeFootage(

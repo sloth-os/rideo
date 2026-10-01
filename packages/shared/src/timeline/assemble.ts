@@ -3,7 +3,15 @@ import type { Character } from '../schemas/character';
 import type { Clip } from '../schemas/clip';
 import type { MediaRef } from '../schemas/common';
 import type { AudioItem, TextItem, Timeline, VideoItem } from '../schemas/timeline';
-import { emptyTimeline, itemEnd, layoutPrimary, type OpContext, primaryTrack } from './ops';
+import {
+  DEFAULT_TRACK_IDS,
+  emptyTimeline,
+  itemDuration,
+  itemEnd,
+  layoutPrimary,
+  type OpContext,
+  primaryTrack,
+} from './ops';
 
 export interface AssembleInput {
   clips: Clip[];
@@ -17,7 +25,13 @@ export interface AssembleInput {
   includeUnapproved?: boolean;
 }
 
-/** Builds the story timeline: selected takes in clip/shot order, scene crossfades, music bed, captions. */
+/** The track that holds the TTS dialogue of the takes (docs/design/dialogue.md#timeline). */
+export const DIALOGUE_TRACK_ID = 'trk_dialoguetrack01';
+
+/**
+ * Builds the story timeline: selected takes in clip/shot order, scene crossfades, the dialogue track, music bed,
+ * captions.
+ */
 export function assembleStoryTimeline(input: AssembleInput, ctx: OpContext = {}): Timeline {
   const gen = ctx.newId ?? ((k) => newId(k));
   const timeline = emptyTimeline({ fps: input.fps, width: input.width, height: input.height });
@@ -26,7 +40,12 @@ export function assembleStoryTimeline(input: AssembleInput, ctx: OpContext = {})
     .filter((c) => input.includeUnapproved || c.status === 'approved')
     .sort((a, b) => a.index - b.index);
 
-  const captionSpans: { itemId: string; lines: { speaker: string; line: string }[] }[] = [];
+  const speaker = (id: string | null) => (id ? (input.characters?.[id]?.name ?? '') : '');
+  const captionSpans: {
+    itemId: string;
+    lines: { speaker: string; line: string; start?: number; end?: number }[];
+  }[] = [];
+  const dialogueSpans: { itemId: string; media: MediaRef }[] = [];
   clips.forEach((clip, ci) => {
     const shots = [...clip.shots].sort((a, b) => a.index - b.index);
     let firstInClip = true;
@@ -42,20 +61,30 @@ export function assembleStoryTimeline(input: AssembleInput, ctx: OpContext = {})
         in: 0,
         out: Math.max(0.1, dur),
         speed: 1,
-        volume: 1,
+        // A take with a TTS mix is heard through the Dialogue track; its own sound would double the voices.
+        volume: take.audio?.dialogue ? 0 : 1,
         transitionIn:
           ci > 0 && firstInClip && video.items.length > 0 ? { type: 'crossfade', duration: 0.5 } : null,
         label: `C${clip.index + 1}·S${shot.index + 1}`,
       };
       video.items.push(item);
       firstInClip = false;
-      if (input.captions && shot.dialogue.length > 0) {
+      if (take.audio?.dialogue) dialogueSpans.push({ itemId: item.id, media: take.audio.dialogue });
+      if (input.captions && take.audio?.lines.length) {
+        // Real line timings from the take's speech.
         captionSpans.push({
           itemId: item.id,
-          lines: shot.dialogue.map((d) => ({
-            speaker: d.characterId ? (input.characters?.[d.characterId]?.name ?? '') : '',
-            line: d.line,
+          lines: take.audio.lines.map((l) => ({
+            speaker: speaker(l.characterId),
+            line: l.text,
+            start: l.start,
+            end: l.end,
           })),
+        });
+      } else if (input.captions && shot.dialogue.length > 0) {
+        captionSpans.push({
+          itemId: item.id,
+          lines: shot.dialogue.map((d) => ({ speaker: speaker(d.characterId), line: d.line })),
         });
       }
     }
@@ -78,8 +107,34 @@ export function assembleStoryTimeline(input: AssembleInput, ctx: OpContext = {})
   layoutPrimary(video);
   const total = items.length ? itemEnd(items[items.length - 1]!) : 0;
 
+  if (dialogueSpans.length) {
+    const dialogue: AudioItem[] = [];
+    for (const span of dialogueSpans) {
+      const item = items.find((it) => it.id === span.itemId)!;
+      const len = Math.min(span.media.durationSec ?? itemDuration(item), itemDuration(item));
+      if (len < 0.1) continue;
+      dialogue.push({
+        id: gen('item'),
+        kind: 'audio',
+        source: { type: 'media', media: span.media },
+        start: item.start,
+        in: 0,
+        out: len,
+        volume: 1,
+      });
+    }
+    // After the music bed, so lookups of "the audio track" keep finding the music.
+    const at = timeline.tracks.findIndex((t) => t.kind === 'text');
+    timeline.tracks.splice(at < 0 ? timeline.tracks.length : at, 0, {
+      id: DIALOGUE_TRACK_ID,
+      kind: 'audio',
+      name: 'Dialogue',
+      items: dialogue,
+    });
+  }
+
   if (input.music && total > 0) {
-    const music = timeline.tracks.find((t) => t.kind === 'audio')!;
+    const music = timeline.tracks.find((t) => t.id === DEFAULT_TRACK_IDS.audio)!;
     const len = input.music.media.durationSec ?? total;
     let cursor = 0;
     const musicItems: AudioItem[] = [];
@@ -113,11 +168,12 @@ export function assembleStoryTimeline(input: AssembleInput, ctx: OpContext = {})
       const dur = itemEnd(item) - start;
       const each = dur / span.lines.length;
       span.lines.forEach((l, k) => {
+        const timed = l.start !== undefined && l.end !== undefined && l.start < dur;
         const text: TextItem = {
           id: gen('item'),
           kind: 'text',
-          start: start + k * each,
-          duration: Math.max(0.5, each - 0.1),
+          start: timed ? start + l.start! : start + k * each,
+          duration: timed ? Math.max(0.8, Math.min(l.end!, dur) - l.start!) : Math.max(0.5, each - 0.1),
           text: (l.speaker ? `${l.speaker}: ${l.line}` : l.line).slice(0, 500),
           style: { preset: 'caption', position: 'bottom' },
         };

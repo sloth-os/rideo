@@ -92,6 +92,61 @@ export const CharacterLockSchema = z.object({
   identityHash: z.string().optional(),
 });
 
+/** A designed preview the user can pick (docs/design/dialogue.md#voice-of-a-character). */
+export const VoiceCandidateSchema = z.object({
+  id: IdSchema,
+  voiceId: z.string().min(1).max(200),
+  sample: MediaRefSchema,
+  createdAt: IsoDateSchema,
+});
+export type VoiceCandidate = z.infer<typeof VoiceCandidateSchema>;
+
+export const VoiceSourceSchema = z.enum(['designed', 'cloned', 'preset']);
+export type VoiceSource = z.infer<typeof VoiceSourceSchema>;
+
+/**
+ * A character's voice: designed or cloned once, approved and locked like the face (rules V1–V6). `sample` is the
+ * reference audio of native-audio generation and of the speaker check.
+ */
+export const VoiceSchema = z.object({
+  description: z.string().max(1000).default(''),
+  /** The TTS provider that owns `voiceId` (elevenlabs, openai). */
+  provider: z.string().max(40).nullable().default(null),
+  voiceId: z.string().max(200).nullable().default(null),
+  source: VoiceSourceSchema.nullable().default(null),
+  sample: MediaRefSchema.nullable().default(null),
+  candidates: z.array(VoiceCandidateSchema).max(8).default([]),
+  /** Cloned voices are real people (docs/design/provenance.md#consent-records). */
+  consent: ConsentSchema.optional(),
+  lock: CharacterLockSchema.default({ locked: false, version: 0 }),
+});
+export type Voice = z.infer<typeof VoiceSchema>;
+
+export function newVoice(description = ''): Voice {
+  return {
+    description,
+    provider: null,
+    voiceId: null,
+    source: null,
+    sample: null,
+    candidates: [],
+    lock: { locked: false, version: 0 },
+  };
+}
+
+/** The character's voice (characters saved before voices existed have none). */
+export function voiceOf(c: Pick<Character, 'voice'>): Voice {
+  return c.voice ?? newVoice();
+}
+
+/**
+ * Can this voice speak in a shot (rule V1)? Native audio needs the sample; TTS also needs the provider's voice.
+ */
+export function voiceReady(c: Pick<Character, 'voice'>, mode: 'tts' | 'native'): boolean {
+  const v = voiceOf(c);
+  return v.lock.locked && !!v.sample && (mode === 'native' || !!v.voiceId);
+}
+
 export const CharacterSchema = z.object({
   id: IdSchema,
   name: z.string().min(1).max(120),
@@ -100,7 +155,7 @@ export const CharacterSchema = z.object({
   identity: IdentitySchema,
   wardrobe: z.array(WardrobeSchema).default([]),
   personality: z.string().max(2000).optional(),
-  voice: z.object({ description: z.string().max(1000) }).optional(),
+  voice: VoiceSchema.optional(),
   references: z.array(CharacterReferenceSchema).default([]),
   seed: z.number().int().nonnegative().max(0xffffffff),
   lock: CharacterLockSchema,
@@ -111,9 +166,16 @@ export function approvedReferences(c: Character): CharacterReference[] {
   return c.references.filter((r) => r.approved);
 }
 
-/** A character whose approved likeness is a real person: exports with it carry the disclosure label. */
-export function isRealPersonCharacter(c: Pick<Character, 'references'>): boolean {
-  return c.references.some((r) => r.approved && r.consent?.depictsRealPerson === true);
+/**
+ * A character whose approved likeness or cloned voice is a real person: exports with it carry the disclosure label.
+ */
+export function isRealPersonCharacter(
+  c: Pick<Character, 'references'> & Partial<Pick<Character, 'voice'>>,
+): boolean {
+  return (
+    c.references.some((r) => r.approved && r.consent?.depictsRealPerson === true) ||
+    (c.voice?.source === 'cloned' && c.voice.consent?.depictsRealPerson === true)
+  );
 }
 
 export function defaultWardrobe(c: Character): Wardrobe | undefined {

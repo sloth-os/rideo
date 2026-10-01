@@ -1,6 +1,10 @@
 import type { ProxyClient } from '../gateway/proxy-client';
 
-export type LlmPart = { type: 'text'; text: string } | { type: 'image'; data: Buffer; mime: string };
+export type LlmPart =
+  | { type: 'text'; text: string }
+  | { type: 'image'; data: Buffer; mime: string }
+  /** Audio input (the speaker check, docs/design/dialogue.md#rules): OpenAI audio models and Gemini. */
+  | { type: 'audio'; data: Buffer; format: 'wav' | 'mp3' };
 
 export interface LlmRequest {
   system: string;
@@ -56,7 +60,9 @@ export class OpenAiAdapter implements LlmAdapter {
     const content = req.parts.map((p) =>
       p.type === 'text'
         ? { type: 'text', text: p.text }
-        : { type: 'image_url', image_url: { url: `data:${p.mime};base64,${p.data.toString('base64')}` } },
+        : p.type === 'audio'
+          ? { type: 'input_audio', input_audio: { data: p.data.toString('base64'), format: p.format } }
+          : { type: 'image_url', image_url: { url: `data:${p.mime};base64,${p.data.toString('base64')}` } },
     );
     const body: Record<string, unknown> = {
       model: this.model,
@@ -113,7 +119,12 @@ export class GeminiAdapter implements LlmAdapter {
     const parts = req.parts.map((p) =>
       p.type === 'text'
         ? { text: p.text }
-        : { inline_data: { mime_type: p.mime, data: p.data.toString('base64') } },
+        : {
+            inline_data: {
+              mime_type: p.type === 'audio' ? (p.format === 'wav' ? 'audio/wav' : 'audio/mp3') : p.mime,
+              data: p.data.toString('base64'),
+            },
+          },
     );
     const res = await this.proxy.fetch(
       this.domain,
@@ -158,10 +169,19 @@ export class AnthropicAdapter implements LlmAdapter {
   ) {}
 
   async complete(req: LlmRequest): Promise<LlmResponse> {
+    if (req.parts.some((p) => p.type === 'audio'))
+      throw new LlmError('Anthropic models do not accept audio input', undefined, false);
     const content = req.parts.map((p) =>
       p.type === 'text'
         ? { type: 'text', text: p.text }
-        : { type: 'image', source: { type: 'base64', media_type: p.mime, data: p.data.toString('base64') } },
+        : {
+            type: 'image',
+            source: {
+              type: 'base64',
+              media_type: (p as { mime: string }).mime,
+              data: p.data.toString('base64'),
+            },
+          },
     );
     const res = await this.proxy.fetch(this.domain, 'v1/messages', {
       method: 'POST',

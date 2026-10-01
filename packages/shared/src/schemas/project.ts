@@ -10,7 +10,19 @@ export const ConsistencySettingsSchema = z.object({
   judge: z.enum(['vision-llm', 'off']).default('vision-llm'),
   /** Also judge locations and props against their references (rule E4). */
   judgeElements: z.boolean().default(false),
+  /** Check the speakers of native-audio takes against their voice locks (rule V4). */
+  judgeVoices: z.boolean().default(true),
 });
+
+/** How screenplay lines become audio (docs/design/dialogue.md#from-lines-to-audio). */
+export const DialogueModeSchema = z.enum(['tts', 'native', 'off']);
+export type DialogueMode = z.infer<typeof DialogueModeSchema>;
+export const DialogueSettingsSchema = z.object({
+  mode: DialogueModeSchema.default('off'),
+  /** Re-render TTS takes whose model could not take the dialogue as reference audio. */
+  lipSync: z.boolean().default(true),
+});
+export type DialogueSettings = z.infer<typeof DialogueSettingsSchema>;
 
 /** The visible "AI-generated" label (docs/design/provenance.md#disclosure-label). */
 export const DisclosurePositionSchema = z.enum(['top_left', 'top_right', 'bottom_left', 'bottom_right']);
@@ -41,14 +53,18 @@ export const ProjectSettingsSchema = z.object({
       image: z.string().min(1).default('auto'),
       video: z.string().min(1).default('auto'),
       music: z.string().min(1).default('auto'),
+      /** The video model of the lip-sync pass (docs/design/dialogue.md#from-lines-to-audio). */
+      lipSync: z.string().min(1).default('auto'),
     })
-    .default({ image: 'auto', video: 'auto', music: 'auto' }),
+    .default({ image: 'auto', video: 'auto', music: 'auto', lipSync: 'auto' }),
   consistency: ConsistencySettingsSchema.default({
     threshold: 0.75,
     maxAttempts: 3,
     judge: 'vision-llm',
     judgeElements: false,
+    judgeVoices: true,
   }),
+  dialogue: DialogueSettingsSchema.default({ mode: 'off', lipSync: true }),
   generation: z
     .object({ includeAudio: z.boolean().default(false), keyframes: z.boolean().default(true) })
     .default({ includeAudio: false, keyframes: true }),

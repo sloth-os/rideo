@@ -70,6 +70,8 @@ export class ProjectService extends Service {
         maxAttempts: c.consistency.maxAttempts,
         judge: c.consistency.judge,
       },
+      // New projects speak their dialogue when the server has a TTS provider (docs/design/dialogue.md).
+      dialogue: { mode: c.tts ? 'tts' : 'off', lipSync: true },
     });
     const merged = mergeSettings(
       base as unknown as Record<string, unknown>,

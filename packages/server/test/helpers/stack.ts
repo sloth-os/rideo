@@ -54,6 +54,8 @@ export async function startStack(
       RIDEO_WEBDAV_SYNC_INTERVAL_SEC: '0',
       RIDEO_GATEWAY_POLL_MS: '50',
       RIDEO_WEB_DIST: join(dataDir, 'no-web'),
+      // Dialogue voices through the mock's ElevenLabs endpoints (docs/design/dialogue.md).
+      RIDEO_TTS_PROVIDER: 'elevenlabs',
       ...opts.env,
     });
     const server = await buildServer(config, { logger: false });
@@ -156,7 +158,28 @@ export async function readyStoryProject(stack: Stack, settings: Record<string, u
     await stack.api('POST', `/projects/${p.id}/characters/${c.id}/lock`);
   }
   await lockElements(stack, p.id);
+  await lockVoices(stack, p.id);
   return { projectId: p.id, state: await stack.api<any>('GET', `/projects/${p.id}/state`) };
+}
+
+/** Designs, picks (the first preview) and locks a voice for every character, when the project speaks. */
+export async function lockVoices(stack: Stack, projectId: string): Promise<void> {
+  let state = await stack.api<any>('GET', `/projects/${projectId}/state`);
+  if (state.docs.project.settings.dialogue.mode === 'off') return;
+  for (const c of Object.values<any>(state.docs.characters)) {
+    if (c.voice?.lock.locked || c.voice?.candidates.length) continue;
+    const j = await stack.api<Job>('POST', `/projects/${projectId}/characters/${c.id}/voice/design`, {});
+    expectSucceeded(await stack.waitJob(projectId, j.id));
+  }
+  state = await stack.api<any>('GET', `/projects/${projectId}/state`);
+  for (const c of Object.values<any>(state.docs.characters)) {
+    if (c.voice.lock.locked) continue;
+    if (!c.voice.voiceId)
+      await stack.api('POST', `/projects/${projectId}/characters/${c.id}/voice/select`, {
+        candidateId: c.voice.candidates[0].id,
+      });
+    await stack.api('POST', `/projects/${projectId}/characters/${c.id}/voice/lock`);
+  }
 }
 
 /** Generates, approves and locks every element (location, prop) the story uses (docs/design/elements.md). */

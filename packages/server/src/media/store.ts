@@ -41,7 +41,9 @@ export type MediaKind =
   | 'uploads'
   | 'exports'
   | 'thumbs'
-  | 'sheets';
+  | 'sheets'
+  | 'voices'
+  | 'dialogue';
 
 export interface PutOptions {
   kind: MediaKind;

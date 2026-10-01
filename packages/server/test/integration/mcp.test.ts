@@ -31,6 +31,8 @@ describe('MCP server', () => {
       'project_create',
       'screenplay_generate',
       'character_lock',
+      'character_voice_design',
+      'character_voice_lock',
       'clip_generate',
       'clip_approve',
       'timeline_apply',
@@ -112,6 +114,30 @@ describe('MCP server', () => {
     });
     const locked = await call('character_lock', { projectId: project.id, characterId: c.id });
     expect(locked.lock.locked).toBe(true);
+    // Voices over MCP (docs/design/dialogue.md#surfaces): design, pick a preview, lock.
+    const design = await call('character_voice_design', { projectId: project.id, characterId: c.id });
+    expect((await call('job_wait', { projectId: project.id, jobId: design.id, timeoutSec: 60 })).status).toBe(
+      'succeeded',
+    );
+    const voiced = (await call('project_get', { projectId: project.id })).characters[0].voice;
+    expect(voiced).toMatchObject({ status: 'candidates', locked: false });
+    expect(voiced.candidates).toHaveLength(3);
+    await call('character_voice_select', {
+      projectId: project.id,
+      characterId: c.id,
+      candidateId: voiced.candidates[0].id,
+    });
+    const voiceLocked = await call('character_voice_lock', { projectId: project.id, characterId: c.id });
+    expect(voiceLocked.voice.lock).toMatchObject({ locked: true, version: 1 });
+    // A cloned real voice needs the full consent record; a locked voice cannot be replaced (V2).
+    await expect(
+      call('character_voice_clone', {
+        projectId: project.id,
+        characterId: c.id,
+        uri: png,
+        consent: { depictsRealPerson: true, subject: 'Mira Vale' },
+      }),
+    ).rejects.toMatchObject({ body: { code: 'voice_locked' } });
     await call('ui_focus', { projectId: project.id, kind: 'character', id: c.id });
 
     await call('project_update', { projectId: project.id, settings: { approvals: { allowAgents: false } } });

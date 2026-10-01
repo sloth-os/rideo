@@ -192,10 +192,13 @@ export function compileShotPrompt(ctx: ShotContext, mode: 'keyframe' | 'video'):
     );
   }
   lines.push(...elementLines(ctx.elements ?? []));
-  if (mode === 'video' && ctx.settings.generation.includeAudio && shot.dialogue.length) {
+  // Lines are written into the prompt whenever they are heard, so the speakers' lips move (docs/design/dialogue.md).
+  const spoken = ctx.settings.generation.includeAudio || (ctx.settings.dialogue?.mode ?? 'off') !== 'off';
+  const said = shot.dialogue.filter((d) => clean(d.line));
+  if (mode === 'video' && spoken && said.length) {
     const names = new Map(ctx.characters.map((c) => [c.id, c.name]));
     lines.push(
-      `Dialogue: ${shot.dialogue.map((d) => `${d.characterId ? (names.get(d.characterId) ?? 'Someone') : 'Narrator'} says "${clean(d.line)}"`).join(' ')}.`,
+      `Dialogue: ${said.map((d) => `${d.characterId ? (names.get(d.characterId) ?? 'Someone') : 'Narrator'} says "${clean(d.line)}"`).join(' ')}.`,
     );
   }
   return lines.join(' ');
@@ -366,6 +369,11 @@ export function compileVideoRequest(
     attempt: number;
     model?: string;
     limits?: ModelLimits | null;
+    /** Dialogue (docs/design/dialogue.md): reference audio the model must accept, and whether it renders sound. */
+    referenceAudioUris?: string[];
+    includeAudio?: boolean;
+    /** The shot's length when its dialogue needs more time than planned. */
+    durationSec?: number;
   },
 ): GatewayVideoRequest {
   const { shot, settings } = ctx;
@@ -375,15 +383,17 @@ export function compileVideoRequest(
     input.push({ type: 'image', uri: opts.firstFrameUri, role: 'first_frame' });
   }
   for (const uri of refs) input.push({ type: 'image', uri, role: 'reference_image' });
+  for (const uri of opts.referenceAudioUris ?? [])
+    input.push({ type: 'audio', uri, role: 'reference_audio' });
   return {
     ...(opts.model && opts.model !== 'auto' ? { model: opts.model } : {}),
     input,
     parameters: {
-      duration_seconds: clampDuration(shot.durationSec, opts.limits),
+      duration_seconds: clampDuration(opts.durationSec ?? shot.durationSec, opts.limits),
       dimensions: { width: settings.resolution.width, height: settings.resolution.height },
       seed: shotSeed(shot, ctx.characters, opts.attempt),
       negative_prompt: [BASE_NEGATIVE, clean(shot.negativePrompt ?? '')].filter(Boolean).join(', '),
-      include_audio: settings.generation.includeAudio,
+      include_audio: opts.includeAudio ?? settings.generation.includeAudio,
       camera_motion: shot.camera.movement === 'static' ? 'fixed' : 'auto',
     },
   };

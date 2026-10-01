@@ -108,7 +108,7 @@ items below are mostly Rideo-side work.
 
 ### P0 — next milestone
 
-**1. Dialogue and character voices** (L)
+**1. Dialogue and character voices** (L) — *done:* [design/dialogue.md](design/dialogue.md)
 - *Why:* every leading model now ships lip-synced dialogue; a feature film without dialogue audio is not
   deliverable. Kling binds voices to characters; Firefly and ElevenLabs offer expressive, directable speech.
 - *What:* a **voice lock** per character (designed or cloned voice, reference clip) next to the identity lock;
@@ -120,7 +120,7 @@ items below are mostly Rideo-side work.
 - *Fits:* `CharacterSchema.voice` grows into a locked voice asset; `ShotSchema` gains `dialogueLineIds`; new TTS task
   in `ai/` via the proxy; `Take` gains an audio stream flag; docs: character-consistency, generation-pipeline.
 
-**2. Elements library: locations, props, wardrobe states** (M)
+**2. Elements library: locations, props, wardrobe states** (M) — *done:* [design/elements.md](design/elements.md)
 - *Why:* LTX Elements, Flow ingredients and Kling elements treat places and objects as saved references;
   continuity errors in long films are as often about sets and props as faces.
 - *What:* `elements/<id>.json` documents (kind `location` | `prop` | `style`) with reference sheets, the same
@@ -139,7 +139,8 @@ items below are mostly Rideo-side work.
 - *Fits:* workflow stage table + gate `storyboard_approved`; keyframes become reusable first frames for the video
   pass (no second image generation); parsing in `shared/screenplay`.
 
-**4. Provenance compliance: C2PA manifests and disclosure** (M)
+**4. Provenance compliance: C2PA manifests and disclosure** (M) — *done:*
+[design/provenance.md](design/provenance.md)
 - *Why:* EU AI Act Article 50 (2 Aug 2026; 2 Dec 2026 for systems already on the market) requires machine-readable
   marking and a free detection tool; C2PA is what Adobe, Runway, OpenAI and Frame.io use.
 - *What:* sign every take and export with a C2PA manifest (AI-generated assertion, generator, ingredients = source
@@ -149,7 +150,8 @@ items below are mostly Rideo-side work.
   permission model); document `/api/watermark/detect` as the public detection endpoint.
 - *Fits:* finishing pass (`export.finish`) and shot pipeline; `docs/design/watermark.md`; settings for label policy.
 
-**5. Model routing, fallbacks and cost control** (M)
+**5. Model routing, fallbacks and cost control** (M) — *done in mm-gateway's auto mode*
+(mm-gateway `docs/design/auto-mode.md`)
 - *Why:* models appear and disappear (Sora); Runway routes automatically, falls back on capacity limits and reports
   cost per task.
 - *What:* per-shot routing rules (dialogue → native-audio model, fast action → motion-strong model, long take →

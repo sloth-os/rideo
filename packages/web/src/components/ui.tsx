@@ -68,15 +68,18 @@ export function Badge({
   children,
   className,
   title,
+  testid,
 }: {
   tone?: Tone;
   children: ReactNode;
   className?: string;
   title?: string;
+  testid?: string;
 }) {
   return (
     <span
       title={title}
+      data-testid={testid}
       className={cx(
         'inline-flex items-center gap-1 whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-medium',
         TONES[tone],

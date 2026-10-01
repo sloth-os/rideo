@@ -1,6 +1,7 @@
 # Character consistency
 
-Locations, props and styles follow the same rules as characters: see [elements](elements.md).
+Locations, props and styles follow the same rules as characters: see [elements](elements.md). Voices are locked
+and verified the same way: see [dialogue](dialogue.md) (rules V1–V6).
 
 A 40–60 minute movie is several hundred independent generations. Without enforcement, faces, hair, age and
 wardrobe drift from shot to shot. Rideo treats consistency as an **invariant enforced by the server**, not

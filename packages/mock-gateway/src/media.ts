@@ -97,6 +97,8 @@ export async function synthesizeVideo(opts: {
   firstFrame?: Buffer;
   frame?: Rgba;
   includeAudio?: boolean;
+  /** The sound of the video (reference audio of native-audio and audio-driven models), padded to its length. */
+  audioPath?: string;
 }): Promise<string> {
   const fps = opts.fps ?? 24;
   const width = opts.width - (opts.width % 2);
@@ -106,7 +108,8 @@ export async function synthesizeVideo(opts: {
   const out = join(opts.dir, `${opts.name}.mp4`);
   const frames = Math.max(1, Math.round(opts.durationSec * fps));
   const args = ['-i', framePath];
-  if (opts.includeAudio)
+  if (opts.includeAudio && opts.audioPath) args.push('-i', opts.audioPath);
+  else if (opts.includeAudio)
     args.push('-f', 'lavfi', '-i', `sine=frequency=330:duration=${opts.durationSec}:sample_rate=48000`);
   args.push(
     '-vf',
@@ -122,7 +125,23 @@ export async function synthesizeVideo(opts: {
     '-pix_fmt',
     'yuv420p',
   );
-  if (opts.includeAudio) args.push('-c:a', 'aac', '-b:a', '96k', '-shortest');
+  if (opts.includeAudio && opts.audioPath)
+    // Exactly as long as the pictures: pad or cut the sound.
+    args.push(
+      '-map',
+      '0:v',
+      '-map',
+      '1:a',
+      '-af',
+      `apad=whole_dur=${frames / fps},atrim=0:${frames / fps}`,
+      '-c:a',
+      'aac',
+      '-b:a',
+      '96k',
+      '-t',
+      String(frames / fps),
+    );
+  else if (opts.includeAudio) args.push('-c:a', 'aac', '-b:a', '96k', '-shortest');
   args.push('-movflags', '+faststart', out);
   await runFfmpeg(args);
   return out;

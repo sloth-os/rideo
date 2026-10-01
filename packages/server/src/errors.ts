@@ -22,6 +22,9 @@ const STATUS: Record<ErrorCode, number> = {
   cancelled: 409,
   lease_lost: 409,
   consent_required: 422,
+  voice_not_locked: 409,
+  voice_locked: 409,
+  tts_unavailable: 422,
   internal_error: 500,
 };
 

@@ -9,6 +9,7 @@ export const ID_PREFIXES = {
   character: 'chr',
   element: 'ele',
   reference: 'ref',
+  voice: 'voc',
   wardrobe: 'wdr',
   scene: 'scn',
   beat: 'otl',

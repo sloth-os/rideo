@@ -10,7 +10,36 @@ describe('config', () => {
     expect(c.vision.model).toBe('gpt-4.1-mini');
     expect(c.watermark.strength).toBe(16);
     expect(c.lanes).toMatchObject({ control: 16, video: 2, media: 1 });
-    expect(c.gateway.models).toEqual({ image: 'auto', video: 'auto', music: 'auto' });
+    expect(c.gateway.models).toEqual({ image: 'auto', video: 'auto', music: 'auto', lipSync: 'auto' });
+    // Dialogue (docs/design/dialogue.md): no TTS until a provider is chosen; the speaker check follows vision.
+    expect(c.tts).toBeUndefined();
+    expect(c.voiceJudge).toEqual({
+      provider: 'openai',
+      domain: 'api.openai.com',
+      model: 'gpt-4o-audio-preview',
+    });
+  });
+
+  it('configures TTS and the speaker check through the gateway proxy', () => {
+    expect(loadConfig({ RIDEO_TTS_PROVIDER: 'elevenlabs' }).tts).toEqual({
+      provider: 'elevenlabs',
+      domain: 'api.elevenlabs.io',
+      model: 'eleven_multilingual_v2',
+    });
+    expect(
+      loadConfig({
+        RIDEO_TTS_PROVIDER: 'openai',
+        RIDEO_TTS_PROXY_DOMAIN: 'tts.internal',
+        RIDEO_TTS_MODEL: 'tts-1',
+      }).tts,
+    ).toEqual({ provider: 'openai', domain: 'tts.internal', model: 'tts-1' });
+    // Anthropic models do not take audio: no speaker check unless another provider is named.
+    expect(loadConfig({ RIDEO_VISION_PROVIDER: 'anthropic' }).voiceJudge).toBeUndefined();
+    expect(
+      loadConfig({ RIDEO_VISION_PROVIDER: 'anthropic', RIDEO_VOICE_JUDGE_PROVIDER: 'gemini' }).voiceJudge,
+    ).toEqual({ provider: 'gemini', domain: 'generativelanguage.googleapis.com', model: 'gemini-2.5-flash' });
+    expect(loadConfig({ RIDEO_VOICE_JUDGE_PROVIDER: 'off' }).voiceJudge).toBeUndefined();
+    expect(() => loadConfig({ RIDEO_TTS_PROVIDER: 'mystery' })).toThrow();
   });
 
   it('switches to an external WebDAV server and provider domains', () => {

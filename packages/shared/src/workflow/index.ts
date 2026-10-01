@@ -1,5 +1,6 @@
 import { clipBlockers, isAcceptable, takeState } from '../consistency';
-import { approvedReferences } from '../schemas/character';
+import { dialogueMode, speakingCharacters } from '../dialogue';
+import { approvedReferences, voiceReady } from '../schemas/character';
 import { clipPlannedDuration } from '../schemas/clip';
 import { type ProjectDocs, sortedClips } from '../schemas/documents';
 import { approvedElementReferences, type Element } from '../schemas/element';
@@ -40,6 +41,7 @@ export type RequirementId =
   | 'elements.inUseLocked'
   | 'elements.inUseHaveApprovedRefs'
   | 'elements.allLocked'
+  | 'voices.speakingLocked'
   | 'clips.pilotApproved'
   | 'clips.allApproved'
   | 'duration.targetReached'
@@ -53,6 +55,7 @@ export type AutoActionId =
   | 'screenplay.generate'
   | 'characters.generateRefs'
   | 'elements.generateRefs'
+  | 'voices.design'
   | 'clip.pilot'
   | 'batch.generate'
   | 'timeline.assemble'
@@ -96,19 +99,20 @@ export const STORY_WORKFLOW: WorkflowDefinition = {
     {
       id: 'cast',
       title: 'Cast & elements',
-      description: 'Generate or upload references and lock every character, location and prop in use.',
+      description: 'Generate or upload references and lock every character, voice, location and prop in use.',
       gate: {
         id: 'cast_locked',
         title: 'Lock cast',
         requirements: [
           'characters.allLocked',
           'characters.allHaveApprovedRefs',
+          'voices.speakingLocked',
           'elements.inUseLocked',
           'elements.inUseHaveApprovedRefs',
         ],
         tag: 'cast-locked',
       },
-      autoOnEnter: ['characters.generateRefs', 'elements.generateRefs'],
+      autoOnEnter: ['characters.generateRefs', 'voices.design', 'elements.generateRefs'],
     },
     {
       id: 'resources',
@@ -278,6 +282,18 @@ const CHECKS: Record<RequirementId, Check> = {
       message: missing.length
         ? `${missing.length} character(s) without an approved reference`
         : 'Add references',
+      details: missing.map((c) => c.name),
+    };
+  },
+  'voices.speakingLocked': (d) => {
+    const mode = dialogueMode(d.project.settings);
+    if (mode === 'off') return { ok: true, message: 'Dialogue audio is off' };
+    const missing = speakingCharacters(d).filter((c) => !voiceReady(c, mode));
+    return {
+      ok: missing.length === 0,
+      message: missing.length
+        ? `${missing.length} speaking character(s) without a locked voice`
+        : 'Every speaking character has a locked voice',
       details: missing.map((c) => c.name),
     };
   },

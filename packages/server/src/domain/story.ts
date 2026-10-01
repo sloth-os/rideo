@@ -13,6 +13,7 @@ import {
   kindFromMime,
   missingConsentFields,
   newId,
+  newVoice,
   type OutlineBeat,
   type Probe,
   type Project,
@@ -23,6 +24,8 @@ import {
   type Screenplay,
   type ScreenplayPatchInput,
   ScreenplaySchema,
+  type Voice,
+  voiceOf,
 } from '@rideo/shared';
 import { AppError, invalid, notFound } from '../errors';
 import type { MediaStore } from '../media/store';
@@ -67,6 +70,18 @@ export function consentRecord(actor: Actor, input: ConsentInput | undefined, wha
     );
   }
   return { ...input, recordedBy: actor, recordedAt: new Date().toISOString() };
+}
+
+/** Rule V2: a locked voice keeps its description (docs/design/dialogue.md#rules). */
+function describeVoice(c: Character, description: string): Voice {
+  const v = voiceOf(c);
+  if (v.description === description) return v;
+  if (v.lock.locked)
+    throw new AppError(
+      'voice_locked',
+      `${c.name}'s voice is locked; unlock the voice before changing its description (rule V2)`,
+    );
+  return { ...v, description };
 }
 
 export class StoryService extends Service {
@@ -251,7 +266,7 @@ export class StoryService extends Service {
             ...(w.default || i === 0 ? { default: true } : {}),
           })),
           ...(input.personality ? { personality: input.personality } : {}),
-          ...(input.voice ? { voice: input.voice } : {}),
+          ...(input.voice ? { voice: newVoice(input.voice.description) } : {}),
           references: [],
           seed: characterSeed(id),
           lock: { locked: false, version: 0 },
@@ -328,7 +343,7 @@ export class StoryService extends Service {
               }
             : {}),
           ...(input.personality !== undefined ? { personality: input.personality } : {}),
-          ...(input.voice !== undefined ? { voice: input.voice } : {}),
+          ...(input.voice !== undefined ? { voice: describeVoice(c, input.voice.description) } : {}),
         };
       },
       coalesce,

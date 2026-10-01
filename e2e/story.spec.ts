@@ -55,6 +55,20 @@ test('idea → screenplay → locked cast → pilot → production → edit → 
     await expect(lock).toHaveCount(left - 1);
   }
   await expect(page.getByTestId('unlock-character')).toHaveCount(cast);
+  // Everyone who speaks needs a locked voice (docs/design/dialogue.md): design, listen, pick, lock.
+  await expect(approveCast).toBeDisabled();
+  await expect(page.getByTestId('cast-unmet')).toContainText('without a locked voice');
+  for (let i = 0; i < cast; i++) await page.getByTestId('design-voice').nth(i).click();
+  await api.waitIdle(pid);
+  const panels = page.getByTestId('voice-panel');
+  for (let i = 0; i < cast; i++) {
+    const panel = panels.nth(i);
+    await expect(panel.getByTestId('voice-candidate')).toHaveCount(3);
+    await panel.getByTestId('select-voice').first().click();
+    await expect(panel.getByTestId('voice-candidate').first()).toContainText('chosen');
+    await panel.getByTestId('lock-voice').click();
+    await expect(panel.getByTestId('voice-locked')).toContainText('voice v1');
+  }
   // The cast gate also waits for the locations and props in use (docs/design/elements.md)
   await expect(approveCast).toBeDisabled();
   await expect(page.getByTestId('cast-unmet')).toContainText('not locked');
@@ -91,6 +105,8 @@ test('idea → screenplay → locked cast → pilot → production → edit → 
   const approveClip = page.getByTestId('approve-clip');
   await expect(approveClip.first()).toBeEnabled({ timeout: 120_000 });
   await expect(page.getByText(/passed 0\.\d\d/).first()).toBeVisible();
+  // The speaking shot's take carries its TTS dialogue.
+  await expect(page.getByTestId('take-audio').first()).toContainText('tts');
   await approveClip.first().click();
   const approveStage = page.getByTestId('approve-stage');
   await expect(approveStage).toHaveText(/Approve pilot/);
@@ -116,6 +132,10 @@ test('idea → screenplay → locked cast → pilot → production → edit → 
   await page.getByTestId('assemble').click();
   const videoItems = page.locator('[data-track="video"] [data-testid="timeline-item"]');
   await expect(videoItems.first()).toBeVisible();
+  // The takes' TTS mixes sit on the Dialogue track (docs/design/dialogue.md#timeline).
+  await expect(
+    page.locator('[data-track-name="Dialogue"] [data-testid="timeline-item"]').first(),
+  ).toBeVisible();
   const before = await videoItems.count();
   expect(before).toBeGreaterThanOrEqual(2);
   await videoItems.first().click();

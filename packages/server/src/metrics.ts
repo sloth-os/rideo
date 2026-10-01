@@ -119,6 +119,17 @@ export class Metrics {
   readonly c2pa = this.add(
     new Counter('rideo_c2pa_operations_total', 'C2PA Content Credentials signs and reads by result'),
   );
+  /** Dialogue (docs/design/dialogue.md): TTS calls by provider, operation and outcome; spoken characters. */
+  readonly tts = this.add(
+    new Counter('rideo_tts_requests_total', 'TTS requests by provider, op and outcome'),
+  );
+  readonly ttsCharacters = this.add(
+    new Counter('rideo_tts_characters_total', 'Characters of text spoken by TTS, by provider'),
+  );
+  readonly lipSync = this.add(new Counter('rideo_lipsync_passes_total', 'Lip-sync passes by outcome'));
+  readonly voiceChecks = this.add(
+    new Counter('rideo_voice_checks_total', 'Speaker checks of native-audio takes by result'),
+  );
 
   add<M extends Metric>(m: M): M {
     this.all.push(m);

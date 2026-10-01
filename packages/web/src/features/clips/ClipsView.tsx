@@ -13,6 +13,7 @@ import {
   takeState,
 } from '@rideo/shared';
 import {
+  AudioLines,
   Check,
   CirclePause,
   Clapperboard,
@@ -42,9 +43,11 @@ import {
   SectionHeader,
   Textarea,
 } from '../../components/ui';
-import { api } from '../../lib/api';
+import { api, mediaUrl } from '../../lib/api';
 import { NO_ELEMENTS, useProject } from '../../store/project';
 import { reportError, useUi } from '../../store/ui';
+
+const LIP_SYNC = { conditioned: 'lips from the mix', pass: 'lip-synced', none: 'no lip sync' } as const;
 
 function EvidenceDialog({
   take,
@@ -122,6 +125,49 @@ function EvidenceDialog({
             </div>
           );
         })}
+        {take.audio ? (
+          <div className="space-y-1.5" data-testid="take-dialogue">
+            <div className="text-[13px] font-medium">
+              Dialogue · {take.audio.mode === 'tts' ? 'TTS' : 'native audio'} · {LIP_SYNC[take.audio.lipSync]}
+            </div>
+            {take.audio.dialogue ? (
+              // biome-ignore lint/a11y/useMediaCaption: the lines are listed below
+              <audio
+                controls
+                preload="none"
+                src={mediaUrl(projectId, take.audio.dialogue.path)}
+                aria-label="Dialogue mix"
+                className="h-8 w-full max-w-sm"
+              />
+            ) : null}
+            {take.audio.lines.map((l) => (
+              <p key={l.index} className="text-[12px]">
+                <span className="text-muted tabular-nums">
+                  {l.start.toFixed(1)}–{l.end.toFixed(1)}s
+                </span>{' '}
+                <span className="font-medium">
+                  {l.characterId ? (characters[l.characterId]?.name ?? '') : ''}
+                </span>
+                : {l.text}
+              </p>
+            ))}
+            {take.consistency.voices?.map((v) => (
+              <div
+                key={v.characterId}
+                className="flex flex-wrap items-center gap-2 text-[13px]"
+                data-testid="voice-verdict"
+              >
+                <span className="font-medium">{characters[v.characterId]?.name ?? v.characterId}</span>
+                <Badge tone={v.present && v.score >= take.consistency.threshold ? 'success' : 'danger'}>
+                  {v.present ? `voice ${v.score.toFixed(2)}` : 'not heard'}
+                </Badge>
+                {v.issues.length ? (
+                  <span className="text-[12px] text-warning">{v.issues.join('; ')}</span>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        ) : null}
         {take.consistency.elements?.length ? (
           <div className="space-y-1" data-testid="element-verdicts">
             {take.consistency.elements.map((v) => (
@@ -254,6 +300,15 @@ function TakeTile({
             <Badge title={`Invisible watermark ${take.watermarkId}`}>
               <ShieldCheck className="size-3" />
               wm
+            </Badge>
+          ) : null}
+          {take.audio ? (
+            <Badge
+              title={`${take.audio.mode === 'tts' ? 'TTS dialogue' : 'Native audio'} · ${LIP_SYNC[take.audio.lipSync]}`}
+              testid="take-audio"
+            >
+              <AudioLines className="size-3" />
+              {take.audio.mode === 'tts' ? 'tts' : 'native'}
             </Badge>
           ) : null}
         </div>

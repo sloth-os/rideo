@@ -35,12 +35,18 @@ RIDEO_TEST_WEBDAV_URL=http://rideo:rideo@localhost:8080/ npx vitest run --projec
   provenance (consent validation, real-person characters, the disclosure rule for every `label` × real-person
   case, `withDisclosure` over and beyond an hour, the corner `label` drawtext); elements (library merging by
   name and alias, scene and shot linking, element prompt sentences, the element share of the image budget and
-  the element sheet, reference-sheet requests, E6 staleness, the `elements.*` requirements).
+  the element sheet, reference-sheet requests, E6 staleness, the `elements.*` requirements); dialogue (legacy
+  voices, voice readiness per mode, voiced lines and speakers, line seeds, the line layout, V1 readiness, the
+  video request's reference audio, sound and length, the `voices.speakingLocked` requirement, V6 staleness, the
+  Dialogue track with muted takes and timed captions, cloned real voices and the disclosure rule).
 - **server**: repository commit, log, diff, restore, branches, tags, coalescing and GC on `MemoryBackend`;
   job queue (lanes, priorities, dedupe, retry classification, cancel propagation, restart recovery; the
   `client` lane: claim order, leases, heartbeats, expiry and session release, cancel, staged files);
   consistency gate scoring, preconditions R1/R2, stale detection R6, override rules R8, fail-closed R9; LLM
-  adapters' request shapes and JSON repair; live hub sequencing, replay and resync; config parsing.
+  adapters' request shapes and JSON repair (and audio parts for the speaker check); live hub sequencing,
+  replay and resync; config parsing (TTS and speaker-check endpoints); the ElevenLabs and OpenAI TTS clients
+  against a fake proxy (design, save, clone, speech with timings and seeds, retryable failures, metrics); the
+  speaker-check merge (V4: same, different, missing and silent voices, no judge, judge outage).
 - **web**: live-event store reducer and optimistic timeline edits (apply, confirm, roll back), live client
   (sequence dedupe, UI-command acks, restart resync), UI command dispatch, WebCodecs codec/container
   selection, render engine choice, the editor-job worker against a fake API (claims only with a project and a
@@ -78,11 +84,20 @@ RIDEO_TEST_WEBDAV_URL=http://rideo:rideo@localhost:8080/ npx vitest run --projec
   and C2PA Content Credentials on every take and on the export (every take and the music as ingredients);
   elements: the screenplay's locations and props become draft elements linked from scenes and planned shots,
   E1 (`element_not_locked`) and E2 (`element_locked`), element lock versions on takes, E6 staleness after a
-  relock with changes, E4 judging with `judgeElements`, and the batch stopping for a new prop until it is locked.
+  relock with changes, E4 judging with `judgeElements`, and the batch stopping for a new prop until it is locked;
+  V1 (`voice_not_locked`) before the speaking characters' voices are locked, and the takes' TTS dialogue mixes
+  as AI-generated ingredients of the export.
+- **Dialogue** (`dialogue.test.ts`): voices against the mock's ElevenLabs endpoints: design three previews, pick
+  (the saved voice keeps the preview), lock, V2 (`voice_locked` for design, pick and description), relock keeps
+  the version; cloning needs consent; TTS takes (line audio, mix, timings, voice locks, the model conditioned on
+  the mix); the lip-sync pass with `mock-video-lite-v1`; native audio with the speaker check passing and failing
+  (V4); V1 and V6 (relock with another voice marks takes stale, regeneration speaks with the new voice); the
+  Dialogue track and timed captions; dialogue off; a server without TTS (`tts_unavailable`).
 - **Footage workflow** (`footage.test.ts`): upload with a browser-style probe, an inbox/URL import processed
   by the worker, analysis signals from the worker then AI and rule suggestions, review, auto edit, export.
 - **MCP** (`mcp.test.ts`): the official MCP client over Streamable HTTP. Lists tools, runs a production
-  through tools, and asserts that a WebSocket subscriber received the matching `commit`, `job` and
+  through tools (including designing, picking and locking a voice), and asserts that a WebSocket subscriber
+  received the matching `commit`, `job` and
   `activity` events and that `ui_*` commands reach a fake browser session with acks.
 - **WebDAV editing** (`webdav-sync.test.ts`): edit `screenplay.json` through the WebDAV client and sync (a
   commit by `webdav`); an invalid edit raises a `sync-issue`; the inbox import creates resources.
@@ -92,14 +107,15 @@ RIDEO_TEST_WEBDAV_URL=http://rideo:rideo@localhost:8080/ npx vitest run --projec
 ### End-to-end (Playwright)
 
 Projects: `desktop` (1440×900) runs every spec except `responsive`; `mobile` (412×915, touch) runs
-`responsive`, `mcp-sync`, `provenance` and `elements`. Specs:
+`responsive`, `mcp-sync`, `provenance`, `elements` and `dialogue`. Specs:
 
 | Spec | Flow |
 |---|---|
-| `story.spec.ts` | brief → screenplay → cast (generate, approve, lock; then the locations and props in the Elements view) → pilot → approve → batch (30 s target) → approve → editor (assemble, split, inspector trim, edge-drag trim; the preview plays local proxies because H.264 is hidden from WebCodecs) → export rendered in the tab (`auto` → ffmpeg.wasm) → verify watermark |
+| `story.spec.ts` | brief → screenplay → cast (generate, approve, lock; design, pick and lock every voice; then the locations and props in the Elements view) → pilot (the speaking take carries TTS dialogue) → approve → batch (30 s target) → approve → editor (assemble; the Dialogue track holds the mixes; split, inspector trim, edge-drag trim; the preview plays local proxies because H.264 is hidden from WebCodecs) → export rendered in the tab (`auto` → ffmpeg.wasm) → verify watermark |
 | `mcp-sync.spec.ts` | page open; the test drives MCP tools as “Claude Code” (create character, add reference, lock, `ui_navigate`, `ui_focus`, `ui_notify`) and asserts the page updates live, attributed to the agent, without a reload; an agent's `export_render` is claimed and rendered by the open tab (`auto` → WebCodecs) and watermarked by the server |
 | `footage.spec.ts` | upload (probe + poster in the browser) → analysis signals in the browser → AI suggestions → accept → auto edit → exports with the ffmpeg.wasm and WebCodecs engines → both listed and verified |
 | `history.spec.ts` | edit → history → diff → restore → UI updates |
+| `dialogue.spec.ts` | (desktop and mobile) the Cast view's voice panel: design three voices, the previews play, pick one, lock it; clone a recording of a real person through the consent dialog and lock it; the gate stops asking for voices; the dialogue mode setting |
 | `elements.spec.ts` | (desktop and mobile) the screenplay's location in the Elements view → generate, approve, lock; add a prop and link it to a scene in the Story view |
 | `provenance.spec.ts` | (desktop and mobile) uploading a likeness opens the consent dialog; a real person needs subject, grantor and date and marks the character; the disclosure setting labels the export; the export card and the public Verify page show the Content Credentials |
 | `responsive.spec.ts` | every main view on mobile: no horizontal overflow, navigation reachable, primary actions visible |

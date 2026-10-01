@@ -4,7 +4,9 @@ import {
   JUDGE_FRAME_LABEL,
   JUDGE_REFERENCE_LABEL,
   type LlmTaskId,
+  TAKE_AUDIO_LABEL,
   TASK_MARKER_PATTERN,
+  VOICE_REFERENCE_LABEL,
 } from '@rideo/shared';
 import {
   characterDescribe,
@@ -17,8 +19,12 @@ import {
   screenplayGenerate,
 } from './fixtures';
 import { parseDataUri } from './png';
+import { voiceJudge } from './speech';
 
-type Part = { kind: 'text'; text: string } | { kind: 'image'; data: Buffer; mime: string };
+type Part =
+  | { kind: 'text'; text: string }
+  | { kind: 'image'; data: Buffer; mime: string }
+  | { kind: 'audio'; data: Buffer; format: string };
 
 export interface ProxyResponse {
   status: number;
@@ -48,6 +54,12 @@ export function parseOpenAi(body: any): ChatRequest {
         continue;
       }
       if (c.type === 'text') parts.push({ kind: 'text', text: c.text });
+      else if (c.type === 'input_audio' && c.input_audio?.data)
+        parts.push({
+          kind: 'audio',
+          data: Buffer.from(c.input_audio.data, 'base64'),
+          format: c.input_audio.format ?? 'wav',
+        });
       else if (c.type === 'image_url') {
         const img = imageFromUrl(typeof c.image_url === 'string' ? c.image_url : c.image_url?.url);
         if (img) parts.push(img);
@@ -66,12 +78,10 @@ export function parseGemini(body: any): ChatRequest {
     for (const p of c.parts ?? []) {
       if (typeof p.text === 'string') parts.push({ kind: 'text', text: p.text });
       const inline = p.inline_data ?? p.inlineData;
-      if (inline?.data)
-        parts.push({
-          kind: 'image',
-          data: Buffer.from(inline.data, 'base64'),
-          mime: inline.mime_type ?? inline.mimeType,
-        });
+      const mime = String(inline?.mime_type ?? inline?.mimeType ?? '');
+      if (inline?.data && mime.startsWith('audio/'))
+        parts.push({ kind: 'audio', data: Buffer.from(inline.data, 'base64'), format: mime.split('/')[1]! });
+      else if (inline?.data) parts.push({ kind: 'image', data: Buffer.from(inline.data, 'base64'), mime });
     }
   }
   return { system, parts };
@@ -120,10 +130,36 @@ function labelledImages(parts: Part[]): LabelledImages {
       }
       continue;
     }
+    if (p.kind !== 'image') continue;
     if (refOwner) references.set(refOwner, [...(references.get(refOwner) ?? []), p.data]);
     else if (frameIndex !== null) frames.set(frameIndex, p.data);
   }
   return { references, frames };
+}
+
+/** The speaker check's audio: each character's reference voice, then the take (docs/design/dialogue.md). */
+function labelledAudio(parts: Part[]): { references: Map<string, Buffer>; take: Buffer | null } {
+  const references = new Map<string, Buffer>();
+  let take: Buffer | null = null;
+  let owner: string | null = null;
+  let isTake = false;
+  for (const p of parts) {
+    if (p.kind === 'text') {
+      const ref = new RegExp(`${VOICE_REFERENCE_LABEL}\\s+(\\S+)`).exec(p.text);
+      if (ref) {
+        owner = ref[1]!.replace(/[^a-z0-9_]/gi, '');
+        isTake = false;
+      } else if (p.text.startsWith(TAKE_AUDIO_LABEL)) {
+        owner = null;
+        isTake = true;
+      }
+      continue;
+    }
+    if (p.kind !== 'audio') continue;
+    if (owner) references.set(owner, p.data);
+    else if (isTake) take = p.data;
+  }
+  return { references, take };
 }
 
 /** Routes a chat request to the fixture for its `rideo-task:` marker; unknown tasks get a small echo. */
@@ -157,6 +193,9 @@ export function answer(req: ChatRequest): string {
       break;
     case 'consistency.judge':
       out = consistencyJudge(input, labelledImages(req.parts));
+      break;
+    case 'voice.judge':
+      out = voiceJudge(input, labelledAudio(req.parts));
       break;
     case 'footage.analyze':
       out = footageAnalyze(input);

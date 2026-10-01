@@ -1,4 +1,4 @@
-import type { Character } from '../schemas/character';
+import { type Character, voiceOf } from '../schemas/character';
 import type { CharacterVerdict, Clip, ConsistencyStatus, ElementVerdict, Shot, Take } from '../schemas/clip';
 import type { Element } from '../schemas/element';
 
@@ -35,6 +35,16 @@ export function staleElements(
   });
 }
 
+/** Speakers whose voice lock changed since the take was generated (rule V6, docs/design/dialogue.md). */
+export function staleVoices(take: Take, characters: Record<string, Character>): string[] {
+  return Object.entries(take.audio?.voiceLocks ?? {})
+    .filter(([id, version]) => {
+      const c = characters[id];
+      return !!c && voiceOf(c).lock.version !== version;
+    })
+    .map(([id]) => id);
+}
+
 export function takeState(
   take: Take,
   shot: Pick<Shot, 'characterIds'> & Partial<Pick<Shot, 'elementIds'>>,
@@ -44,6 +54,7 @@ export function takeState(
   if (take.override) return 'overridden';
   if (staleCharacters(take, shot, characters).length > 0) return 'stale';
   if (staleElements(take, { elementIds: shot.elementIds ?? [] }, elements).length > 0) return 'stale';
+  if (staleVoices(take, characters).length > 0) return 'stale';
   return take.consistency.status;
 }
 
@@ -75,7 +86,7 @@ export function shotBlocker(
   const why: Record<Exclude<TakeState, 'passed' | 'overridden'>, string> = {
     failed: 'failed the consistency check',
     unverified: 'is not verified',
-    stale: 'was generated from an older character or element lock',
+    stale: 'was generated from an older character, element or voice lock',
   };
   return {
     clipId: clip.id,

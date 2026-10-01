@@ -29,6 +29,8 @@ import {
   TimelineOpSchema,
   timelineDuration,
   ViewSchema,
+  voiceOf,
+  voiceStatus,
   WardrobeInputSchema,
 } from '@rideo/shared';
 import type { FastifyInstance } from 'fastify';
@@ -98,6 +100,17 @@ export function summarizeState(state: ProjectState) {
         approved: r.approved,
         source: r.source,
       })),
+      voice: (() => {
+        const v = voiceOf(c);
+        return {
+          status: voiceStatus(c),
+          description: v.description,
+          source: v.source,
+          locked: v.lock.locked,
+          lockVersion: v.lock.version,
+          candidates: v.candidates.map((x) => ({ id: x.id, durationSec: x.sample.durationSec })),
+        };
+      })(),
     })),
     elements: Object.values(d.elements).map((e) => ({
       id: e.id,
@@ -389,6 +402,10 @@ function buildServer(studio: Studio): McpServer {
       identity: IdentitySchema.partial().optional(),
       wardrobe: z.array(WardrobeInputSchema).optional(),
       personality: z.string().optional(),
+      voice: z
+        .object({ description: z.string().max(1000) })
+        .optional()
+        .describe('The voice description used to design voices (frozen while the voice is locked)'),
     },
     (a, actor) => studio.story.updateCharacter(actor, a.projectId, a.characterId, a),
   );
@@ -441,6 +458,37 @@ function buildServer(studio: Studio): McpServer {
     'Unlock a character to edit its identity (relocking with changes marks older takes stale).',
     { projectId: PROJECT, characterId: z.string() },
     (a, actor) => studio.story.unlockCharacter(actor, a.projectId, a.characterId),
+  );
+  // Voices (docs/design/dialogue.md)
+  tool(
+    'character_voice_design',
+    'Design voices for a character from its voice description (job): three previews speaking its lines, to pick with character_voice_select.',
+    { projectId: PROJECT, characterId: z.string() },
+    (a, actor) => studio.voices.design(actor, a.projectId, a.characterId),
+  );
+  tool(
+    'character_voice_select',
+    'Use a designed voice preview as the character voice.',
+    { projectId: PROJECT, characterId: z.string(), candidateId: z.string() },
+    (a, actor) => studio.voices.select(actor, a.projectId, a.characterId, a.candidateId),
+  );
+  tool(
+    'character_voice_clone',
+    'Clone a voice from a recording (https or data URI). consent states whether it is a real person (then subject, grantedBy and grantedAt are required, docs/design/provenance.md#consent-records).',
+    { projectId: PROJECT, characterId: z.string(), uri: z.string(), consent: ConsentInputSchema },
+    (a, actor) => studio.voices.clone(actor, a.projectId, a.characterId, { uri: a.uri }, a.consent),
+  );
+  tool(
+    'character_voice_lock',
+    'Lock a character voice — required before generating shots where the character speaks (rule V1).',
+    { projectId: PROJECT, characterId: z.string() },
+    (a, actor) => studio.voices.lock(actor, a.projectId, a.characterId),
+  );
+  tool(
+    'character_voice_unlock',
+    'Unlock a character voice to change it (relocking with changes marks takes where it speaks stale).',
+    { projectId: PROJECT, characterId: z.string() },
+    (a, actor) => studio.voices.unlock(actor, a.projectId, a.characterId),
   );
   // Elements: locations, props, styles (docs/design/elements.md)
   tool(

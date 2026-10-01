@@ -30,7 +30,8 @@ the agent work.
 
 Tools return `structuredContent` (JSON) plus the same JSON as a text block for clients that ignore
 structured output. Failures return `isError: true` with `{code, message}` using the stable error codes of
-the REST API (`validation_error`, `not_found`, `character_not_locked`, `character_locked`,
+the REST API (`validation_error`, `not_found`, `character_not_locked`, `character_locked`, `voice_not_locked`,
+`voice_locked`,
 `consistency_gate`, `gate_unmet`, `conflict`, `gateway_error`, …).
 
 Long-running tools (`*_generate`, `batch_generate`, `export_render`, `footage_analyze`) enqueue a job and
@@ -66,12 +67,16 @@ or keep going and `job_wait` until a tab picks the job up.
 | `screenplay_update` | `projectId`, `fields?` (title, logline, synopsis, genre, tone, style), `upsertScenes?[]`, `removeSceneIds?[]`, `outline?[]` |
 | `screenplay_extend` | `projectId`, `beats?` → job |
 | `character_create` | `projectId`, `name`, `role?`, `summary?`, `identity?`, `wardrobe?[]` |
-| `character_update` | `projectId`, `characterId`, fields (rejected while locked) |
+| `character_update` | `projectId`, `characterId`, fields, `voice?: {description}` (rejected while locked) |
 | `character_generate_refs` | `projectId`, `characterId`, `views?[]` → job |
 | `character_add_reference` | `projectId`, `characterId`, `uri` (https or data URI), `view?`, `consent` (`{depictsRealPerson, subject?, grantedBy?, grantedAt?, scope?, evidence?}`) |
 | `character_set_reference_approval` | `projectId`, `characterId`, `referenceId`, `approved` |
 | `character_describe_from_image` | `projectId`, `characterId`, `resourceId`, `consent` → job |
 | `character_lock` / `character_unlock` | `projectId`, `characterId` |
+| `character_voice_design` | `projectId`, `characterId` → job (three previews, [dialogue](dialogue.md)) |
+| `character_voice_select` | `projectId`, `characterId`, `candidateId` |
+| `character_voice_clone` | `projectId`, `characterId`, `uri`, `consent` |
+| `character_voice_lock` / `character_voice_unlock` | `projectId`, `characterId` |
 | `element_list` | `projectId` |
 | `element_create` | `projectId`, `kind` (`location`, `prop`, `style`), `name`, `description?`, `aliases?` |
 | `element_update` / `element_delete` | `projectId`, `elementId`, fields (rejected while locked) |

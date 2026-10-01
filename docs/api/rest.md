@@ -22,6 +22,9 @@ Errors are RFC 9457 problem details (`application/problem+json`) with a stable `
 | `character_locked` | 409 | R2: edit a locked character |
 | `element_not_locked` | 409 | E1 precondition: a shot's location or prop is not locked ([elements](../design/elements.md)) |
 | `element_locked` | 409 | E2: edit a locked element |
+| `voice_not_locked` | 409 | V1 precondition: a speaker of the shot has no locked voice ([dialogue](../design/dialogue.md)) |
+| `voice_locked` | 409 | V2: change a locked voice |
+| `tts_unavailable` | 422 | voices or TTS dialogue without a TTS provider on the server (or cloning with one that cannot clone) |
 | `consistency_gate` | 409 | R7: approval or export blocked by unverified, failed or stale takes |
 | `gate_unmet` | 409 | workflow gate requirements not satisfied (`errors[]` lists them) |
 | `timeline_op_invalid` | 422 | a timeline op failed (`errors[0].opIndex`) |
@@ -73,7 +76,7 @@ Errors are RFC 9457 problem details (`application/problem+json`) with a stable `
 | PATCH | `/api/projects/:id/screenplay` | `{fields?, upsertScenes?, removeSceneIds?, outline?}`; header `X-Rideo-Coalesce: <key>` for typing sessions | `Screenplay` |
 | POST | `/api/projects/:id/screenplay/extend` | `{beats?}` | `Job` |
 | POST | `/api/projects/:id/characters` | `{name, role?, summary?, identity?, wardrobe?}` | `Character` |
-| PATCH | `/api/projects/:id/characters/:cid` | character fields | `Character` (`character_locked` while locked) |
+| PATCH | `/api/projects/:id/characters/:cid` | character fields, `voice: {description}` | `Character` (`character_locked` / `voice_locked` while locked) |
 | DELETE | `/api/projects/:id/characters/:cid` | – | `204` |
 | POST | `/api/projects/:id/characters/:cid/references/generate` | `{views?}` | `Job` |
 | POST | `/api/projects/:id/characters/:cid/references` | multipart `file` + `view` + `consent` (JSON), or `{uri, view?, consent}`; `consent: {depictsRealPerson, subject?, grantedBy?, grantedAt?, scope?, evidence?}` | `Character` (`consent_required` when a real person lacks subject, grantor or date) |
@@ -81,6 +84,10 @@ Errors are RFC 9457 problem details (`application/problem+json`) with a stable `
 | DELETE | `/api/projects/:id/characters/:cid/references/:rid` | – | `Character` |
 | POST | `/api/projects/:id/characters/:cid/describe` | `{resourceId, consent}` (the photo becomes an uploaded reference) | `Job` |
 | POST | `/api/projects/:id/characters/:cid/lock` / `unlock` | – | `Character` |
+| POST | `/api/projects/:id/characters/:cid/voice/design` | – | `Job` (`voice.design`: three previews in `voice.candidates`) |
+| POST | `/api/projects/:id/characters/:cid/voice/select` | `{candidateId}` | `Character` |
+| POST | `/api/projects/:id/characters/:cid/voice/clone` | multipart `file` + `consent` (JSON), or `{uri, consent}` | `Character` (`consent_required`, `tts_unavailable`) |
+| POST | `/api/projects/:id/characters/:cid/voice/lock` / `unlock` | – | `Character` (`voice_locked` for changes while locked) |
 | POST | `/api/projects/:id/music` | `{prompt, durationSec?, instrumental?}` | `Job` |
 
 ## Elements (locations, props, styles)

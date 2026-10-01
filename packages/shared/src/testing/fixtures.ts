@@ -145,6 +145,7 @@ export function report(overrides: Partial<ConsistencyReport> = {}): ConsistencyR
     checkedAt: '2026-09-30T00:00:00.000Z',
     characters: [],
     elements: [],
+    voices: [],
     frames: [],
     ...overrides,
   };
@@ -162,6 +163,7 @@ export function take(overrides: Partial<Take> = {}): Take {
     consistency: report(),
     characterLocks: {},
     elementLocks: {},
+    audio: null,
     watermarkId: null,
     contentCredentials: null,
     override: null,

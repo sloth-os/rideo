@@ -21,6 +21,15 @@ export const ElementVerdictSchema = z.object({
 });
 export type ElementVerdict = z.infer<typeof ElementVerdictSchema>;
 
+/** Speaker check of a native-audio take (rule V4, docs/design/dialogue.md#rules). */
+export const VoiceVerdictSchema = z.object({
+  characterId: IdSchema,
+  present: z.boolean(),
+  score: z.number().min(0).max(1),
+  issues: z.array(z.string().max(500)).default([]),
+});
+export type VoiceVerdict = z.infer<typeof VoiceVerdictSchema>;
+
 export const ConsistencyReportSchema = z.object({
   status: ConsistencyStatusSchema,
   judge: z.string(),
@@ -31,6 +40,8 @@ export const ConsistencyReportSchema = z.object({
   characters: z.array(CharacterVerdictSchema).default([]),
   /** Locations and props, when the project judges elements (rule E4, docs/design/elements.md). */
   elements: z.array(ElementVerdictSchema).default([]),
+  /** Speakers, when a native-audio take is checked against the voice locks (rule V4). */
+  voices: z.array(VoiceVerdictSchema).default([]),
   frames: z.array(MediaRefSchema).default([]),
   note: z.string().max(1000).optional(),
 });
@@ -67,6 +78,30 @@ export const CameraSchema = z.object({
 });
 export type Camera = z.infer<typeof CameraSchema>;
 
+/** One spoken line of a take, placed on the take's own clock (seconds). */
+export const TakeLineSchema = z.object({
+  index: z.number().int().nonnegative(),
+  characterId: IdSchema.nullable(),
+  text: z.string().max(2000),
+  start: z.number().nonnegative(),
+  end: z.number().nonnegative(),
+  media: MediaRefSchema.nullable().default(null),
+});
+export type TakeLine = z.infer<typeof TakeLineSchema>;
+
+/** The dialogue of a take (docs/design/dialogue.md#take-audio). */
+export const TakeAudioSchema = z.object({
+  mode: z.enum(['tts', 'native']),
+  /** The TTS mix of the shot's lines (tts mode): the Dialogue track plays it. */
+  dialogue: MediaRefSchema.nullable().default(null),
+  lines: z.array(TakeLineSchema).default([]),
+  /** Voice lock versions of the speakers at generation time (rule V6). */
+  voiceLocks: z.record(z.string(), z.number().int().nonnegative()).default({}),
+  /** How the lips follow the TTS mix: conditioned on it, a lip-sync pass, or not at all. */
+  lipSync: z.enum(['conditioned', 'pass', 'none']).default('none'),
+});
+export type TakeAudio = z.infer<typeof TakeAudioSchema>;
+
 export const TakeSchema = z.object({
   id: IdSchema,
   createdAt: IsoDateSchema,
@@ -88,6 +123,7 @@ export const TakeSchema = z.object({
   characterLocks: z.record(z.string(), z.number().int().nonnegative()).default({}),
   /** Lock versions of the shot's elements at generation time (rule E6). */
   elementLocks: z.record(z.string(), z.number().int().nonnegative()).default({}),
+  audio: TakeAudioSchema.nullable().default(null),
   watermarkId: z.string().nullable().default(null),
   /** C2PA manifest embedded in the take's video (docs/design/provenance.md#takes). */
   contentCredentials: ContentCredentialsStampSchema.nullable().default(null),

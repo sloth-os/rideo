@@ -64,6 +64,13 @@ export const EnvSchema = z.object({
   RIDEO_VISION_MODEL: str(),
   RIDEO_STT_PROXY_DOMAIN: str(),
   RIDEO_STT_MODEL: str('whisper-1'),
+  RIDEO_TTS_PROVIDER: z.enum(['elevenlabs', 'openai', 'off']).optional().default('off'),
+  RIDEO_TTS_PROXY_DOMAIN: str(),
+  RIDEO_TTS_MODEL: str(),
+  RIDEO_LIPSYNC_MODEL: str('auto'),
+  RIDEO_VOICE_JUDGE_PROVIDER: z.enum(['openai', 'gemini', 'off']).optional(),
+  RIDEO_VOICE_JUDGE_PROXY_DOMAIN: str(),
+  RIDEO_VOICE_JUDGE_MODEL: str(),
   RIDEO_CONSISTENCY_JUDGE: z.enum(['vision-llm', 'off']).optional().default('vision-llm'),
   RIDEO_CONSISTENCY_THRESHOLD: num(0.75),
   RIDEO_CONSISTENCY_MAX_ATTEMPTS: num(3),
@@ -97,6 +104,20 @@ export interface LlmEndpoint {
   model: string;
 }
 
+/** Text-to-speech through the gateway proxy (docs/design/dialogue.md#providers). */
+export interface TtsEndpoint {
+  provider: 'elevenlabs' | 'openai';
+  domain: string;
+  model: string;
+}
+
+const TTS_DEFAULTS = {
+  elevenlabs: { domain: 'api.elevenlabs.io', model: 'eleven_multilingual_v2' },
+  openai: { domain: 'api.openai.com', model: 'gpt-4o-mini-tts' },
+} as const;
+
+const VOICE_JUDGE_DEFAULT_MODELS = { openai: 'gpt-4o-audio-preview', gemini: 'gemini-2.5-flash' } as const;
+
 export interface Config {
   host: string;
   port: number;
@@ -123,13 +144,17 @@ export interface Config {
     url: string;
     apiKey?: string;
     routingProfile?: string;
-    models: { image: string; video: string; music: string };
+    models: { image: string; video: string; music: string; lipSync: string };
     pollMs: number;
     timeoutsSec: { image: number; video: number; music: number };
   };
   llm: LlmEndpoint;
   vision: LlmEndpoint;
   stt?: { domain: string; model: string };
+  /** Dialogue voices; unset when RIDEO_TTS_PROVIDER=off. */
+  tts?: TtsEndpoint;
+  /** The audio-capable LLM that checks speakers of native-audio takes (rule V4). */
+  voiceJudge?: { provider: 'openai' | 'gemini'; domain: string; model: string };
   consistency: { judge: 'vision-llm' | 'off'; threshold: number; maxAttempts: number };
   lanes: Record<string, number>;
   watermark: { key?: string; oldKeys: string[]; strength: number };
@@ -200,7 +225,12 @@ export function loadConfig(
       url: e.MM_GATEWAY_URL!.replace(/\/+$/, ''),
       apiKey: e.MM_GATEWAY_API_KEY,
       routingProfile: e.MM_GATEWAY_ROUTING_PROFILE,
-      models: { image: e.RIDEO_IMAGE_MODEL!, video: e.RIDEO_VIDEO_MODEL!, music: e.RIDEO_MUSIC_MODEL! },
+      models: {
+        image: e.RIDEO_IMAGE_MODEL!,
+        video: e.RIDEO_VIDEO_MODEL!,
+        music: e.RIDEO_MUSIC_MODEL!,
+        lipSync: e.RIDEO_LIPSYNC_MODEL!,
+      },
       pollMs: e.RIDEO_GATEWAY_POLL_MS,
       timeoutsSec: {
         image: e.RIDEO_GATEWAY_TIMEOUT_IMAGE_SEC,
@@ -225,6 +255,29 @@ export function loadConfig(
     stt: e.RIDEO_STT_PROXY_DOMAIN
       ? { domain: e.RIDEO_STT_PROXY_DOMAIN, model: e.RIDEO_STT_MODEL! }
       : undefined,
+    tts:
+      e.RIDEO_TTS_PROVIDER === 'off'
+        ? undefined
+        : {
+            provider: e.RIDEO_TTS_PROVIDER,
+            domain: e.RIDEO_TTS_PROXY_DOMAIN ?? TTS_DEFAULTS[e.RIDEO_TTS_PROVIDER].domain,
+            model: e.RIDEO_TTS_MODEL ?? TTS_DEFAULTS[e.RIDEO_TTS_PROVIDER].model,
+          },
+    voiceJudge: (() => {
+      // Defaults to the vision provider when it accepts audio (Anthropic models do not).
+      const provider =
+        e.RIDEO_VOICE_JUDGE_PROVIDER ?? (visionProvider === 'anthropic' ? 'off' : visionProvider);
+      if (provider === 'off') return undefined;
+      return {
+        provider,
+        domain:
+          e.RIDEO_VOICE_JUDGE_PROXY_DOMAIN ??
+          (provider === visionProvider && e.RIDEO_VISION_PROXY_DOMAIN
+            ? e.RIDEO_VISION_PROXY_DOMAIN
+            : LLM_DEFAULT_DOMAINS[provider]),
+        model: e.RIDEO_VOICE_JUDGE_MODEL ?? VOICE_JUDGE_DEFAULT_MODELS[provider],
+      };
+    })(),
     consistency: {
       judge: e.RIDEO_CONSISTENCY_JUDGE,
       threshold: e.RIDEO_CONSISTENCY_THRESHOLD,

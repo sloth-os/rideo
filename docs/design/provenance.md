@@ -161,10 +161,11 @@ type Consent = {
 
 - Adding an uploaded reference requires `consent.depictsRealPerson` to be stated. When it is `true`, the
   subject, grantor and date are required, else the request fails with `consent_required` (422).
-- A character whose approved references include one with `depictsRealPerson: true` is a **real-person
-  character**: the disclosure label is forced onto exports containing its takes, and the UI marks it.
-- Cloning a voice from a recording always depicts a real person, so it always needs a consent record
-  ([dialogue](dialogue.md)).
+- A character whose approved references include one with `depictsRealPerson: true`, or whose voice is a clone
+  of a real person, is a **real-person character**: the disclosure label is forced onto exports containing its
+  takes, and the UI marks it.
+- Cloning a voice from a recording needs a consent record like an uploaded likeness ([dialogue](dialogue.md));
+  the TTS dialogue of takes is listed as an AI-generated ingredient of exports.
 - Generated references never depict real people (the screenplay prompt forbids real people).
 - Withdrawing consent means removing the reference; relocking the character marks its takes stale (R6), so
   they cannot be exported until regenerated.

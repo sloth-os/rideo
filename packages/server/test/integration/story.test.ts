@@ -5,6 +5,7 @@ import {
   ApiError,
   expectSucceeded,
   lockElements,
+  lockVoices,
   readyStoryProject,
   type Stack,
   startStack,
@@ -71,6 +72,7 @@ describe('story → movie workflow (REST, mock gateway)', () => {
     expect(unmet.body.errors.map((e: { requirement: string }) => e.requirement)).toEqual([
       'characters.allLocked',
       'characters.allHaveApprovedRefs',
+      'voices.speakingLocked',
       'elements.inUseLocked',
       'elements.inUseHaveApprovedRefs',
     ]);
@@ -121,6 +123,9 @@ describe('story → movie workflow (REST, mock gateway)', () => {
       stack.api('PATCH', `/projects/${pid}/elements/${location.id}`, { description: 'a different room' }),
       'element_locked',
     );
+    // V1: the speaking characters need locked voices (docs/design/dialogue.md).
+    await rejects(stack.api('POST', `/projects/${pid}/clips/${pilot.id}/generate`), 'voice_not_locked');
+    await lockVoices(stack, pid);
     await stack.api('POST', `/projects/${pid}/workflow/approve`, { gate: 'cast_locked' });
     await stack.api('POST', `/projects/${pid}/workflow/approve`, { gate: 'resources_ready' });
 
@@ -203,15 +208,19 @@ describe('story → movie workflow (REST, mock gateway)', () => {
         .filter((i: { source?: { type: string } }) => i.source?.type === 'take')
         .map((i: { source: { media: { hash: string } } }) => i.source.media.hash),
     );
+    // The takes' TTS dialogue mixes are ingredients too (docs/design/dialogue.md#timeline).
+    const dialogue = assembled.timeline.tracks.find((t: { name: string }) => t.name === 'Dialogue');
+    expect(dialogue.items.length).toBeGreaterThan(0);
+    const ingredients = takes.size + dialogue.items.length + 1;
     expect(done.disclosure).toMatchObject({ label: false, reason: null });
-    expect(done.contentCredentials.ingredients).toBe(takes.size + 1);
+    expect(done.contentCredentials.ingredients).toBe(ingredients);
     expect(detect.contentCredentials).toMatchObject({
       present: true,
       state: 'valid',
       aiGenerated: true,
       digitalSourceType:
         'http://cv.iptc.org/newscodes/digitalsourcetype/compositeWithTrainedAlgorithmicMedia',
-      ingredients: takes.size + 1,
+      ingredients,
       watermarkId: done.watermarkId,
       bound: true,
       disclosure: { label: false, reason: null },

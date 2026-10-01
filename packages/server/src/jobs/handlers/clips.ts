@@ -2,6 +2,7 @@ import {
   approvedElementReferences,
   type Clip,
   DEFAULT_VIDEO_LIMITS,
+  dialogueMode,
   docPath,
   isAcceptable,
   type Job,
@@ -13,8 +14,10 @@ import {
   sortedClips,
   TARGET_REACHED_RATIO,
   takeState,
+  voiceOf,
+  voicesNotReady,
 } from '@rideo/shared';
-import { assertCastReady, clipStatusOf } from '../../domain/clips';
+import { assertCastReady, assertVoicesReady, clipStatusOf } from '../../domain/clips';
 import { AppError, notFound } from '../../errors';
 import { throwIfAborted } from '../../util/abort';
 import type { JobContext } from '../queue';
@@ -100,6 +103,7 @@ export async function clipPlan(deps: HandlerDeps, ctx: JobContext) {
   if (thenGenerate) {
     const fresh = await docsFor(deps, ctx);
     assertCastReady(clip.shots, fresh.characters, fresh.elements);
+    assertVoicesReady(deps, clip.shots, fresh.characters, fresh.project.settings);
     await ctx.spawn('clip.generate', { clipId: clip.id }, { dedupeKey: `clip:${clip.id}` });
   }
   return { clipId: clip.id, shots: clip.shots.length };
@@ -112,6 +116,7 @@ export async function clipGenerate(deps: HandlerDeps, ctx: JobContext) {
   const clip = docs.clips[clipId];
   if (!clip) throw notFound(`clip ${clipId}`);
   assertCastReady(clip.shots, docs.characters, docs.elements);
+  assertVoicesReady(deps, clip.shots, docs.characters, docs.project.settings);
   const todo = [...clip.shots]
     .sort((a, b) => a.index - b.index)
     .filter((s) => {
@@ -216,7 +221,19 @@ export async function batchGenerate(deps: HandlerDeps, ctx: JobContext) {
         stopReason = `new locations or props need approval: ${pending.map((e) => e!.name).join(', ')}`;
         break;
       }
+      // The same for a speaker without a locked voice (docs/design/dialogue.md#workflow): design and stop.
+      const silent = voicesNotReady(next.shots, docs.characters, dialogueMode(docs.project.settings));
+      if (silent.length) {
+        for (const c of silent) {
+          const v = voiceOf(c);
+          if (deps.tts && !v.lock.locked && !v.voiceId && !v.sample && v.candidates.length === 0)
+            await deps.services.voices.design(ctx.actor, ctx.job.projectId, c.id);
+        }
+        stopReason = `voices need approval: ${silent.map((c) => c.name).join(', ')}`;
+        break;
+      }
       assertCastReady(next.shots, docs.characters, docs.elements);
+      assertVoicesReady(deps, next.shots, docs.characters, docs.project.settings);
       const job = await ctx.spawn('clip.generate', { clipId: next.id }, { dedupeKey: `clip:${next.id}` });
       started.add(next.id);
       inFlight.push(job);

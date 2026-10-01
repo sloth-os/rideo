@@ -1,11 +1,15 @@
+import { execFile } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { synthesizeFrame, synthesizeMusic, synthesizeVideo } from './media';
+import { promisify } from 'node:util';
+import { runFfmpeg, synthesizeFrame, synthesizeMusic, synthesizeVideo } from './media';
 import type { Modality } from './models';
 import { decodePng, encodePng, isPng, parseDataUri } from './png';
 import { allSignatures, type Rgb, signatureColor } from './signature';
 import { type RunResult, TaskError } from './tasks';
+
+const execFileP = promisify(execFile);
 
 export interface GenerateContext {
   dir: string;
@@ -216,6 +220,79 @@ export async function runImage(body: Record<string, any>, ctx: GenerateContext):
   return { outputs, usage: { output_count: count } };
 }
 
+/** Decodes the reference audio parts and joins them (each speaker's sample in order). */
+async function referenceAudio(parts: Part[], dir: string, name: string): Promise<string | undefined> {
+  const audio = parts.filter(
+    (p) => p.type === 'audio' && (p.role ?? 'reference_audio') === 'reference_audio',
+  );
+  if (!audio.length) return undefined;
+  const inputs: string[] = [];
+  for (const [i, p] of audio.entries()) {
+    const path = join(dir, `${name}-ref-${i}`);
+    await writeFile(path, await loadUri(p.uri!));
+    inputs.push(path);
+  }
+  const out = join(dir, `${name}-audio.wav`);
+  const filter =
+    inputs.length === 1
+      ? '[0:a]aformat=sample_rates=48000:channel_layouts=mono[out]'
+      : `${inputs.map((_, i) => `[${i}:a]aformat=sample_rates=48000:channel_layouts=mono[a${i}]`).join(';')};${inputs.map((_, i) => `[a${i}]`).join('')}concat=n=${inputs.length}:v=0:a=1[out]`;
+  await runFfmpeg([...inputs.flatMap((p) => ['-i', p]), '-filter_complex', filter, '-map', '[out]', out]);
+  return out;
+}
+
+async function videoDuration(path: string): Promise<number> {
+  const { stdout } = await execFileP(process.env.RIDEO_FFPROBE_PATH ?? 'ffprobe', [
+    '-v',
+    'error',
+    '-select_streams',
+    'v:0',
+    '-show_entries',
+    'stream=duration',
+    '-of',
+    'csv=p=0',
+    path,
+  ]);
+  return Number.parseFloat(stdout) || 5;
+}
+
+/** Audio-driven lip sync: the reference video's pictures with the reference audio as its sound. */
+async function lipSync(parts: Part[], ctx: GenerateContext, name: string): Promise<RunResult> {
+  const video = parts.find((p) => p.type === 'video' && p.role === 'reference_video')!;
+  const src = join(ctx.dir, `${name}-src.mp4`);
+  await writeFile(src, await loadUri(video.uri!));
+  const audio = await referenceAudio(parts, ctx.dir, name);
+  if (!audio) throw new TaskError('invalid_input', 'lip sync needs reference_audio');
+  const out = join(ctx.dir, `${name}.mp4`);
+  await runFfmpeg([
+    '-i',
+    src,
+    '-i',
+    audio,
+    '-map',
+    '0:v',
+    '-map',
+    '1:a',
+    '-af',
+    'apad',
+    '-c:v',
+    'copy',
+    '-c:a',
+    'aac',
+    '-b:a',
+    '96k',
+    '-t',
+    String(await videoDuration(src)),
+    '-movflags',
+    '+faststart',
+    out,
+  ]);
+  return {
+    outputs: [{ uri: ctx.fileUrl(`${name}.mp4`), mime_type: 'video/mp4' }],
+    usage: { output_count: 1 },
+  };
+}
+
 export async function runVideo(body: Record<string, any>, ctx: GenerateContext): Promise<RunResult> {
   const parts = body.input as Part[];
   const params = (body.parameters ?? {}) as Record<string, unknown>;
@@ -224,6 +301,10 @@ export async function runVideo(body: Record<string, any>, ctx: GenerateContext):
   const durationSec = Math.max(2, Math.min(10, Number(params.duration_seconds ?? 5)));
   const first = parts.find((p) => p.type === 'image' && p.role === 'first_frame');
   const name = randomBytes(8).toString('hex');
+  if (parts.some((p) => p.type === 'video' && p.role === 'reference_video')) return lipSync(parts, ctx, name);
+  // A drifting generation also loses the voices: its sound is the plain tone.
+  const audioPath =
+    params.include_audio && !ctx.flaky ? await referenceAudio(parts, ctx.dir, name) : undefined;
   if (first?.uri && !ctx.flaky) {
     await synthesizeVideo({
       dir: ctx.dir,
@@ -233,6 +314,7 @@ export async function runVideo(body: Record<string, any>, ctx: GenerateContext):
       durationSec,
       firstFrame: await loadUri(first.uri),
       includeAudio: !!params.include_audio,
+      audioPath,
     });
   } else {
     const sigs = ctx.flaky ? [] : await signaturesFromImages(parts);
@@ -250,6 +332,7 @@ export async function runVideo(body: Record<string, any>, ctx: GenerateContext):
       durationSec,
       frame,
       includeAudio: !!params.include_audio,
+      audioPath,
     });
   }
   return {

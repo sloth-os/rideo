@@ -28,6 +28,7 @@ type Job = {
 | `character.describe` | llm | fill identity fields from an uploaded photo |
 | `character.refs` | image | generate reference views for one character |
 | `element.refs` | image | generate reference views for one location, prop or style ([elements](elements.md)) |
+| `voice.design` | music | design three voice previews for one character ([dialogue](dialogue.md)) |
 | `clip.plan` | llm | break a scene into shots sized to model limits |
 | `clip.generate` | control | enqueue `shot.generate` for every shot without a passing take and wait |
 | `shot.generate` | video | the shot pipeline below |
@@ -90,13 +91,15 @@ music 10 min (`RIDEO_GATEWAY_TIMEOUT_*`).
 
 | Step | Progress | Action |
 |---|---|---|
-| precheck | 0.02 | R1 and E1 (character and element locks, approved refs), resolve models, fetch model limits (5 min cache) |
+| precheck | 0.02 | R1, E1 and V1 (character, element and voice locks, approved refs), resolve models, fetch model limits (5 min cache) |
 | keyframe | 0.05–0.35 | skip if continuous and the previous take passed (its last frame is the first frame); otherwise image task → download → judge → retry |
-| video | 0.35–0.80 | video task with `first_frame`, references and clamped duration → download |
-| verify | 0.80–0.90 | sample frames (ffmpeg) → judge → retry the video up to `maxAttempts` |
+| dialogue | 0.33 | `tts`: speak every voiced line with its locked voice, mix them (ffmpeg); `native`: the speakers' voice samples ([dialogue](dialogue.md)) |
+| video | 0.35–0.80 | video task with `first_frame`, references, the dialogue as `reference_audio` when the model accepts it, and the clamped duration (long enough for the lines) → download |
+| verify | 0.80–0.90 | sample frames (ffmpeg) → judge; native audio: the speaker check (V4) → retry the video up to `maxAttempts` |
+| lip sync | 0.86 | `tts` takes whose model could not take the mix: lip-sync pass (`reference_video` + `reference_audio`) → judge again |
 | watermark | 0.90–0.96 | embed the invisible watermark (raw frame pipe) + provenance metadata, register the id |
 | poster | 0.96–0.99 | JPEG poster and the last frame (continuity); browsers that cannot decode H.264 build their own local proxy ([editor](editor.md#playback-compatibility-local-proxies)) |
-| commit | 1.00 | append the take to the clip (`meta.jobId`), auto-select it if it passed, set the shot status |
+| commit | 1.00 | append the take to the clip (`meta.jobId`) with its `audio` (mix, line timings, voice locks, lip sync), auto-select it if it passed, set the shot status |
 
 A shot whose attempts are exhausted still commits its best take (`needs_review`), so the user can inspect
 the evidence, regenerate with changes, or override.

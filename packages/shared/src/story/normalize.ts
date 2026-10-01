@@ -2,7 +2,7 @@ import { newId } from '../ids';
 import { characterSeed, elementSeed } from '../prompt';
 import type { EditSuggestion } from '../schemas/analysis';
 import { SuggestionParamsSchema } from '../schemas/analysis';
-import type { Character, Identity } from '../schemas/character';
+import { type Character, type Identity, newVoice } from '../schemas/character';
 import type { Shot } from '../schemas/clip';
 import type { TimeRange } from '../schemas/common';
 import { type Element, type ElementKind, elementIndex } from '../schemas/element';
@@ -73,7 +73,7 @@ export function mergeCharacters(llm: LlmCharacter[], existing: Character[]): Cha
               identity: identityFromLlm(c.identity),
               wardrobe: wardrobe.length ? wardrobe : current.wardrobe,
               ...(c.personality ? { personality: c.personality } : {}),
-              ...(c.voice ? { voice: { description: c.voice } } : {}),
+              ...(c.voice ? { voice: newVoice(c.voice) } : {}),
             },
       );
       continue;
@@ -87,7 +87,7 @@ export function mergeCharacters(llm: LlmCharacter[], existing: Character[]): Cha
       identity: identityFromLlm(c.identity),
       wardrobe,
       ...(c.personality ? { personality: c.personality } : {}),
-      ...(c.voice ? { voice: { description: c.voice } } : {}),
+      ...(c.voice ? { voice: newVoice(c.voice) } : {}),
       references: [],
       seed: characterSeed(newIdValue),
       lock: { locked: false, version: 0 },

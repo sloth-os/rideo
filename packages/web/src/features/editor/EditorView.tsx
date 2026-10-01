@@ -803,6 +803,8 @@ export function EditorView() {
                     key={track.id}
                     className="relative mb-1 h-12 rounded bg-surface-2"
                     data-track={track.kind}
+                    data-track-name={track.name}
+                    title={track.name}
                   >
                     {track.items.map((item) => (
                       <Entity

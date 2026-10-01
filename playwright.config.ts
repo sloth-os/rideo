@@ -26,7 +26,7 @@ export default defineConfig({
     },
     {
       name: 'mobile',
-      testMatch: /(responsive|mcp-sync|provenance|elements)\.spec\.ts/,
+      testMatch: /(responsive|mcp-sync|provenance|elements|dialogue)\.spec\.ts/,
       use: {
         browserName: 'chromium',
         viewport: { width: 412, height: 915 },

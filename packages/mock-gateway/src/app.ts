@@ -9,6 +9,7 @@ import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest }
 import { type GenerateContext, runImage, runMusic, runVideo, validateRequest } from './generate';
 import { handleChat, multipartFile } from './llm';
 import { MOCK_MODELS, type Modality } from './models';
+import { handleSpeech } from './speech';
 import { publicTask, type RunResult, TaskStore } from './tasks';
 
 const execFileP = promisify(execFile);
@@ -121,10 +122,16 @@ export async function buildMockGateway(opts: MockGatewayOptions = {}): Promise<M
       const issues = validateRequest(route.modality, body);
       if (issues.length)
         return problem(req, reply, 422, 'validation_error', 'Request validation failed.', issues);
+      // Auto routing (like mm-gateway's fit step): a reference video goes to the lip-sync model.
+      const lipSync = (body.input as { type?: string; role?: string }[] | undefined)?.some(
+        (p) => p?.type === 'video' && p.role === 'reference_video',
+      );
       const model =
         body.model && body.model !== 'auto'
           ? body.model
-          : MOCK_MODELS.find((m) => m.modality === route.modality)!.id;
+          : lipSync && route.modality === 'video'
+            ? 'mock-lipsync-v1'
+            : MOCK_MODELS.find((m) => m.modality === route.modality)!.id;
       if (!MOCK_MODELS.some((m) => m.id === model && m.modality === route.modality)) {
         return problem(req, reply, 422, 'validation_error', `Unknown model ${model}.`, [
           { loc: 'model', msg: 'unknown model' },
@@ -205,6 +212,8 @@ export async function buildMockGateway(opts: MockGatewayOptions = {}): Promise<M
     const { domain } = req.params as { domain: string; '*': string };
     const path = (req.params as { '*': string })['*'];
     counters.proxyCalls[domain] = (counters.proxyCalls[domain] ?? 0) + 1;
+    const speech = await handleSpeech(path, req.body, String(req.headers['content-type'] ?? ''), dir);
+    if (speech) return reply.code(speech.status).headers(speech.headers).send(speech.body);
     if (/audio\/transcriptions$/.test(path)) {
       const buf = req.body as Buffer;
       const file = multipartFile(buf, String(req.headers['content-type'] ?? ''));

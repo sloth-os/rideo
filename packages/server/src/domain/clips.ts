@@ -5,20 +5,24 @@ import {
   type Character,
   type Clip,
   clipBlockers,
+  dialogueMode,
   docPath,
   type Element,
   isAcceptable,
   type Job,
   type Project,
   type ProjectDocs,
+  type ProjectSettings,
   type Screenplay,
   type Shot,
   type ShotUpdateInput,
   takeState,
+  voicesNotReady,
 } from '@rideo/shared';
 import { AppError, invalid, notFound } from '../errors';
 import type { Tx } from '../vcs/repo';
 import { Service } from './base';
+import type { Deps } from './deps';
 
 /**
  * R1 and E1 preconditions: every character, location and prop in the shots is locked with an approved
@@ -60,6 +64,32 @@ export function assertCastReady(
       'element_not_locked',
       `Lock the locations and props before generating: ${[...elementProblems].join('; ')} (rule E1)`,
       [...elementProblems],
+    );
+  }
+}
+
+/** Rule V1: speakers need a ready voice; TTS also needs a provider. */
+export function assertVoicesReady(
+  deps: Pick<Deps, 'tts'>,
+  shots: Pick<Shot, 'dialogue'>[],
+  characters: Record<string, Character>,
+  settings: Pick<ProjectSettings, 'dialogue'>,
+): void {
+  const mode = dialogueMode(settings);
+  if (mode === 'off') return;
+  const missing = voicesNotReady(shots, characters, mode);
+  if (missing.length) {
+    const problems = missing.map((c) => `${c.name} has no locked voice`);
+    throw new AppError(
+      'voice_not_locked',
+      `Lock the voices of the speaking characters before generating: ${problems.join('; ')} (rule V1)`,
+      problems,
+    );
+  }
+  if (mode === 'tts' && !deps.tts && shots.some((s) => s.dialogue.some((d) => d.characterId))) {
+    throw new AppError(
+      'tts_unavailable',
+      'Dialogue audio needs a TTS provider: set RIDEO_TTS_PROVIDER on the server or turn dialogue off in the project settings',
     );
   }
 }
@@ -112,6 +142,7 @@ export class ClipService extends Service {
     if (!clip) throw notFound(`clip ${clipId}`);
     if (!clip.shots.length) throw invalid('the clip has no shots; plan it first');
     assertCastReady(clip.shots, docs.characters, docs.elements);
+    assertVoicesReady(this.deps, clip.shots, docs.characters, docs.project.settings);
     return this.deps.jobs.enqueue({
       projectId,
       kind: 'clip.generate',
@@ -160,6 +191,7 @@ export class ClipService extends Service {
     if (!clip) throw notFound(`clip ${clipId}`);
     const shot = this.requireShot(clip, shotId);
     assertCastReady([shot], docs.characters, docs.elements);
+    assertVoicesReady(this.deps, [shot], docs.characters, docs.project.settings);
     return this.deps.jobs.enqueue({
       projectId,
       kind: 'shot.generate',
