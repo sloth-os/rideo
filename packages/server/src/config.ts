@@ -26,6 +26,13 @@ const LLM_DEFAULT_DOMAINS = {
   anthropic: 'api.anthropic.com',
 } as const;
 
+/** A comma-separated list, lowercased. */
+const list = (v: string | undefined) =>
+  (v ?? '')
+    .split(',')
+    .map((x) => x.trim().toLowerCase())
+    .filter(Boolean);
+
 export const EnvSchema = z.object({
   RIDEO_HOST: str('0.0.0.0'),
   RIDEO_PORT: num(8787),
@@ -33,6 +40,15 @@ export const EnvSchema = z.object({
   RIDEO_API_TOKEN: str(),
   RIDEO_USER_ID: str('local'),
   RIDEO_USER_NAME: str('You'),
+  // Accounts (docs/design/accounts.md)
+  RIDEO_OIDC_ISSUER: str(),
+  RIDEO_OIDC_CLIENT_ID: str(),
+  RIDEO_OIDC_CLIENT_SECRET: str(),
+  RIDEO_OIDC_SCOPES: str('openid profile email'),
+  RIDEO_OIDC_NAME: str('your identity provider'),
+  RIDEO_ADMINS: str(''),
+  RIDEO_OIDC_ALLOWED_DOMAINS: str(''),
+  RIDEO_SESSION_DAYS: num(14),
   RIDEO_DATA_DIR: str('./data'),
   RIDEO_CACHE_MAX_BYTES: num(5 * 1024 ** 3),
   RIDEO_WEB_DIST: str(),
@@ -136,6 +152,15 @@ export interface Config {
   publicUrl: string;
   apiToken?: string;
   user: { id: string; name: string };
+  /** Accounts (docs/design/accounts.md): OIDC sign-in when `oidc` is set. */
+  auth: {
+    oidc?: { issuer: string; clientId: string; clientSecret?: string; scopes: string; name: string };
+    /** Emails that are administrators. */
+    admins: string[];
+    /** Email domains that may join (empty: anyone the provider signs in). */
+    allowedDomains: string[];
+    sessionDays: number;
+  };
   dataDir: string;
   cacheMaxBytes: number;
   webDist?: string;
@@ -219,6 +244,24 @@ export function loadConfig(
     publicUrl: (e.RIDEO_PUBLIC_URL ?? `http://localhost:${port}`).replace(/\/+$/, ''),
     apiToken: e.RIDEO_API_TOKEN,
     user: { id: e.RIDEO_USER_ID!, name: e.RIDEO_USER_NAME! },
+    auth: {
+      oidc: e.RIDEO_OIDC_ISSUER
+        ? {
+            issuer: e.RIDEO_OIDC_ISSUER,
+            clientId: (() => {
+              if (!e.RIDEO_OIDC_CLIENT_ID)
+                throw new Error('RIDEO_OIDC_CLIENT_ID is required with RIDEO_OIDC_ISSUER');
+              return e.RIDEO_OIDC_CLIENT_ID;
+            })(),
+            clientSecret: e.RIDEO_OIDC_CLIENT_SECRET,
+            scopes: e.RIDEO_OIDC_SCOPES!,
+            name: e.RIDEO_OIDC_NAME!,
+          }
+        : undefined,
+      admins: list(e.RIDEO_ADMINS),
+      allowedDomains: list(e.RIDEO_OIDC_ALLOWED_DOMAINS),
+      sessionDays: e.RIDEO_SESSION_DAYS,
+    },
     dataDir: e.RIDEO_DATA_DIR!,
     cacheMaxBytes: e.RIDEO_CACHE_MAX_BYTES,
     webDist: e.RIDEO_WEB_DIST,

@@ -20,6 +20,7 @@ import { ActivityFeed } from '../../components/ActivityFeed';
 import { JobRow } from '../../components/JobProgress';
 import { Badge, cx, Spinner } from '../../components/ui';
 import { editorWorker } from '../../engine';
+import { useProjectRole } from '../../lib/auth';
 import { liveClient } from '../../lib/live-bridge';
 import { useProject } from '../../store/project';
 import { AnalysisView } from '../analysis/AnalysisView';
@@ -111,6 +112,7 @@ function ContextPanel({ projectId }: { projectId: string }) {
 export function Workspace() {
   const { projectId = '', view: rawView } = useParams();
   const { load, docs, loading, error, head } = useProject();
+  const access = useProjectRole(docs?.project);
   const [more, setMore] = useState(false);
   useEffect(() => {
     let cancelled = false;
@@ -197,6 +199,15 @@ export function Workspace() {
           className="min-w-0 flex-1 overflow-y-auto px-3 pt-4 pb-24 sm:px-6 md:pb-8"
           data-testid={`view-${view}`}
         >
+          {access.role === 'reviewer' ? (
+            <p
+              className="mx-auto mb-3 max-w-5xl rounded-[var(--radius-control)] border border-border bg-surface-2 px-3 py-2 text-[13px] text-muted"
+              data-testid="role-banner"
+            >
+              You review this project: you can read and comment; editing and approvals are for its editors and
+              directors.
+            </p>
+          ) : null}
           <Suspense fallback={<Spinner className="size-6" />}>
             <Current />
           </Suspense>

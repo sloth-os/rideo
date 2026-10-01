@@ -199,7 +199,7 @@ and image-sequence masters, delivery presets (YouTube, broadcast), social cut-do
 frame annotations on takes and cuts, approval stages mapped to Rideo gates, @-mentions and notifications; comments
 are versioned documents; MCP tools let agents read and resolve notes. *Why:* Frame.io v4, Runway comments on assets.
 
-**13. Accounts, roles and teams** (M) — OIDC/SSO login, roles (director, editor, reviewer, agent), per-project
+**13. Accounts, roles and teams** (M) — *done:* [design/accounts.md](design/accounts.md) — OIDC/SSO login, roles (director, editor, reviewer, agent), per-project
 permissions, audit log, scoped agent tokens. Lifts the single-studio non-goal.
 
 **14. NLE interchange** (S–M) — export OTIO, FCPXML, Premiere XML and EDL that relink to the originals on WebDAV;

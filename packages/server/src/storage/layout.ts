@@ -82,6 +82,23 @@ export class Layout {
     return joinPath(this.jobsDir(projectId), `${assertId(jobId, 'job')}.json`);
   }
 
+  /** The studio's people and agent tokens (docs/design/accounts.md). */
+  usersDir(): string {
+    return joinPath(this.root, 'accounts', 'users');
+  }
+
+  user(id: string): string {
+    return joinPath(this.usersDir(), `${assertId(id, 'user')}.json`);
+  }
+
+  tokensDir(): string {
+    return joinPath(this.root, 'accounts', 'tokens');
+  }
+
+  token(id: string): string {
+    return joinPath(this.tokensDir(), `${assertId(id, 'token')}.json`);
+  }
+
   watermarksDir(): string {
     return joinPath(this.root, 'watermarks');
   }

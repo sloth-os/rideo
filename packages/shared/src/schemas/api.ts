@@ -340,3 +340,42 @@ export const RestoreInputSchema = z.object({
 export const ApproveInputSchema = z.object({ gate: z.string().min(1) });
 export const ReopenInputSchema = z.object({ stage: z.string().min(1) });
 export const OverrideInputSchema = z.object({ reason: z.string().min(3).max(1000) });
+
+/** Accounts (docs/design/accounts.md#surfaces). */
+export const ProjectAccessInputSchema = z.object({
+  visibility: z.enum(['private', 'studio']).optional(),
+  members: z
+    .array(z.object({ email: z.string().email().max(320), role: z.enum(['reviewer', 'editor', 'director']) }))
+    .max(500)
+    .optional(),
+});
+export const TokenCreateInputSchema = z.object({
+  name: z.string().min(1).max(100),
+  role: z.enum(['reviewer', 'editor', 'director']),
+  projectIds: z.array(IdSchema).max(200).optional(),
+  expiresInDays: z.number().int().min(1).max(3650).optional(),
+});
+export const UserUpdateInputSchema = z.object({
+  studioRole: z.enum(['admin', 'member']).optional(),
+  disabled: z.boolean().optional(),
+});
+export const AuditQueryInputSchema = z.object({
+  since: z.string().max(40).optional(),
+  until: z.string().max(40).optional(),
+  projectId: IdSchema.optional(),
+  actor: z.string().max(128).optional(),
+  type: z
+    .enum([
+      'auth.login',
+      'auth.logout',
+      'auth.failed',
+      'auth.denied',
+      'token.created',
+      'token.revoked',
+      'user.updated',
+      'project.access',
+      'project.approval',
+    ])
+    .optional(),
+  limit: z.coerce.number().int().min(1).max(1000).optional(),
+});

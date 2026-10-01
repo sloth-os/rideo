@@ -5,8 +5,9 @@ import { join, resolve } from 'node:path';
 import multipart from '@fastify/multipart';
 import fastifyStatic from '@fastify/static';
 import websocket from '@fastify/websocket';
-import { APERTURE_PRESETS, CAMERA_MOVES, LENS_PRESETS } from '@rideo/shared';
+import { APERTURE_PRESETS, CAMERA_MOVES, LENS_PRESETS, routePermission } from '@rideo/shared';
 import Fastify, { type FastifyError, type FastifyInstance } from 'fastify';
+import { principalContext } from '../auth/context';
 import type { Config } from '../config';
 import type { Logger } from '../domain/deps';
 import { createStudio, type Studio } from '../domain/studio';
@@ -17,6 +18,7 @@ import type { StorageBackend } from '../storage/backend';
 import { createEmbeddedDav, DAV_PREFIX } from '../storage/embedded-dav';
 import { WebDavBackend } from '../storage/webdav';
 import { VERSION } from '../version';
+import { type AuthedRequest, registerAuthRoutes } from './auth-routes';
 import { registerRoutes } from './routes';
 
 export { VERSION };
@@ -27,11 +29,6 @@ export interface RideoServer {
   url: () => string;
   start(): Promise<string>;
   stop(): Promise<void>;
-}
-
-function bearer(header: string | undefined): string | undefined {
-  const m = /^Bearer\s+(.+)$/i.exec(header ?? '');
-  return m?.[1];
 }
 
 /** Builds the Rideo HTTP server: REST, live WebSocket, MCP, embedded /dav and the web UI. */
@@ -98,26 +95,61 @@ export async function buildServer(
   await app.register(multipart, { limits: { fileSize: 4 * 1024 ** 3, files: 2 } });
   await app.register(websocket, { options: { maxPayload: 1024 * 1024 } });
 
+  // Who is calling (docs/design/accounts.md): every mode resolves a principal or answers 401.
+  const accounts = studio.deps.accounts;
+  const open = new Set([
+    '/api/health',
+    '/api/ready',
+    '/api/auth/me',
+    '/api/auth/login',
+    '/api/auth/callback',
+  ]);
   app.addHook('onRequest', async (req, reply) => {
-    if (!config.apiToken) return;
     const url = req.url.split('?')[0]!;
-    const guarded =
-      (url.startsWith('/api/') && url !== '/api/health') || url === '/mcp' || url === '/metrics';
-    if (!guarded) return;
-    const token = bearer(req.headers.authorization) ?? (req.query as { token?: string } | undefined)?.token;
+    const principal = await accounts.authenticate({
+      authorization: req.headers.authorization,
+      cookie: req.headers.cookie,
+      token: (req.query as { token?: string } | undefined)?.token,
+    });
+    (req as AuthedRequest).principal = principal;
+    const guarded = (url.startsWith('/api/') && !open.has(url)) || url === '/mcp' || url === '/metrics';
+    if (!guarded || principal) return;
     // The free detection tool (docs/design/provenance.md#public-detection-tool): file uploads need no token.
     const publicDetect =
       req.method === 'POST' &&
       url === '/api/watermark/detect' &&
       String(req.headers['content-type'] ?? '').startsWith('multipart/form-data');
-    if (token !== config.apiToken && publicDetect) {
+    if (publicDetect) {
       (req as { publicCaller?: boolean }).publicCaller = true;
       return;
     }
-    if (token !== config.apiToken) {
-      const err = new AppError('unauthorized', 'Missing or invalid bearer token');
-      return reply.code(401).type('application/problem+json').send(problemDetails(err, url));
-    }
+    const err = new AppError(
+      'unauthorized',
+      accounts.mode === 'oidc' ? 'Sign in, or send an agent token' : 'Missing or invalid bearer token',
+    );
+    return reply.code(401).type('application/problem+json').send(problemDetails(err, url));
+  });
+  // The rest of the request runs as its principal: services and MCP tools read it (currentPrincipal).
+  app.addHook('onRequest', (req, _reply, done) => {
+    principalContext.run((req as AuthedRequest).principal ?? null, done);
+  });
+  // Every project route needs its permission (ROUTE_PERMISSIONS, docs/design/accounts.md#users-roles-and-projects).
+  app.addHook('preHandler', async (req) => {
+    const principal = (req as AuthedRequest).principal;
+    const m = /^\/api\/projects\/([a-z]{3}_[0-9a-z]{10,32})(\/[^?]*)?$/.exec(req.url.split('?')[0]!);
+    if (!m || !principal) return;
+    const permission = routePermission(req.method, m[2] ?? '');
+    await accounts.authorize(principal, m[1]!, permission);
+    if (permission === 'project.approve') (req as { approval?: string }).approval = m[1]!;
+  });
+  // Approvals that went through are audited (docs/design/accounts.md#audit-log).
+  app.addHook('onResponse', async (req, reply) => {
+    const projectId = (req as { approval?: string }).approval;
+    if (projectId && reply.statusCode < 400)
+      await accounts.record((req as AuthedRequest).principal ?? null, 'project.approval', {
+        projectId,
+        detail: { method: req.method, path: req.url.split('?')[0] },
+      });
   });
 
   app.setErrorHandler((error: FastifyError, req, reply) => {
@@ -207,12 +239,27 @@ export async function buildServer(
 
   app.get('/api/live', { websocket: true }, (socket, req) => {
     const projectId = (req.query as { projectId?: string }).projectId;
+    const principal = (req as AuthedRequest).principal ?? null;
     studio.deps.hub.attach(
       socket as never,
       projectId && /^prj_[0-9a-z]{10,32}$/.test(projectId) ? projectId : undefined,
+      {
+        userId: principal?.user.id,
+        // Live updates of a project need its read permission.
+        authorize: async (pid) => {
+          if (!principal) return false;
+          try {
+            await accounts.authorize(principal, pid, 'project.read');
+            return true;
+          } catch {
+            return false;
+          }
+        },
+      },
     );
   });
 
+  registerAuthRoutes(app, studio);
   registerRoutes(app, studio);
   registerMcp(app, studio);
 

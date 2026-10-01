@@ -1,9 +1,13 @@
 # REST API
 
-Base path `/api`. JSON in and out, except uploads (multipart) and media (bytes). When `RIDEO_API_TOKEN` is
-set, every `/api` route except `/api/health` and file uploads to `/api/watermark/detect` (the public detection
-tool) requires `Authorization: Bearer <token>`. REST calls are
-attributed to the configured user actor (`RIDEO_USER_ID`, `RIDEO_USER_NAME`).
+Base path `/api`. JSON in and out, except uploads (multipart) and media (bytes). Who is calling
+([accounts](../design/accounts.md)): without accounts, the configured user (`RIDEO_USER_ID`, `RIDEO_USER_NAME`),
+with `Authorization: Bearer <RIDEO_API_TOKEN>` when that is set; with accounts (`RIDEO_OIDC_ISSUER`), a signed-in
+person (the `rideo_session` cookie), an agent token (`Bearer rdo_…`, acting on behalf of its owner) or the studio
+token. Every route except `/api/health`, `/api/ready`, `/api/auth/*` and file uploads to `/api/watermark/detect`
+(the public detection tool) needs one (401). Project routes also need a permission of the caller's role in the
+project (`project.read` for reads, `project.edit` for writes, `project.approve` for approvals, `project.manage` for
+settings, access and branches): 403 `forbidden` otherwise, and the project list only shows readable projects.
 
 Errors are RFC 9457 problem details (`application/problem+json`) with a stable `code`:
 
@@ -36,7 +40,8 @@ Errors are RFC 9457 problem details (`application/problem+json`) with a stable `
 | `storage_error` | 503 | the WebDAV backend failed |
 | `lease_lost` | 409 | an editor job is no longer leased to this session (expired, cancelled or reassigned) |
 | `consent_required` | 422 | an uploaded reference or voice sample of a real person lacks its consent record ([provenance](../design/provenance.md#consent-records)) |
-| `unauthorized` | 401 | missing or wrong token |
+| `unauthorized` | 401 | not signed in, or a missing, wrong, revoked or expired token |
+| `forbidden` | 403 | the caller's role in the project does not allow it, or an admin-only route |
 
 ## System
 
@@ -46,6 +51,23 @@ Errors are RFC 9457 problem details (`application/problem+json`) with a stable `
 | GET | `/api/ready` | `{status, checks: {storage, gateway, ffmpeg, llm}}` |
 | GET | `/api/config` | public config: brand, features (`mcp`, `embeddedDav`, `judge`, `stt`), defaults, model catalogue from the gateway |
 | GET | `/metrics` | Prometheus text |
+
+## Accounts
+
+| Method | Path | Body / query | Result |
+|---|---|---|---|
+| GET | `/api/auth/me` | – | `{mode: "none" \| "token" \| "oidc", provider, user, token, admin}` |
+| GET | `/api/auth/login` | `?returnTo&login_hint` | 302 to the identity provider (PKCE) |
+| GET | `/api/auth/callback` | `?code&state` | sets the session cookie, 302 to `returnTo` (or `/login?error=`) |
+| POST | `/api/auth/logout` | – | ends the session |
+| GET | `/api/projects/:id/access` | – | `{visibility, members[{userId, role, name, email}], invites, open, role}` |
+| PUT | `/api/projects/:id/access` | `{visibility?, members?[{email, role}]}` | the same; people who never signed in are invited (`project.manage`) |
+| GET | `/api/users` | – | people (admins) |
+| PATCH | `/api/users/:id` | `{studioRole?, disabled?}` | the person (admins) |
+| GET | `/api/tokens` | – | the caller's agent tokens (admins: all), without secrets |
+| POST | `/api/tokens` | `{name, role, projectIds?, expiresInDays?}` | `201 {token, secret}` (signed-in people only; the secret is shown once) |
+| DELETE | `/api/tokens/:id` | – | the token, revoked |
+| GET | `/api/audit` | `?since&until&projectId&actor&type&limit` | audit events, newest first (admins; directors with their `projectId`) |
 
 ## Projects and documents
 

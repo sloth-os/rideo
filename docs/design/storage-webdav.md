@@ -90,6 +90,8 @@ All paths are under `RIDEO_WEBDAV_ROOT` (default `/rideo`).
 │       ├── objects/ab/cdef….json content-addressed blobs, trees, commits
 │       ├── worktree.json         work-tree index (hash + etag of each materialized file)
 │       └── jobs/<jobId>.json     job records (operational, not versioned)
+├── accounts/users/<userId>.json   people of the studio (docs/design/accounts.md)
+├── accounts/tokens/<tokenId>.json agent tokens (the secret's SHA-256 only)
 └── watermarks/<watermarkId>.json provenance registry (global)
 ```
 

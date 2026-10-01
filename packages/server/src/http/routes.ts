@@ -51,6 +51,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { Detection, Studio } from '../domain/studio';
 import { AppError, invalid } from '../errors';
+import type { AuthedRequest } from './auth-routes';
 
 const IdParam = z.object({ id: z.string().regex(/^prj_[0-9a-z]{10,32}$/) });
 
@@ -730,12 +731,28 @@ export function registerRoutes(app: FastifyInstance, studio: Studio): void {
   app.addContentTypeParser('application/octet-stream', (_req, payload, done) => done(null, payload));
   const jobId = (req: FastifyRequest) =>
     parse(z.object({ jobId: z.string().regex(/^job_[0-9a-z]+$/) }), req.params).jobId;
+  // Editor jobs edit their project (docs/design/accounts.md): the project is in the body or the job.
+  const mayEdit = (req: FastifyRequest, projectId: string) =>
+    studio.deps.accounts.authorize(
+      (req as AuthedRequest).principal ?? studio.deps.accounts.studioPrincipal(),
+      projectId,
+      'project.edit',
+    );
+  const editorJob = async (req: FastifyRequest) => {
+    const job = await studio.editor.job(jobId(req));
+    await mayEdit(req, job.projectId);
+    return job;
+  };
   app.post('/api/editor/claim', async (req) => {
     const body = parse(z.object({ projectId: z.string() }).passthrough(), req.body);
+    await mayEdit(req, body.projectId);
     return { job: await studio.editor.claim(body.projectId, body) };
   });
-  app.get('/api/editor/jobs/:jobId', async (req) => studio.editor.job(jobId(req)));
-  app.post('/api/editor/jobs/:jobId/heartbeat', async (req) => studio.editor.heartbeat(jobId(req), req.body));
+  app.get('/api/editor/jobs/:jobId', async (req) => editorJob(req));
+  app.post('/api/editor/jobs/:jobId/heartbeat', async (req) => {
+    await editorJob(req);
+    return studio.editor.heartbeat(jobId(req), req.body);
+  });
   app.put(
     '/api/editor/jobs/:jobId/files/:name',
     { bodyLimit: studio.config.editor.fileMaxBytes },
@@ -744,11 +761,18 @@ export function registerRoutes(app: FastifyInstance, studio: Studio): void {
       const body = req.body as NodeJS.ReadableStream | undefined;
       if (!body || typeof (body as { pipe?: unknown }).pipe !== 'function')
         throw invalid('send the file as application/octet-stream');
+      await editorJob(req);
       return studio.editor.stageFile(jobId(req), q.sessionId, p<string>(req, 'name'), body);
     },
   );
-  app.post('/api/editor/jobs/:jobId/complete', async (req) => studio.editor.complete(jobId(req), req.body));
-  app.post('/api/editor/jobs/:jobId/fail', async (req) => studio.editor.fail(jobId(req), req.body));
+  app.post('/api/editor/jobs/:jobId/complete', async (req) => {
+    await editorJob(req);
+    return studio.editor.complete(jobId(req), req.body);
+  });
+  app.post('/api/editor/jobs/:jobId/fail', async (req) => {
+    await editorJob(req);
+    return studio.editor.fail(jobId(req), req.body);
+  });
 
   // History
   app.get('/api/projects/:id/history', async (req) => {

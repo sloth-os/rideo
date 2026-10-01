@@ -2,6 +2,7 @@ import type { SttClient } from '../ai/llm';
 import type { SfxClient } from '../ai/sfx';
 import type { LlmTasks } from '../ai/tasks';
 import type { TtsClient } from '../ai/tts';
+import type { AccountsService } from '../auth/accounts';
 import type { Config } from '../config';
 import type { ConsistencyJudge } from '../consistency/judge';
 import type { VoiceJudge } from '../consistency/voice';
@@ -54,4 +55,6 @@ export interface Deps {
   sfx?: SfxClient;
   /** Speaker check of native-audio takes (rule V4); null when no audio-capable model is configured. */
   voiceJudge: VoiceJudge | null;
+  /** People, sessions, agent tokens, permissions and the audit log (docs/design/accounts.md). */
+  accounts: AccountsService;
 }

@@ -25,6 +25,8 @@ export const ID_PREFIXES = {
   item: 'itm',
   session: 'ses',
   command: 'cmd',
+  user: 'usr',
+  token: 'tok',
 } as const;
 
 export type IdKind = keyof typeof ID_PREFIXES;

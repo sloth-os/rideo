@@ -23,7 +23,7 @@ JSON and validated with the zod unions in `shared/src/schemas/live.ts`.
 
 | Message | Meaning |
 |---|---|
-| `{type: "subscribe", projectId, lastSeq?}` | Start receiving events. With `lastSeq`, the server replays newer events from its ring buffer (the last 1000 per project), or sends `resync` when too far behind. |
+| `{type: "subscribe", projectId, lastSeq?}` | Start receiving events. With `lastSeq`, the server replays newer events from its ring buffer (the last 1000 per project), or sends `resync` when too far behind. With accounts the caller needs to read the project ([accounts](accounts.md)); otherwise the server answers `{type: "error", message: "forbidden: …"}`. |
 | `{type: "unsubscribe", projectId}` | Stop. |
 | `{type: "presence", projectId, route, selection?, viewport, engine?}` | What the user is looking at, and the tab's editor engine (`{ffmpeg, webcodecs: {video, audio}, busyJobId}`). Agents read it with `ui_sessions`. |
 | `{type: "ui-ack", commandId, ok, error?}` | Acknowledges a UI command. |

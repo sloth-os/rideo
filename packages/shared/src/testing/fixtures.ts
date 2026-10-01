@@ -59,6 +59,7 @@ export function project(overrides: Partial<Project> = {}): Project {
     brief: { prompt: 'A lighthouse keeper receives letters from the future.', attachmentResourceIds: [] },
     settings: ProjectSettingsSchema.parse({ targetDurationSec: 60, pilotDurationSec: 10 }),
     workflow: { stage: 'brief', approvals: {} },
+    access: null,
     ...overrides,
   };
 }

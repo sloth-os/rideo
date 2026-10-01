@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { ProjectAccessSchema } from './accounts';
 import { ActorSchema, AspectRatioSchema, IdSchema, IsoDateSchema } from './common';
 
 export const ProjectKindSchema = z.enum(['story', 'edit']);
@@ -116,6 +117,8 @@ export const ProjectSchema = z.object({
     stage: z.string().min(1),
     approvals: z.record(z.string(), ApprovalSchema).default({}),
   }),
+  /** Members and visibility (docs/design/accounts.md); null on projects from before accounts: open. */
+  access: ProjectAccessSchema.nullable().default(null),
 });
 export type Project = z.infer<typeof ProjectSchema>;
 
@@ -130,5 +133,7 @@ export const ProjectSummarySchema = z.object({
   plannedDurationSec: z.number().optional(),
   approvedDurationSec: z.number().optional(),
   posterPath: z.string().optional(),
+  /** The caller's role (docs/design/accounts.md). */
+  role: z.enum(['reviewer', 'editor', 'director']).optional(),
 });
 export type ProjectSummary = z.infer<typeof ProjectSummarySchema>;

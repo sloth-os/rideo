@@ -13,6 +13,8 @@ import { createAdapter, SttClient } from '../ai/llm';
 import { SfxClient } from '../ai/sfx';
 import { LlmTasks } from '../ai/tasks';
 import { createTts } from '../ai/tts';
+import { AccountsService } from '../auth/accounts';
+import { currentPrincipal } from '../auth/context';
 import type { Config } from '../config';
 import { OffJudge, VisionLlmJudge } from '../consistency/judge';
 import { LlmVoiceJudge } from '../consistency/voice';
@@ -162,7 +164,16 @@ export function createStudio(
     coalesceWindowMs: config.coalesceWindowSec * 1000,
     log,
   });
+  const accounts = new AccountsService({
+    config,
+    storage,
+    layout,
+    projects: projectsRegistry,
+    metrics,
+    log: log.child({ component: 'accounts' }),
+  });
   const deps: Deps = {
+    accounts,
     config,
     log,
     metrics,
@@ -334,7 +345,9 @@ export function createStudio(
     ...services,
     history: new HistoryService(deps),
     ui: new UiService(hub),
-    userActor: () => ({ kind: 'user', id: config.user.id, name: config.user.name }),
+    // The caller of the request being handled (docs/design/accounts.md), else the configured user.
+    userActor: () =>
+      currentPrincipal()?.actor ?? { kind: 'user', id: config.user.id, name: config.user.name },
     async detectWatermark(file) {
       const [mark, credentials] = await Promise.all([watermark.detectVideo(file), c2pa.read(file)]);
       return {
@@ -350,6 +363,7 @@ export function createStudio(
       await media.init();
       await watermark.init();
       await c2pa.init();
+      await accounts.init();
       let recovered = 0;
       for (const id of await projectsRegistry.listIds()) {
         try {

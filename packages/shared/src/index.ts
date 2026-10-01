@@ -1,3 +1,4 @@
+export * from './accounts';
 export * from './audio';
 export * from './captions';
 export * from './consistency';
@@ -11,6 +12,7 @@ export * from './media';
 export * from './prompt';
 export * from './prompt/multishot';
 export * from './provenance/disclosure';
+export * from './schemas/accounts';
 export * from './schemas/analysis';
 export * from './schemas/api';
 export * from './schemas/character';

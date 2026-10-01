@@ -1,5 +1,7 @@
 import type {
   Analysis,
+  AuditEvent,
+  AuthMe,
   BranchInfo,
   Character,
   Clip,
@@ -19,7 +21,9 @@ import type {
   Probe,
   Project,
   ProjectDocs,
+  ProjectRole,
   ProjectSummary,
+  PublicUser,
   RenderEngineChoice,
   Resource,
   ResourceRole,
@@ -27,6 +31,7 @@ import type {
   TagInfo,
   Timeline,
   TimelineOp,
+  TokenInfo,
   WorkflowEvaluation,
 } from '@rideo/shared';
 
@@ -59,6 +64,16 @@ export interface ProjectState {
   jobs: Job[];
   workflow: WorkflowEvaluation;
   syncIssues: { path: string; error: string }[];
+}
+
+/** A project's members as people (docs/design/accounts.md#surfaces). */
+export interface ProjectAccessView {
+  visibility: 'private' | 'studio';
+  members: { userId: string; role: ProjectRole; name: string; email: string }[];
+  invites: { email: string; role: ProjectRole; invitedBy: string; at: string }[];
+  /** No access settings yet: open to everyone. */
+  open: boolean;
+  role: ProjectRole | null;
 }
 
 export interface PublicConfig {
@@ -101,6 +116,12 @@ export function setToken(token: string | null): void {
   }
 }
 
+/** Called when the server says the caller is not signed in (docs/design/accounts.md). */
+let onUnauthorized: (() => void) | null = null;
+export function setUnauthorizedHandler(fn: (() => void) | null): void {
+  onUnauthorized = fn;
+}
+
 async function request<T>(
   method: string,
   path: string,
@@ -130,6 +151,7 @@ async function request<T>(
   } catch {
     json = { detail: text };
   }
+  if (res.status === 401 && !path.startsWith('/auth/')) onUnauthorized?.();
   if (!res.ok) {
     const problem = (json ?? {}) as Partial<ProblemDetails>;
     throw new ApiError(res.status, {
@@ -348,6 +370,27 @@ export const api = {
     ),
   assemble: (id: string, body: { captions?: boolean; musicResourceId?: string }) =>
     request<{ timeline: Timeline }>('POST', `${p(id)}/timeline/assemble`, body),
+  /** Accounts (docs/design/accounts.md#surfaces). */
+  me: () => request<AuthMe>('GET', '/auth/me'),
+  logout: () => request<{ ok: true }>('POST', '/auth/logout', {}),
+  projectAccess: (id: string) => request<ProjectAccessView>('GET', `${p(id)}/access`),
+  setProjectAccess: (
+    id: string,
+    body: { visibility?: 'private' | 'studio'; members?: { email: string; role: ProjectRole }[] },
+  ) => request<ProjectAccessView>('PUT', `${p(id)}/access`, body),
+  tokens: () => request<TokenInfo[]>('GET', '/tokens'),
+  createToken: (body: { name: string; role: ProjectRole; projectIds?: string[]; expiresInDays?: number }) =>
+    request<{ token: TokenInfo; secret: string }>('POST', '/tokens', body),
+  revokeToken: (id: string) => request<TokenInfo>('DELETE', `/tokens/${id}`),
+  users: () => request<PublicUser[]>('GET', '/users'),
+  updateUser: (id: string, body: { studioRole?: 'admin' | 'member'; disabled?: boolean }) =>
+    request<PublicUser>('PATCH', `/users/${id}`, body),
+  audit: (q: { projectId?: string; type?: string; limit?: number } = {}) => {
+    const qs = new URLSearchParams(
+      Object.entries(q).flatMap(([k, v]) => (v === undefined ? [] : [[k, String(v)]])),
+    );
+    return request<AuditEvent[]>('GET', `/audit${qs.size ? `?${qs}` : ''}`);
+  },
   /** Post audio (docs/design/post-audio.md#surfaces): a cue per scene, effects from the action lines. */
   scoreCut: (id: string, body: { direction?: string }) =>
     request<Job>('POST', `${p(id)}/timeline/score`, body),

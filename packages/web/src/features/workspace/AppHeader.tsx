@@ -1,8 +1,9 @@
-import { Cpu, Loader2, Moon, ShieldCheck, Sun } from 'lucide-react';
-import type { ReactNode } from 'react';
+import { Cpu, KeyRound, Loader2, LogOut, Moon, ShieldCheck, Sun, Users } from 'lucide-react';
+import { type ReactNode, useState } from 'react';
 import { Link } from 'react-router';
 import { cx } from '../../components/ui';
 import { useEngine } from '../../engine/state';
+import { useAuth } from '../../lib/auth';
 import { useUi } from '../../store/ui';
 
 export function LiveDot() {
@@ -67,6 +68,74 @@ export function EngineStatus() {
   );
 }
 
+/** The signed-in person: their tokens, the admin pages, sign-out (docs/design/accounts.md#surfaces). */
+export function UserMenu() {
+  const me = useAuth((s) => s.me);
+  const signOut = useAuth((s) => s.signOut);
+  const [open, setOpen] = useState(false);
+  if (me?.mode !== 'oidc' || !me.user) return null;
+  const initials = me.user.name
+    .split(/\s+/)
+    .map((w) => w[0])
+    .join('')
+    .slice(0, 2)
+    .toUpperCase();
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        className="flex size-8 items-center justify-center rounded-full bg-accent text-[12px] font-semibold text-accent-contrast"
+        onClick={() => setOpen((o) => !o)}
+        aria-label={`Account of ${me.user.name}`}
+        aria-expanded={open}
+        data-testid="user-menu"
+      >
+        {initials}
+      </button>
+      {open ? (
+        <div
+          className="absolute right-0 top-10 z-40 w-56 space-y-1 rounded-[var(--radius-card)] border border-border bg-surface p-2 text-[13px] shadow-lg"
+          role="menu"
+        >
+          <div className="px-2 py-1">
+            <div className="font-medium" data-testid="user-name">
+              {me.user.name}
+            </div>
+            <div className="truncate text-[12px] text-muted">{me.user.email}</div>
+          </div>
+          <Link
+            to="/tokens"
+            className="flex items-center gap-2 rounded px-2 py-1.5 hover:bg-surface-2"
+            role="menuitem"
+            data-testid="user-menu-tokens"
+          >
+            <KeyRound className="size-3.5" /> Agent tokens
+          </Link>
+          {me.admin ? (
+            <Link
+              to="/admin"
+              className="flex items-center gap-2 rounded px-2 py-1.5 hover:bg-surface-2"
+              role="menuitem"
+              data-testid="user-menu-admin"
+            >
+              <Users className="size-3.5" /> People and audit log
+            </Link>
+          ) : null}
+          <button
+            type="button"
+            className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left hover:bg-surface-2"
+            onClick={() => void signOut()}
+            role="menuitem"
+            data-testid="sign-out"
+          >
+            <LogOut className="size-3.5" /> Sign out
+          </button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export function AppHeader({ children }: { children?: ReactNode }) {
   const { theme, setTheme } = useUi();
   return (
@@ -94,6 +163,7 @@ export function AppHeader({ children }: { children?: ReactNode }) {
       >
         {theme === 'dark' ? <Sun className="size-4" /> : <Moon className="size-4" />}
       </button>
+      <UserMenu />
     </header>
   );
 }

@@ -1,10 +1,12 @@
 import { evaluateWorkflow, type Job } from '@rideo/shared';
 import * as f from '@rideo/shared/testing';
 import { cleanup, render, screen } from '@testing-library/react';
+import { MemoryRouter } from 'react-router';
 import { afterEach, describe, expect, it } from 'vitest';
 import { ConsistencyBadge } from '../src/components/ConsistencyBadge';
 import { JobRow } from '../src/components/JobProgress';
 import { WorkflowStepper } from '../src/components/WorkflowStepper';
+import { LoginPage } from '../src/features/account/LoginPage';
 import { LineageBadge, MultiShotBadge } from '../src/features/clips/TakeActions';
 
 afterEach(cleanup);
@@ -109,5 +111,19 @@ describe('take badges', () => {
       />,
     );
     expect(screen.getByTestId('take-lineage').textContent).toBe('extended +2s');
+  });
+});
+
+describe('LoginPage', () => {
+  it('links to the provider with the page to return to, and shows why a sign-in failed', () => {
+    render(
+      <MemoryRouter initialEntries={['/login?returnTo=%2Fp%2Fprj_0000000000aaaa&error=may%20not%20join']}>
+        <LoginPage />
+      </MemoryRouter>,
+    );
+    expect(screen.getByTestId('sign-in').getAttribute('href')).toBe(
+      '/api/auth/login?returnTo=%2Fp%2Fprj_0000000000aaaa',
+    );
+    expect(screen.getByTestId('login-error').textContent).toBe('may not join');
   });
 });

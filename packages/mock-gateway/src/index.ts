@@ -2,6 +2,7 @@ import type { AddressInfo } from 'node:net';
 import { buildMockGateway, type MockGatewayApp, type MockGatewayOptions } from './app';
 
 export { buildMockGateway, type MockGatewayApp, type MockGatewayOptions } from './app';
+export { type MockIdpUser, type RunningMockIdp, startMockIdp } from './idp';
 export { MOCK_MODELS } from './models';
 export { signatureColor } from './signature';
 

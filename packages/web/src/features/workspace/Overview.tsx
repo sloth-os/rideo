@@ -21,9 +21,11 @@ import {
 } from '../../components/ui';
 import { WorkflowStepper } from '../../components/WorkflowStepper';
 import { api } from '../../lib/api';
+import { useProjectRole } from '../../lib/auth';
 import { useConfig } from '../../lib/config';
 import { useProject } from '../../store/project';
 import { reportError, useUi } from '../../store/ui';
+import { MembersCard } from './MembersCard';
 
 function SettingsDialog({
   open,
@@ -307,6 +309,7 @@ export function Overview() {
   const [busy, setBusy] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [reopen, setReopen] = useState('');
+  const access = useProjectRole(docs?.project);
   if (!docs || !workflow || !projectId) return null;
   const project = docs.project;
   const current = workflow.stages[workflow.stageIndex];
@@ -334,6 +337,8 @@ export function Overview() {
         actions={
           <Button
             icon={<Settings2 className="size-4" />}
+            disabled={!access.can('project.manage')}
+            title={access.can('project.manage') ? undefined : 'Directors change the settings'}
             onClick={() => setSettingsOpen(true)}
             data-testid="open-settings"
           >
@@ -353,7 +358,8 @@ export function Overview() {
             {gate && current.id !== 'brief' ? (
               <Button
                 variant="primary"
-                disabled={!gate.satisfied}
+                disabled={!gate.satisfied || !access.can('project.approve')}
+                title={access.can('project.approve') ? undefined : 'Directors approve stages'}
                 loading={busy === 'approve'}
                 onClick={approve}
                 data-testid="approve-gate"
@@ -488,6 +494,7 @@ export function Overview() {
             </Button>
           </div>
         </Card>
+        <MembersCard project={docs.project} />
         <Card className="p-4">
           <div className="mb-2 flex items-center gap-2 font-medium">
             <FolderSync className="size-4 text-muted" /> Assets on WebDAV

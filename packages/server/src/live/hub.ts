@@ -27,6 +27,10 @@ interface Session {
   presence: Presence | null;
   connectedAt: string;
   lastSeen: number;
+  /** The signed-in person (docs/design/accounts.md), for notifications. */
+  userId?: string;
+  /** Whether the session may follow a project (read permission); everyone may without accounts. */
+  authorize?: (projectId: string) => Promise<boolean>;
 }
 
 interface Buffered {
@@ -101,7 +105,11 @@ export class LiveHub {
     return !!s && (s.projects.has(projectId) || s.presence?.projectId === projectId);
   }
 
-  attach(socket: LiveSocket, initialProject?: string): string {
+  attach(
+    socket: LiveSocket,
+    initialProject?: string,
+    opts: { userId?: string; authorize?: (projectId: string) => Promise<boolean> } = {},
+  ): string {
     const session: Session = {
       id: newId('session'),
       socket,
@@ -109,6 +117,8 @@ export class LiveHub {
       presence: null,
       connectedAt: new Date().toISOString(),
       lastSeen: Date.now(),
+      userId: opts.userId,
+      authorize: opts.authorize,
     };
     this.sessions.set(session.id, session);
     this.deps.metrics?.liveSessions.set({}, this.sessions.size);
@@ -121,8 +131,18 @@ export class LiveHub {
       instanceId: this.instanceId,
       serverTime: new Date().toISOString(),
     });
-    if (initialProject) session.projects.add(initialProject);
+    if (initialProject) void this.follow(session, initialProject);
     return session.id;
+  }
+
+  /** Subscribes a session to a project when it may read it. */
+  private async follow(session: Session, projectId: string, lastSeq?: number): Promise<void> {
+    if (session.authorize && !(await session.authorize(projectId))) {
+      this.send(session, { type: 'error', message: `forbidden: you may not follow ${projectId}` });
+      return;
+    }
+    session.projects.add(projectId);
+    if (lastSeq !== undefined) this.replay(session, projectId, lastSeq);
   }
 
   private onMessage(session: Session, raw: Buffer | string): void {
@@ -142,8 +162,7 @@ export class LiveHub {
     const msg = res.data;
     switch (msg.type) {
       case 'subscribe': {
-        session.projects.add(msg.projectId);
-        if (msg.lastSeq !== undefined) this.replay(session, msg.projectId, msg.lastSeq);
+        void this.follow(session, msg.projectId, msg.lastSeq);
         break;
       }
       case 'unsubscribe':

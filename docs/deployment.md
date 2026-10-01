@@ -32,7 +32,13 @@ editor-job staging area and, without a configured certificate, the development C
 |---|---|---|
 | `RIDEO_HOST` / `RIDEO_PORT` | `0.0.0.0` / `8787` | listen address |
 | `RIDEO_PUBLIC_URL` | `http://localhost:8787` | external base URL (links in MCP results) |
-| `RIDEO_API_TOKEN` | – | bearer token for `/api`, `/api/live`, `/mcp` (unset = open, for local use) |
+| `RIDEO_API_TOKEN` | – | bearer token for `/api`, `/api/live`, `/mcp` (unset = open, for local use); with accounts it stays a studio token acting as the configured user with admin rights |
+| `RIDEO_OIDC_ISSUER` | – | accounts ([accounts](design/accounts.md)): the OpenID Connect issuer; people sign in through it and the redirect URI is `RIDEO_PUBLIC_URL/api/auth/callback` |
+| `RIDEO_OIDC_CLIENT_ID` / `RIDEO_OIDC_CLIENT_SECRET` | – | the client registered at the issuer (no secret: a public client with PKCE) |
+| `RIDEO_OIDC_SCOPES` / `RIDEO_OIDC_NAME` | `openid profile email` / `your identity provider` | requested scopes; the provider's name on the sign-in button |
+| `RIDEO_ADMINS` | – | comma-separated emails of administrators |
+| `RIDEO_OIDC_ALLOWED_DOMAINS` | – | comma-separated email domains that may join (empty: anyone the provider signs in) |
+| `RIDEO_SESSION_DAYS` | `14` | sign-in session lifetime (renewed on use) |
 | `RIDEO_USER_ID` / `RIDEO_USER_NAME` | `local` / `You` | actor for REST calls |
 | `RIDEO_DATA_DIR` | `./data` | embedded WebDAV root and caches |
 | `RIDEO_CACHE_MAX_BYTES` | `5368709120` | local media cache cap |

@@ -10,7 +10,11 @@ resulting change streams live to the frontend.
 
 - **Streamable HTTP** at `POST|GET|DELETE /mcp`, with stateful sessions (`Mcp-Session-Id`). Idle sessions are
   reaped after 30 minutes.
-- When `RIDEO_API_TOKEN` is set, calls require `Authorization: Bearer <token>`.
+- When `RIDEO_API_TOKEN` is set, calls require `Authorization: Bearer <token>`. With accounts
+  ([accounts](accounts.md#agent-tokens)) an agent sends its **agent token** (`Bearer rdo_…`): tools act on behalf
+  of the token's owner, within the token's role and projects, with the same permissions as REST (approval tools
+  need `project.approve`, settings, branches and access `project.manage`). A session stays bound to the caller that
+  opened it (403 for anyone else).
 - Clients that only support stdio can bridge with `npx mcp-remote http://HOST:8787/mcp`.
 
 ```bash
@@ -21,7 +25,7 @@ claude mcp add --transport http rideo http://localhost:8787/mcp \
 ## Attribution and visibility
 
 The MCP `initialize` request's `clientInfo.name` becomes the actor
-`{kind: "agent", id: slug(name), name}`. Every commit made by a tool is authored by that actor, so history
+`{kind: "agent", id: slug(name), name}`, with `onBehalfOf` the token's owner when the studio has accounts. Every commit made by a tool is authored by that actor, so history
 shows "Claude Code: Lock character Mira". Every tool call also publishes an `activity` live event
 (`{actor, tool, summary}`), and the UI shows it in the activity feed and as a toast, so the user can watch
 the agent work.
@@ -125,6 +129,7 @@ or keep going and `job_wait` until a tab picks the job up.
 | `localization_get` | `projectId` → every language with its lines, dubs and progress for the cut |
 | `translation_update` | `projectId`, `language`, `shotId`, `index`, `text` (kept when translating again) |
 | `subtitles_get` | `projectId`, `format` (`srt`, `vtt`), `language?` → `{format, text}` |
+| `project_access` | `projectId`, `visibility?`, `members?[{email, role}]` → members, invites and visibility (sets them when given; [accounts](accounts.md)) |
 | `score_generate` | `projectId`, `direction?` → job (a cue per scene on the Music track, [post audio](post-audio.md)) |
 | `effects_generate` | `projectId` → job (effects from the action lines on the Effects track; `sfx_unavailable` without a provider) |
 | `footage_analyze` | `projectId`, `resourceId` → `{analysis, job}` (editor job) |

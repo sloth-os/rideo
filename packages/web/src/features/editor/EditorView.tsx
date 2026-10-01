@@ -59,6 +59,7 @@ import {
 } from '../../components/ui';
 import { useEngine } from '../../engine/state';
 import { api } from '../../lib/api';
+import { useProjectRole } from '../../lib/auth';
 import { useProject } from '../../store/project';
 import { reportError, useUi } from '../../store/ui';
 import { detectCaps, type EngineCaps } from './engine/capabilities';
@@ -808,6 +809,7 @@ export function EditorView() {
   }, [playerCommand]);
 
   const selectedItem = timeline?.tracks.flatMap((t) => t.items).find((i) => i.id === selected) ?? null;
+  const access = useProjectRole(docs?.project);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -904,7 +906,7 @@ export function EditorView() {
             <Button
               variant="primary"
               icon={<Download className="size-4" />}
-              disabled={primary.items.length === 0}
+              disabled={primary.items.length === 0 || !access.can('project.edit')}
               onClick={() => setExportOpen(true)}
               data-testid="open-export"
             >

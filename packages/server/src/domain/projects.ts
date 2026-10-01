@@ -13,7 +13,9 @@ import {
   kindFromMime,
   newId,
   type Project,
+  ProjectAccessSchema,
   type ProjectDocs,
+  type ProjectRole,
   type ProjectSettingsPatch,
   ProjectSettingsSchema,
   type ProjectSummary,
@@ -21,6 +23,7 @@ import {
   type UpdateProjectInput,
   type WorkflowEvaluation,
 } from '@rideo/shared';
+import { currentPrincipal } from '../auth/context';
 import { invalid } from '../errors';
 import { mimeFor } from '../media/store';
 import { Service } from './base';
@@ -95,6 +98,8 @@ export class ProjectService extends Service {
       },
       settings: this.defaultSettings(input.settings),
       workflow: { stage: initialStage(input.kind), approvals: {} },
+      // With accounts the creator directs the project (docs/design/accounts.md#users-roles-and-projects).
+      access: this.creatorAccess(),
     };
     const h = this.deps.projects.handle(id);
     await h.repo.init({ 'project.json': project }, actor, `Create ${input.kind} project “${project.title}”`);
@@ -106,11 +111,21 @@ export class ProjectService extends Service {
     return project;
   }
 
+  private creatorAccess(): Project['access'] {
+    const p = currentPrincipal();
+    if (this.deps.accounts.mode !== 'oidc' || !p || p.kind === 'studio') return null;
+    return ProjectAccessSchema.parse({ members: [{ userId: p.user.id, role: 'director' }] });
+  }
+
+  /** The projects the caller may read, with their role. */
   async list(): Promise<ProjectSummary[]> {
     const out: ProjectSummary[] = [];
+    const principal = currentPrincipal() ?? this.deps.accounts.studioPrincipal();
     for (const id of await this.deps.projects.listIds()) {
       try {
         const docs = await this.deps.projects.docs(id);
+        const role = this.deps.accounts.roleInProject(principal, docs.project);
+        if (!role) continue;
         const ev = evaluateWorkflow(docs);
         const log = await this.deps.projects.handle(id).repo.log({ limit: 1 });
         const poster = Object.values(docs.clips)
@@ -128,12 +143,52 @@ export class ProjectService extends Service {
           plannedDurationSec: ev.plannedDurationSec,
           approvedDurationSec: ev.approvedDurationSec,
           ...(poster ? { posterPath: poster } : {}),
+          role,
         });
       } catch (err) {
         this.deps.log.warn({ err, projectId: id }, 'skipping unreadable project');
       }
     }
     return out.sort((a, b) => (b.updatedAt ?? b.createdAt).localeCompare(a.updatedAt ?? a.createdAt));
+  }
+
+  /** Members (as people), invites and visibility (docs/design/accounts.md#surfaces). */
+  async access(projectId: string) {
+    const project = (await this.deps.projects.docs(projectId)).project;
+    const principal = currentPrincipal() ?? this.deps.accounts.studioPrincipal();
+    return {
+      ...this.deps.accounts.describeAccess(project.access),
+      open: !project.access,
+      role: this.deps.accounts.roleInProject(principal, project),
+    };
+  }
+
+  /** Sets visibility and the members by email (people not signed in yet are invited). */
+  async setAccess(
+    actor: Actor,
+    projectId: string,
+    input: { visibility?: 'private' | 'studio'; members?: { email: string; role: ProjectRole }[] },
+  ) {
+    const principal = currentPrincipal() ?? this.deps.accounts.studioPrincipal();
+    await this.mutate(
+      actor,
+      projectId,
+      (tx) => {
+        const cur = tx.require<Project>('project.json', 'project');
+        const access = this.deps.accounts.resolveAccess(principal, cur.access, input);
+        tx.set('project.json', { ...cur, access });
+        return access;
+      },
+      {
+        message: (a) =>
+          `Set access: ${a.visibility === 'studio' ? 'studio-visible, ' : ''}${a.members.length} member(s)${a.invites.length ? `, ${a.invites.length} invited` : ''}`,
+      },
+    );
+    await this.deps.accounts.record(principal, 'project.access', {
+      projectId,
+      detail: { visibility: input.visibility, members: input.members },
+    });
+    return this.access(projectId);
   }
 
   async state(projectId: string): Promise<ProjectState> {

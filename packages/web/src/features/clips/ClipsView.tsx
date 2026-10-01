@@ -45,6 +45,7 @@ import {
   Textarea,
 } from '../../components/ui';
 import { api, mediaUrl } from '../../lib/api';
+import { useProjectRole } from '../../lib/auth';
 import { NO_ELEMENTS, useProject } from '../../store/project';
 import { reportError, useUi } from '../../store/ui';
 import { CompareDialog, DirectPanel } from './DirectPanel';
@@ -544,6 +545,7 @@ function ClipCard({
     ),
   );
   const elements = useProject((s) => s.docs?.elements ?? NO_ELEMENTS);
+  const access = useProjectRole(useProject((s) => s.docs?.project));
   const blockers = clipBlockers(clip, characters, elements);
   const pending = clip.shots.some((s) => !s.takes.length);
   return (
@@ -580,7 +582,7 @@ function ClipCard({
           <Button
             size="sm"
             icon={<Sparkles className="size-3.5" />}
-            disabled={!!job}
+            disabled={!!job || !access.can('project.edit')}
             onClick={() => api.generateClip(projectId, clip.id).catch(reportError)}
             data-testid="generate-clip"
           >
@@ -601,8 +603,12 @@ function ClipCard({
             size="sm"
             variant="primary"
             icon={<Check className="size-3.5" />}
-            disabled={blockers.length > 0}
-            title={blockers.map((b) => b.message).join('\n')}
+            disabled={blockers.length > 0 || !access.can('project.approve')}
+            title={
+              access.can('project.approve')
+                ? blockers.map((b) => b.message).join('\n')
+                : 'Directors approve clips'
+            }
             onClick={() =>
               api
                 .approveClip(projectId, clip.id)
@@ -652,6 +658,7 @@ function ClipCard({
 
 export function ClipsView() {
   const { docs, projectId, workflow, jobs } = useProject();
+  const access = useProjectRole(docs?.project);
   if (!docs || !projectId || !workflow) return null;
   const clips = sortedClips(docs);
   const batch = Object.values(jobs).find((j) => j.kind === 'batch.generate' && !isTerminalJob(j));
@@ -679,6 +686,7 @@ export function ClipsView() {
             ) : workflow.stage === 'production' || clips.some((c) => c.status === 'approved') ? (
               <Button
                 icon={<Play className="size-4" />}
+                disabled={!access.can('project.edit')}
                 onClick={() => api.startBatch(projectId).catch(reportError)}
                 data-testid="start-batch"
               >
@@ -689,7 +697,7 @@ export function ClipsView() {
               <Button
                 variant="primary"
                 icon={<Check className="size-4" />}
-                disabled={!stageGate.satisfied}
+                disabled={!stageGate.satisfied || !access.can('project.approve')}
                 onClick={() =>
                   api
                     .approve(projectId, stageGate.id)

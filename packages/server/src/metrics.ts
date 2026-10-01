@@ -106,6 +106,10 @@ export class Metrics {
     ),
   );
   readonly liveSessions = this.add(new Gauge('rideo_live_sessions', 'Connected live sessions'));
+  /** Accounts (docs/design/accounts.md): sign-ins, token use and denials. */
+  readonly auth = this.add(
+    new Counter('rideo_auth_total', 'Sign-ins, token use and denials by event and outcome'),
+  );
   readonly editorJobs = this.add(
     new Counter(
       'rideo_editor_jobs_total',

@@ -30,6 +30,7 @@ import {
   LENS_PRESETS,
   LoudnessTargetSchema,
   MotionReferenceSchema,
+  type Permission,
   ProjectSettingsPatchSchema,
   ReferenceViewSchema,
   RenderEngineChoiceSchema,
@@ -51,10 +52,12 @@ import {
 } from '@rideo/shared';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
+import { currentPrincipal, type Principal } from '../auth/context';
 import type { ProjectState } from '../domain/projects';
 import type { Studio } from '../domain/studio';
 import { toAppError } from '../errors';
 import { VERSION } from '../http/app';
+import type { AuthedRequest } from '../http/auth-routes';
 
 const PROJECT = z.string().describe('Project id (prj_…)');
 
@@ -220,7 +223,12 @@ function buildServer(studio: Studio): McpServer {
   const actorOf = (): Actor => {
     const info = server.server.getClientVersion();
     const name = info?.name ?? 'MCP client';
-    return { kind: 'agent', id: slugify(name, 64) || 'mcp-client', name };
+    const agent: Actor = { kind: 'agent', id: slugify(name, 64) || 'mcp-client', name };
+    // An agent token (or a signed-in person) acts for its owner (docs/design/accounts.md#agent-tokens).
+    const p = currentPrincipal();
+    return p && p.kind !== 'studio'
+      ? { ...agent, onBehalfOf: { kind: 'user', id: p.user.id, name: p.user.name } }
+      : agent;
   };
   const tool = <S extends z.ZodRawShape>(
     name: string,
@@ -238,7 +246,19 @@ function buildServer(studio: Studio): McpServer {
         studio.deps.hub.activity(projectId, actor, `tool:${name}`, `${actor.name} → ${name}`);
       }
       try {
+        // The same permissions as REST (docs/design/accounts.md#users-roles-and-projects).
+        if (projectId && /^prj_/.test(projectId))
+          await studio.deps.accounts.authorize(
+            currentPrincipal() ?? studio.deps.accounts.studioPrincipal(),
+            projectId,
+            TOOL_PERMISSIONS[name] ?? (annotations.readOnlyHint ? 'project.read' : 'project.edit'),
+          );
         const result = await run(args, actor);
+        if (projectId && TOOL_PERMISSIONS[name] === 'project.approve')
+          await studio.deps.accounts.record(currentPrincipal(), 'project.approval', {
+            projectId,
+            detail: { tool: name },
+          });
         return {
           content: [{ type: 'text' as const, text: JSON.stringify(result ?? { ok: true }, null, 2) }],
         };
@@ -259,6 +279,21 @@ function buildServer(studio: Studio): McpServer {
   const ro = { readOnlyHint: true };
 
   // Projects, documents, workflow
+  tool(
+    'project_access',
+    'Read or set who may work on a project: visibility (private or studio) and members by email with a role (director, editor, reviewer); people who never signed in are invited (docs/design/accounts.md).',
+    {
+      projectId: PROJECT,
+      visibility: z.enum(['private', 'studio']).optional(),
+      members: z
+        .array(z.object({ email: z.string().email(), role: z.enum(['reviewer', 'editor', 'director']) }))
+        .optional(),
+    },
+    (a, actor) =>
+      a.visibility || a.members
+        ? studio.projects.setAccess(actor, a.projectId, { visibility: a.visibility, members: a.members })
+        : studio.projects.access(a.projectId),
+  );
   tool(
     'project_list',
     'List projects with kind, workflow stage and planned/approved length.',
@@ -1195,7 +1230,26 @@ interface Session {
   transport: StreamableHTTPServerTransport;
   server: McpServer;
   lastSeen: number;
+  /** Who opened it: later requests must come from the same caller. */
+  owner: string;
 }
+
+const ownerOf = (p: Principal | null) => (p ? `${p.kind}:${p.token?.id ?? p.user.id}` : 'anonymous');
+
+/** Tools that need more than reading (read-only tools) or editing (the rest). */
+const TOOL_PERMISSIONS: Record<string, Permission> = {
+  workflow_approve: 'project.approve',
+  workflow_reopen: 'project.approve',
+  shot_board_approve: 'project.approve',
+  storyboard_approve_all: 'project.approve',
+  take_override: 'project.approve',
+  clip_approve: 'project.approve',
+  project_update: 'project.manage',
+  project_delete: 'project.manage',
+  branch_create: 'project.manage',
+  branch_switch: 'project.manage',
+  project_access: 'project.manage',
+};
 
 /** Streamable HTTP MCP endpoint at /mcp with stateful sessions (docs/design/mcp.md). */
 export function registerMcp(app: FastifyInstance, studio: Studio): void {
@@ -1232,6 +1286,7 @@ export function registerMcp(app: FastifyInstance, studio: Studio): void {
       const server = buildServer(studio);
       const created: Session = {
         server,
+        owner: ownerOf((req as AuthedRequest).principal ?? null),
         lastSeen: Date.now(),
         transport: new StreamableHTTPServerTransport({
           sessionIdGenerator: () => randomUUID(),
@@ -1246,6 +1301,8 @@ export function registerMcp(app: FastifyInstance, studio: Studio): void {
       await server.connect(created.transport);
       session = created;
     }
+    if (session.owner !== ownerOf((req as AuthedRequest).principal ?? null))
+      return reply.code(403).send(jsonRpcError(-32003, 'This MCP session belongs to another caller'));
     session.lastSeen = Date.now();
     reply.hijack();
     await session.transport.handleRequest(req.raw, reply.raw, req.body);
@@ -1258,6 +1315,8 @@ export function registerMcp(app: FastifyInstance, studio: Studio): void {
     const sid = req.headers['mcp-session-id'];
     const session = typeof sid === 'string' ? sessions.get(sid) : undefined;
     if (!session) return reply.code(404).send(jsonRpcError(-32001, 'Unknown MCP session'));
+    if (session.owner !== ownerOf((req as AuthedRequest).principal ?? null))
+      return reply.code(403).send(jsonRpcError(-32003, 'This MCP session belongs to another caller'));
     session.lastSeen = Date.now();
     reply.hijack();
     await session.transport.handleRequest(req.raw, reply.raw);
