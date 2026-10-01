@@ -190,6 +190,7 @@ export function shot(overrides: Partial<Shot> = {}): Shot {
     status: 'planned',
     takes: [],
     selectedTakeId: null,
+    board: null,
     lastError: null,
     ...overrides,
   };
@@ -248,6 +249,7 @@ export function docs(overrides: Partial<ProjectDocs> = {}): ProjectDocs {
     project: project(),
     screenplay: null,
     timeline: null,
+    animatic: null,
     characters: {},
     elements: {},
     clips: {},

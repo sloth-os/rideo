@@ -39,6 +39,14 @@ export const DEFAULT_DISCLOSURE: DisclosureSettings = {
   position: 'top_right',
 };
 
+/** The storyboard stage (docs/design/storyboard.md#stage-and-gate). */
+export const StoryboardSettingsSchema = z.object({
+  enabled: z.boolean().default(true),
+  /** How many scenes (from the first) are storyboarded before the pilot. */
+  scenes: z.number().int().min(1).max(50).default(3),
+});
+export type StoryboardSettings = z.infer<typeof StoryboardSettingsSchema>;
+
 export const ProjectSettingsSchema = z.object({
   aspectRatio: AspectRatioSchema.default('16:9'),
   resolution: z
@@ -65,6 +73,7 @@ export const ProjectSettingsSchema = z.object({
     judgeVoices: true,
   }),
   dialogue: DialogueSettingsSchema.default({ mode: 'off', lipSync: true }),
+  storyboard: StoryboardSettingsSchema.default({ enabled: true, scenes: 3 }),
   generation: z
     .object({ includeAudio: z.boolean().default(false), keyframes: z.boolean().default(true) })
     .default({ includeAudio: false, keyframes: true }),

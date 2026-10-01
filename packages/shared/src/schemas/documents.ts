@@ -20,6 +20,7 @@ export type DocKind =
   | 'element'
   | 'clip'
   | 'timeline'
+  | 'animatic'
   | 'resource'
   | 'analysis'
   | 'export';
@@ -37,6 +38,8 @@ export const DOC_SPECS: DocSpec[] = [
   { kind: 'project', pattern: /^project\.json$/, schema: ProjectSchema },
   { kind: 'screenplay', pattern: /^screenplay\.json$/, schema: ScreenplaySchema },
   { kind: 'timeline', pattern: /^timeline\.json$/, schema: TimelineSchema },
+  /** The storyboard's animatic: a timeline of stills (docs/design/storyboard.md#animatic). */
+  { kind: 'animatic', pattern: /^animatic\.json$/, schema: TimelineSchema },
   {
     kind: 'character',
     pattern: new RegExp(`^characters/${ID}\\.json$`),
@@ -83,6 +86,7 @@ export const docPath = {
   project: () => 'project.json',
   screenplay: () => 'screenplay.json',
   timeline: () => 'timeline.json',
+  animatic: () => 'animatic.json',
   character: (id: string) => `characters/${id}.json`,
   element: (id: string) => `elements/${id}.json`,
   clip: (id: string) => `clips/${id}.json`,
@@ -123,6 +127,7 @@ export interface ProjectDocs {
   project: Project;
   screenplay: Screenplay | null;
   timeline: Timeline | null;
+  animatic: Timeline | null;
   characters: Record<string, Character>;
   elements: Record<string, Element>;
   clips: Record<string, Clip>;
@@ -162,6 +167,8 @@ export function applyDocChanges(docs: ProjectDocs, changes: Record<string, unkno
       next.screenplay = (doc as Screenplay | null) ?? null;
     } else if (spec.kind === 'timeline') {
       next.timeline = (doc as Timeline | null) ?? null;
+    } else if (spec.kind === 'animatic') {
+      next.animatic = (doc as Timeline | null) ?? null;
     }
   }
   return next;
@@ -180,6 +187,7 @@ export function docsFromEntries(entries: Iterable<[string, unknown]>): ProjectDo
       project,
       screenplay: null,
       timeline: null,
+      animatic: null,
       characters: {},
       elements: {},
       clips: {},

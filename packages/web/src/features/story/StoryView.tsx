@@ -2,6 +2,7 @@ import { formatDuration, isTerminalJob, type Scene } from '@rideo/shared';
 import {
   Check,
   Clapperboard,
+  FileUp,
   ImagePlus,
   PenLine,
   Plus,
@@ -20,6 +21,57 @@ import { Badge, Button, Card, EmptyState, Field, SectionHeader, Select, Textarea
 import { api } from '../../lib/api';
 import { useProject } from '../../store/project';
 import { reportError, useUi } from '../../store/ui';
+
+/** Fountain, Final Draft or PDF → the screenplay (docs/design/storyboard.md#screenplay-import). */
+function ImportScreenplay({ replace }: { replace: boolean }) {
+  const { projectId } = useProject();
+  const [busy, setBusy] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+  if (!projectId) return null;
+  const run = async (file: File) => {
+    if (
+      replace &&
+      !confirm('Replace the screenplay and its planned clips? The current version stays in history.')
+    )
+      return;
+    setBusy(true);
+    try {
+      const r = await api.importScreenplay(projectId, file, replace);
+      useUi
+        .getState()
+        .toast(`Imported “${r.title}”: ${r.scenes} scenes, ${r.characters} characters`, 'success');
+    } catch (err) {
+      reportError(err);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <>
+      <Button
+        variant="ghost"
+        icon={<FileUp className="size-4" />}
+        loading={busy}
+        onClick={() => fileRef.current?.click()}
+        title="Fountain, Final Draft (.fdx) or PDF"
+      >
+        Import screenplay
+      </Button>
+      <input
+        ref={fileRef}
+        type="file"
+        accept=".fountain,.spmd,.txt,.fdx,.pdf,application/pdf,text/plain"
+        hidden
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          if (f) void run(f);
+          e.target.value = '';
+        }}
+        data-testid="import-screenplay"
+      />
+    </>
+  );
+}
 
 function BriefEditor() {
   const { docs, projectId, jobs } = useProject();
@@ -114,6 +166,7 @@ function BriefEditor() {
         >
           Generate screenplay &amp; cast
         </Button>
+        <ImportScreenplay replace={false} />
         <span className="text-[12px] text-muted">
           Target {formatDuration(docs.project.settings.targetDurationSec)} · pilot{' '}
           {formatDuration(docs.project.settings.pilotDurationSec)}
@@ -278,6 +331,7 @@ export function StoryView() {
         subtitle={`${sp.scenes.length} scene(s) written · ${sp.outline.length} outline beat(s)`}
         actions={
           <>
+            {!gate?.approved ? <ImportScreenplay replace /> : null}
             <Button
               icon={<RefreshCcw className="size-4" />}
               onClick={() =>

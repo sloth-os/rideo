@@ -209,7 +209,9 @@ exact, and a failed or interrupted render resumes at the first missing chunk.
 ### Video graph (per chunk)
 
 Every video segment overlapping the chunk becomes a normalized stream (input seeking with `-ss` on each
-source keeps chunks independent):
+source keeps chunks independent). A still image (a storyboard frame in the animatic,
+[storyboard](storyboard.md#animatic)) is looped instead (`-loop 1 -framerate FPS -t D`) and trimmed from 0; the
+WebCodecs compositor and the preview draw it as an `ImageBitmap`, and audio queries skip it:
 
 ```
 [k:v]trim=start=IN:end=OUT,setpts=(PTS-STARTPTS)/SPEED,scale=W:H:force_original_aspect_ratio=decrease,

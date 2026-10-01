@@ -139,6 +139,12 @@ async function request<T>(
   return json as T;
 }
 
+/** A download of the shot list (the token rides in the query like media URLs). */
+export function shotListUrl(projectId: string, format: 'csv' | 'pdf'): string {
+  const token = getToken();
+  return `/api/projects/${projectId}/shotlist.${format}${token ? `?token=${encodeURIComponent(token)}` : ''}`;
+}
+
 export function mediaUrl(projectId: string, path: string): string {
   const token = getToken();
   return `/api/projects/${projectId}/media/${path}${token ? `?token=${encodeURIComponent(token)}` : ''}`;
@@ -314,8 +320,35 @@ export const api = {
   autoEdit: (id: string, aid: string) =>
     request<{ timeline: Timeline }>('POST', `${p(id)}/analyses/${aid}/auto-edit`),
   /** Queues an export; an editor tab renders it and the server watermarks it. */
-  createExport: (id: string, body: { quality: ExportQuality; engine: RenderEngineChoice }) =>
-    request<{ export: Export; job: Job }>('POST', `${p(id)}/exports`, body),
+  createExport: (
+    id: string,
+    body: { quality: ExportQuality; engine: RenderEngineChoice; source?: 'timeline' | 'animatic' },
+  ) => request<{ export: Export; job: Job }>('POST', `${p(id)}/exports`, body),
+  // Storyboard and animatic (docs/design/storyboard.md#surfaces)
+  generateStoryboard: (id: string) => request<Job>('POST', `${p(id)}/storyboard/generate`, {}),
+  generateBoard: (id: string, clipId: string, shotId: string) =>
+    request<Job>('POST', `${p(id)}/clips/${clipId}/shots/${shotId}/board/generate`, {}),
+  approveBoard: (id: string, clipId: string, shotId: string, approved: boolean) =>
+    request<Clip>('POST', `${p(id)}/clips/${clipId}/shots/${shotId}/board/approve`, { approved }),
+  approveAllBoards: (id: string) =>
+    request<{ approved: number }>('POST', `${p(id)}/storyboard/approve-all`, {}),
+  reorderShots: (id: string, clipId: string, shotIds: string[]) =>
+    request<Clip>('POST', `${p(id)}/clips/${clipId}/shots/reorder`, { shotIds }),
+  buildAnimatic: (id: string, body: { musicResourceId?: string; captions?: boolean }) =>
+    request<{ animatic: Timeline }>('POST', `${p(id)}/storyboard/animatic`, body),
+  /** Fountain, Final Draft (.fdx) or PDF (docs/design/storyboard.md#screenplay-import). */
+  importScreenplay: (id: string, file: File, replace: boolean) => {
+    const form = new FormData();
+    form.set('replace', String(replace));
+    form.set('file', file, file.name);
+    return request<{
+      title: string;
+      scenes: number;
+      characters: number;
+      elements: number;
+      durationSec: number;
+    }>('POST', `${p(id)}/screenplay/import`, form);
+  },
   history: (id: string, q: { path?: string; limit?: number; before?: string } = {}) => {
     const qs = new URLSearchParams(
       Object.entries(q)

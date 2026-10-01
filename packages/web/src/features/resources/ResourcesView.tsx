@@ -114,9 +114,14 @@ export function ResourcesView() {
         const source = videos.find((v) => v.role === 'source') ?? videos[0];
         if (source) await api.analyze(projectId, source.id);
         navigate(`/p/${projectId}/analysis`);
-      } else {
+      } else if (docs?.project.settings.storyboard.enabled === false) {
+        // No storyboard: its gate has nothing to check, so the pilot follows (docs/design/storyboard.md).
+        await api.approve(projectId, 'storyboard_approved');
         useUi.getState().toast(`${gate.title}: done`, 'success');
         navigate(`/p/${projectId}/clips`);
+      } else {
+        useUi.getState().toast(`${gate.title}: done`, 'success');
+        navigate(`/p/${projectId}/storyboard`);
       }
     } catch (err) {
       reportError(err);
@@ -140,7 +145,11 @@ export function ResourcesView() {
               onClick={proceed}
               data-testid="approve-resources"
             >
-              {isEdit ? 'Analyze footage' : 'Continue to pilot'}
+              {isEdit
+                ? 'Analyze footage'
+                : docs?.project.settings.storyboard.enabled === false
+                  ? 'Continue to pilot'
+                  : 'Continue to storyboard'}
             </Button>
           ) : null
         }

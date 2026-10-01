@@ -110,6 +110,7 @@ export const ERROR_CODES = [
   'voice_not_locked',
   'voice_locked',
   'tts_unavailable',
+  'board_unapprovable',
   'internal_error',
 ] as const;
 export const ErrorCodeSchema = z.enum(ERROR_CODES);

@@ -5,6 +5,7 @@ import {
   FolderOpen,
   GitBranch,
   LayoutDashboard,
+  LayoutGrid,
   type LucideIcon,
   MapPin,
   MoreHorizontal,
@@ -29,6 +30,7 @@ import { ExportsView } from '../exports/ExportsView';
 import { HistoryView } from '../history/HistoryView';
 import { ResourcesView } from '../resources/ResourcesView';
 import { StoryView } from '../story/StoryView';
+import { StoryboardView } from '../storyboard/StoryboardView';
 import { AppHeader } from './AppHeader';
 import { Overview } from './Overview';
 
@@ -44,6 +46,7 @@ const STORY_NAV: NavItem[] = [
   { view: 'cast', label: 'Cast', icon: Users },
   { view: 'elements', label: 'Elements', icon: MapPin },
   { view: 'resources', label: 'Resources', icon: FolderOpen },
+  { view: 'storyboard', label: 'Storyboard', icon: LayoutGrid },
   { view: 'clips', label: 'Clips', icon: Clapperboard },
   { view: 'editor', label: 'Editor', icon: Scissors },
   { view: 'history', label: 'History', icon: GitBranch },
@@ -68,6 +71,7 @@ const VIEWS: Record<View, ComponentType> = {
   cast: CastView,
   elements: ElementsView,
   resources: ResourcesView,
+  storyboard: StoryboardView,
   clips: ClipsView,
   editor: EditorView,
   analysis: AnalysisView,

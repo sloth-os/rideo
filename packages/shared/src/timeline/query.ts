@@ -198,11 +198,17 @@ export interface AudioSegment {
  * Every audible segment on the timeline (embedded audio of primary video items plus audio tracks).
  * Transition overlaps become audio crossfades, so browser mixdown and server render sound the same.
  */
+/** A still image used as a video item (storyboard frames in the animatic, docs/design/storyboard.md#animatic). */
+export function isStillMedia(media: Pick<MediaRef, 'mime'>): boolean {
+  return media.mime.startsWith('image/');
+}
+
 export function audioSegments(t: Timeline): AudioSegment[] {
   const out: AudioSegment[] = [];
   const items = primaryTrack(t).items as VideoItem[];
   items.forEach((item, i) => {
     if (item.muted || item.volume <= 0 || item.source.media.hasAudio === false) return;
+    if (isStillMedia(item.source.media)) return;
     const next = items[i + 1];
     const tin = i > 0 && item.transitionIn ? item.transitionIn.duration : 0;
     const tout = next?.transitionIn ? next.transitionIn.duration : 0;

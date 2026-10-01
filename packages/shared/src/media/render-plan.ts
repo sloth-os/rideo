@@ -3,6 +3,7 @@ import type { ExportQuality } from '../schemas/job';
 import type { TextItem, Timeline } from '../schemas/timeline';
 import {
   audioSegments,
+  isStillMedia,
   textItems,
   timelineDuration,
   type VideoSegment,
@@ -180,12 +181,20 @@ export function chunkGraph(t: Timeline, chunk: RenderChunk, opts: ChunkGraphOpti
     const to = Math.min(s.end, chunk.end);
     const srcIn = Math.min(s.out, s.in + (from - s.start) * s.speed);
     const srcOut = Math.min(s.out, s.in + (to - s.start) * s.speed);
-    // Seek a second early and trim exactly: input seeking alone drops the frame that sits on the seek point.
-    const seek = Math.max(0, srcIn - SEEK_MARGIN);
-    args.push('-ss', n(seek), '-t', n(srcOut - seek + 0.25), '-i', opts.inputPath(s.media));
     const d = to - from;
+    let head: string;
+    if (isStillMedia(s.media)) {
+      // A still (storyboard frame): loop the image for the segment's part of the chunk.
+      args.push('-loop', '1', '-framerate', String(fps), '-t', n(d + 0.25), '-i', opts.inputPath(s.media));
+      head = `[${k}:v]trim=start=0:end=${n(d)},setpts=PTS-STARTPTS,`;
+    } else {
+      // Seek a second early and trim exactly: input seeking alone drops the frame that sits on the seek point.
+      const seek = Math.max(0, srcIn - SEEK_MARGIN);
+      args.push('-ss', n(seek), '-t', n(srcOut - seek + 0.25), '-i', opts.inputPath(s.media));
+      head = `[${k}:v]trim=start=${n(srcIn - seek)}:end=${n(srcOut - seek)},setpts=(PTS-STARTPTS)/${n(s.speed)},`;
+    }
     let chain =
-      `[${k}:v]trim=start=${n(srcIn - seek)}:end=${n(srcOut - seek)},setpts=(PTS-STARTPTS)/${n(s.speed)},` +
+      head +
       `scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:color=black,` +
       // settb: concat outputs AV_TIME_BASE, and xfade needs both inputs on the same timebase
       `setsar=1,fps=${fps},format=yuv420p,settb=AVTB`;

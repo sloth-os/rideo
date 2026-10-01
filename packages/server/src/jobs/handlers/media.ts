@@ -189,7 +189,8 @@ async function exportIngredients(
         generated:
           item.source.type === 'take' ||
           resource?.origin === 'generated' ||
-          media.path.startsWith('media/dialogue/'),
+          media.path.startsWith('media/dialogue/') ||
+          media.path.startsWith('media/keyframes/'),
       });
     }
   }
@@ -340,7 +341,7 @@ export async function exportFinish(deps: HandlerDeps, ctx: JobContext) {
         ctx.progress(total, total, 'signing Content Credentials');
         const timeline = (await deps.services.projects.getDoc(
           ctx.job.projectId,
-          'timeline.json',
+          exp.source === 'animatic' ? 'animatic.json' : 'timeline.json',
           exp.timelineCommit ?? undefined,
         )) as Timeline;
         published = join(dir, 'export-signed.mp4');

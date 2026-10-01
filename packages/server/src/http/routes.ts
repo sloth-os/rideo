@@ -5,8 +5,10 @@ import { pipeline } from 'node:stream/promises';
 import {
   AddElementReferenceInputSchema,
   AddReferenceInputSchema,
+  AnimaticInputSchema,
   ApproveInputSchema,
   AssembleInputSchema,
+  BoardApproveInputSchema,
   CharacterInputSchema,
   CharacterUpdateInputSchema,
   CloneVoiceInputSchema,
@@ -19,16 +21,19 @@ import {
   ExportInputSchema,
   GenerateElementRefsInputSchema,
   GenerateRefsInputSchema,
+  ImportScreenplayInputSchema,
   JobStatusSchema,
   MusicInputSchema,
   OverrideInputSchema,
   ReferenceViewSchema,
   ReopenInputSchema,
+  ReorderShotsInputSchema,
   ResourceInputSchema,
   RestoreInputSchema,
   ScreenplayPatchInputSchema,
   SelectVoiceInputSchema,
   ShotUpdateInputSchema,
+  StoryboardGenerateInputSchema,
   SuggestionDecisionsInputSchema,
   TimelineOpsInputSchema,
   UpdateProjectInputSchema,
@@ -228,6 +233,65 @@ export function registerRoutes(app: FastifyInstance, studio: Studio): void {
           parse(z.object({ beats: z.number().int().min(1).max(20).optional() }), req.body).beats,
         ),
       ),
+  );
+  // Screenplay import: Fountain, Final Draft, PDF (docs/design/storyboard.md#screenplay-import)
+  app.post('/api/projects/:id/screenplay/import', async (req, reply) => {
+    if (req.isMultipart()) {
+      const { file, fields } = await receiveUpload(studio, req, { fileSize: 20 * 1024 * 1024 });
+      if (!file) throw invalid('multipart field "file" is required');
+      try {
+        return reply
+          .code(201)
+          .send(
+            await studio.storyboard.importScreenplay(
+              actor(),
+              pid(req),
+              { file: file.path, filename: file.filename, mime: file.mime },
+              { replace: fields.replace === 'true' },
+            ),
+          );
+      } finally {
+        await rm(file.path, { force: true });
+      }
+    }
+    const body = parse(ImportScreenplayInputSchema, req.body);
+    return reply
+      .code(201)
+      .send(await studio.storyboard.importScreenplay(actor(), pid(req), body, { replace: body.replace }));
+  });
+  // Storyboard and animatic (docs/design/storyboard.md#surfaces)
+  app.post('/api/projects/:id/storyboard/generate', async (req, reply) =>
+    reply
+      .code(202)
+      .send(
+        await studio.storyboard.generate(
+          actor(),
+          pid(req),
+          parse(StoryboardGenerateInputSchema, req.body ?? {}).sceneIds,
+        ),
+      ),
+  );
+  app.post('/api/projects/:id/storyboard/approve-all', async (req) =>
+    studio.storyboard.approveAll(actor(), pid(req)),
+  );
+  app.post('/api/projects/:id/storyboard/animatic', async (req) => ({
+    animatic: await studio.storyboard.buildAnimatic(
+      actor(),
+      pid(req),
+      parse(AnimaticInputSchema, req.body ?? {}),
+    ),
+  }));
+  app.get('/api/projects/:id/shotlist.csv', async (req, reply) =>
+    reply
+      .type('text/csv; charset=utf-8')
+      .header('content-disposition', 'attachment; filename="shot-list.csv"')
+      .send(await studio.storyboard.shotListCsv(pid(req))),
+  );
+  app.get('/api/projects/:id/shotlist.pdf', async (req, reply) =>
+    reply
+      .type('application/pdf')
+      .header('content-disposition', 'attachment; filename="shot-list.pdf"')
+      .send(await studio.storyboard.shotListPdf(pid(req))),
   );
   app.post('/api/projects/:id/characters', async (req, reply) =>
     reply
@@ -461,6 +525,28 @@ export function registerRoutes(app: FastifyInstance, studio: Studio): void {
       p(req, 'clipId'),
       p(req, 'shotId'),
       parse(ShotUpdateInputSchema, req.body),
+    ),
+  );
+  app.post('/api/projects/:id/clips/:clipId/shots/reorder', async (req) =>
+    studio.storyboard.reorder(
+      actor(),
+      pid(req),
+      p(req, 'clipId'),
+      parse(ReorderShotsInputSchema, req.body).shotIds,
+    ),
+  );
+  app.post('/api/projects/:id/clips/:clipId/shots/:shotId/board/generate', async (req, reply) =>
+    reply
+      .code(202)
+      .send(await studio.storyboard.generateBoard(actor(), pid(req), p(req, 'clipId'), p(req, 'shotId'))),
+  );
+  app.post('/api/projects/:id/clips/:clipId/shots/:shotId/board/approve', async (req) =>
+    studio.storyboard.approve(
+      actor(),
+      pid(req),
+      p(req, 'clipId'),
+      p(req, 'shotId'),
+      parse(BoardApproveInputSchema, req.body).approved,
     ),
   );
   app.post('/api/projects/:id/clips/:clipId/shots/:shotId/regenerate', async (req, reply) =>

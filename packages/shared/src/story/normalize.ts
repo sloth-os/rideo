@@ -344,6 +344,7 @@ export function normalizePlannedShots(planned: LlmShot[], opts: ShotPlanOptions)
       status: 'planned',
       takes: [],
       selectedTakeId: null,
+      board: null,
       lastError: null,
     };
   });

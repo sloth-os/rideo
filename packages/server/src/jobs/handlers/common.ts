@@ -6,6 +6,7 @@ import type { EditService } from '../../domain/edit';
 import type { ElementService } from '../../domain/elements';
 import type { ProjectService } from '../../domain/projects';
 import type { StoryService } from '../../domain/story';
+import type { StoryboardService } from '../../domain/storyboard';
 import type { VoiceService } from '../../domain/voices';
 import type { WorkflowService } from '../../domain/workflow';
 import type { GenerateOptions } from '../../gateway/gateway-client';
@@ -20,6 +21,7 @@ export interface HandlerDeps extends Deps {
     story: StoryService;
     elements: ElementService;
     voices: VoiceService;
+    storyboard: StoryboardService;
     clips: ClipService;
     edit: EditService;
   };

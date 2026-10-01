@@ -1,7 +1,7 @@
-import { copyFile, readFile, writeFile } from 'node:fs/promises';
+import { copyFile, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
-  approvedElementReferences,
+  boardState,
   type Character,
   type Clip,
   type ConsistencyReport,
@@ -17,7 +17,6 @@ import {
   orderedShotElements,
   type Shot,
   type ShotContext,
-  selectReferences,
   type Take,
   type TakeAudio,
   takeState,
@@ -27,11 +26,11 @@ import { verifyVoices } from '../../consistency/voice';
 import { assertCastReady, assertVoicesReady, clipStatusOf } from '../../domain/clips';
 import { notFound } from '../../errors';
 import { extractLastFrame, sampleFrames } from '../../media/frames';
-import { makeCastSheet } from '../../media/sheet';
 import { throwIfAborted } from '../../util/abort';
 import type { JobContext } from '../queue';
 import { commitAs, docsFor, gatewayOptions, type HandlerDeps, withPoster } from './common';
 import { lipSyncPass, prepareDialogue, takeAudio, takeAudioWav } from './dialogue';
+import { generateKeyframe, prepareShotReferences } from './keyframe';
 
 interface Candidate {
   local: string;
@@ -98,54 +97,15 @@ export async function shotGenerate(deps: HandlerDeps, ctx: JobContext) {
         deps.gateway.limitsFor('image', settings.models.image),
         deps.gateway.limitsFor('video', settings.models.video),
       ]);
-      // R3/E3: deterministic references, bounded by the model; a cast sheet when the cast exceeds the budget.
-      const selection = selectReferences(characters, shot, imageLimits.limits?.max_input_images, 2, elements);
-      const judgeRefs = new Map<string, Buffer[]>();
-      const refPngs: Buffer[] = [];
-      for (const pc of selection.perCharacter) {
-        const bufs: Buffer[] = [];
-        for (const r of pc.refs) bufs.push(await deps.media.pngBuffer(projectId, r.media, 1024));
-        judgeRefs.set(
-          pc.characterId,
-          await Promise.all(pc.refs.slice(0, 2).map((r) => deps.media.pngBuffer(projectId, r.media, 512))),
-        );
-        refPngs.push(...bufs);
-      }
-      let referenceUris = refPngs.map((b) => `data:image/png;base64,${b.toString('base64')}`);
-      if (selection.needsSheet && refPngs.length > 1) {
-        const parts = await Promise.all(
-          refPngs.map(async (b, i) => {
-            const p = join(dir, `sheet-${i}.png`);
-            await writeFile(p, b);
-            return p;
-          }),
-        );
-        const sheet = await makeCastSheet(deps.ff, parts, join(dir, 'cast-sheet.png'), 512, ctx.signal);
-        referenceUris = [`data:image/png;base64,${(await readFile(sheet)).toString('base64')}`];
-      }
-      // Element references follow the cast (location first); an element sheet when they outnumber their slots.
-      const elementPngs: Buffer[] = [];
-      for (const pe of selection.perElement)
-        for (const r of pe.refs) elementPngs.push(await deps.media.pngBuffer(projectId, r.media, 1024));
-      if (selection.elementSheet && elementPngs.length > 1) {
-        const parts = await Promise.all(
-          elementPngs.map(async (b, i) => {
-            const p = join(dir, `element-sheet-${i}.png`);
-            await writeFile(p, b);
-            return p;
-          }),
-        );
-        const sheet = await makeCastSheet(deps.ff, parts, join(dir, 'element-sheet.png'), 512, ctx.signal);
-        referenceUris.push(`data:image/png;base64,${(await readFile(sheet)).toString('base64')}`);
-      } else {
-        for (const b of elementPngs) referenceUris.push(`data:image/png;base64,${b.toString('base64')}`);
-      }
-      // The judge sees every judged element's best reference, budget or not (rule E4).
-      const elementJudgeRefs = new Map<string, Buffer[]>();
-      for (const e of judgedElements) {
-        const ref = approvedElementReferences(e)[0];
-        if (ref) elementJudgeRefs.set(e.id, [await deps.media.pngBuffer(projectId, ref.media, 512)]);
-      }
+      const refs = await prepareShotReferences(deps, ctx, {
+        shot,
+        characters,
+        elements,
+        judgedElements,
+        maxInputImages: imageLimits.limits?.max_input_images,
+        dir,
+      });
+      const { referenceUris, judgeRefs, elementJudgeRefs } = refs;
       const shotCtx: ShotContext = { shot, characters, elements, screenplay: docs.screenplay, settings };
 
       // R5: continuity chaining from the previous shot's passing take.
@@ -165,53 +125,39 @@ export async function shotGenerate(deps: HandlerDeps, ctx: JobContext) {
         }
       }
 
+      // An approved, current storyboard frame is the first frame: no second image generation
+      // (docs/design/storyboard.md#video-pass).
       let keyframeRef: MediaRef | null = null;
       let keyframeReport: ConsistencyReport | null = null;
       let imageModel: string | undefined;
       const taskIds: string[] = [];
+      if (!firstFrame && shot.board && boardState(shot, docs) === 'approved') {
+        keyframeRef = shot.board.keyframe;
+        keyframeReport = shot.board.consistency;
+        imageModel = shot.board.request.imageModel;
+        firstFrame = { uri: await deps.media.pngDataUri(projectId, keyframeRef, 1920), source: 'storyboard' };
+      }
       if (!firstFrame && settings.generation.keyframes) {
-        for (let attempt = 0; attempt < maxAttempts; attempt++) {
-          throwIfAborted(ctx.signal);
-          ctx.progress(
-            0.05 + (0.3 * attempt) / maxAttempts,
-            1,
-            `keyframe attempt ${attempt + 1}/${maxAttempts}`,
-          );
-          const req = compileKeyframeRequest(shotCtx, {
-            referenceUris,
-            attempt,
-            model: settings.models.image,
-          });
-          const task = await deps.gateway.generateImage(
-            req,
-            gatewayOptions(ctx, 'image', 'keyframe', attempt),
-          );
-          taskIds.push(task.id);
-          imageModel = task.model || imageModel;
-          keyframeRef = await deps.media.importUri(projectId, task.outputs![0]!.uri, {
-            kind: 'keyframes',
-            name: `${name}-a${attempt + 1}`,
-            signal: ctx.signal,
-          });
-          const png = await deps.media.pngBuffer(projectId, keyframeRef, 512);
-          keyframeReport = await verifyFrames({
-            judge,
-            shot,
-            characters,
-            references: judgeRefs,
-            elements: judgedElements,
-            elementReferences: elementJudgeRefs,
-            frames: [png],
-            frameRefs: [keyframeRef],
-            threshold,
-            attempts: attempt + 1,
-            metrics: deps.metrics,
-            log: ctx.log,
-            signal: ctx.signal,
-          });
-          if (keyframeReport.status !== 'failed') break;
-          ctx.log.info({ attempt, score: keyframeReport.score }, 'keyframe failed the consistency gate');
-        }
+        const kf = await generateKeyframe(deps, ctx, {
+          shotCtx,
+          refs,
+          judge,
+          judgedElements,
+          threshold,
+          maxAttempts,
+          name,
+          step: 'keyframe',
+          progress: (attempt) =>
+            ctx.progress(
+              0.05 + (0.3 * attempt) / maxAttempts,
+              1,
+              `keyframe attempt ${attempt + 1}/${maxAttempts}`,
+            ),
+        });
+        keyframeRef = kf.keyframe;
+        keyframeReport = kf.report;
+        imageModel = kf.imageModel;
+        taskIds.push(...kf.taskIds);
         if (keyframeReport?.status === 'failed') {
           // Never spend a video generation on an unverified identity: save the evidence for review.
           const kfRequest = compileKeyframeRequest(shotCtx, { referenceUris: [], attempt: maxAttempts - 1 });

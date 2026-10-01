@@ -21,6 +21,7 @@
     "@sloth-os/mm-gateway-js": "github:sloth-os/mm-gateway-js#2308c1f0e22a48c02a936ae0e0f6a2acc95ae2f9",
     "fastify": "5.12.5",
     "mime-types": "3.0.2",
+    "pdfjs-dist": "^5.7.284",
     "webdav": "5.11.0",
     "webdav-server": "2.6.3",
     "zod": "4.6.5"

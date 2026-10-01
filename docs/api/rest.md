@@ -24,6 +24,7 @@ Errors are RFC 9457 problem details (`application/problem+json`) with a stable `
 | `element_locked` | 409 | E2: edit a locked element |
 | `voice_not_locked` | 409 | V1 precondition: a speaker of the shot has no locked voice ([dialogue](../design/dialogue.md)) |
 | `voice_locked` | 409 | V2: change a locked voice |
+| `board_unapprovable` | 409 | approving a storyboard frame that is missing, failed, stale or outdated ([storyboard](../design/storyboard.md)) |
 | `tts_unavailable` | 422 | voices or TTS dialogue without a TTS provider on the server (or cloning with one that cannot clone) |
 | `consistency_gate` | 409 | R7: approval or export blocked by unverified, failed or stale takes |
 | `gate_unmet` | 409 | workflow gate requirements not satisfied (`errors[]` lists them) |
@@ -75,6 +76,7 @@ Errors are RFC 9457 problem details (`application/problem+json`) with a stable `
 | POST | `/api/projects/:id/screenplay/generate` | `{prompt?, attachmentResourceIds?}` | `Job` |
 | PATCH | `/api/projects/:id/screenplay` | `{fields?, upsertScenes?, removeSceneIds?, outline?}`; header `X-Rideo-Coalesce: <key>` for typing sessions | `Screenplay` |
 | POST | `/api/projects/:id/screenplay/extend` | `{beats?}` | `Job` |
+| POST | `/api/projects/:id/screenplay/import` | multipart `file` (+ `replace`), or `{uri, replace?}`, or `{text, format?: "fountain" \| "fdx" \| "pdf", replace?}` | `{title, scenes, characters, elements, durationSec}` (`conflict` when a screenplay exists without `replace`) |
 | POST | `/api/projects/:id/characters` | `{name, role?, summary?, identity?, wardrobe?}` | `Character` |
 | PATCH | `/api/projects/:id/characters/:cid` | character fields, `voice: {description}` | `Character` (`character_locked` / `voice_locked` while locked) |
 | DELETE | `/api/projects/:id/characters/:cid` | – | `204` |
@@ -102,6 +104,15 @@ Errors are RFC 9457 problem details (`application/problem+json`) with a stable `
 | PATCH / DELETE | `/api/projects/:id/elements/:eid/references/:rid` | `{approved}` / – | `Element` |
 | POST | `/api/projects/:id/elements/:eid/lock` / `unlock` | – | `Element` |
 
+## Storyboard and animatic
+
+| Method | Path | Body | Result |
+|---|---|---|---|
+| POST | `/api/projects/:id/storyboard/generate` | `{sceneIds?}` | `Job` (`storyboard.generate`) |
+| POST | `/api/projects/:id/storyboard/approve-all` | – | `{approved}` |
+| POST | `/api/projects/:id/storyboard/animatic` | `{musicResourceId?, captions?}` | `{animatic: Timeline}` (`animatic.json`) |
+| GET | `/api/projects/:id/shotlist.csv` / `shotlist.pdf` | – | the shot list (attachment) |
+
 ## Clips, shots, takes
 
 | Method | Path | Body | Result |
@@ -110,6 +121,9 @@ Errors are RFC 9457 problem details (`application/problem+json`) with a stable `
 | POST | `/api/projects/:id/clips/:clipId/generate` | – | `Job` |
 | PATCH | `/api/projects/:id/clips/:clipId/shots/:shotId` | shot fields | `Clip` |
 | POST | `/api/projects/:id/clips/:clipId/shots/:shotId/regenerate` | – | `Job` |
+| POST | `/api/projects/:id/clips/:clipId/shots/reorder` | `{shotIds}` (every shot once) | `Clip` |
+| POST | `/api/projects/:id/clips/:clipId/shots/:shotId/board/generate` | – | `Job` (`shot.board`) |
+| POST | `/api/projects/:id/clips/:clipId/shots/:shotId/board/approve` | `{approved}` | `Clip` (`board_unapprovable`) |
 | POST | `/api/projects/:id/clips/:clipId/shots/:shotId/takes/:takeId/select` | – | `Clip` |
 | POST | `/api/projects/:id/clips/:clipId/shots/:shotId/takes/:takeId/override` | `{reason}` | `Clip` |
 | POST | `/api/projects/:id/clips/:clipId/approve` | – | `Clip` (or `consistency_gate`) |
@@ -126,7 +140,7 @@ Errors are RFC 9457 problem details (`application/problem+json`) with a stable `
 | POST | `/api/projects/:id/analyses` | `{resourceId}` | `{analysis, job}` (`analysis.signals` editor job) |
 | PATCH | `/api/projects/:id/analyses/:aid/suggestions` | `{decisions: [{id, status}]}` | `Analysis` |
 | POST | `/api/projects/:id/analyses/:aid/auto-edit` | – | `{timeline, commit}` |
-| POST | `/api/projects/:id/exports` | `{quality?, engine?: "auto" \| "ffmpeg" \| "webcodecs"}` | `{export, job}` (`export.render` editor job) |
+| POST | `/api/projects/:id/exports` | `{quality?, engine?: "auto" \| "ffmpeg" \| "webcodecs", source?: "timeline" \| "animatic"}` | `{export, job}` (`export.render` editor job) |
 | GET | `/api/projects/:id/exports` | – | `Export[]` |
 
 ## History

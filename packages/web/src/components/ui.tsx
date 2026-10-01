@@ -21,6 +21,15 @@ const VARIANTS: Record<Variant, string> = {
   danger: 'bg-danger/15 text-danger border border-danger/40 hover:bg-danger/25 disabled:opacity-50',
 };
 
+/** Button styling for links (downloads) that must stay `<a>` elements. */
+export function buttonClass(variant: Variant = 'secondary', size: 'sm' | 'md' = 'md'): string {
+  return cx(
+    'inline-flex items-center justify-center gap-1.5 rounded-[var(--radius-control)] font-medium transition-colors duration-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent',
+    size === 'sm' ? 'h-8 px-2.5 text-[13px]' : 'h-9 px-3.5 text-sm',
+    VARIANTS[variant],
+  );
+}
+
 export function Button({
   variant = 'secondary',
   size = 'md',

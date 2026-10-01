@@ -1,8 +1,8 @@
 import { newId } from '../ids';
 import type { Character } from '../schemas/character';
-import type { Clip } from '../schemas/clip';
+import type { Clip, Shot, TakeAudio } from '../schemas/clip';
 import type { MediaRef } from '../schemas/common';
-import type { AudioItem, TextItem, Timeline, VideoItem } from '../schemas/timeline';
+import type { AudioItem, Source, TextItem, Timeline, Transition, VideoItem } from '../schemas/timeline';
 import {
   DEFAULT_TRACK_IDS,
   emptyTimeline,
@@ -28,67 +28,68 @@ export interface AssembleInput {
 /** The track that holds the TTS dialogue of the takes (docs/design/dialogue.md#timeline). */
 export const DIALOGUE_TRACK_ID = 'trk_dialoguetrack01';
 
+/** One picture of an assembled film: a take or a still, with its dialogue. */
+interface Segment {
+  source: Source;
+  durationSec: number;
+  label: string;
+  transitionIn: Transition | null;
+  audio: TakeAudio | null;
+  shot: Pick<Shot, 'dialogue'>;
+}
+
 /**
- * Builds the story timeline: selected takes in clip/shot order, scene crossfades, the dialogue track, music bed,
- * captions.
+ * Lays segments on the primary track and adds the dialogue track, the music bed and captions; shared by the cut
+ * and the animatic so both play their dialogue the same way.
  */
-export function assembleStoryTimeline(input: AssembleInput, ctx: OpContext = {}): Timeline {
+function assembleSegments(
+  segments: Segment[],
+  input: Omit<AssembleInput, 'clips' | 'includeUnapproved'>,
+  ctx: OpContext,
+): Timeline {
   const gen = ctx.newId ?? ((k) => newId(k));
   const timeline = emptyTimeline({ fps: input.fps, width: input.width, height: input.height });
   const video = primaryTrack(timeline);
-  const clips = [...input.clips]
-    .filter((c) => input.includeUnapproved || c.status === 'approved')
-    .sort((a, b) => a.index - b.index);
-
   const speaker = (id: string | null) => (id ? (input.characters?.[id]?.name ?? '') : '');
   const captionSpans: {
     itemId: string;
     lines: { speaker: string; line: string; start?: number; end?: number }[];
   }[] = [];
   const dialogueSpans: { itemId: string; media: MediaRef }[] = [];
-  clips.forEach((clip, ci) => {
-    const shots = [...clip.shots].sort((a, b) => a.index - b.index);
-    let firstInClip = true;
-    for (const shot of shots) {
-      const take = shot.takes.find((t) => t.id === shot.selectedTakeId);
-      if (!take?.video) continue;
-      const dur = take.video.durationSec ?? take.durationSec ?? shot.durationSec;
-      const item: VideoItem = {
-        id: gen('item'),
-        kind: 'video',
-        source: { type: 'take', clipId: clip.id, shotId: shot.id, takeId: take.id, media: take.video },
-        start: 0,
-        in: 0,
-        out: Math.max(0.1, dur),
-        speed: 1,
-        // A take with a TTS mix is heard through the Dialogue track; its own sound would double the voices.
-        volume: take.audio?.dialogue ? 0 : 1,
-        transitionIn:
-          ci > 0 && firstInClip && video.items.length > 0 ? { type: 'crossfade', duration: 0.5 } : null,
-        label: `C${clip.index + 1}·S${shot.index + 1}`,
-      };
-      video.items.push(item);
-      firstInClip = false;
-      if (take.audio?.dialogue) dialogueSpans.push({ itemId: item.id, media: take.audio.dialogue });
-      if (input.captions && take.audio?.lines.length) {
-        // Real line timings from the take's speech.
-        captionSpans.push({
-          itemId: item.id,
-          lines: take.audio.lines.map((l) => ({
-            speaker: speaker(l.characterId),
-            line: l.text,
-            start: l.start,
-            end: l.end,
-          })),
-        });
-      } else if (input.captions && shot.dialogue.length > 0) {
-        captionSpans.push({
-          itemId: item.id,
-          lines: shot.dialogue.map((d) => ({ speaker: speaker(d.characterId), line: d.line })),
-        });
-      }
+  for (const seg of segments) {
+    const item: VideoItem = {
+      id: gen('item'),
+      kind: 'video',
+      source: seg.source,
+      start: 0,
+      in: 0,
+      out: Math.max(0.1, seg.durationSec),
+      speed: 1,
+      // A segment with a TTS mix is heard through the Dialogue track; its own sound would double the voices.
+      volume: seg.audio?.dialogue ? 0 : 1,
+      transitionIn: video.items.length > 0 ? seg.transitionIn : null,
+      label: seg.label,
+    };
+    video.items.push(item);
+    if (seg.audio?.dialogue) dialogueSpans.push({ itemId: item.id, media: seg.audio.dialogue });
+    if (input.captions && seg.audio?.lines.length) {
+      // Real line timings from the speech.
+      captionSpans.push({
+        itemId: item.id,
+        lines: seg.audio.lines.map((l) => ({
+          speaker: speaker(l.characterId),
+          line: l.text,
+          start: l.start,
+          end: l.end,
+        })),
+      });
+    } else if (input.captions && seg.shot.dialogue.length > 0) {
+      captionSpans.push({
+        itemId: item.id,
+        lines: seg.shot.dialogue.map((d) => ({ speaker: speaker(d.characterId), line: d.line })),
+      });
     }
-  });
+  }
   const items = video.items as VideoItem[];
   // Never crossfade into an item shorter than twice the transition.
   items.forEach((it, i) => {
@@ -182,4 +183,55 @@ export function assembleStoryTimeline(input: AssembleInput, ctx: OpContext = {})
     }
   }
   return timeline;
+}
+
+/**
+ * Builds the story timeline: selected takes in clip/shot order, scene crossfades, the dialogue track, music bed,
+ * captions.
+ */
+export function assembleStoryTimeline(input: AssembleInput, ctx: OpContext = {}): Timeline {
+  const clips = [...input.clips]
+    .filter((c) => input.includeUnapproved || c.status === 'approved')
+    .sort((a, b) => a.index - b.index);
+  const segments: Segment[] = [];
+  clips.forEach((clip, ci) => {
+    let firstInClip = true;
+    for (const shot of [...clip.shots].sort((a, b) => a.index - b.index)) {
+      const take = shot.takes.find((t) => t.id === shot.selectedTakeId);
+      if (!take?.video) continue;
+      segments.push({
+        source: { type: 'take', clipId: clip.id, shotId: shot.id, takeId: take.id, media: take.video },
+        durationSec: take.video.durationSec ?? take.durationSec ?? shot.durationSec,
+        label: `C${clip.index + 1}·S${shot.index + 1}`,
+        transitionIn: ci > 0 && firstInClip ? { type: 'crossfade', duration: 0.5 } : null,
+        audio: take.audio ?? null,
+        shot,
+      });
+      firstInClip = false;
+    }
+  });
+  return assembleSegments(segments, input, ctx);
+}
+
+/**
+ * The animatic (docs/design/storyboard.md#animatic): every board frame as a still for its shot's length (or its
+ * dialogue's, when longer), hard cuts, the boards' TTS dialogue, temp music and captions.
+ */
+export function assembleAnimatic(input: AssembleInput, ctx: OpContext = {}): Timeline {
+  const segments: Segment[] = [];
+  for (const clip of [...input.clips].sort((a, b) => a.index - b.index)) {
+    for (const shot of [...clip.shots].sort((a, b) => a.index - b.index)) {
+      const board = shot.board;
+      if (!board) continue;
+      segments.push({
+        source: { type: 'media', media: board.keyframe },
+        durationSec: Math.max(shot.durationSec, board.audio?.dialogue?.durationSec ?? 0),
+        label: `C${clip.index + 1}·S${shot.index + 1}`,
+        transitionIn: null,
+        audio: board.audio ?? null,
+        shot,
+      });
+    }
+  }
+  return assembleSegments(segments, input, ctx);
 }

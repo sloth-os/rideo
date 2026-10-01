@@ -41,6 +41,8 @@ export const ProjectSettingsPatchSchema = z
       .partial(),
     /** Dialogue audio (docs/design/dialogue.md#from-lines-to-audio). */
     dialogue: z.object({ mode: DialogueModeSchema, lipSync: z.boolean() }).partial(),
+    /** The storyboard stage (docs/design/storyboard.md). */
+    storyboard: z.object({ enabled: z.boolean(), scenes: z.number().int().min(1).max(50) }).partial(),
     generation: z.object({ includeAudio: z.boolean(), keyframes: z.boolean() }).partial(),
     batch: z.object({ maxGenerations: z.number().int().min(1).max(100000) }).partial(),
     watermark: z.object({ enabled: z.boolean() }).partial(),
@@ -233,7 +235,29 @@ export const SuggestionDecisionsInputSchema = z.object({
 export const ExportInputSchema = z.object({
   quality: ExportQualitySchema.optional(),
   engine: RenderEngineChoiceSchema.optional(),
+  /** `animatic` renders the storyboard's animatic (docs/design/storyboard.md#animatic). */
+  source: z.enum(['timeline', 'animatic']).optional(),
 });
+
+/** Storyboard (docs/design/storyboard.md#surfaces). */
+export const StoryboardGenerateInputSchema = z.object({ sceneIds: z.array(IdSchema).max(50).optional() });
+export const BoardApproveInputSchema = z.object({ approved: z.boolean() });
+export const ReorderShotsInputSchema = z.object({ shotIds: z.array(IdSchema).min(1).max(200) });
+export const AnimaticInputSchema = z.object({
+  musicResourceId: IdSchema.optional(),
+  captions: z.boolean().optional(),
+});
+export const ScriptFormatSchema = z.enum(['fountain', 'fdx', 'pdf']);
+/** A screenplay file by URI (https or data) or as text (uploads use multipart `file`). */
+export const ImportScreenplayInputSchema = z.union([
+  z.object({ uri: z.string().min(1).max(30_000_000), replace: z.boolean().optional() }),
+  z.object({
+    text: z.string().min(1).max(5_000_000),
+    format: ScriptFormatSchema.optional(),
+    filename: z.string().max(300).optional(),
+    replace: z.boolean().optional(),
+  }),
+]);
 
 export const RestoreInputSchema = z.object({
   commit: z.string().min(4),

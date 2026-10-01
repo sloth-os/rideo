@@ -1,6 +1,7 @@
 import {
   activeAt,
   type Effects,
+  isStillMedia,
   type TextItem,
   type Timeline,
   textPad,
@@ -132,7 +133,8 @@ export class Compositor {
     item: VideoItem,
     sourceTime: number,
     sequential: boolean,
-  ): Promise<WrappedCanvas['canvas'] | null> {
+  ): Promise<WrappedCanvas['canvas'] | ImageBitmap | null> {
+    if (isStillMedia(item.source.media)) return this.pool.image(item.source.media);
     const entry = await this.pool.get(item.source.media);
     if (!entry.video) return null;
     if (!sequential) return (await entry.video.getCanvas(sourceTime))?.canvas ?? null;

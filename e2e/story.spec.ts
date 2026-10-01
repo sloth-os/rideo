@@ -95,13 +95,26 @@ test('idea → screenplay → locked cast → pilot → production → edit → 
   await expect(approveCast).toBeEnabled();
   await approveCast.click();
 
-  // Resources → pilot
+  // Resources → storyboard: a verified frame per shot of the first scenes, approved before any video
   await page.getByTestId('nav-resources').click();
   await page.getByTestId('approve-resources').click();
+  await expect(page).toHaveURL(/\/storyboard$/);
+  await page.getByTestId('generate-storyboard').click();
+  const boardStates = page.getByTestId('board-state');
+  await expect(boardStates.first()).toBeVisible({ timeout: 60_000 });
+  await api.waitIdle(pid, 180_000);
+  await expect(boardStates.first()).toContainText('to review');
+  const frames = await boardStates.count();
+  await expect(page.getByTestId('approve-storyboard')).toBeDisabled();
+  await page.getByTestId('approve-all-boards').click();
+  await expect(page.getByTestId('storyboard-progress')).toContainText(
+    `${frames} of ${frames} frames approved`,
+  );
+  await page.getByTestId('approve-storyboard').click();
   await expect(page).toHaveURL(/\/clips$/);
 
-  // Pilot clip: plan + generate the first scene, check the consistency gate, approve
-  await page.getByTestId('plan-generate-scene').first().click();
+  // Pilot clip: generate the storyboarded first scene from its approved frames, check the gate, approve
+  await page.getByTestId('generate-clip').first().click();
   const approveClip = page.getByTestId('approve-clip');
   await expect(approveClip.first()).toBeEnabled({ timeout: 120_000 });
   await expect(page.getByText(/passed 0\.\d\d/).first()).toBeVisible();

@@ -129,7 +129,7 @@ items below are mostly Rideo-side work.
 - *Fits:* generalize `lock`/`references` from characters; workflow requirement `elements.allLocked` for elements
   used by scheduled shots; MCP `element_*` tools.
 
-**3. Storyboard and animatic stage** (M)
+**3. Storyboard and animatic stage** (M) — *done:* [design/storyboard.md](design/storyboard.md)
 - *Why:* storyboard-first is the standard pre-production flow (LTX, Higgsfield Popcorn, previs tools) and it saves
   money: images are far cheaper than video.
 - *What:* a `storyboard` stage between cast and pilot: generate the verified keyframe of every shot of the first N

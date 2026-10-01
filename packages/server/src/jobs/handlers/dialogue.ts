@@ -10,6 +10,7 @@ import {
   type ProjectSettings,
   type Shot,
   shotSpeakers,
+  staleVoices,
   type TakeAudio,
   type TakeLine,
   voicedLines,
@@ -108,8 +109,80 @@ export async function prepareDialogue(
     };
   }
 
-  // TTS (rule V3): every line with its speaker's locked voice and a fixed seed, then one mix for the shot.
-  const tts = deps.tts!;
+  // TTS: a current storyboard mix is reused (docs/design/storyboard.md#video-pass); otherwise the lines are spoken.
+  const spoken =
+    (await reuseBoardMix(deps, ctx, shot, characters)) ??
+    (await speakLines(deps, ctx, { shot, characters, settings, dir, name }));
+  if (!spoken) return null;
+  return {
+    mode,
+    lines: spoken.lines,
+    mix: spoken.mix,
+    referenceAudioUris: conditioned ? [spoken.mix.uri] : [],
+    conditioned,
+    durationSec: Math.max(shot.durationSec, spoken.durationSec),
+    voiceLocks,
+    speakers: [],
+    judgeLines,
+  };
+}
+
+/** A shot's spoken dialogue: line audio, the mix and the line timings. */
+export interface SpokenDialogue {
+  lines: TakeLine[];
+  mix: { ref: MediaRef; local: string; uri: string };
+  durationSec: number;
+  voiceLocks: Record<string, number>;
+}
+
+/** The board's TTS mix when its lines and voices are still the shot's (V6), else null. */
+async function reuseBoardMix(
+  deps: HandlerDeps,
+  ctx: JobContext,
+  shot: Shot,
+  characters: Record<string, Character>,
+): Promise<SpokenDialogue | null> {
+  const audio = shot.board?.audio;
+  if (audio?.mode !== 'tts' || !audio.dialogue || staleVoices({ audio }, characters).length) return null;
+  const lines = voicedLines(shot, characters);
+  const same =
+    lines.length === audio.lines.length &&
+    lines.every((l, k) => audio.lines[k]?.characterId === l.characterId && audio.lines[k]?.text === l.text);
+  if (!same) return null;
+  const projectId = ctx.job.projectId;
+  return {
+    lines: audio.lines,
+    mix: {
+      ref: audio.dialogue,
+      local: await deps.media.localPath(projectId, audio.dialogue),
+      uri: await deps.media.dataUri(projectId, audio.dialogue),
+    },
+    durationSec: audio.dialogue.durationSec ?? shot.durationSec,
+    voiceLocks: audio.voiceLocks,
+  };
+}
+
+/**
+ * Rule V3: every voiced line with its speaker's locked voice and a fixed seed, laid out and mixed into one WAV.
+ * Null when the shot has no voiced line or a speaker has no provider voice.
+ */
+export async function speakLines(
+  deps: HandlerDeps,
+  ctx: JobContext,
+  input: {
+    shot: Shot;
+    characters: Record<string, Character>;
+    settings: ProjectSettings;
+    dir: string;
+    name: string;
+  },
+): Promise<SpokenDialogue | null> {
+  const { shot, characters, settings, dir, name } = input;
+  const lines = voicedLines(shot, characters);
+  if (!lines.length || !deps.tts) return null;
+  if (lines.some((l) => !voiceOf(characters[l.characterId]!).voiceId)) return null;
+  const tts = deps.tts;
+  const projectId = ctx.job.projectId;
   ctx.progress(0.33, 1, 'speaking the dialogue');
   const spoken: {
     line: (typeof lines)[number];
@@ -120,8 +193,7 @@ export async function prepareDialogue(
   }[] = [];
   for (const line of lines) {
     throwIfAborted(ctx.signal);
-    const c = characters[line.characterId]!;
-    const v = voiceOf(c);
+    const v = voiceOf(characters[line.characterId]!);
     const speech = await tts.speak({
       voiceId: v.voiceId!,
       text: line.text,
@@ -190,17 +262,16 @@ export async function prepareDialogue(
       media: s.ref,
     };
   });
-  const uri = `data:audio/wav;base64,${(await readFile(mixPath)).toString('base64')}`;
+  const speakers = [...new Set(lines.map((l) => l.characterId))];
   return {
-    mode,
     lines: takeLines,
-    mix: { ref: mixRef, local: mixPath, uri },
-    referenceAudioUris: conditioned ? [uri] : [],
-    conditioned,
-    durationSec: Math.max(shot.durationSec, total),
-    voiceLocks,
-    speakers: [],
-    judgeLines,
+    mix: {
+      ref: mixRef,
+      local: mixPath,
+      uri: `data:audio/wav;base64,${(await readFile(mixPath)).toString('base64')}`,
+    },
+    durationSec: total,
+    voiceLocks: Object.fromEntries(speakers.map((id) => [id, voiceOf(characters[id]!).lock.version])),
   };
 }
 

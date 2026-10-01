@@ -115,7 +115,8 @@ export const TakeSchema = z.object({
     prompt: z.string().max(20000),
     seed: z.number().int(),
     durationSec: z.number().positive(),
-    firstFrameSource: z.enum(['keyframe', 'previous_shot', 'none']),
+    /** `storyboard`: the shot's approved board frame (docs/design/storyboard.md#video-pass). */
+    firstFrameSource: z.enum(['keyframe', 'previous_shot', 'storyboard', 'none']),
     referenceCount: z.number().int().nonnegative(),
   }),
   gatewayTaskIds: z.array(z.string()).default([]),
@@ -135,6 +136,31 @@ export const TakeSchema = z.object({
   error: z.string().max(2000).optional(),
 });
 export type Take = z.infer<typeof TakeSchema>;
+
+/** The storyboard frame of a shot (docs/design/storyboard.md#board-frames). */
+export const ShotBoardSchema = z.object({
+  keyframe: MediaRefSchema,
+  createdAt: IsoDateSchema,
+  jobId: IdSchema.optional(),
+  request: z.object({
+    imageModel: z.string().optional(),
+    prompt: z.string().max(20000),
+    seed: z.number().int(),
+    referenceCount: z.number().int().nonnegative(),
+  }),
+  /** Hash of the keyframe prompt it was generated from: editing the shot makes it outdated. */
+  promptHash: z.string(),
+  consistency: ConsistencyReportSchema,
+  characterLocks: z.record(z.string(), z.number().int().nonnegative()).default({}),
+  elementLocks: z.record(z.string(), z.number().int().nonnegative()).default({}),
+  /** The shot's TTS dialogue, for the animatic and the video pass. */
+  audio: TakeAudioSchema.nullable().default(null),
+  gatewayTaskIds: z.array(z.string()).default([]),
+  approved: z.boolean().default(false),
+  approvedAt: IsoDateSchema.nullable().default(null),
+  approvedBy: ActorSchema.nullable().default(null),
+});
+export type ShotBoard = z.infer<typeof ShotBoardSchema>;
 
 export const ShotStatusSchema = z.enum([
   'planned',
@@ -164,6 +190,7 @@ export const ShotSchema = z.object({
   status: ShotStatusSchema.default('planned'),
   takes: z.array(TakeSchema).default([]),
   selectedTakeId: IdSchema.nullable().default(null),
+  board: ShotBoardSchema.nullable().default(null),
   lastError: z.string().max(2000).nullable().default(null),
 });
 export type Shot = z.infer<typeof ShotSchema>;

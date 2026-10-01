@@ -1,7 +1,14 @@
 import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { Actor, AutoActionId, ProjectDocs } from '@rideo/shared';
-import { dialogueMode, elementsInUse, sortedClips, speakingCharacters, voiceOf } from '@rideo/shared';
+import {
+  checkRequirement,
+  dialogueMode,
+  elementsInUse,
+  sortedClips,
+  speakingCharacters,
+  voiceOf,
+} from '@rideo/shared';
 import { createAdapter, SttClient } from '../ai/llm';
 import { LlmTasks } from '../ai/tasks';
 import { createTts } from '../ai/tts';
@@ -23,6 +30,7 @@ import {
   screenplayExtend,
   screenplayGenerate,
 } from '../jobs/handlers/story';
+import { shotBoard, storyboardGenerate } from '../jobs/handlers/storyboard';
 import { voiceDesign } from '../jobs/handlers/voice';
 import { JobQueue } from '../jobs/queue';
 import { LiveHub } from '../live/hub';
@@ -44,6 +52,7 @@ import { HistoryService } from './history';
 import { ProjectService } from './projects';
 import { ProjectRegistry } from './registry';
 import { StoryService } from './story';
+import { StoryboardService } from './storyboard';
 import { UiService } from './ui';
 import { VoiceService } from './voices';
 import { WorkflowService } from './workflow';
@@ -56,6 +65,7 @@ export interface Studio {
   story: StoryService;
   elements: ElementService;
   voices: VoiceService;
+  storyboard: StoryboardService;
   clips: ClipService;
   edit: EditService;
   editor: EditorService;
@@ -172,6 +182,7 @@ export function createStudio(
     story: new StoryService(deps),
     elements: new ElementService(deps),
     voices: new VoiceService(deps),
+    storyboard: new StoryboardService(deps),
     clips: new ClipService(deps),
     edit: new EditService(deps),
     editor: new EditorService(deps),
@@ -190,6 +201,8 @@ export function createStudio(
   reg('character.describe', characterDescribe);
   reg('element.refs', elementRefs);
   reg('voice.design', voiceDesign);
+  reg('storyboard.generate', storyboardGenerate);
+  reg('shot.board', shotBoard);
   reg('music.generate', musicGenerate);
   reg('clip.plan', clipPlan);
   reg('clip.generate', clipGenerate);
@@ -221,6 +234,12 @@ export function createStudio(
             if (!v.lock.locked && !v.voiceId && !v.sample && v.candidates.length === 0)
               await services.voices.design(actor, projectId, c.id);
           }
+          return;
+        case 'storyboard.generate':
+          // Plan and draw the storyboarded scenes that still need frames (docs/design/storyboard.md).
+          if (docs.project.settings.storyboard?.enabled === false || !docs.screenplay?.scenes.length) return;
+          if (!checkRequirement('storyboard.approved', docs).ok)
+            await services.storyboard.generate(actor, projectId);
           return;
         case 'elements.generateRefs':
           for (const e of elementsInUse(docs)) {

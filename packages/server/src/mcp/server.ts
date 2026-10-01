@@ -5,6 +5,7 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
 import {
   type Actor,
+  boardState,
   CameraSchema,
   CharacterInputSchema,
   ConsentInputSchema,
@@ -24,8 +25,10 @@ import {
   ResourceRoleSchema,
   renderScreenplayMarkdown,
   SceneInputSchema,
+  ScriptFormatSchema,
   slugify,
   sortedClips,
+  storyboardProgress,
   TimelineOpSchema,
   timelineDuration,
   ViewSchema,
@@ -121,6 +124,10 @@ export function summarizeState(state: ProjectState) {
       inUse: elementsInUse(d).some((x) => x.id === e.id),
       references: e.references.map((r) => ({ id: r.id, view: r.view, approved: r.approved })),
     })),
+    storyboard: (() => {
+      const { pending: _pending, ...progress } = storyboardProgress(d);
+      return { enabled: d.project.settings.storyboard.enabled, ...progress };
+    })(),
     clips: sortedClips(d).map((c) => ({
       id: c.id,
       index: c.index,
@@ -138,6 +145,7 @@ export function summarizeState(state: ProjectState) {
           characterIds: s.characterIds,
           elementIds: s.elementIds,
           takes: s.takes.length,
+          board: boardState(s, d),
           selectedTake: take
             ? {
                 id: take.id,
@@ -383,6 +391,73 @@ function buildServer(studio: Studio): McpServer {
     'Write the next outline beats as full scenes (job).',
     { projectId: PROJECT, beats: z.number().int().min(1).max(20).optional() },
     (a, actor) => studio.story.extendScreenplay(actor, a.projectId, a.beats),
+  );
+  tool(
+    'screenplay_import',
+    'Import a Fountain, Final Draft (.fdx) or PDF screenplay from an https/data URI, or Fountain/FDX text; scenes, draft characters and locations are created (docs/design/storyboard.md#screenplay-import).',
+    {
+      projectId: PROJECT,
+      uri: z.string().optional(),
+      text: z.string().optional(),
+      format: ScriptFormatSchema.optional(),
+      replace: z.boolean().optional().describe('Replace an existing (unapproved) screenplay and its clips'),
+    },
+    (a, actor) => {
+      const source = a.uri ? { uri: a.uri } : a.text ? { text: a.text, format: a.format } : null;
+      if (!source) throw new Error('pass uri or text');
+      return studio.storyboard.importScreenplay(actor, a.projectId, source, { replace: a.replace });
+    },
+  );
+  // Storyboard and animatic (docs/design/storyboard.md)
+  tool(
+    'storyboard_generate',
+    'Plan the storyboarded scenes (settings.storyboard.scenes, default the first 3) and draw a verified frame for every shot that needs one (job).',
+    { projectId: PROJECT, sceneIds: z.array(z.string()).optional() },
+    (a, actor) => studio.storyboard.generate(actor, a.projectId, a.sceneIds),
+  );
+  tool(
+    'shot_board_generate',
+    'Draw (or redraw) the storyboard frame of one shot (job).',
+    { projectId: PROJECT, clipId: z.string(), shotId: z.string() },
+    (a, actor) => studio.storyboard.generateBoard(actor, a.projectId, a.clipId, a.shotId),
+  );
+  tool(
+    'shot_board_approve',
+    'Approve or unapprove a storyboard frame (only current frames that passed can be approved; approved frames become the first frames of the video pass).',
+    { projectId: PROJECT, clipId: z.string(), shotId: z.string(), approved: z.boolean() },
+    (a, actor) => studio.storyboard.approve(actor, a.projectId, a.clipId, a.shotId, a.approved),
+  );
+  tool(
+    'storyboard_approve_all',
+    'Approve every current, unapproved storyboard frame.',
+    { projectId: PROJECT },
+    (a, actor) => studio.storyboard.approveAll(actor, a.projectId),
+  );
+  tool(
+    'shot_reorder',
+    'Reorder the shots of a clip (every shot id once). Moved continuous shots become cuts.',
+    { projectId: PROJECT, clipId: z.string(), shotIds: z.array(z.string()) },
+    (a, actor) => studio.storyboard.reorder(actor, a.projectId, a.clipId, a.shotIds),
+  );
+  tool(
+    'animatic_build',
+    'Build the animatic (storyboard frames, their TTS dialogue, optional temp music, captions) into animatic.json; export it with export_render source "animatic".',
+    { projectId: PROJECT, musicResourceId: z.string().optional(), captions: z.boolean().optional() },
+    async (a, actor) => {
+      const t = await studio.storyboard.buildAnimatic(actor, a.projectId, a);
+      return {
+        frames: t.tracks.find((x) => x.kind === 'video')?.items.length ?? 0,
+        durationSec: timelineDuration(t),
+      };
+    },
+  );
+  tool(
+    'shotlist_get',
+    'The shot list as CSV (scene, clip, shot, length, camera, characters, location, props, description, dialogue, board and take state). A PDF is at GET /api/projects/:id/shotlist.pdf.',
+    { projectId: PROJECT },
+    // Without the BOM the download carries for spreadsheet apps.
+    async (a) => ({ csv: (await studio.storyboard.shotListCsv(a.projectId)).replace(/^\uFEFF/, '') }),
+    ro,
   );
   tool(
     'character_create',
@@ -723,11 +798,12 @@ function buildServer(studio: Studio): McpServer {
   );
   tool(
     'export_render',
-    'Export the timeline: an open studio tab of the project renders it (ffmpeg.wasm or WebCodecs, editor job), then the server adds the invisible watermark. Returns {export, job}; use job_wait.',
+    'Export the timeline (or, with source "animatic", the storyboard animatic): an open studio tab of the project renders it (ffmpeg.wasm or WebCodecs, editor job), then the server adds the invisible watermark. Returns {export, job}; use job_wait.',
     {
       projectId: PROJECT,
       quality: ExportQualitySchema.optional(),
       engine: RenderEngineChoiceSchema.optional(),
+      source: z.enum(['timeline', 'animatic']).optional(),
     },
     async (a, actor) => ({
       ...(await studio.edit.createExport(actor, a.projectId, a)),

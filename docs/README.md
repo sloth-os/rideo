@@ -7,6 +7,7 @@
 | [design/storage-webdav.md](design/storage-webdav.md) | WebDAV asset layout, storage backends, embedded `/dav` server, external edits and the inbox |
 | [design/version-control.md](design/version-control.md) | Content-addressed objects, commits, branches, tags, coalescing, diff, restore |
 | [design/elements.md](design/elements.md) | Locations, props and styles as locked references, with the same lock and verification rules as characters |
+| [design/storyboard.md](design/storyboard.md) | The storyboard stage, board frames reused by the video pass, the animatic, screenplay import (Fountain, FDX, PDF), shot lists |
 | [design/dialogue.md](design/dialogue.md) | Character voices (designed or cloned, locked), TTS or native dialogue, lip sync, the speaker check, the Dialogue track |
 | [design/character-consistency.md](design/character-consistency.md) | How consistency is guaranteed: identity lock, deterministic conditioning, judge gate, continuity, drift |
 | [design/generation-pipeline.md](design/generation-pipeline.md) | Job queue, shot pipeline, batch generation to target length, retries, idempotency |

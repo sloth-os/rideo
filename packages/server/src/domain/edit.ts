@@ -235,8 +235,14 @@ export class EditService extends Service {
     return { timeline: result, commit };
   }
 
-  private async exportPrecheck(projectId: string): Promise<void> {
+  private async exportPrecheck(projectId: string, source: 'timeline' | 'animatic'): Promise<void> {
     const docs = await this.deps.projects.docs(projectId);
+    if (source === 'animatic') {
+      // A previz of verified storyboard frames (docs/design/storyboard.md#animatic): no take gate.
+      if (!docs.animatic?.tracks.some((t) => t.kind === 'video' && t.items.length))
+        throw invalid('build the animatic first');
+      return;
+    }
     if (!checkRequirement('timeline.nonEmpty', docs).ok) throw invalid('the timeline is empty');
     const verified = checkRequirement('timeline.consistencyVerified', docs);
     if (docs.project.kind === 'story' && !verified.ok) {
@@ -248,9 +254,10 @@ export class EditService extends Service {
   async createExport(
     actor: Actor,
     projectId: string,
-    opts: { quality?: ExportQuality; engine?: RenderEngineChoice } = {},
+    opts: { quality?: ExportQuality; engine?: RenderEngineChoice; source?: 'timeline' | 'animatic' } = {},
   ): Promise<{ export: Export; job: Job }> {
-    await this.exportPrecheck(projectId);
+    const source = opts.source ?? 'timeline';
+    await this.exportPrecheck(projectId, source);
     const quality = opts.quality ?? 'standard';
     const engine = opts.engine ?? 'auto';
     const h = await this.deps.projects.existing(projectId);
@@ -263,6 +270,7 @@ export class EditService extends Service {
       method: 'browser',
       status: 'queued',
       quality,
+      source,
       media: null,
       watermarkId: null,
       contentCredentials: null,
@@ -270,7 +278,7 @@ export class EditService extends Service {
       timelineCommit,
     };
     await this.mutate(actor, projectId, (tx) => tx.set(docPath.export(exp.id), exp), {
-      message: `Queue ${quality} export`,
+      message: `Queue ${quality} ${source === 'animatic' ? 'animatic ' : ''}export`,
     });
     const job = await this.deps.jobs.enqueue({
       projectId,
@@ -281,6 +289,7 @@ export class EditService extends Service {
         engine,
         chunkSec: 30,
         timelineCommit,
+        timelinePath: source === 'animatic' ? 'animatic.json' : 'timeline.json',
         disclosure: disclosure.label ? { text: disclosure.text, position: disclosure.position } : null,
       },
       actor,

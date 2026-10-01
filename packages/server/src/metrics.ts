@@ -127,6 +127,9 @@ export class Metrics {
     new Counter('rideo_tts_characters_total', 'Characters of text spoken by TTS, by provider'),
   );
   readonly lipSync = this.add(new Counter('rideo_lipsync_passes_total', 'Lip-sync passes by outcome'));
+  readonly storyboardFrames = this.add(
+    new Counter('rideo_storyboard_frames_total', 'Storyboard frames by consistency gate result'),
+  );
   readonly voiceChecks = this.add(
     new Counter('rideo_voice_checks_total', 'Speaker checks of native-audio takes by result'),
   );

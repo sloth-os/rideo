@@ -37,10 +37,11 @@ type StageDef = {
 | 2 | `screenplay` | A `screenplay.generate` job describes the attachments (vision), then writes the title, style bible, a **full-length outline** paced to the target length, the first scenes (covering at least the pilot length), and a draft cast. The user fine-tunes everything. | `screenplay_approved`: `screenplay.hasScenes`, `characters.nonEmpty`, `screenplay.outlineCoversTarget` | `screenplay.generate` |
 | 3 | `cast` (*Cast & elements*) | For each character: generate reference sheets (front, three-quarter, profile, full body) or upload references, edit identity fields, approve references, **lock**; design or clone the **voice** of everyone who speaks and lock it ([dialogue](dialogue.md)). The same for every location, prop and style the screenplay uses ([elements](elements.md)). | `cast_locked`: `characters.allLocked`, `characters.allHaveApprovedRefs`, `voices.speakingLocked`, `elements.inUseLocked`, `elements.inUseHaveApprovedRefs` | `characters.generateRefs`, `voices.design`, `elements.generateRefs` (unlocked ones without refs or voices) |
 | 4 | `resources` | Optional extra material: voice-over or music audio, images, videos; generate music through the SDK. | `resources_ready`: – (can be approved empty) | – |
-| 5 | `pilot` | Plan clip 1 (shots sized to model limits) and generate it. The user edits shot prompts, regenerates shots or picks takes, and approves. The approved pilot fixes the look for the rest of the production. | `pilot_approved`: `clips.pilotApproved`, `elements.allLocked` | `clip.plan` + `clip.generate` for clip 1 |
-| 6 | `production` | A `batch.generate` job writes the remaining scenes from the outline, plans the clips and generates them in order until the planned length reaches the target. The user reviews, regenerates any shot or clip, and approves clips. | `production_approved`: `clips.allApproved`, `duration.targetReached` | `batch.generate` |
-| 7 | `edit` | The timeline is assembled from approved clips (selected takes, scene transitions, music bed, optional dialogue captions). The user edits it in the WebCodecs editor. | `cut_approved`: `timeline.nonEmpty`, `timeline.consistencyVerified` | `timeline.assemble` |
-| 8 | `export` | The browser renders the timeline (ffmpeg.wasm or WebCodecs, in chunks) and uploads it; the server watermarks and publishes it. | – (terminal; done when `exports.anySucceeded`) | – |
+| 5 | `storyboard` | Plan the first `settings.storyboard.scenes` scenes and draw a verified frame per shot; review the grid, reorder, redraw and approve; play and export the animatic ([storyboard](storyboard.md)). Satisfied at once when the storyboard is off. | `storyboard_approved`: `storyboard.approved` | `storyboard.generate` (frames missing, failed, stale or outdated) |
+| 6 | `pilot` | Plan clip 1 (shots sized to model limits) and generate it. The user edits shot prompts, regenerates shots or picks takes, and approves. The approved pilot fixes the look for the rest of the production. | `pilot_approved`: `clips.pilotApproved`, `elements.allLocked` | `clip.plan` + `clip.generate` for clip 1 |
+| 7 | `production` | A `batch.generate` job writes the remaining scenes from the outline, plans the clips and generates them in order until the planned length reaches the target. The user reviews, regenerates any shot or clip, and approves clips. | `production_approved`: `clips.allApproved`, `duration.targetReached` | `batch.generate` |
+| 8 | `edit` | The timeline is assembled from approved clips (selected takes, scene transitions, music bed, optional dialogue captions). The user edits it in the WebCodecs editor. | `cut_approved`: `timeline.nonEmpty`, `timeline.consistencyVerified` | `timeline.assemble` |
+| 9 | `export` | The browser renders the timeline (ffmpeg.wasm or WebCodecs, in chunks) and uploads it; the server watermarks and publishes it. | – (terminal; done when `exports.anySucceeded`) | – |
 
 "Go on…" after production means editing and exporting. At any point you can reopen an earlier stage, or
 tag and branch the history to try an alternative.
@@ -101,6 +102,7 @@ sequenceDiagram
 | `elements.inUseHaveApprovedRefs` | every element in use has at least one approved reference |
 | `elements.allLocked` | every element of the library is locked (before production) |
 | `voices.speakingLocked` | dialogue is off, or every character with a line in a written scene or planned shot has a locked voice |
+| `storyboard.approved` | the storyboard is off, or every shot of the storyboarded scenes has an approved, current frame |
 | `clips.pilotApproved` | the clip with `index: 0` has `status: approved` |
 | `clips.allApproved` | at least one clip, and every clip is `approved` |
 | `duration.targetReached` | see "Target length arithmetic" |

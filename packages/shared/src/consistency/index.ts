@@ -8,8 +8,11 @@ import type { Element } from '../schemas/element';
  */
 export type TakeState = 'passed' | 'failed' | 'unverified' | 'stale' | 'overridden';
 
+/** What a take or a board frame was generated with (lock versions and dialogue). */
+type Generated = Pick<Take, 'characterLocks' | 'elementLocks'> & { audio?: Take['audio'] };
+
 export function staleCharacters(
-  take: Take,
+  take: Pick<Take, 'characterLocks'>,
   shot: Pick<Shot, 'characterIds'>,
   characters: Record<string, Character>,
 ): string[] {
@@ -23,7 +26,7 @@ export function staleCharacters(
 
 /** Elements of the shot whose lock changed since the take was generated (rule E6, docs/design/elements.md). */
 export function staleElements(
-  take: Take,
+  take: Pick<Take, 'elementLocks'>,
   shot: Pick<Shot, 'elementIds'>,
   elements: Record<string, Element>,
 ): string[] {
@@ -36,13 +39,27 @@ export function staleElements(
 }
 
 /** Speakers whose voice lock changed since the take was generated (rule V6, docs/design/dialogue.md). */
-export function staleVoices(take: Take, characters: Record<string, Character>): string[] {
+export function staleVoices(take: Pick<Generated, 'audio'>, characters: Record<string, Character>): string[] {
   return Object.entries(take.audio?.voiceLocks ?? {})
     .filter(([id, version]) => {
       const c = characters[id];
       return !!c && voiceOf(c).lock.version !== version;
     })
     .map(([id]) => id);
+}
+
+/** True when a take or board frame no longer matches the locks it was generated with (R6/E6/V6). */
+export function isStale(
+  generated: Generated,
+  shot: Pick<Shot, 'characterIds'> & Partial<Pick<Shot, 'elementIds'>>,
+  characters: Record<string, Character>,
+  elements: Record<string, Element> = {},
+): boolean {
+  return (
+    staleCharacters(generated, shot, characters).length > 0 ||
+    staleElements(generated, { elementIds: shot.elementIds ?? [] }, elements).length > 0 ||
+    staleVoices(generated, characters).length > 0
+  );
 }
 
 export function takeState(

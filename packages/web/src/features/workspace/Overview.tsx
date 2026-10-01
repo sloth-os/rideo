@@ -52,6 +52,7 @@ function SettingsDialog({
           watermark: s.watermark,
           disclosure: s.disclosure,
           dialogue: s.dialogue,
+          storyboard: s.storyboard,
         },
       });
       useUi.getState().toast('Settings saved', 'success');
@@ -151,6 +152,35 @@ function SettingsDialog({
           (v) => setS({ ...s, generation: { ...s.generation, includeAudio: v } }),
           'includeAudio',
         )}
+        <div className="rounded-[var(--radius-control)] border border-border p-3">
+          <p className="mb-2 text-[13px] font-medium">Storyboard</p>
+          <div className="grid grid-cols-1 items-end gap-3 sm:grid-cols-2">
+            {toggle(
+              'Storyboard the first scenes before the pilot',
+              s.storyboard.enabled,
+              (v) => setS({ ...s, storyboard: { ...s.storyboard, enabled: v } }),
+              'storyboardEnabled',
+            )}
+            <Field label="Scenes to storyboard">
+              <Input
+                type="number"
+                min={1}
+                max={50}
+                value={s.storyboard.scenes}
+                onChange={(e) =>
+                  setS({
+                    ...s,
+                    storyboard: {
+                      ...s.storyboard,
+                      scenes: Math.min(50, Math.max(1, Number(e.target.value))),
+                    },
+                  })
+                }
+                data-testid="storyboard-scenes"
+              />
+            </Field>
+          </div>
+        </div>
         <div className="rounded-[var(--radius-control)] border border-border p-3">
           <p className="mb-2 text-[13px] font-medium">Dialogue</p>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">

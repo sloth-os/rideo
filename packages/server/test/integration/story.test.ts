@@ -129,6 +129,18 @@ describe('story → movie workflow (REST, mock gateway)', () => {
     await stack.api('POST', `/projects/${pid}/workflow/approve`, { gate: 'cast_locked' });
     await stack.api('POST', `/projects/${pid}/workflow/approve`, { gate: 'resources_ready' });
 
+    // Storyboard (docs/design/storyboard.md): a verified frame per shot of the first scenes, approved first.
+    const sb = await stack.api<Job>('POST', `/projects/${pid}/storyboard/generate`, {});
+    expectSucceeded(await stack.waitJob(pid, sb.id));
+    await stack.waitIdle(pid);
+    await rejects(
+      stack.api('POST', `/projects/${pid}/workflow/approve`, { gate: 'storyboard_approved' }),
+      'gate_unmet',
+    );
+    const boards = await stack.api<{ approved: number }>('POST', `/projects/${pid}/storyboard/approve-all`);
+    expect(boards.approved).toBeGreaterThanOrEqual(pilot.shots.length);
+    await stack.api('POST', `/projects/${pid}/workflow/approve`, { gate: 'storyboard_approved' });
+
     const gc = await stack.api<Job>('POST', `/projects/${pid}/clips/${pilot.id}/generate`);
     expectSucceeded(await stack.waitJob(pid, gc.id));
     await stack.waitIdle(pid);
@@ -148,6 +160,11 @@ describe('story → movie workflow (REST, mock gateway)', () => {
       expect(take.video?.videoCodec).toBe('h264');
       expect(Object.keys(take.characterLocks).length).toBe(shot.characterIds.length);
       expect(take.elementLocks).toEqual(Object.fromEntries(shot.elementIds.map((id) => [id, 1])));
+      // Cut shots start from their approved storyboard frame: no second image generation.
+      if (shot.continuity === 'cut') {
+        expect(take.request.firstFrameSource).toBe('storyboard');
+        expect(take.keyframe?.hash).toBe(shot.board!.keyframe.hash);
+      }
     }
 
     await stack.api('POST', `/projects/${pid}/clips/${pilot.id}/approve`);

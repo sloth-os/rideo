@@ -33,6 +33,11 @@ describe('MCP server', () => {
       'character_lock',
       'character_voice_design',
       'character_voice_lock',
+      'screenplay_import',
+      'storyboard_generate',
+      'shot_board_approve',
+      'animatic_build',
+      'shotlist_get',
       'clip_generate',
       'clip_approve',
       'timeline_apply',
@@ -46,6 +51,28 @@ describe('MCP server', () => {
     expect(tools.length).toBeGreaterThanOrEqual(55);
     const resources = await client.listResources();
     expect(resources.resources.map((r) => r.uri)).toContain('rideo://projects');
+  });
+
+  it('imports a screenplay and reads the storyboard and the shot list', async () => {
+    const project = await call('project_create', { kind: 'story', title: 'Agent import' });
+    const imported = await call('screenplay_import', {
+      projectId: project.id,
+      text: 'Title: Two Rooms\n\nINT. ROOM ONE - DAY\n\nA lamp flickers.\n\nNOVA\nHello?\n\nEXT. YARD - NIGHT\n\nWind.\n',
+    });
+    expect(imported).toMatchObject({ title: 'Two Rooms', scenes: 2, characters: 1, elements: 2 });
+    await expect(
+      call('screenplay_import', { projectId: project.id, text: 'INT. X - DAY\n\nY.\n' }),
+    ).rejects.toMatchObject({ body: { code: 'conflict' } });
+    const summary = await call('project_get', { projectId: project.id });
+    expect(summary.storyboard).toMatchObject({ enabled: true, scenes: 2, planned: 0, shots: 0, approved: 0 });
+    expect(summary.screenplay.scenes).toHaveLength(2);
+    // storyboard_generate needs the locked cast; the shot list lists what is planned (nothing yet)
+    const { csv } = await call<{ csv: string }>('shotlist_get', { projectId: project.id });
+    expect(csv.startsWith('scene,clip,shot,')).toBe(true);
+    expect(csv.trim().split('\r\n')).toHaveLength(1);
+    await expect(call('animatic_build', { projectId: project.id })).rejects.toMatchObject({
+      body: { code: 'validation_error' },
+    });
   });
 
   it('drives a production, attributes commits to the agent and steers the live UI', async () => {

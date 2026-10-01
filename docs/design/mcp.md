@@ -66,6 +66,14 @@ or keep going and `job_wait` until a tab picks the job up.
 | `screenplay_generate` | `projectId`, `prompt?`, `attachmentResourceIds?[]` → job |
 | `screenplay_update` | `projectId`, `fields?` (title, logline, synopsis, genre, tone, style), `upsertScenes?[]`, `removeSceneIds?[]`, `outline?[]` |
 | `screenplay_extend` | `projectId`, `beats?` → job |
+| `screenplay_import` | `projectId`, `uri` or `text` (+ `format?`), `replace?` ([storyboard](storyboard.md#screenplay-import)) |
+| `storyboard_generate` | `projectId`, `sceneIds?` → job |
+| `shot_board_generate` | `projectId`, `clipId`, `shotId` → job |
+| `shot_board_approve` | `projectId`, `clipId`, `shotId`, `approved` |
+| `storyboard_approve_all` | `projectId` |
+| `shot_reorder` | `projectId`, `clipId`, `shotIds[]` |
+| `animatic_build` | `projectId`, `musicResourceId?`, `captions?` → `{frames, durationSec}` |
+| `shotlist_get` | `projectId` → `{csv}` |
 | `character_create` | `projectId`, `name`, `role?`, `summary?`, `identity?`, `wardrobe?[]` |
 | `character_update` | `projectId`, `characterId`, fields, `voice?: {description}` (rejected while locked) |
 | `character_generate_refs` | `projectId`, `characterId`, `views?[]` → job |
@@ -111,7 +119,7 @@ or keep going and `job_wait` until a tab picks the job up.
 | `footage_analyze` | `projectId`, `resourceId` → `{analysis, job}` (editor job) |
 | `suggestions_review` | `projectId`, `analysisId`, `decisions[{id, status}]` |
 | `edit_auto` | `projectId`, `analysisId` |
-| `export_render` | `projectId`, `quality?` (`draft`, `standard`, `high`), `engine?` (`auto`, `ffmpeg`, `webcodecs`) → `{export, job}` (editor job) |
+| `export_render` | `projectId`, `quality?` (`draft`, `standard`, `high`), `engine?` (`auto`, `ffmpeg`, `webcodecs`), `source?` (`timeline`, `animatic`) → `{export, job}` (editor job) |
 | `export_list` | `projectId` |
 | `watermark_detect` | `uri` or `projectId` + `mediaPath` → watermark, registry record and `contentCredentials` (C2PA) |
 

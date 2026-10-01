@@ -7,12 +7,14 @@ import { approvedElementReferences, type Element } from '../schemas/element';
 import type { ProjectKind } from '../schemas/project';
 import { outlineDuration } from '../schemas/screenplay';
 import type { VideoItem } from '../schemas/timeline';
+import { storyboardProgress } from '../storyboard';
 
 export type StageId =
   | 'brief'
   | 'screenplay'
   | 'cast'
   | 'resources'
+  | 'storyboard'
   | 'pilot'
   | 'production'
   | 'edit'
@@ -25,6 +27,7 @@ export type GateId =
   | 'screenplay_approved'
   | 'cast_locked'
   | 'resources_ready'
+  | 'storyboard_approved'
   | 'pilot_approved'
   | 'production_approved'
   | 'cut_approved'
@@ -42,6 +45,7 @@ export type RequirementId =
   | 'elements.inUseHaveApprovedRefs'
   | 'elements.allLocked'
   | 'voices.speakingLocked'
+  | 'storyboard.approved'
   | 'clips.pilotApproved'
   | 'clips.allApproved'
   | 'duration.targetReached'
@@ -56,6 +60,7 @@ export type AutoActionId =
   | 'characters.generateRefs'
   | 'elements.generateRefs'
   | 'voices.design'
+  | 'storyboard.generate'
   | 'clip.pilot'
   | 'batch.generate'
   | 'timeline.assemble'
@@ -119,6 +124,19 @@ export const STORY_WORKFLOW: WorkflowDefinition = {
       title: 'Resources',
       description: 'Add audio, music, images or footage (optional).',
       gate: { id: 'resources_ready', title: 'Continue', requirements: [], tag: 'resources-ready' },
+    },
+    {
+      id: 'storyboard',
+      title: 'Storyboard',
+      description:
+        'Generate a verified frame for every shot of the first scenes, reorder and approve them, play the animatic.',
+      gate: {
+        id: 'storyboard_approved',
+        title: 'Approve storyboard',
+        requirements: ['storyboard.approved'],
+        tag: 'storyboard-approved',
+      },
+      autoOnEnter: ['storyboard.generate'],
     },
     {
       id: 'pilot',
@@ -295,6 +313,19 @@ const CHECKS: Record<RequirementId, Check> = {
         ? `${missing.length} speaking character(s) without a locked voice`
         : 'Every speaking character has a locked voice',
       details: missing.map((c) => c.name),
+    };
+  },
+  'storyboard.approved': (d) => {
+    if (d.project.settings.storyboard?.enabled === false)
+      return { ok: true, message: 'The storyboard is off' };
+    const p = storyboardProgress(d);
+    if (p.scenes === 0) return { ok: false, message: 'Write the screenplay first' };
+    if (p.planned < p.scenes)
+      return { ok: false, message: `${p.scenes - p.planned} storyboard scene(s) to plan and draw` };
+    return {
+      ok: p.shots > 0 && p.approved === p.shots,
+      message: `${p.approved} of ${p.shots} storyboard frames approved`,
+      details: p.pending,
     };
   },
   'elements.inUseLocked': (d) => {

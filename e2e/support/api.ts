@@ -43,12 +43,15 @@ export class Api {
   }
 
   /** A story project with tiny media (320×180) and a 30 s target so generation stays fast. */
-  async storyProject(title: string, opts: { screenplay?: boolean } = {}): Promise<string> {
+  async storyProject(
+    title: string,
+    opts: { screenplay?: boolean; settings?: Record<string, unknown> } = {},
+  ): Promise<string> {
     const p = await this.call<{ id: string }>('POST', '/projects', {
       kind: 'story',
       title,
       brief: { prompt: 'A lighthouse keeper receives letters from the future' },
-      settings: TINY,
+      settings: { ...TINY, ...opts.settings },
     });
     if (opts.screenplay) {
       const job = await this.call<Job>('POST', `/projects/${p.id}/screenplay/generate`, {});
@@ -92,6 +95,56 @@ export class Api {
 
   shrink(projectId: string) {
     return this.call('PATCH', `/projects/${projectId}`, { settings: TINY });
+  }
+
+  /**
+   * Locks the cast, voices and elements of a project with a screenplay and approves the gates up to the
+   * storyboard stage (what the cast spec does through the page).
+   */
+  async readyForStoryboard(projectId: string): Promise<void> {
+    await this.call('POST', `/projects/${projectId}/workflow/approve`, { gate: 'screenplay_approved' });
+    let s = await this.call<any>('GET', `/projects/${projectId}/state`);
+    for (const c of Object.values<any>(s.docs.characters)) {
+      const j = await this.call<Job>(
+        'POST',
+        `/projects/${projectId}/characters/${c.id}/references/generate`,
+        {
+          views: ['front'],
+        },
+      );
+      await this.waitJob(projectId, j.id);
+      const v = await this.call<Job>('POST', `/projects/${projectId}/characters/${c.id}/voice/design`, {});
+      await this.waitJob(projectId, v.id);
+    }
+    for (const e of Object.values<any>(s.docs.elements)) {
+      const j = await this.call<Job>(
+        'POST',
+        `/projects/${projectId}/elements/${e.id}/references/generate`,
+        {},
+      );
+      await this.waitJob(projectId, j.id);
+    }
+    s = await this.call<any>('GET', `/projects/${projectId}/state`);
+    for (const c of Object.values<any>(s.docs.characters)) {
+      for (const r of c.references)
+        await this.call('PATCH', `/projects/${projectId}/characters/${c.id}/references/${r.id}`, {
+          approved: true,
+        });
+      await this.call('POST', `/projects/${projectId}/characters/${c.id}/lock`);
+      await this.call('POST', `/projects/${projectId}/characters/${c.id}/voice/select`, {
+        candidateId: c.voice.candidates[0].id,
+      });
+      await this.call('POST', `/projects/${projectId}/characters/${c.id}/voice/lock`);
+    }
+    for (const e of Object.values<any>(s.docs.elements)) {
+      for (const r of e.references)
+        await this.call('PATCH', `/projects/${projectId}/elements/${e.id}/references/${r.id}`, {
+          approved: true,
+        });
+      await this.call('POST', `/projects/${projectId}/elements/${e.id}/lock`);
+    }
+    await this.call('POST', `/projects/${projectId}/workflow/approve`, { gate: 'cast_locked' });
+    await this.call('POST', `/projects/${projectId}/workflow/approve`, { gate: 'resources_ready' });
   }
 }
 

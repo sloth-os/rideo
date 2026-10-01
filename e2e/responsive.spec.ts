@@ -7,6 +7,7 @@ const VIEWS = [
   'cast',
   'elements',
   'resources',
+  'storyboard',
   'clips',
   'editor',
   'history',

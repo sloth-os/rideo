@@ -26,9 +26,10 @@ import { renderChunkWebCodecs } from './webcodecs-engine';
 export async function exportRenderJob(ctx: EditorJobContext): Promise<ExportRenderResult> {
   const params = ExportRenderParamsSchema.parse(ctx.job.params);
   // The disclosure label is drawn into the picture (docs/design/provenance.md#disclosure-label).
+  // The cut or the storyboard's animatic (docs/design/storyboard.md#animatic), at the requested commit.
   const timeline = withDisclosure(
-    params.timelineCommit
-      ? await api.doc<Timeline>(ctx.projectId, 'timeline.json', params.timelineCommit)
+    params.timelineCommit || params.timelinePath !== 'timeline.json'
+      ? await api.doc<Timeline>(ctx.projectId, params.timelinePath, params.timelineCommit ?? undefined)
       : await api.timeline(ctx.projectId),
     params.disclosure,
   );

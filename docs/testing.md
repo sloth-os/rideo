@@ -38,7 +38,11 @@ RIDEO_TEST_WEBDAV_URL=http://rideo:rideo@localhost:8080/ npx vitest run --projec
   the element sheet, reference-sheet requests, E6 staleness, the `elements.*` requirements); dialogue (legacy
   voices, voice readiness per mode, voiced lines and speakers, line seeds, the line layout, V1 readiness, the
   video request's reference audio, sound and length, the `voices.speakingLocked` requirement, V6 staleness, the
-  Dialogue track with muted takes and timed captions, cloned real voices and the disclosure rule).
+  Dialogue track with muted takes and timed captions, cloned real voices and the disclosure rule); storyboard
+  (frame states from missing to approved and back when the shot or a lock changes, the `storyboard.approved`
+  requirement and progress, the animatic's stills, dialogue and captions, stills looped in the chunk graph and
+  skipped by audio, Fountain/FDX parsing and PDF lines rebuilt into Fountain, heading parsing, the import's
+  characters and locations, the shot list CSV quoting).
 - **server**: repository commit, log, diff, restore, branches, tags, coalescing and GC on `MemoryBackend`;
   job queue (lanes, priorities, dedupe, retry classification, cancel propagation, restart recovery; the
   `client` lane: claim order, leases, heartbeats, expiry and session release, cancel, staged files);
@@ -93,10 +97,18 @@ RIDEO_TEST_WEBDAV_URL=http://rideo:rideo@localhost:8080/ npx vitest run --projec
   the mix); the lip-sync pass with `mock-video-lite-v1`; native audio with the speaker check passing and failing
   (V4); V1 and V6 (relock with another voice marks takes stale, regeneration speaks with the new voice); the
   Dialogue track and timed captions; dialogue off; a server without TTS (`tts_unavailable`).
+- **Storyboard** (`storyboard.test.ts`): the storyboard plans the first scenes and draws a verified frame (and
+  dialogue) per shot; approving one and all; the gate; editing a shot makes its frame outdated
+  (`board_unapprovable`) and relocking a character makes frames stale until redrawn; reordering keeps the first
+  shot a cut; the video pass starts from approved frames and reuses their dialogue (one generation per take); the
+  animatic (stills, music, dialogue, captions) rendered by the reference worker with native ffmpeg, watermarked and
+  credentialed; the storyboard turned off; the shot list as CSV and as a PDF read back with pdfjs; Fountain, FDX
+  and PDF (written with the server's PDF writer) imports.
 - **Footage workflow** (`footage.test.ts`): upload with a browser-style probe, an inbox/URL import processed
   by the worker, analysis signals from the worker then AI and rule suggestions, review, auto edit, export.
 - **MCP** (`mcp.test.ts`): the official MCP client over Streamable HTTP. Lists tools, runs a production
-  through tools (including designing, picking and locking a voice), and asserts that a WebSocket subscriber
+  through tools (including designing, picking and locking a voice, importing a screenplay and reading the
+  storyboard and the shot list), and asserts that a WebSocket subscriber
   received the matching `commit`, `job` and
   `activity` events and that `ui_*` commands reach a fake browser session with acks.
 - **WebDAV editing** (`webdav-sync.test.ts`): edit `screenplay.json` through the WebDAV client and sync (a
@@ -107,14 +119,15 @@ RIDEO_TEST_WEBDAV_URL=http://rideo:rideo@localhost:8080/ npx vitest run --projec
 ### End-to-end (Playwright)
 
 Projects: `desktop` (1440×900) runs every spec except `responsive`; `mobile` (412×915, touch) runs
-`responsive`, `mcp-sync`, `provenance`, `elements` and `dialogue`. Specs:
+`responsive`, `mcp-sync`, `provenance`, `elements`, `dialogue` and `storyboard`. Specs:
 
 | Spec | Flow |
 |---|---|
-| `story.spec.ts` | brief → screenplay → cast (generate, approve, lock; design, pick and lock every voice; then the locations and props in the Elements view) → pilot (the speaking take carries TTS dialogue) → approve → batch (30 s target) → approve → editor (assemble; the Dialogue track holds the mixes; split, inspector trim, edge-drag trim; the preview plays local proxies because H.264 is hidden from WebCodecs) → export rendered in the tab (`auto` → ffmpeg.wasm) → verify watermark |
+| `story.spec.ts` | brief → screenplay → cast (generate, approve, lock; design, pick and lock every voice; then the locations and props in the Elements view) → storyboard (generate, approve all frames, approve) → pilot from the approved frames (the speaking take carries TTS dialogue) → approve → batch (30 s target) → approve → editor (assemble; the Dialogue track holds the mixes; split, inspector trim, edge-drag trim; the preview plays local proxies because H.264 is hidden from WebCodecs) → export rendered in the tab (`auto` → ffmpeg.wasm) → verify watermark |
 | `mcp-sync.spec.ts` | page open; the test drives MCP tools as “Claude Code” (create character, add reference, lock, `ui_navigate`, `ui_focus`, `ui_notify`) and asserts the page updates live, attributed to the agent, without a reload; an agent's `export_render` is claimed and rendered by the open tab (`auto` → WebCodecs) and watermarked by the server |
 | `footage.spec.ts` | upload (probe + poster in the browser) → analysis signals in the browser → AI suggestions → accept → auto edit → exports with the ffmpeg.wasm and WebCodecs engines → both listed and verified |
 | `history.spec.ts` | edit → history → diff → restore → UI updates |
+| `storyboard.spec.ts` | (desktop and mobile) generate the storyboard, approve a frame, move it later, approve all; download the shot list CSV and PDF; build the animatic, play it, export it in the tab (listed as an animatic export); approve the storyboard; import a Fountain screenplay in the Story view |
 | `dialogue.spec.ts` | (desktop and mobile) the Cast view's voice panel: design three voices, the previews play, pick one, lock it; clone a recording of a real person through the consent dialog and lock it; the gate stops asking for voices; the dialogue mode setting |
 | `elements.spec.ts` | (desktop and mobile) the screenplay's location in the Elements view → generate, approve, lock; add a prop and link it to a scene in the Story view |
 | `provenance.spec.ts` | (desktop and mobile) uploading a likeness opens the consent dialog; a real person needs subject, grantor and date and marks the character; the disclosure setting labels the export; the export card and the public Verify page show the Content Credentials |

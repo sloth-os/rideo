@@ -37,6 +37,7 @@ async function decodable([video, audio]: [InputVideoTrack | null, InputAudioTrac
  */
 export class MediaPool {
   private readonly entries = new Map<string, Promise<PoolEntry>>();
+  private readonly stills = new Map<string, Promise<ImageBitmap>>();
 
   constructor(
     private readonly projectId: string,
@@ -83,8 +84,26 @@ export class MediaPool {
     return { input, video, audio, proxied };
   }
 
+  /** A still image item (storyboard frames in the animatic, docs/design/storyboard.md#animatic). */
+  image(media: MediaRef): Promise<ImageBitmap> {
+    let p = this.stills.get(media.hash);
+    if (!p) {
+      p = fetch(mediaUrl(this.projectId, media.path))
+        .then((res) => {
+          if (!res.ok) throw new Error(`could not load ${media.path}: ${res.status}`);
+          return res.blob();
+        })
+        .then((blob) => createImageBitmap(blob));
+      this.stills.set(media.hash, p);
+      p.catch(() => this.stills.delete(media.hash));
+    }
+    return p;
+  }
+
   dispose(): void {
     for (const p of this.entries.values()) void p.then((e) => e.input.dispose()).catch(() => undefined);
     this.entries.clear();
+    for (const p of this.stills.values()) void p.then((b) => b.close()).catch(() => undefined);
+    this.stills.clear();
   }
 }
