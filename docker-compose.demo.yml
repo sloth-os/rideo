@@ -9,6 +9,8 @@ services:
       RIDEO_LLM_PROVIDER: openai
       RIDEO_LLM_PROXY_DOMAIN: api.openai.com
       RIDEO_GATEWAY_POLL_MS: "500"
+      # Character voices through the mock's ElevenLabs endpoints (docs/design/dialogue.md).
+      RIDEO_TTS_PROVIDER: elevenlabs
     ports:
       - "8787:8787"
     volumes:
