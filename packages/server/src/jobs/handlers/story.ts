@@ -1,10 +1,14 @@
 import {
   appendScenes,
+  approvedElementReferences,
   approvedReferences,
   type Character,
   type Consent,
+  compileElementReferenceRequest,
   compileReferenceRequest,
   docPath,
+  type Element,
+  type ElementReferenceView,
   identityFromLlm,
   newId,
   nextUnwrittenBeats,
@@ -89,22 +93,27 @@ export async function screenplayGenerate(deps: HandlerDeps, ctx: JobContext) {
     ctx,
     (tx) => {
       const existing = tx.list<Character>('characters/');
-      const { screenplay, characters } = screenplayFromLlm(out, {
+      const existingElements = tx.list<Element>('elements/');
+      const { screenplay, characters, elements } = screenplayFromLlm(out, {
         targetDurationSec: p.settings.targetDurationSec,
         language: p.settings.language,
         existing,
+        existingElements,
       });
       tx.set('screenplay.json', screenplay);
       for (const c of characters) tx.set(docPath.character(c.id), c);
+      // Locations and props the writer introduced become draft elements (docs/design/elements.md).
+      for (const e of elements) tx.set(docPath.element(e.id), e);
       return {
         title: screenplay.title,
         scenes: screenplay.scenes.length,
         beats: screenplay.outline.length,
         characters: characters.length,
+        elements: elements.length,
       };
     },
     (r) =>
-      `Generate screenplay “${r.title}” (${r.beats} beats, ${r.scenes} scenes, ${r.characters} characters)`,
+      `Generate screenplay “${r.title}” (${r.beats} beats, ${r.scenes} scenes, ${r.characters} characters, ${r.elements} locations and props)`,
   );
   return result;
 }
@@ -123,6 +132,12 @@ export async function screenplayExtend(deps: HandlerDeps, ctx: JobContext) {
       synopsis: sp.synopsis,
       language: sp.language,
       characters: characters.map((c) => ({ name: c.name, summary: c.summary })),
+      locations: Object.values(docs.elements)
+        .filter((e) => e.kind === 'location')
+        .map((e) => ({ name: e.name, description: e.description })),
+      props: Object.values(docs.elements)
+        .filter((e) => e.kind === 'prop')
+        .map((e) => ({ name: e.name, description: e.description })),
       previousScenes: sp.scenes
         .slice(-6)
         .map((s) => ({ index: s.index, heading: s.heading, summary: s.summary || s.action.slice(0, 300) })),
@@ -144,8 +159,23 @@ export async function screenplayExtend(deps: HandlerDeps, ctx: JobContext) {
     ctx,
     (tx) => {
       const current = tx.require<Screenplay>('screenplay.json', 'screenplay');
-      const { screenplay, added } = appendScenes(current, scenes, tx.list<Character>('characters/'));
+      const existingElements = tx.list<Element>('elements/');
+      const { screenplay, added, elements } = appendScenes(
+        current,
+        scenes,
+        tx.list<Character>('characters/'),
+        {
+          existing: existingElements,
+          introduced: { locations: out.locations, props: out.props },
+        },
+      );
       tx.set('screenplay.json', screenplay);
+      for (const e of elements)
+        if (
+          !existingElements.some((x) => x.id === e.id) ||
+          e.description !== existingElements.find((x) => x.id === e.id)?.description
+        )
+          tx.set(docPath.element(e.id), e);
       return added.length;
     },
     (n) => `Write ${n} more scene(s) from the outline`,
@@ -207,6 +237,63 @@ export async function characterRefs(deps: HandlerDeps, ctx: JobContext) {
         });
       },
       `Generate ${view.replace('_', ' ')} reference for ${c.name}`,
+    );
+    done++;
+  }
+  ctx.progress(done, views.length, 'done');
+  return { generated: done };
+}
+
+/** Reference views of a location, prop or style (docs/design/elements.md#jobs). */
+export async function elementRefs(deps: HandlerDeps, ctx: JobContext) {
+  const { elementId } = ctx.job.params as { elementId: string };
+  const views = (ctx.job.params.views as ElementReferenceView[] | undefined) ?? [];
+  const projectId = ctx.job.projectId;
+  let done = 0;
+  for (const view of views) {
+    throwIfAborted(ctx.signal);
+    const docs = await docsFor(deps, ctx);
+    const e = docs.elements[elementId];
+    if (!e) throw notFound(`element ${elementId}`);
+    if (e.lock.locked)
+      throw new AppError('element_locked', `${e.name} was locked while references were generating`);
+    const anchor = approvedElementReferences(e)[0] ?? e.references[0];
+    const baseImageUri = anchor ? await deps.media.pngDataUri(projectId, anchor.media, 1024) : undefined;
+    const req = compileElementReferenceRequest(e, view, {
+      screenplay: docs.screenplay,
+      settings: docs.project.settings,
+      baseImageUri,
+      model: docs.project.settings.models.image,
+    });
+    ctx.progress(done, views.length, `${e.name}: ${view} view`);
+    const task = await deps.gateway.generateImage(req, gatewayOptions(ctx, 'image', `element-ref-${view}`));
+    const media = await deps.media.importUri(projectId, task.outputs![0]!.uri, {
+      kind: 'refs',
+      name: `element-${slugify(e.name)}-${view}`,
+      signal: ctx.signal,
+    });
+    await commitAs(
+      deps,
+      ctx,
+      (tx) => {
+        const cur = tx.require<Element>(docPath.element(elementId), `element ${elementId}`);
+        if (cur.lock.locked) throw new AppError('element_locked', `${cur.name} is locked`);
+        tx.set(docPath.element(elementId), {
+          ...cur,
+          references: [
+            ...cur.references,
+            {
+              id: newId('reference'),
+              view,
+              media,
+              source: 'generated',
+              approved: false,
+              createdAt: new Date().toISOString(),
+            },
+          ],
+        });
+      },
+      `Generate ${view} reference for ${e.name}`,
     );
     done++;
   }

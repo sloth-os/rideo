@@ -82,6 +82,7 @@ describe('screenplay normalization', () => {
           action: '',
           dialogue: [],
           characters: ['Jonah'],
+          props: [],
           estDurationSec: 10,
         },
       ],
@@ -107,6 +108,7 @@ describe('shot planning normalization', () => {
           durationSec: 25,
           continuity: 'continuous',
           dialogue: [],
+          props: [],
         },
         {
           description: 'Mira reads',
@@ -116,6 +118,7 @@ describe('shot planning normalization', () => {
           durationSec: 1,
           continuity: 'continuous',
           dialogue: [{ character: 'Mira', line: 'Who?' }],
+          props: [],
         },
         {
           description: '   ',
@@ -125,6 +128,7 @@ describe('shot planning normalization', () => {
           durationSec: 5,
           continuity: 'cut',
           dialogue: [],
+          props: [],
         },
       ],
       { characters: [mira], minSec: 2, maxSec: 10, targetSec: 26 },

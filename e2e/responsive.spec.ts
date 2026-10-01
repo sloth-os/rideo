@@ -1,7 +1,17 @@
 import { expect, type Page, test } from '@playwright/test';
 import { Api } from './support/api';
 
-const VIEWS = ['overview', 'story', 'cast', 'resources', 'clips', 'editor', 'history', 'exports'] as const;
+const VIEWS = [
+  'overview',
+  'story',
+  'cast',
+  'elements',
+  'resources',
+  'clips',
+  'editor',
+  'history',
+  'exports',
+] as const;
 
 async function expectNoHorizontalOverflow(page: Page) {
   const overflow = await page.evaluate(() => {

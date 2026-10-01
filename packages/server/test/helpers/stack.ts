@@ -155,7 +155,28 @@ export async function readyStoryProject(stack: Stack, settings: Record<string, u
       await stack.api('PATCH', `/projects/${p.id}/characters/${c.id}/references/${r.id}`, { approved: true });
     await stack.api('POST', `/projects/${p.id}/characters/${c.id}/lock`);
   }
+  await lockElements(stack, p.id);
   return { projectId: p.id, state: await stack.api<any>('GET', `/projects/${p.id}/state`) };
+}
+
+/** Generates, approves and locks every element (location, prop) the story uses (docs/design/elements.md). */
+export async function lockElements(stack: Stack, projectId: string): Promise<void> {
+  let state = await stack.api<any>('GET', `/projects/${projectId}/state`);
+  for (const e of Object.values<any>(state.docs.elements)) {
+    if (e.lock.locked || e.references.length) continue;
+    const j = await stack.api<Job>('POST', `/projects/${projectId}/elements/${e.id}/references/generate`, {});
+    expectSucceeded(await stack.waitJob(projectId, j.id));
+  }
+  state = await stack.api<any>('GET', `/projects/${projectId}/state`);
+  for (const e of Object.values<any>(state.docs.elements)) {
+    if (e.lock.locked) continue;
+    for (const r of e.references)
+      if (!r.approved)
+        await stack.api('PATCH', `/projects/${projectId}/elements/${e.id}/references/${r.id}`, {
+          approved: true,
+        });
+    await stack.api('POST', `/projects/${projectId}/elements/${e.id}/lock`);
+  }
 }
 
 export function expectSucceeded(job: Job): Job {

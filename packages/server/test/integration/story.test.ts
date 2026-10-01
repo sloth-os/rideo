@@ -1,7 +1,14 @@
 import type { Clip, Job, Project } from '@rideo/shared';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { startEditorWorker } from '../helpers/editor-worker';
-import { ApiError, expectSucceeded, readyStoryProject, type Stack, startStack } from '../helpers/stack';
+import {
+  ApiError,
+  expectSucceeded,
+  lockElements,
+  readyStoryProject,
+  type Stack,
+  startStack,
+} from '../helpers/stack';
 
 let stack: Stack;
 
@@ -46,6 +53,15 @@ describe('story → movie workflow (REST, mock gateway)', () => {
     ).toBeCloseTo(30);
     const characters = Object.values<any>(state.docs.characters);
     expect(characters.length).toBe(2);
+    // The writer's locations and props become draft elements linked from the scenes (docs/design/elements.md).
+    const firstScene = state.docs.screenplay.scenes[0];
+    const elements = Object.values<any>(state.docs.elements);
+    expect(elements.find((e) => e.id === firstScene.locationId)).toMatchObject({
+      kind: 'location',
+      name: 'lighthouse lamp room',
+      lock: { locked: false },
+    });
+    expect(firstScene.elementIds.map((id: string) => state.docs.elements[id].kind)).toEqual(['prop']);
 
     await stack.api('POST', `/projects/${pid}/workflow/approve`, { gate: 'screenplay_approved' });
     const unmet = await rejects(
@@ -55,6 +71,8 @@ describe('story → movie workflow (REST, mock gateway)', () => {
     expect(unmet.body.errors.map((e: { requirement: string }) => e.requirement)).toEqual([
       'characters.allLocked',
       'characters.allHaveApprovedRefs',
+      'elements.inUseLocked',
+      'elements.inUseHaveApprovedRefs',
     ]);
 
     // R1: shots cannot be generated before the cast is locked.
@@ -63,6 +81,9 @@ describe('story → movie workflow (REST, mock gateway)', () => {
     expectSucceeded(await stack.waitJob(pid, plan.id));
     state = await stack.api<any>('GET', `/projects/${pid}/state`);
     const pilot = Object.values<Clip>(state.docs.clips)[0]!;
+    // Every planned shot carries the scene's location; the establishing shot also shows the scene's prop.
+    expect(pilot.shots.every((sh) => sh.elementIds[0] === firstScene.locationId)).toBe(true);
+    expect(pilot.shots[0]!.elementIds).toEqual([firstScene.locationId, ...firstScene.elementIds]);
     await rejects(stack.api('POST', `/projects/${pid}/clips/${pilot.id}/generate`), 'character_not_locked');
     await rejects(
       stack.api('POST', `/projects/${pid}/characters/${characters[0].id}/lock`),
@@ -89,6 +110,17 @@ describe('story → movie workflow (REST, mock gateway)', () => {
         'character_locked',
       );
     }
+    // E1: the locations and props must be locked too.
+    await rejects(stack.api('POST', `/projects/${pid}/clips/${pilot.id}/generate`), 'element_not_locked');
+    await lockElements(stack, pid);
+    state = await stack.api<any>('GET', `/projects/${pid}/state`);
+    const location = state.docs.elements[firstScene.locationId];
+    expect(location.references.map((r: { view: string }) => r.view)).toEqual(['establishing', 'angle']);
+    expect(location.lock).toMatchObject({ locked: true, version: 1 });
+    await rejects(
+      stack.api('PATCH', `/projects/${pid}/elements/${location.id}`, { description: 'a different room' }),
+      'element_locked',
+    );
     await stack.api('POST', `/projects/${pid}/workflow/approve`, { gate: 'cast_locked' });
     await stack.api('POST', `/projects/${pid}/workflow/approve`, { gate: 'resources_ready' });
 
@@ -110,6 +142,7 @@ describe('story → movie workflow (REST, mock gateway)', () => {
       expect(take.video?.poster?.mime).toBe('image/jpeg');
       expect(take.video?.videoCodec).toBe('h264');
       expect(Object.keys(take.characterLocks).length).toBe(shot.characterIds.length);
+      expect(take.elementLocks).toEqual(Object.fromEntries(shot.elementIds.map((id) => [id, 1])));
     }
 
     await stack.api('POST', `/projects/${pid}/clips/${pilot.id}/approve`);
@@ -240,6 +273,84 @@ describe('story → movie workflow (REST, mock gateway)', () => {
     expect(s.docs.clips[clip.id].shots.find((x: { id: string }) => x.id === stale[0]!.id).takes.length).toBe(
       2,
     );
+  }, 300_000);
+
+  it('invalidates takes when an element is relocked with changes (E6)', async () => {
+    const { projectId: pid, state } = await readyStoryProject(stack);
+    const scene = state.docs.screenplay.scenes[0];
+    const plan = await stack.api<Job>('POST', `/projects/${pid}/clips/plan`, {
+      sceneId: scene.id,
+      generate: true,
+    });
+    expectSucceeded(await stack.waitJob(pid, plan.id));
+    await stack.waitIdle(pid);
+    const clip = Object.values<Clip>((await stack.api<any>('GET', `/projects/${pid}/state`)).docs.clips)[0]!;
+    // relocking unchanged keeps the version: nothing becomes stale
+    await stack.api('POST', `/projects/${pid}/elements/${scene.locationId}/unlock`);
+    expect(
+      (await stack.api<any>('POST', `/projects/${pid}/elements/${scene.locationId}/lock`)).lock.version,
+    ).toBe(1);
+    await stack.api('POST', `/projects/${pid}/elements/${scene.locationId}/unlock`);
+    await stack.api('PATCH', `/projects/${pid}/elements/${scene.locationId}`, {
+      description: 'the lamp room after the storm, cracked windows',
+    });
+    expect(
+      (await stack.api<any>('POST', `/projects/${pid}/elements/${scene.locationId}/lock`)).lock.version,
+    ).toBe(2);
+    const blocked = await rejects(
+      stack.api('POST', `/projects/${pid}/clips/${clip.id}/approve`),
+      'consistency_gate',
+    );
+    expect(JSON.stringify(blocked.body.errors)).toContain('stale');
+  }, 300_000);
+
+  it('stops the batch for a new location or prop until it is approved and locked', async () => {
+    const { projectId: pid, state } = await readyStoryProject(stack);
+    const scene = state.docs.screenplay.scenes[0];
+    const lantern = await stack.api<any>('POST', `/projects/${pid}/elements`, {
+      kind: 'prop',
+      name: 'ship in a bottle',
+      description: 'a three-masted ship in a dusty bottle',
+    });
+    await stack.api('PATCH', `/projects/${pid}/screenplay`, {
+      upsertScenes: [{ id: scene.id, heading: scene.heading, elementIds: [...scene.elementIds, lantern.id] }],
+    });
+    const plan = await stack.api<Job>('POST', `/projects/${pid}/clips/plan`, { sceneId: scene.id });
+    expectSucceeded(await stack.waitJob(pid, plan.id));
+    const batch = await stack.api<Job>('POST', `/projects/${pid}/batch`, {});
+    const stopped = expectSucceeded(await stack.waitJob(pid, batch.id, 120_000));
+    expect((stopped.result as { stopReason: string }).stopReason).toBe(
+      'new locations or props need approval: ship in a bottle',
+    );
+    await stack.waitIdle(pid);
+    const s = await stack.api<any>('GET', `/projects/${pid}/state`);
+    expect(s.docs.elements[lantern.id].references.length).toBeGreaterThan(0);
+    expect(Object.values<Clip>(s.docs.clips).flatMap((c) => c.shots.flatMap((x) => x.takes))).toEqual([]);
+    await lockElements(stack, pid);
+    const resumed = await stack.api<Job>('POST', `/projects/${pid}/batch`, {});
+    expect(
+      (expectSucceeded(await stack.waitJob(pid, resumed.id, 180_000)).result as { stopReason: string })
+        .stopReason,
+    ).toMatch(/target|outline/);
+  }, 300_000);
+
+  it('judges locations and props when the project asks for it (E4)', async () => {
+    const { projectId: pid, state } = await readyStoryProject(stack, {
+      consistency: { judgeElements: true },
+    });
+    const plan = await stack.api<Job>('POST', `/projects/${pid}/clips/plan`, {
+      sceneId: state.docs.screenplay.scenes[0].id,
+      generate: true,
+    });
+    expectSucceeded(await stack.waitJob(pid, plan.id));
+    await stack.waitIdle(pid);
+    const clip = Object.values<Clip>((await stack.api<any>('GET', `/projects/${pid}/state`)).docs.clips)[0]!;
+    for (const shot of clip.shots) {
+      const take = shot.takes.find((t) => t.id === shot.selectedTakeId)!;
+      expect(take.consistency.status).toBe('passed');
+      expect(take.consistency.elements.map((v) => v.elementId)).toEqual(shot.elementIds);
+      expect(take.consistency.elements.every((v) => v.present)).toBe(true);
+    }
   }, 300_000);
 
   it('fails closed without a judge (R9) and accepts only audited overrides; agents need permission', async () => {

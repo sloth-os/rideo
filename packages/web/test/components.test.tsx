@@ -54,7 +54,7 @@ describe('WorkflowStepper', () => {
     const docs = f.docs();
     docs.project.workflow.stage = 'cast';
     render(<WorkflowStepper workflow={evaluateWorkflow(docs)} />);
-    expect(screen.getByText('Cast').closest('li')?.getAttribute('aria-current')).toBe('step');
+    expect(screen.getByText('Cast & elements').closest('li')?.getAttribute('aria-current')).toBe('step');
     expect(document.querySelectorAll('li[data-stage]').length).toBe(8);
   });
 });

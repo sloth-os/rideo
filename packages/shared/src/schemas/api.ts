@@ -3,6 +3,7 @@ import { EditSuggestionSchema } from './analysis';
 import { CharacterRoleSchema, ConsentInputSchema, IdentitySchema, ReferenceViewSchema } from './character';
 import { CameraSchema } from './clip';
 import { AspectRatioSchema, IdSchema } from './common';
+import { ElementKindSchema, ElementReferenceViewSchema } from './element';
 import { ExportQualitySchema, RenderEngineChoiceSchema } from './job';
 import { DisclosurePositionSchema, ProjectKindSchema } from './project';
 import { ResourceKindSchema, ResourceRoleSchema } from './resource';
@@ -29,6 +30,7 @@ export const ProjectSettingsPatchSchema = z
         threshold: z.number().min(0).max(1),
         maxAttempts: z.number().int().min(1).max(8),
         judge: z.enum(['vision-llm', 'off']),
+        judgeElements: z.boolean(),
       })
       .partial(),
     generation: z.object({ includeAudio: z.boolean(), keyframes: z.boolean() }).partial(),
@@ -76,6 +78,8 @@ export const SceneInputSchema = z.object({
   action: z.string().max(20000).optional(),
   dialogue: z.array(DialogueLineSchema.partial({ characterId: true })).optional(),
   characterIds: z.array(IdSchema).optional(),
+  locationId: IdSchema.nullable().optional(),
+  elementIds: z.array(IdSchema).optional(),
   estDurationSec: z.number().positive().max(3600).optional(),
   beatId: IdSchema.nullable().optional(),
 });
@@ -146,6 +150,27 @@ export const GenerateRefsInputSchema = z.object({
   views: z.array(ReferenceViewSchema).min(1).max(6).optional(),
 });
 
+export const ElementInputSchema = z.object({
+  kind: ElementKindSchema,
+  name: z.string().trim().min(1).max(120),
+  description: z.string().max(2000).optional(),
+  aliases: z.array(z.string().trim().min(1).max(120)).max(20).optional(),
+});
+export type ElementInput = z.infer<typeof ElementInputSchema>;
+
+export const ElementUpdateInputSchema = ElementInputSchema.omit({ kind: true }).partial();
+export type ElementUpdateInput = z.infer<typeof ElementUpdateInputSchema>;
+
+export const AddElementReferenceInputSchema = z.object({
+  uri: z.string().min(1).max(50_000_000),
+  view: ElementReferenceViewSchema.optional(),
+  approved: z.boolean().optional(),
+});
+
+export const GenerateElementRefsInputSchema = z.object({
+  views: z.array(ElementReferenceViewSchema).min(1).max(4).optional(),
+});
+
 export const ResourceInputSchema = z.object({
   uri: z.string().min(1).max(200_000_000),
   kind: ResourceKindSchema.optional(),
@@ -166,6 +191,7 @@ export const ShotUpdateInputSchema = z
     action: z.string().max(4000),
     camera: CameraSchema.partial(),
     characterIds: z.array(IdSchema),
+    elementIds: z.array(IdSchema),
     wardrobe: z.record(z.string(), IdSchema),
     dialogue: z.array(z.object({ characterId: IdSchema.nullable(), line: z.string().max(2000) })),
     durationSec: z.number().positive().max(60),

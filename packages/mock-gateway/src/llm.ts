@@ -1,5 +1,6 @@
 import {
   INPUT_PREFIX,
+  JUDGE_ELEMENT_REFERENCE_LABEL,
   JUDGE_FRAME_LABEL,
   JUDGE_REFERENCE_LABEL,
   type LlmTaskId,
@@ -106,7 +107,9 @@ function labelledImages(parts: Part[]): LabelledImages {
   let frameIndex: number | null = null;
   for (const p of parts) {
     if (p.kind === 'text') {
-      const ref = new RegExp(`${JUDGE_REFERENCE_LABEL}\\s+(\\S+)`).exec(p.text);
+      const ref = new RegExp(`(?:${JUDGE_REFERENCE_LABEL}|${JUDGE_ELEMENT_REFERENCE_LABEL})\\s+(\\S+)`).exec(
+        p.text,
+      );
       const frame = new RegExp(`${JUDGE_FRAME_LABEL}\\s+(\\d+)`).exec(p.text);
       if (ref) {
         refOwner = ref[1]!.replace(/[^a-z0-9_]/gi, '');

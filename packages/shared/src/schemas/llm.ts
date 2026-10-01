@@ -38,6 +38,10 @@ export const LlmCharacterSchema = z.object({
 });
 export type LlmCharacter = z.infer<typeof LlmCharacterSchema>;
 
+/** A location or prop the writer introduces (docs/design/elements.md). */
+export const LlmElementSchema = z.object({ name: z.string().min(1).max(120), description: str(2000) });
+export type LlmElement = z.infer<typeof LlmElementSchema>;
+
 export const LlmDialogueSchema = z.object({
   character: z.string().max(200),
   line: z.string().max(4000),
@@ -53,6 +57,8 @@ export const LlmSceneSchema = z.object({
   action: str(20000),
   dialogue: z.array(LlmDialogueSchema).catch([]).default([]),
   characters: z.array(z.string().max(120)).catch([]).default([]),
+  /** Names of the props in the scene (the location is `location`). */
+  props: z.array(z.string().max(120)).catch([]).default([]),
   estDurationSec: num(60),
 });
 export type LlmScene = z.infer<typeof LlmSceneSchema>;
@@ -72,6 +78,8 @@ export const ScreenplayGenerateOutputSchema = z.object({
   tone: str(200),
   style: LlmStyleSchema.catch(LlmStyleSchema.parse({})).default(LlmStyleSchema.parse({})),
   characters: z.array(LlmCharacterSchema).min(1).max(20),
+  locations: z.array(LlmElementSchema).max(60).catch([]).default([]),
+  props: z.array(LlmElementSchema).max(60).catch([]).default([]),
   outline: z
     .array(z.object({ title: str(200), summary: z.string().min(1).max(4000), estDurationSec: num(90) }))
     .min(1)
@@ -81,7 +89,12 @@ export const ScreenplayGenerateOutputSchema = z.object({
 });
 export type ScreenplayGenerateOutput = z.infer<typeof ScreenplayGenerateOutputSchema>;
 
-export const ScreenplayExtendOutputSchema = z.object({ scenes: z.array(LlmSceneSchema).min(1).max(30) });
+export const ScreenplayExtendOutputSchema = z.object({
+  scenes: z.array(LlmSceneSchema).min(1).max(30),
+  /** Locations and props that first appear in these scenes. */
+  locations: z.array(LlmElementSchema).max(30).catch([]).default([]),
+  props: z.array(LlmElementSchema).max(30).catch([]).default([]),
+});
 export type ScreenplayExtendOutput = z.infer<typeof ScreenplayExtendOutputSchema>;
 
 const FRAMINGS = [
@@ -125,6 +138,8 @@ export const LlmShotSchema = z.object({
     .array(z.object({ character: z.string().max(200), line: z.string().max(2000) }))
     .catch([])
     .default([]),
+  /** Names of the scene's props visible in this shot. */
+  props: z.array(z.string().max(120)).catch([]).default([]),
 });
 export type LlmShot = z.infer<typeof LlmShotSchema>;
 
@@ -169,6 +184,18 @@ export const JudgeOutputSchema = z.object({
             issues: z.array(z.string().max(500)).catch([]).default([]),
           }),
         ),
+        /** Present when the request listed elements (rule E4). */
+        elements: z
+          .array(
+            z.object({
+              elementId: z.string(),
+              present: z.boolean().catch(false),
+              score: z.coerce.number().min(0).max(1).catch(0),
+              issues: z.array(z.string().max(500)).catch([]).default([]),
+            }),
+          )
+          .catch([])
+          .default([]),
       }),
     )
     .min(1),
@@ -220,6 +247,9 @@ export interface ScreenplayExtendInput {
   synopsis: string;
   language: string;
   characters: { name: string; summary: string }[];
+  /** Existing locations and props: reuse these names. */
+  locations: { name: string; description: string }[];
+  props: { name: string; description: string }[];
   previousScenes: { index: number; heading: string; summary: string }[];
   beats: { index: number; title: string; summary: string; estDurationSec: number }[];
 }
@@ -231,6 +261,8 @@ export interface ClipPlanInput {
     action: string;
     dialogue: { character: string; line: string }[];
     estDurationSec: number;
+    location: { name: string; description: string } | null;
+    props: { name: string; description: string }[];
   };
   characters: { name: string; summary: string }[];
   style: string;
@@ -250,6 +282,8 @@ export interface CharacterDescribeInput {
 
 export interface JudgeInput {
   characters: { id: string; name: string; identity: string; referenceCount: number }[];
+  /** Locations and props to verify too (rule E4); omitted when the project does not judge elements. */
+  elements?: { id: string; kind: string; name: string; description: string; referenceCount: number }[];
   frameCount: number;
   shotDescription: string;
 }
@@ -266,4 +300,5 @@ export interface FootageAnalyzeInput {
 
 export const INPUT_PREFIX = 'INPUT:\n';
 export const JUDGE_REFERENCE_LABEL = 'Reference images for character';
+export const JUDGE_ELEMENT_REFERENCE_LABEL = 'Reference images for element';
 export const JUDGE_FRAME_LABEL = 'Candidate frame';

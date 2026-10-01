@@ -7,6 +7,9 @@ import type {
   ConsentInput,
   Diff,
   EditorJobKind,
+  Element,
+  ElementKind,
+  ElementReferenceView,
   Export,
   ExportQuality,
   Job,
@@ -227,6 +230,36 @@ export const api = {
     request<Job>('POST', `${p(id)}/characters/${cid}/describe`, { resourceId, consent }),
   lock: (id: string, cid: string) => request<Character>('POST', `${p(id)}/characters/${cid}/lock`),
   unlock: (id: string, cid: string) => request<Character>('POST', `${p(id)}/characters/${cid}/unlock`),
+  // Elements: locations, props, styles (docs/design/elements.md)
+  createElement: (id: string, body: { kind: ElementKind; name: string; description?: string }) =>
+    request<Element>('POST', `${p(id)}/elements`, body),
+  updateElement: (
+    id: string,
+    eid: string,
+    body: { name?: string; description?: string; aliases?: string[] },
+    coalesce?: string,
+  ) =>
+    request<Element>(
+      'PATCH',
+      `${p(id)}/elements/${eid}`,
+      body,
+      coalesce ? { 'x-rideo-coalesce': coalesce } : {},
+    ),
+  deleteElement: (id: string, eid: string) => request<void>('DELETE', `${p(id)}/elements/${eid}`),
+  generateElementRefs: (id: string, eid: string, views?: ElementReferenceView[]) =>
+    request<Job>('POST', `${p(id)}/elements/${eid}/references/generate`, views ? { views } : {}),
+  uploadElementReference: (id: string, eid: string, file: File, view: ElementReferenceView) => {
+    const form = new FormData();
+    form.set('view', view);
+    form.set('file', file, file.name);
+    return request<Element>('POST', `${p(id)}/elements/${eid}/references`, form);
+  },
+  approveElementReference: (id: string, eid: string, rid: string, approved: boolean) =>
+    request<Element>('PATCH', `${p(id)}/elements/${eid}/references/${rid}`, { approved }),
+  deleteElementReference: (id: string, eid: string, rid: string) =>
+    request<Element>('DELETE', `${p(id)}/elements/${eid}/references/${rid}`),
+  lockElement: (id: string, eid: string) => request<Element>('POST', `${p(id)}/elements/${eid}/lock`),
+  unlockElement: (id: string, eid: string) => request<Element>('POST', `${p(id)}/elements/${eid}/unlock`),
   generateMusic: (id: string, body: { prompt: string; durationSec?: number; instrumental?: boolean }) =>
     request<Job>('POST', `${p(id)}/music`, body),
   planClip: (id: string, sceneId: string, generate = false) =>

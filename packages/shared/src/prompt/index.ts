@@ -7,6 +7,13 @@ import {
   type ReferenceView,
 } from '../schemas/character';
 import type { Shot } from '../schemas/clip';
+import {
+  approvedElementReferences,
+  ELEMENT_VIEW_PRIORITY,
+  type Element,
+  type ElementReference,
+  type ElementReferenceView,
+} from '../schemas/element';
 import type { GatewayImageRequest, GatewayVideoRequest, ModelLimits } from '../schemas/gateway';
 import type { ProjectSettings } from '../schemas/project';
 import type { Screenplay } from '../schemas/screenplay';
@@ -26,6 +33,10 @@ const MAX_SEED = 2147483647;
 
 export function characterSeed(characterId: string): number {
   return fnv1a32(`character:${characterId}`) % MAX_SEED;
+}
+
+export function elementSeed(elementId: string): number {
+  return fnv1a32(`element:${elementId}`) % MAX_SEED;
 }
 
 export function shotSeed(shot: Pick<Shot, 'id'>, characters: Pick<Character, 'seed'>[], attempt = 0): number {
@@ -117,6 +128,8 @@ export interface ShotContext {
   shot: Shot;
   /** Characters appearing in the shot, in shot.characterIds order. */
   characters: Character[];
+  /** The shot's location, props and styles, in shot.elementIds order (docs/design/elements.md). */
+  elements?: Element[];
   screenplay: Pick<Screenplay, 'style'> | null;
   settings: ProjectSettings;
 }
@@ -126,6 +139,37 @@ export function orderedShotCharacters(
   all: Record<string, Character>,
 ): Character[] {
   return shot.characterIds.map((id) => all[id]).filter((c): c is Character => !!c);
+}
+
+/** The shot's elements: the location first, then props, then styles (each in shot.elementIds order). */
+export function orderedShotElements(shot: Pick<Shot, 'elementIds'>, all: Record<string, Element>): Element[] {
+  const list = (shot.elementIds ?? []).map((id) => all[id]).filter((e): e is Element => !!e);
+  const rank = { location: 0, prop: 1, style: 2 } as const;
+  return list
+    .map((e, i) => ({ e, i }))
+    .sort((a, b) => rank[a.e.kind] - rank[b.e.kind] || a.i - b.i)
+    .map((x) => x.e);
+}
+
+/** An element's anchor text (rule E3): the same element always produces the same sentence. */
+export function elementFragment(e: Pick<Element, 'name' | 'description'>): string {
+  const d = clean(e.description);
+  return d ? `${clean(e.name)} — ${d}.` : `${clean(e.name)}.`;
+}
+
+/** The element sentences of a shot prompt (location, props, styles). */
+export function elementLines(elements: Element[]): string[] {
+  const of = (kind: Element['kind']) => elements.filter((e) => e.kind === kind);
+  const lines: string[] = [];
+  const location = of('location')[0];
+  if (location)
+    lines.push(`Location (keep exactly as in the reference images): ${elementFragment(location)}`);
+  const props = of('prop');
+  if (props.length)
+    lines.push(`Props (keep exactly as in the reference images): ${props.map(elementFragment).join(' ')}`);
+  const styles = of('style');
+  if (styles.length) lines.push(`Style reference: ${styles.map(elementFragment).join(' ')}`);
+  return lines;
 }
 
 export function compileShotPrompt(ctx: ShotContext, mode: 'keyframe' | 'video'): string {
@@ -147,6 +191,7 @@ export function compileShotPrompt(ctx: ShotContext, mode: 'keyframe' | 'video'):
       `Characters (keep identities exactly as described and as in the reference images): ${ctx.characters.map((c) => identityFragment(c, shot)).join(' ')}`,
     );
   }
+  lines.push(...elementLines(ctx.elements ?? []));
   if (mode === 'video' && ctx.settings.generation.includeAudio && shot.dialogue.length) {
     const names = new Map(ctx.characters.map((c) => [c.id, c.name]));
     lines.push(
@@ -160,6 +205,20 @@ export interface ReferenceSelection {
   perCharacter: { characterId: string; refs: CharacterReference[] }[];
   /** True when the cast needs more images than the model accepts: compose a single cast sheet. */
   needsSheet: boolean;
+  /** One reference per element (location first; docs/design/elements.md#prompt-and-references). */
+  perElement: { elementId: string; refs: ElementReference[] }[];
+  /** True when the elements outnumber their slots: compose one element sheet. */
+  elementSheet: boolean;
+}
+
+function elementRef(e: Element): ElementReference | undefined {
+  return approvedElementReferences(e)
+    .slice()
+    .sort(
+      (a, b) =>
+        ELEMENT_VIEW_PRIORITY.indexOf(a.view) - ELEMENT_VIEW_PRIORITY.indexOf(b.view) ||
+        a.createdAt.localeCompare(b.createdAt),
+    )[0];
 }
 
 function refRank(r: CharacterReference, wardrobeId: string | undefined): number {
@@ -167,14 +226,29 @@ function refRank(r: CharacterReference, wardrobeId: string | undefined): number 
   return (wardrobeId && r.wardrobeId && r.wardrobeId !== wardrobeId ? 100 : 0) + (view < 0 ? 50 : view);
 }
 
-/** Approved references per character: matching wardrobe first, then view priority; bounded by the model. */
+/**
+ * Approved references per character (matching wardrobe first, then view priority) and one per element, bounded
+ * by the model. Elements get a quarter of the budget (at least one image) when the cast leaves room.
+ */
 export function selectReferences(
   characters: Character[],
   shot: Pick<Shot, 'wardrobe'>,
   maxInputImages: number | undefined,
   perCharacterMax = 2,
+  elements: Element[] = [],
 ): ReferenceSelection {
-  const budget = Math.max(1, maxInputImages ?? DEFAULT_MAX_INPUT_IMAGES);
+  const total = Math.max(1, maxInputImages ?? DEFAULT_MAX_INPUT_IMAGES);
+  const withRefs = elements.filter((e) => elementRef(e));
+  let elementSlots = withRefs.length ? Math.min(withRefs.length, Math.max(1, Math.floor(total / 4))) : 0;
+  if (characters.length + elementSlots > total)
+    elementSlots = Math.max(0, total - Math.max(1, characters.length));
+  // More elements than slots: all of them go into one sheet that takes a single slot.
+  const elementSheet = elementSlots > 0 && withRefs.length > elementSlots;
+  const perElement = (elementSlots > 0 ? withRefs : []).map((e) => ({
+    elementId: e.id,
+    refs: [elementRef(e)!],
+  }));
+  const budget = Math.max(1, total - (elementSheet ? 1 : perElement.length));
   const ranked = characters.map((c) => {
     const w = wardrobeFor(c, shot)?.id;
     const refs = approvedReferences(c)
@@ -186,12 +260,72 @@ export function selectReferences(
     return {
       perCharacter: ranked.map((r) => ({ characterId: r.characterId, refs: r.refs.slice(0, 1) })),
       needsSheet: true,
+      perElement,
+      elementSheet,
     };
   }
   const each = Math.max(1, Math.min(perCharacterMax, Math.floor(budget / Math.max(1, characters.length))));
   return {
     perCharacter: ranked.map((r) => ({ characterId: r.characterId, refs: r.refs.slice(0, each) })),
     needsSheet: false,
+    perElement,
+    elementSheet,
+  };
+}
+
+const ELEMENT_VIEW_PHRASE: Record<Element['kind'], Partial<Record<ElementReferenceView, string>>> = {
+  location: {
+    establishing: 'establishing wide shot of the place, empty of people, even natural light',
+    angle: 'the reverse angle of the same place, empty of people',
+    detail: 'a characteristic detail of the place',
+    custom: 'the place',
+  },
+  prop: {
+    detail: 'the object alone on a neutral light-grey background, soft studio lighting, sharp focus',
+    angle: 'the same object from another angle on a neutral light-grey background',
+    establishing: 'the object in context',
+    custom: 'the object',
+  },
+  style: {
+    custom: 'a style frame that shows the look: medium, palette, texture and lighting',
+    establishing: 'a wide style frame',
+    angle: 'a second style frame',
+    detail: 'a close-up style frame',
+  },
+};
+
+/** A reference-sheet image of an element (`element.refs`); the first approved view anchors the next ones. */
+export function compileElementReferenceRequest(
+  e: Element,
+  view: ElementReferenceView,
+  ctx: {
+    screenplay: Pick<Screenplay, 'style'> | null;
+    settings: ProjectSettings;
+    baseImageUri?: string;
+    model?: string;
+  },
+): GatewayImageRequest {
+  const style = clean(ctx.screenplay?.style.visual);
+  const text = [
+    `Element reference sheet, ${e.kind}: ${ELEMENT_VIEW_PHRASE[e.kind][view] ?? 'reference'}; no text.`,
+    `${clean(e.name)}: ${clean(e.description) || clean(e.name)}.`,
+    style && e.kind !== 'style' ? `Visual style: ${style}.` : '',
+    ctx.baseImageUri ? 'Keep exactly the same design as in the reference image.' : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
+  return {
+    ...(ctx.model && ctx.model !== 'auto' ? { model: ctx.model } : {}),
+    input: [
+      { type: 'text', text },
+      ...(ctx.baseImageUri ? [{ type: 'image' as const, uri: ctx.baseImageUri }] : []),
+    ],
+    parameters: {
+      dimensions: referenceDimensions(ctx.settings),
+      seed: (e.seed + ELEMENT_VIEW_PRIORITY.indexOf(view)) % MAX_SEED,
+      negative_prompt: 'people, text, logo, watermark, deformed',
+      output_count: 1,
+    },
   };
 }
 

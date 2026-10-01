@@ -3,6 +3,7 @@ import { rm } from 'node:fs/promises';
 import { extname } from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import {
+  AddElementReferenceInputSchema,
   AddReferenceInputSchema,
   ApproveInputSchema,
   AssembleInputSchema,
@@ -11,7 +12,11 @@ import {
   ConsentInputSchema,
   CreateProjectInputSchema,
   DescribeCharacterInputSchema,
+  ElementInputSchema,
+  ElementReferenceViewSchema,
+  ElementUpdateInputSchema,
   ExportInputSchema,
+  GenerateElementRefsInputSchema,
   GenerateRefsInputSchema,
   JobStatusSchema,
   MusicInputSchema,
@@ -304,6 +309,81 @@ export function registerRoutes(app: FastifyInstance, studio: Studio): void {
   );
   app.post('/api/projects/:id/characters/:cid/unlock', async (req) =>
     studio.story.unlockCharacter(actor(), pid(req), p(req, 'cid')),
+  );
+  // Elements: locations, props and styles (docs/design/elements.md)
+  app.post('/api/projects/:id/elements', async (req, reply) =>
+    reply
+      .code(201)
+      .send(await studio.elements.create(actor(), pid(req), parse(ElementInputSchema, req.body))),
+  );
+  app.patch('/api/projects/:id/elements/:eid', async (req) =>
+    studio.elements.update(
+      actor(),
+      pid(req),
+      p(req, 'eid'),
+      parse(ElementUpdateInputSchema, req.body),
+      coalesceHeader(req),
+    ),
+  );
+  app.delete('/api/projects/:id/elements/:eid', async (req, reply) => {
+    await studio.elements.remove(actor(), pid(req), p(req, 'eid'));
+    return reply.code(204).send();
+  });
+  app.post('/api/projects/:id/elements/:eid/references/generate', async (req, reply) =>
+    reply
+      .code(202)
+      .send(
+        await studio.elements.generateReferences(
+          actor(),
+          pid(req),
+          p(req, 'eid'),
+          parse(GenerateElementRefsInputSchema, req.body).views,
+        ),
+      ),
+  );
+  app.post('/api/projects/:id/elements/:eid/references', async (req, reply) => {
+    if (req.isMultipart()) {
+      const { file, fields } = await receiveUpload(studio, req);
+      if (!file) throw invalid('multipart field "file" is required');
+      try {
+        const view = fields.view ? ElementReferenceViewSchema.parse(fields.view) : undefined;
+        return reply
+          .code(201)
+          .send(
+            await studio.elements.addReference(
+              actor(),
+              pid(req),
+              p(req, 'eid'),
+              { file: file.path, filename: file.filename, mime: file.mime },
+              { view },
+            ),
+          );
+      } finally {
+        await rm(file.path, { force: true });
+      }
+    }
+    const body = parse(AddElementReferenceInputSchema, req.body);
+    return reply
+      .code(201)
+      .send(await studio.elements.addReference(actor(), pid(req), p(req, 'eid'), { uri: body.uri }, body));
+  });
+  app.patch('/api/projects/:id/elements/:eid/references/:rid', async (req) =>
+    studio.elements.setReferenceApproval(
+      actor(),
+      pid(req),
+      p(req, 'eid'),
+      p(req, 'rid'),
+      parse(z.object({ approved: z.boolean() }), req.body).approved,
+    ),
+  );
+  app.delete('/api/projects/:id/elements/:eid/references/:rid', async (req) =>
+    studio.elements.deleteReference(actor(), pid(req), p(req, 'eid'), p(req, 'rid')),
+  );
+  app.post('/api/projects/:id/elements/:eid/lock', async (req) =>
+    studio.elements.lock(actor(), pid(req), p(req, 'eid')),
+  );
+  app.post('/api/projects/:id/elements/:eid/unlock', async (req) =>
+    studio.elements.unlock(actor(), pid(req), p(req, 'eid')),
   );
   app.post('/api/projects/:id/music', async (req, reply) =>
     reply

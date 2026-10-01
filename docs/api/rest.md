@@ -20,6 +20,8 @@ Errors are RFC 9457 problem details (`application/problem+json`) with a stable `
 | `conflict` | 409 | concurrent modification, duplicate name, branch in use |
 | `character_not_locked` | 409 | R1 precondition |
 | `character_locked` | 409 | R2: edit a locked character |
+| `element_not_locked` | 409 | E1 precondition: a shot's location or prop is not locked ([elements](../design/elements.md)) |
+| `element_locked` | 409 | E2: edit a locked element |
 | `consistency_gate` | 409 | R7: approval or export blocked by unverified, failed or stale takes |
 | `gate_unmet` | 409 | workflow gate requirements not satisfied (`errors[]` lists them) |
 | `timeline_op_invalid` | 422 | a timeline op failed (`errors[0].opIndex`) |
@@ -80,6 +82,18 @@ Errors are RFC 9457 problem details (`application/problem+json`) with a stable `
 | POST | `/api/projects/:id/characters/:cid/describe` | `{resourceId, consent}` (the photo becomes an uploaded reference) | `Job` |
 | POST | `/api/projects/:id/characters/:cid/lock` / `unlock` | – | `Character` |
 | POST | `/api/projects/:id/music` | `{prompt, durationSec?, instrumental?}` | `Job` |
+
+## Elements (locations, props, styles)
+
+| Method | Path | Body | Result |
+|---|---|---|---|
+| POST | `/api/projects/:id/elements` | `{kind, name, description?, aliases?}` | `Element` |
+| PATCH | `/api/projects/:id/elements/:eid` | `{name?, description?, aliases?}` | `Element` (`element_locked` while locked) |
+| DELETE | `/api/projects/:id/elements/:eid` | – | `204` |
+| POST | `/api/projects/:id/elements/:eid/references/generate` | `{views?}` | `Job` (`element.refs`) |
+| POST | `/api/projects/:id/elements/:eid/references` | multipart `file` + `view`, or `{uri, view?}` | `Element` |
+| PATCH / DELETE | `/api/projects/:id/elements/:eid/references/:rid` | `{approved}` / – | `Element` |
+| POST | `/api/projects/:id/elements/:eid/lock` / `unlock` | – | `Element` |
 
 ## Clips, shots, takes
 

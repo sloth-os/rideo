@@ -9,6 +9,7 @@ import {
   type FootageAnalyzeOutput,
   FootageAnalyzeOutputSchema,
   INPUT_PREFIX,
+  JUDGE_ELEMENT_REFERENCE_LABEL,
   JUDGE_FRAME_LABEL,
   JUDGE_REFERENCE_LABEL,
   type JudgeInput,
@@ -47,14 +48,16 @@ Rules:
 - Write full "scenes" only for the first outline beats, enough to cover at least pilotDurationSec. Each scene has beatIndex = index of the outline beat it realizes.
 - "characters": 1–6 principal characters with precise, visual, stable identities (age, gender, ethnicity, build, height, face, hair, eyes, skin, distinguishing marks) and at least one wardrobe item. Never depict real people.
 - Scenes: vivid visual action, short cinematic dialogue, characters listed by name.
+- "locations": every distinct place of the WHOLE film (all outline beats, not only the written scenes), each with a precise visual description (architecture, materials, light); each scene's "location" is one of these names. "props": the recurring objects of the whole film that must look the same every time (name + precise visual description); each scene lists the props it shows in "props".
 - "style": concrete visual language (film stock/lens, palette, lighting, camera movement).
 - Use the attachment descriptions as inspiration for the look and the cast.
-Return only JSON: {"title":"...","logline":"...","synopsis":"...","genre":"...","tone":"...","style":{"visual":"...","palette":"...","camera":"...","lighting":"..."},"characters":[{"name":"...","role":"protagonist|antagonist|supporting|minor","summary":"...","identity":${IDENTITY_TEMPLATE},"wardrobe":[{"name":"...","description":"..."}],"personality":"...","voice":"..."}],"outline":[{"title":"...","summary":"...","estDurationSec":90}],"scenes":[{"beatIndex":0,"heading":"INT. PLACE - NIGHT","location":"...","timeOfDay":"...","summary":"...","action":"...","dialogue":[{"character":"Name","line":"...","parenthetical":"..."}],"characters":["Name"],"estDurationSec":90}],"ended":true}`,
+Return only JSON: {"title":"...","logline":"...","synopsis":"...","genre":"...","tone":"...","style":{"visual":"...","palette":"...","camera":"...","lighting":"..."},"characters":[{"name":"...","role":"protagonist|antagonist|supporting|minor","summary":"...","identity":${IDENTITY_TEMPLATE},"wardrobe":[{"name":"...","description":"..."}],"personality":"...","voice":"..."}],"locations":[{"name":"...","description":"..."}],"props":[{"name":"...","description":"..."}],"outline":[{"title":"...","summary":"...","estDurationSec":90}],"scenes":[{"beatIndex":0,"heading":"INT. PLACE - NIGHT","location":"location name","timeOfDay":"...","summary":"...","action":"...","dialogue":[{"character":"Name","line":"...","parenthetical":"..."}],"characters":["Name"],"props":["prop name"],"estDurationSec":90}],"ended":true}`,
 
   'screenplay.extend': `rideo-task: screenplay.extend
 You are the screenwriter continuing an AI-generated film. Write one full scene for each requested outline beat, in order, consistent with the story so far, the cast (use only these names) and the tone.
 Each scene's beatIndex must equal the beat's index and estDurationSec should match the beat estimate.
-Return only JSON: {"scenes":[{"beatIndex":0,"heading":"INT. PLACE - NIGHT","location":"...","timeOfDay":"...","summary":"...","action":"...","dialogue":[{"character":"Name","line":"..."}],"characters":["Name"],"estDurationSec":90}]}`,
+Reuse the names in "locations" and "props" for places and objects the story already has; list only new places and objects (name + precise visual description) in the answer's "locations" and "props".
+Return only JSON: {"scenes":[{"beatIndex":0,"heading":"INT. PLACE - NIGHT","location":"location name","timeOfDay":"...","summary":"...","action":"...","dialogue":[{"character":"Name","line":"..."}],"characters":["Name"],"props":["prop name"],"estDurationSec":90}],"locations":[{"name":"...","description":"..."}],"props":[{"name":"...","description":"..."}]}`,
 
   'clip.plan': `rideo-task: clip.plan
 You are a director breaking one scene into shots for an AI video model.
@@ -62,9 +65,10 @@ Rules:
 - Every shot durationSec must be within [limits.minDurationSec, limits.maxDurationSec]; the shot durations should sum to targetDurationSec.
 - A shot is one continuous camera setup: describe what is visible in the first frame ("description") and what moves ("action").
 - "characters": names of the characters visible in the shot (only from the cast list).
+- "props": names of the scene's props visible in the shot (only from scene.props).
 - Use "continuity":"continuous" only when the shot continues the previous shot's final frame without a cut; the first shot is always "cut".
 - camera.framing: extreme_wide|wide|medium|medium_close|close_up|extreme_close_up|over_shoulder|pov|insert; camera.movement: static|pan|tilt|dolly_in|dolly_out|tracking|handheld|crane|zoom|orbit.
-Return only JSON: {"shots":[{"description":"...","action":"...","camera":{"framing":"wide","movement":"static"},"characters":["Name"],"durationSec":6,"continuity":"cut","dialogue":[{"character":"Name","line":"..."}]}]}`,
+Return only JSON: {"shots":[{"description":"...","action":"...","camera":{"framing":"wide","movement":"static"},"characters":["Name"],"props":["prop name"],"durationSec":6,"continuity":"cut","dialogue":[{"character":"Name","line":"..."}]}]}`,
 
   'character.describe': `rideo-task: character.describe
 You are a cast designer. Describe the person in the photo as a stable, visual identity for AI image generation. Do not identify real people by name.
@@ -78,7 +82,8 @@ For every candidate frame and every character, compare the frame against that ch
 - outfitScore (0–1): same wardrobe as the references?
 - issues: short concrete differences (e.g. "hair is blonde instead of black").
 Be critical: different faces, age changes, or hair changes must score low.
-Return only JSON: {"frames":[{"index":0,"characters":[{"characterId":"...","present":true,"identityScore":0.9,"outfitScore":0.9,"issues":[]}]}]}`,
+When the input lists "elements" (locations and props), also judge each one per frame against its reference images: present (is it visible?), score (0–1: the same place or object, same design, materials and colours), issues.
+Return only JSON: {"frames":[{"index":0,"characters":[{"characterId":"...","present":true,"identityScore":0.9,"outfitScore":0.9,"issues":[]}],"elements":[{"elementId":"...","present":true,"score":0.9,"issues":[]}]}]}`,
 
   'footage.analyze': `rideo-task: footage.analyze
 You are a senior film editor. From the footage statistics, scene thumbnails and transcript, summarize the footage and suggest concrete edits.
@@ -252,10 +257,19 @@ export class LlmTasks {
     signal?: AbortSignal,
   ): Promise<JudgeOutput> {
     const images: LabelledImage[] = [];
-    for (const c of input.characters) {
-      (references.get(c.id) ?? []).forEach((data, i) => {
+    // Characters, then elements (docs/design/elements.md#prompt-and-references), each labelled with its id.
+    const owners = [
+      ...input.characters.map((c) => ({ id: c.id, name: c.name, label: JUDGE_REFERENCE_LABEL })),
+      ...(input.elements ?? []).map((e) => ({
+        id: e.id,
+        name: e.name,
+        label: JUDGE_ELEMENT_REFERENCE_LABEL,
+      })),
+    ];
+    for (const o of owners) {
+      (references.get(o.id) ?? []).forEach((data, i) => {
         images.push({
-          label: i === 0 ? `${JUDGE_REFERENCE_LABEL} ${c.id} (${c.name}):` : undefined,
+          label: i === 0 ? `${o.label} ${o.id} (${o.name}):` : undefined,
           data,
           mime: 'image/png',
         });

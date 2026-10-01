@@ -1,5 +1,6 @@
 import type { Character } from '../schemas/character';
-import type { CharacterVerdict, Clip, ConsistencyStatus, Shot, Take } from '../schemas/clip';
+import type { CharacterVerdict, Clip, ConsistencyStatus, ElementVerdict, Shot, Take } from '../schemas/clip';
+import type { Element } from '../schemas/element';
 
 /**
  * Take states as seen by the consistency invariant (docs/design/character-consistency.md):
@@ -20,13 +21,29 @@ export function staleCharacters(
   });
 }
 
+/** Elements of the shot whose lock changed since the take was generated (rule E6, docs/design/elements.md). */
+export function staleElements(
+  take: Take,
+  shot: Pick<Shot, 'elementIds'>,
+  elements: Record<string, Element>,
+): string[] {
+  return (shot.elementIds ?? []).filter((id) => {
+    const e = elements[id];
+    if (!e) return false;
+    const used = take.elementLocks?.[id];
+    return used === undefined || used !== e.lock.version;
+  });
+}
+
 export function takeState(
   take: Take,
-  shot: Pick<Shot, 'characterIds'>,
+  shot: Pick<Shot, 'characterIds'> & Partial<Pick<Shot, 'elementIds'>>,
   characters: Record<string, Character>,
+  elements: Record<string, Element> = {},
 ): TakeState {
   if (take.override) return 'overridden';
   if (staleCharacters(take, shot, characters).length > 0) return 'stale';
+  if (staleElements(take, { elementIds: shot.elementIds ?? [] }, elements).length > 0) return 'stale';
   return take.consistency.status;
 }
 
@@ -42,18 +59,23 @@ export interface Blocker {
   message: string;
 }
 
-export function shotBlocker(clip: Clip, shot: Shot, characters: Record<string, Character>): Blocker | null {
+export function shotBlocker(
+  clip: Clip,
+  shot: Shot,
+  characters: Record<string, Character>,
+  elements: Record<string, Element> = {},
+): Blocker | null {
   const label = `shot c${clip.index + 1}-s${shot.index + 1}`;
   const take = shot.takes.find((t) => t.id === shot.selectedTakeId);
   if (!take?.video) {
     return { clipId: clip.id, shotId: shot.id, state: 'missing', message: `${label} has no selected take` };
   }
-  const state = takeState(take, shot, characters);
+  const state = takeState(take, shot, characters, elements);
   if (isAcceptable(state)) return null;
   const why: Record<Exclude<TakeState, 'passed' | 'overridden'>, string> = {
     failed: 'failed the consistency check',
     unverified: 'is not verified',
-    stale: 'was generated from an older character lock',
+    stale: 'was generated from an older character or element lock',
   };
   return {
     clipId: clip.id,
@@ -65,7 +87,11 @@ export function shotBlocker(clip: Clip, shot: Shot, characters: Record<string, C
 }
 
 /** R7: everything that prevents approving a clip. */
-export function clipBlockers(clip: Clip, characters: Record<string, Character>): Blocker[] {
+export function clipBlockers(
+  clip: Clip,
+  characters: Record<string, Character>,
+  elements: Record<string, Element> = {},
+): Blocker[] {
   if (clip.shots.length === 0) {
     return [
       { clipId: clip.id, shotId: '', state: 'missing', message: `clip ${clip.index + 1} has no shots` },
@@ -74,7 +100,7 @@ export function clipBlockers(clip: Clip, characters: Record<string, Character>):
   return clip.shots
     .slice()
     .sort((a, b) => a.index - b.index)
-    .map((s) => shotBlocker(clip, s, characters))
+    .map((s) => shotBlocker(clip, s, characters, elements))
     .filter((b): b is Blocker => b !== null);
 }
 
@@ -121,6 +147,44 @@ export function aggregateVerdicts(
   const score = Math.min(...characters.map((c) => c.score));
   const passed = characters.every((c) => c.present && c.score >= opts.threshold);
   return { status: passed ? 'passed' : 'failed', score: round3(score), characters };
+}
+
+export interface ElementFrameVerdict {
+  elementId: string;
+  present: boolean;
+  score: number;
+  issues?: string[];
+}
+
+/**
+ * Element verdicts (rule E4): present in at least one frame, score = minimum where present; every element
+ * must be present at or above the threshold.
+ */
+export function aggregateElementVerdicts(
+  expected: string[],
+  frames: ElementFrameVerdict[][],
+  threshold: number,
+): { passed: boolean; score: number; elements: ElementVerdict[] } {
+  if (expected.length === 0) return { passed: true, score: 1, elements: [] };
+  const elements: ElementVerdict[] = expected.map((id) => {
+    let present = false;
+    let score = 1;
+    const issues = new Set<string>();
+    for (const frame of frames) {
+      const v = frame.find((x) => x.elementId === id);
+      if (!v?.present) continue;
+      present = true;
+      score = Math.min(score, clamp01(v.score));
+      for (const issue of v.issues ?? []) issues.add(issue.slice(0, 500));
+    }
+    if (!present) issues.add('element not visible in any sampled frame');
+    return { elementId: id, present, score: present ? round3(score) : 0, issues: [...issues].slice(0, 10) };
+  });
+  return {
+    passed: elements.every((e) => e.present && e.score >= threshold),
+    score: round3(Math.min(...elements.map((e) => e.score))),
+    elements,
+  };
 }
 
 function clamp01(n: number): number {

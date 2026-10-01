@@ -1,10 +1,11 @@
 /** Test builders shared by the shared, server and web suites (never imported by production code). */
 import { newId } from '../ids';
-import { characterSeed } from '../prompt';
+import { characterSeed, elementSeed } from '../prompt';
 import type { Character, CharacterReference } from '../schemas/character';
 import type { Clip, ConsistencyReport, Shot, Take } from '../schemas/clip';
 import type { MediaRef } from '../schemas/common';
 import type { ProjectDocs } from '../schemas/documents';
+import type { Element, ElementReference } from '../schemas/element';
 import { type Project, ProjectSettingsSchema } from '../schemas/project';
 import type { Screenplay } from '../schemas/screenplay';
 
@@ -106,6 +107,34 @@ export function character(overrides: Partial<Character> = {}): Character {
   };
 }
 
+export function elementReference(overrides: Partial<ElementReference> = {}): ElementReference {
+  return {
+    id: newId('reference'),
+    view: 'establishing',
+    media: imageMedia(),
+    source: 'generated',
+    approved: true,
+    createdAt: '2026-09-30T00:00:00.000Z',
+    ...overrides,
+  };
+}
+
+/** A locked location with one approved reference (pass `kind`, `lock` or `references` to vary it). */
+export function element(overrides: Partial<Element> = {}): Element {
+  const id = overrides.id ?? newId('element');
+  return {
+    id,
+    kind: 'location',
+    name: 'Lamp room',
+    description: 'circular brass-framed lantern room, salt-crusted windows',
+    aliases: [],
+    references: [elementReference()],
+    seed: elementSeed(id),
+    lock: { locked: true, version: 1, lockedAt: '2026-09-30T00:00:00.000Z' },
+    ...overrides,
+  };
+}
+
 export function report(overrides: Partial<ConsistencyReport> = {}): ConsistencyReport {
   return {
     status: 'passed',
@@ -115,6 +144,7 @@ export function report(overrides: Partial<ConsistencyReport> = {}): ConsistencyR
     attempts: 1,
     checkedAt: '2026-09-30T00:00:00.000Z',
     characters: [],
+    elements: [],
     frames: [],
     ...overrides,
   };
@@ -131,6 +161,7 @@ export function take(overrides: Partial<Take> = {}): Take {
     gatewayTaskIds: [],
     consistency: report(),
     characterLocks: {},
+    elementLocks: {},
     watermarkId: null,
     contentCredentials: null,
     override: null,
@@ -147,6 +178,7 @@ export function shot(overrides: Partial<Shot> = {}): Shot {
     action: 'She climbs, breathing hard.',
     camera: { framing: 'medium', movement: 'tracking' },
     characterIds: [],
+    elementIds: [],
     wardrobe: {},
     dialogue: [],
     durationSec: 5,
@@ -215,6 +247,7 @@ export function docs(overrides: Partial<ProjectDocs> = {}): ProjectDocs {
     screenplay: null,
     timeline: null,
     characters: {},
+    elements: {},
     clips: {},
     resources: {},
     analyses: {},

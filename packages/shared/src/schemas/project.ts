@@ -8,6 +8,8 @@ export const ConsistencySettingsSchema = z.object({
   threshold: z.number().min(0).max(1).default(0.75),
   maxAttempts: z.number().int().min(1).max(8).default(3),
   judge: z.enum(['vision-llm', 'off']).default('vision-llm'),
+  /** Also judge locations and props against their references (rule E4). */
+  judgeElements: z.boolean().default(false),
 });
 
 /** The visible "AI-generated" label (docs/design/provenance.md#disclosure-label). */
@@ -41,7 +43,12 @@ export const ProjectSettingsSchema = z.object({
       music: z.string().min(1).default('auto'),
     })
     .default({ image: 'auto', video: 'auto', music: 'auto' }),
-  consistency: ConsistencySettingsSchema.default({ threshold: 0.75, maxAttempts: 3, judge: 'vision-llm' }),
+  consistency: ConsistencySettingsSchema.default({
+    threshold: 0.75,
+    maxAttempts: 3,
+    judge: 'vision-llm',
+    judgeElements: false,
+  }),
   generation: z
     .object({ includeAudio: z.boolean().default(false), keyframes: z.boolean().default(true) })
     .default({ includeAudio: false, keyframes: true }),

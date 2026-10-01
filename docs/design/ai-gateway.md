@@ -66,11 +66,11 @@ Every LLM use is a **task** with an id, a zod output schema, a system prompt and
 | Task | Input | Output (validated) |
 |---|---|---|
 | `media.describe` | user images + video keyframes | `{summary, style, setting, people[{label, description, identity}]}` |
-| `screenplay.generate` | prompt, attachment descriptions, target/pilot length, language, aspect | `{title, logline, synopsis, genre, tone, style, characters[], outline[], scenes[]}` |
+| `screenplay.generate` | prompt, attachment descriptions, target/pilot length, language, aspect | `{title, logline, synopsis, genre, tone, style, characters[], locations[], props[], outline[], scenes[]}` (scenes name their `location` and `props`) |
 | `screenplay.extend` | story so far (summaries), cast, outline beats to write | `{scenes[]}` |
-| `clip.plan` | scene, cast, style, video model limits | `{shots[]}` |
+| `clip.plan` | scene (with its location and props), cast, style, video model limits | `{shots[]}` (each with the `props` visible in it) |
 | `character.describe` | one photo | `{identity, summary, wardrobe[]}` |
-| `consistency.judge` | references per character, candidate frames | `{frames[{index, characters[{characterId, present, identityScore, outfitScore, issues}]}]}` |
+| `consistency.judge` | references per character (and per element when `judgeElements`), candidate frames | `{frames[{index, characters[{characterId, present, identityScore, outfitScore, issues}], elements?[{elementId, present, score, issues}]}]}` |
 | `footage.analyze` | probe stats, scenes, silences, thumbnails, transcript | `{summary, suggestions[]}` |
 
 `runTask()`:

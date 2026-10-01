@@ -6,6 +6,7 @@
 | [design/workflows.md](design/workflows.md) | Declarative stage machines for the story → movie and footage → edit workflows |
 | [design/storage-webdav.md](design/storage-webdav.md) | WebDAV asset layout, storage backends, embedded `/dav` server, external edits and the inbox |
 | [design/version-control.md](design/version-control.md) | Content-addressed objects, commits, branches, tags, coalescing, diff, restore |
+| [design/elements.md](design/elements.md) | Locations, props and styles as locked references, with the same lock and verification rules as characters |
 | [design/character-consistency.md](design/character-consistency.md) | How consistency is guaranteed: identity lock, deterministic conditioning, judge gate, continuity, drift |
 | [design/generation-pipeline.md](design/generation-pipeline.md) | Job queue, shot pipeline, batch generation to target length, retries, idempotency |
 | [design/ai-gateway.md](design/ai-gateway.md) | mm-gateway SDK usage, the LLM/vision/STT proxy, prompts and structured output, the mock gateway |

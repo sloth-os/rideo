@@ -1,4 +1,5 @@
 import {
+  approvedElementReferences,
   type Clip,
   DEFAULT_VIDEO_LIMITS,
   docPath,
@@ -38,6 +39,9 @@ export async function clipPlan(deps: HandlerDeps, ctx: JobContext) {
   const cast = scene.characterIds.length
     ? scene.characterIds.map((id) => docs.characters[id]).filter((c) => !!c)
     : all;
+  // The scene's location goes on every shot; the planner picks the props each shot shows (docs/design/elements.md).
+  const location = scene.locationId ? docs.elements[scene.locationId] : undefined;
+  const sceneElements = scene.elementIds.map((id) => docs.elements[id]).filter((e) => !!e);
   ctx.progress(0.2, 1, `planning shots for “${scene.heading}”`);
   const out = await deps.llm.planClip(
     {
@@ -50,6 +54,8 @@ export async function clipPlan(deps: HandlerDeps, ctx: JobContext) {
           line: d.line,
         })),
         estDurationSec: target,
+        location: location ? { name: location.name, description: location.description } : null,
+        props: sceneElements.map((e) => ({ name: e!.name, description: e!.description })),
       },
       characters: cast.map((c) => ({ name: c!.name, summary: c!.summary })),
       style: [sp.style.visual, sp.style.camera].filter(Boolean).join('; '),
@@ -58,7 +64,14 @@ export async function clipPlan(deps: HandlerDeps, ctx: JobContext) {
     },
     ctx.signal,
   );
-  const shots = normalizePlannedShots(out.shots, { characters: all, minSec, maxSec, targetSec: target });
+  const shots = normalizePlannedShots(out.shots, {
+    characters: all,
+    minSec,
+    maxSec,
+    targetSec: target,
+    locationId: location?.id ?? null,
+    sceneElements: sceneElements.filter((e) => e !== undefined),
+  });
   if (!shots.length) throw new AppError('llm_invalid_output', 'the shot plan was empty', [], true);
   const { result: clip } = await commitAs(
     deps,
@@ -86,7 +99,7 @@ export async function clipPlan(deps: HandlerDeps, ctx: JobContext) {
   );
   if (thenGenerate) {
     const fresh = await docsFor(deps, ctx);
-    assertCastReady(clip.shots, fresh.characters);
+    assertCastReady(clip.shots, fresh.characters, fresh.elements);
     await ctx.spawn('clip.generate', { clipId: clip.id }, { dedupeKey: `clip:${clip.id}` });
   }
   return { clipId: clip.id, shots: clip.shots.length };
@@ -98,12 +111,12 @@ export async function clipGenerate(deps: HandlerDeps, ctx: JobContext) {
   const docs = await docsFor(deps, ctx);
   const clip = docs.clips[clipId];
   if (!clip) throw notFound(`clip ${clipId}`);
-  assertCastReady(clip.shots, docs.characters);
+  assertCastReady(clip.shots, docs.characters, docs.elements);
   const todo = [...clip.shots]
     .sort((a, b) => a.index - b.index)
     .filter((s) => {
       const t = s.takes.find((x) => x.id === s.selectedTakeId);
-      return !t?.video || !isAcceptable(takeState(t, s, docs.characters));
+      return !t?.video || !isAcceptable(takeState(t, s, docs.characters, docs.elements));
     });
   if (!todo.length) return { generated: 0, failed: 0 };
   await commitAs(
@@ -182,7 +195,7 @@ export async function batchGenerate(deps: HandlerDeps, ctx: JobContext) {
         c.shots.length > 0 &&
         c.shots.some((s) => {
           const t = s.takes.find((x) => x.id === s.selectedTakeId);
-          return !t?.video || !isAcceptable(takeState(t, s, docs.characters));
+          return !t?.video || !isAcceptable(takeState(t, s, docs.characters, docs.elements));
         }),
     );
     if (next && inFlight.length < 2) {
@@ -191,7 +204,19 @@ export async function batchGenerate(deps: HandlerDeps, ctx: JobContext) {
         stopReason = 'generation budget reached';
         break;
       }
-      assertCastReady(next.shots, docs.characters);
+      // Safety net (docs/design/elements.md#workflow): a location or prop the extension introduced must be
+      // approved and locked by a person before shots use it; prepare its references and stop.
+      const pending = [...new Set(next.shots.flatMap((s) => s.elementIds))]
+        .map((id) => docs.elements[id])
+        .filter((e) => !!e && (!e.lock.locked || approvedElementReferences(e).length === 0));
+      if (pending.length) {
+        for (const e of pending)
+          if (!e!.lock.locked && e!.references.length === 0)
+            await deps.services.elements.generateReferences(ctx.actor, ctx.job.projectId, e!.id);
+        stopReason = `new locations or props need approval: ${pending.map((e) => e!.name).join(', ')}`;
+        break;
+      }
+      assertCastReady(next.shots, docs.characters, docs.elements);
       const job = await ctx.spawn('clip.generate', { clipId: next.id }, { dedupeKey: `clip:${next.id}` });
       started.add(next.id);
       inFlight.push(job);

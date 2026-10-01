@@ -7,6 +7,8 @@ const STATUS: Record<ErrorCode, number> = {
   conflict: 409,
   character_not_locked: 409,
   character_locked: 409,
+  element_not_locked: 409,
+  element_locked: 409,
   consistency_gate: 409,
   gate_unmet: 409,
   timeline_op_invalid: 422,

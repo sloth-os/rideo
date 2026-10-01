@@ -92,6 +92,8 @@ export const ERROR_CODES = [
   'conflict',
   'character_not_locked',
   'character_locked',
+  'element_not_locked',
+  'element_locked',
   'consistency_gate',
   'gate_unmet',
   'timeline_op_invalid',

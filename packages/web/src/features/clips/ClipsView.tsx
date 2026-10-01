@@ -26,6 +26,7 @@ import {
 import { useState } from 'react';
 import { ConsistencyBadge } from '../../components/ConsistencyBadge';
 import { Editable } from '../../components/Editable';
+import { ElementPicker } from '../../components/ElementPicker';
 import { Entity } from '../../components/Entity';
 import { JobRow } from '../../components/JobProgress';
 import { MediaImage, MediaVideo } from '../../components/Media';
@@ -42,7 +43,7 @@ import {
   Textarea,
 } from '../../components/ui';
 import { api } from '../../lib/api';
-import { useProject } from '../../store/project';
+import { NO_ELEMENTS, useProject } from '../../store/project';
 import { reportError, useUi } from '../../store/ui';
 
 function EvidenceDialog({
@@ -58,6 +59,8 @@ function EvidenceDialog({
   projectId: string;
   onClose: () => void;
 }) {
+  const elementDocs = useProject((s) => s.docs?.elements ?? NO_ELEMENTS);
+  const elementNames = Object.fromEntries(Object.values(elementDocs).map((e) => [e.id, e.name]));
   if (!take || !shot) return null;
   return (
     <Dialog open onClose={onClose} title="Consistency evidence" wide>
@@ -119,6 +122,21 @@ function EvidenceDialog({
             </div>
           );
         })}
+        {take.consistency.elements?.length ? (
+          <div className="space-y-1" data-testid="element-verdicts">
+            {take.consistency.elements.map((v) => (
+              <div key={v.elementId} className="flex flex-wrap items-center gap-2 text-[13px]">
+                <span className="font-medium">{elementNames[v.elementId] ?? v.elementId}</span>
+                <Badge tone={v.present && v.score >= take.consistency.threshold ? 'success' : 'danger'}>
+                  {v.present ? `score ${v.score.toFixed(2)}` : 'not visible'}
+                </Badge>
+                {v.issues.length ? (
+                  <span className="text-[12px] text-warning">{v.issues.join('; ')}</span>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        ) : null}
         <div>
           <div className="mb-1.5 text-[13px] font-medium">Judged frames</div>
           <div className="flex gap-2 overflow-x-auto">
@@ -207,7 +225,8 @@ function TakeTile({
   onOverride: () => void;
 }) {
   const selected = shot.selectedTakeId === take.id;
-  const state = takeState(take, shot, characters);
+  const elements = useProject((s) => s.docs?.elements ?? NO_ELEMENTS);
+  const state = takeState(take, shot, characters, elements);
   return (
     <Entity
       kind="take"
@@ -347,6 +366,17 @@ function ShotRow({
           ariaLabel="Shot description"
         />
       </div>
+      <div className="mt-2">
+        <ElementPicker
+          value={shot.elementIds}
+          kinds={['location', 'prop', 'style']}
+          label="element"
+          onChange={(ids) =>
+            api.updateShot(projectId, clip.id, shot.id, { elementIds: ids }).catch(reportError)
+          }
+          testid="shot-elements"
+        />
+      </div>
       {shot.lastError ? <p className="mt-1 text-[12px] text-danger">{shot.lastError}</p> : null}
       {job ? (
         <div className="mt-2">
@@ -389,7 +419,8 @@ function ClipCard({
       (j) => j.kind === 'clip.generate' && j.params.clipId === clip.id && !isTerminalJob(j),
     ),
   );
-  const blockers = clipBlockers(clip, characters);
+  const elements = useProject((s) => s.docs?.elements ?? NO_ELEMENTS);
+  const blockers = clipBlockers(clip, characters, elements);
   const pending = clip.shots.some((s) => !s.takes.length);
   return (
     <Entity

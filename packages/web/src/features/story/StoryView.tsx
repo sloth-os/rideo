@@ -12,10 +12,11 @@ import {
 } from 'lucide-react';
 import { useRef, useState } from 'react';
 import { Editable } from '../../components/Editable';
+import { ElementPicker } from '../../components/ElementPicker';
 import { Entity } from '../../components/Entity';
 import { JobRow } from '../../components/JobProgress';
 import { MediaImage, MediaVideo } from '../../components/Media';
-import { Badge, Button, Card, EmptyState, Field, SectionHeader, Textarea } from '../../components/ui';
+import { Badge, Button, Card, EmptyState, Field, SectionHeader, Select, Textarea } from '../../components/ui';
 import { api } from '../../lib/api';
 import { useProject } from '../../store/project';
 import { reportError, useUi } from '../../store/ui';
@@ -176,6 +177,33 @@ function SceneCard({ scene }: { scene: Scene }) {
             {docs.characters[id]?.name ?? id}
           </Badge>
         ))}
+      </div>
+      <div className="mt-2 flex flex-wrap items-center gap-2 text-[12px]">
+        <Select
+          value={scene.locationId ?? ''}
+          onChange={(e) => save({ locationId: e.target.value || null })}
+          className="h-7 w-auto px-2 text-[12px]"
+          aria-label="Scene location"
+          data-testid="scene-location"
+        >
+          <option value="">No location</option>
+          {Object.values(docs.elements)
+            .filter((e) => e.kind === 'location')
+            .sort((a, b) => a.name.localeCompare(b.name))
+            .map((e) => (
+              <option key={e.id} value={e.id}>
+                {e.name}
+                {e.lock.locked ? ' 🔒' : ''}
+              </option>
+            ))}
+        </Select>
+        <ElementPicker
+          value={scene.elementIds}
+          kinds={['prop', 'style']}
+          label="prop or style"
+          onChange={(ids) => save({ elementIds: ids })}
+          testid="scene-elements"
+        />
       </div>
       <div className="mt-3 space-y-2">
         <Editable

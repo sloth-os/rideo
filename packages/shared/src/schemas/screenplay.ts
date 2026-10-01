@@ -38,6 +38,10 @@ export const SceneSchema = z.object({
   action: z.string().max(20000).default(''),
   dialogue: z.array(DialogueLineSchema).default([]),
   characterIds: z.array(IdSchema).default([]),
+  /** The scene's location element (docs/design/elements.md). */
+  locationId: IdSchema.nullable().default(null),
+  /** Props and styles present in the scene. */
+  elementIds: z.array(IdSchema).default([]),
   estDurationSec: z.number().positive().max(3600),
 });
 export type Scene = z.infer<typeof SceneSchema>;

@@ -27,6 +27,7 @@ type Job = {
 | `screenplay.extend` | llm | write the next K outline beats as full scenes |
 | `character.describe` | llm | fill identity fields from an uploaded photo |
 | `character.refs` | image | generate reference views for one character |
+| `element.refs` | image | generate reference views for one location, prop or style ([elements](elements.md)) |
 | `clip.plan` | llm | break a scene into shots sized to model limits |
 | `clip.generate` | control | enqueue `shot.generate` for every shot without a passing take and wait |
 | `shot.generate` | video | the shot pipeline below |
@@ -89,7 +90,7 @@ music 10 min (`RIDEO_GATEWAY_TIMEOUT_*`).
 
 | Step | Progress | Action |
 |---|---|---|
-| precheck | 0.02 | R1 (locks, approved refs), resolve models, fetch model limits (5 min cache) |
+| precheck | 0.02 | R1 and E1 (character and element locks, approved refs), resolve models, fetch model limits (5 min cache) |
 | keyframe | 0.05–0.35 | skip if continuous and the previous take passed (its last frame is the first frame); otherwise image task → download → judge → retry |
 | video | 0.35–0.80 | video task with `first_frame`, references and clamped duration → download |
 | verify | 0.80–0.90 | sample frames (ffmpeg) → judge → retry the video up to `maxAttempts` |

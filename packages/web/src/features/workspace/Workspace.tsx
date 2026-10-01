@@ -6,6 +6,7 @@ import {
   GitBranch,
   LayoutDashboard,
   type LucideIcon,
+  MapPin,
   MoreHorizontal,
   NotebookPen,
   ScanSearch,
@@ -23,6 +24,7 @@ import { useProject } from '../../store/project';
 import { AnalysisView } from '../analysis/AnalysisView';
 import { CastView } from '../cast/CastView';
 import { ClipsView } from '../clips/ClipsView';
+import { ElementsView } from '../elements/ElementsView';
 import { ExportsView } from '../exports/ExportsView';
 import { HistoryView } from '../history/HistoryView';
 import { ResourcesView } from '../resources/ResourcesView';
@@ -40,6 +42,7 @@ const STORY_NAV: NavItem[] = [
   { view: 'overview', label: 'Overview', icon: LayoutDashboard },
   { view: 'story', label: 'Story', icon: NotebookPen },
   { view: 'cast', label: 'Cast', icon: Users },
+  { view: 'elements', label: 'Elements', icon: MapPin },
   { view: 'resources', label: 'Resources', icon: FolderOpen },
   { view: 'clips', label: 'Clips', icon: Clapperboard },
   { view: 'editor', label: 'Editor', icon: Scissors },
@@ -63,6 +66,7 @@ const VIEWS: Record<View, ComponentType> = {
   overview: Overview,
   story: StoryView,
   cast: CastView,
+  elements: ElementsView,
   resources: ResourcesView,
   clips: ClipsView,
   editor: EditorView,

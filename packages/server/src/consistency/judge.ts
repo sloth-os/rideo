@@ -1,4 +1,4 @@
-import type { FrameVerdict } from '@rideo/shared';
+import type { ElementFrameVerdict, FrameVerdict } from '@rideo/shared';
 import type { LlmTasks } from '../ai/tasks';
 
 export interface JudgeCharacter {
@@ -8,18 +8,33 @@ export interface JudgeCharacter {
   references: Buffer[];
 }
 
+/** A location or prop to verify too (rule E4, docs/design/elements.md). */
+export interface JudgeElement {
+  id: string;
+  kind: string;
+  name: string;
+  description: string;
+  references: Buffer[];
+}
+
 export interface JudgeRequest {
   characters: JudgeCharacter[];
+  elements?: JudgeElement[];
   frames: Buffer[];
   shotDescription: string;
   signal?: AbortSignal;
 }
 
+/** Per frame (request order): character verdicts, and element verdicts when elements were asked for. */
+export interface JudgeVerdicts {
+  characters: FrameVerdict[][];
+  elements: ElementFrameVerdict[][];
+}
+
 /** Pluggable identity verifier (docs/design/character-consistency.md#judges). */
 export interface ConsistencyJudge {
   readonly id: string;
-  /** Per frame, per character verdicts (frames in request order). */
-  judge(req: JudgeRequest): Promise<FrameVerdict[][]>;
+  judge(req: JudgeRequest): Promise<JudgeVerdicts>;
 }
 
 export class JudgeUnavailableError extends Error {
@@ -35,8 +50,12 @@ export class VisionLlmJudge implements ConsistencyJudge {
     this.id = `vision-llm:${llm.vision.model}`;
   }
 
-  async judge(req: JudgeRequest): Promise<FrameVerdict[][]> {
-    const refs = new Map(req.characters.map((c) => [c.id, c.references]));
+  async judge(req: JudgeRequest): Promise<JudgeVerdicts> {
+    const elements = req.elements ?? [];
+    const refs = new Map<string, Buffer[]>([
+      ...req.characters.map((c) => [c.id, c.references] as const),
+      ...elements.map((e) => [e.id, e.references] as const),
+    ]);
     const out = await this.llm.judge(
       {
         characters: req.characters.map((c) => ({
@@ -45,6 +64,17 @@ export class VisionLlmJudge implements ConsistencyJudge {
           identity: c.identity,
           referenceCount: c.references.length,
         })),
+        ...(elements.length
+          ? {
+              elements: elements.map((e) => ({
+                id: e.id,
+                kind: e.kind,
+                name: e.name,
+                description: e.description,
+                referenceCount: e.references.length,
+              })),
+            }
+          : {}),
         frameCount: req.frames.length,
         shotDescription: req.shotDescription,
       },
@@ -52,26 +82,34 @@ export class VisionLlmJudge implements ConsistencyJudge {
       req.frames,
       req.signal,
     );
-    const known = new Set(req.characters.map((c) => c.id));
-    return req.frames.map((_, i) => {
-      const frame = out.frames.find((f) => f.index === i);
-      return (frame?.characters ?? [])
-        .filter((c) => known.has(c.characterId))
-        .map((c) => ({
-          characterId: c.characterId,
-          present: c.present,
-          identityScore: c.identityScore,
-          outfitScore: c.outfitScore,
-          issues: c.issues,
-        }));
-    });
+    const knownCharacters = new Set(req.characters.map((c) => c.id));
+    const knownElements = new Set(elements.map((e) => e.id));
+    const frames = req.frames.map((_, i) => out.frames.find((f) => f.index === i));
+    return {
+      characters: frames.map((frame) =>
+        (frame?.characters ?? [])
+          .filter((c) => knownCharacters.has(c.characterId))
+          .map((c) => ({
+            characterId: c.characterId,
+            present: c.present,
+            identityScore: c.identityScore,
+            outfitScore: c.outfitScore,
+            issues: c.issues,
+          })),
+      ),
+      elements: frames.map((frame) =>
+        (frame?.elements ?? [])
+          .filter((e) => knownElements.has(e.elementId))
+          .map((e) => ({ elementId: e.elementId, present: e.present, score: e.score, issues: e.issues })),
+      ),
+    };
   }
 }
 
 /** RIDEO_CONSISTENCY_JUDGE=off — every take stays unverified (fail closed, rule R9). */
 export class OffJudge implements ConsistencyJudge {
   readonly id = 'none';
-  async judge(): Promise<FrameVerdict[][]> {
+  async judge(): Promise<JudgeVerdicts> {
     throw new JudgeUnavailableError('consistency judge disabled');
   }
 }

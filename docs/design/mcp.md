@@ -72,6 +72,13 @@ or keep going and `job_wait` until a tab picks the job up.
 | `character_set_reference_approval` | `projectId`, `characterId`, `referenceId`, `approved` |
 | `character_describe_from_image` | `projectId`, `characterId`, `resourceId`, `consent` → job |
 | `character_lock` / `character_unlock` | `projectId`, `characterId` |
+| `element_list` | `projectId` |
+| `element_create` | `projectId`, `kind` (`location`, `prop`, `style`), `name`, `description?`, `aliases?` |
+| `element_update` / `element_delete` | `projectId`, `elementId`, fields (rejected while locked) |
+| `element_generate_refs` | `projectId`, `elementId`, `views?[]` → job |
+| `element_add_reference` | `projectId`, `elementId`, `uri`, `view?` |
+| `element_set_reference_approval` | `projectId`, `elementId`, `referenceId`, `approved` |
+| `element_lock` / `element_unlock` | `projectId`, `elementId` |
 | `resource_add` | `projectId`, `uri`, `kind?`, `role?`, `name?` |
 | `resource_list` | `projectId` |
 | `music_generate` | `projectId`, `prompt`, `durationSec?`, `instrumental?` → job |
@@ -124,8 +131,8 @@ project. The result lists which sessions acknowledged it within 3 s.
 | Tool | Arguments | Browser effect |
 |---|---|---|
 | `ui_sessions` | `projectId?` | – (lists sessions with route, selection, viewport, editor engine and current editor job) |
-| `ui_navigate` | `projectId`, `view` (`overview`, `story`, `cast`, `resources`, `clips`, `editor`, `analysis`, `history`, `exports`), `params?` | route change |
-| `ui_focus` | `projectId`, `target {kind: scene, character, clip, shot, take, timeline-item, commit, job; id}` | scrolls to and highlights the entity |
+| `ui_navigate` | `projectId`, `view` (`overview`, `story`, `cast`, `elements`, `resources`, `clips`, `editor`, `analysis`, `history`, `exports`), `params?` | route change |
+| `ui_focus` | `projectId`, `target {kind: scene, character, element, clip, shot, take, timeline-item, commit, job; id}` | scrolls to and highlights the entity |
 | `ui_notify` | `message`, `level?`, `projectId?` | toast |
 | `ui_player` | `projectId`, `action` (`play`, `pause`, `seek`), `time?` | editor/preview playback |
 

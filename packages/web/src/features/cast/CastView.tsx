@@ -8,6 +8,7 @@ import {
 } from '@rideo/shared';
 import { Check, ImagePlus, Lock, Sparkles, Trash2, Unlock, UserCheck, UserPlus, X } from 'lucide-react';
 import { useRef, useState } from 'react';
+import { Link } from 'react-router';
 import { ConsentDialog } from '../../components/ConsentDialog';
 import { Editable } from '../../components/Editable';
 import { Entity } from '../../components/Entity';
@@ -360,6 +361,33 @@ export function CastView() {
           </>
         }
       />
+      {workflow?.stage === 'cast' && gate && !gate.satisfied ? (
+        <div
+          className="space-y-1 rounded-[var(--radius-control)] border border-border bg-surface-2 p-3 text-[13px]"
+          data-testid="cast-unmet"
+        >
+          {gate.requirements
+            .filter((r) => !r.ok)
+            .map((r) => (
+              <p key={r.id}>
+                {r.message}
+                {r.details?.length ? `: ${r.details.join(', ')}` : ''}
+                {r.id.startsWith('elements.') ? (
+                  <>
+                    {' '}
+                    <Link
+                      to={`/p/${projectId}/elements`}
+                      className="text-accent underline"
+                      data-testid="go-elements"
+                    >
+                      Open elements
+                    </Link>
+                  </>
+                ) : null}
+              </p>
+            ))}
+        </div>
+      ) : null}
       {characters.length === 0 ? (
         <EmptyState title="No characters yet">
           Generate the screenplay to draft a cast, or add characters yourself.

@@ -153,6 +153,8 @@ export class StoryService extends Service {
               action: '',
               dialogue: [],
               characterIds: [],
+              locationId: null,
+              elementIds: [],
               estDurationSec: 60,
             }),
             ...Object.fromEntries(Object.entries(up).filter(([, v]) => v !== undefined)),
@@ -168,6 +170,8 @@ export class StoryService extends Service {
           } as Scene;
           for (const cid of scene.characterIds)
             if (!tx.get(docPath.character(cid))) throw notFound(`character ${cid}`);
+          for (const eid of [...(scene.locationId ? [scene.locationId] : []), ...scene.elementIds])
+            if (!tx.get(docPath.element(eid))) throw notFound(`element ${eid}`);
           if (existing) scenes = scenes.map((s) => (s.id === scene.id ? scene : s));
           else scenes.push(scene);
         }

@@ -116,6 +116,8 @@ describe('screenplay markdown', () => {
           action: 'Wind howls.',
           dialogue: [{ characterId: mira.id, character: 'M', line: 'Who is there?' }],
           characterIds: [mira.id],
+          locationId: null,
+          elementIds: [],
           estDurationSec: 60,
         },
       ],

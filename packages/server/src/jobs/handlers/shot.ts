@@ -1,6 +1,7 @@
 import { copyFile, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
+  approvedElementReferences,
   type Character,
   type Clip,
   type ConsistencyReport,
@@ -8,10 +9,12 @@ import {
   compileKeyframeRequest,
   compileVideoRequest,
   docPath,
+  type Element,
   isAcceptable,
   type MediaRef,
   newId,
   orderedShotCharacters,
+  orderedShotElements,
   type Shot,
   type ShotContext,
   selectReferences,
@@ -53,10 +56,13 @@ export async function shotGenerate(deps: HandlerDeps, ctx: JobContext) {
   if (!shot) throw notFound(`shot ${shotId}`);
   const existing = shot.takes.find((t) => t.jobId === ctx.job.id);
   if (existing) return { takeId: existing.id, status: existing.consistency.status, reused: true };
-  assertCastReady([shot], docs.characters);
+  assertCastReady([shot], docs.characters, docs.elements);
 
   const characters = orderedShotCharacters(shot, docs.characters);
+  // The shot's location, props and styles (docs/design/elements.md): conditioned always, judged when configured.
+  const elements = orderedShotElements(shot, docs.elements);
   const settings = docs.project.settings;
+  const judgedElements = settings.consistency.judgeElements ? elements : [];
   const judge = settings.consistency.judge === 'off' ? deps.offJudge : deps.judge;
   const { threshold, maxAttempts } = settings.consistency;
   const name = label(clip, shot);
@@ -88,8 +94,8 @@ export async function shotGenerate(deps: HandlerDeps, ctx: JobContext) {
         deps.gateway.limitsFor('image', settings.models.image),
         deps.gateway.limitsFor('video', settings.models.video),
       ]);
-      // R3: deterministic references, bounded by the model; a cast sheet when the cast exceeds the budget.
-      const selection = selectReferences(characters, shot, imageLimits.limits?.max_input_images);
+      // R3/E3: deterministic references, bounded by the model; a cast sheet when the cast exceeds the budget.
+      const selection = selectReferences(characters, shot, imageLimits.limits?.max_input_images, 2, elements);
       const judgeRefs = new Map<string, Buffer[]>();
       const refPngs: Buffer[] = [];
       for (const pc of selection.perCharacter) {
@@ -113,14 +119,41 @@ export async function shotGenerate(deps: HandlerDeps, ctx: JobContext) {
         const sheet = await makeCastSheet(deps.ff, parts, join(dir, 'cast-sheet.png'), 512, ctx.signal);
         referenceUris = [`data:image/png;base64,${(await readFile(sheet)).toString('base64')}`];
       }
-      const shotCtx: ShotContext = { shot, characters, screenplay: docs.screenplay, settings };
+      // Element references follow the cast (location first); an element sheet when they outnumber their slots.
+      const elementPngs: Buffer[] = [];
+      for (const pe of selection.perElement)
+        for (const r of pe.refs) elementPngs.push(await deps.media.pngBuffer(projectId, r.media, 1024));
+      if (selection.elementSheet && elementPngs.length > 1) {
+        const parts = await Promise.all(
+          elementPngs.map(async (b, i) => {
+            const p = join(dir, `element-sheet-${i}.png`);
+            await writeFile(p, b);
+            return p;
+          }),
+        );
+        const sheet = await makeCastSheet(deps.ff, parts, join(dir, 'element-sheet.png'), 512, ctx.signal);
+        referenceUris.push(`data:image/png;base64,${(await readFile(sheet)).toString('base64')}`);
+      } else {
+        for (const b of elementPngs) referenceUris.push(`data:image/png;base64,${b.toString('base64')}`);
+      }
+      // The judge sees every judged element's best reference, budget or not (rule E4).
+      const elementJudgeRefs = new Map<string, Buffer[]>();
+      for (const e of judgedElements) {
+        const ref = approvedElementReferences(e)[0];
+        if (ref) elementJudgeRefs.set(e.id, [await deps.media.pngBuffer(projectId, ref.media, 512)]);
+      }
+      const shotCtx: ShotContext = { shot, characters, elements, screenplay: docs.screenplay, settings };
 
       // R5: continuity chaining from the previous shot's passing take.
       let firstFrame: { uri: string; source: Take['request']['firstFrameSource'] } | null = null;
       if (shot.continuity === 'continuous') {
         const prev = clip.shots.find((s) => s.index === shot.index - 1);
         const prevTake = prev?.takes.find((t) => t.id === prev.selectedTakeId);
-        if (prev && prevTake?.lastFrame && isAcceptable(takeState(prevTake, prev, docs.characters))) {
+        if (
+          prev &&
+          prevTake?.lastFrame &&
+          isAcceptable(takeState(prevTake, prev, docs.characters, docs.elements))
+        ) {
           firstFrame = {
             uri: await deps.media.pngDataUri(projectId, prevTake.lastFrame, 1920),
             source: 'previous_shot',
@@ -162,6 +195,8 @@ export async function shotGenerate(deps: HandlerDeps, ctx: JobContext) {
             shot,
             characters,
             references: judgeRefs,
+            elements: judgedElements,
+            elementReferences: elementJudgeRefs,
             frames: [png],
             frameRefs: [keyframeRef],
             threshold,
@@ -191,6 +226,7 @@ export async function shotGenerate(deps: HandlerDeps, ctx: JobContext) {
             },
             taskIds,
             characters,
+            elements,
           });
           return { takeId: take.id, status: 'failed', stage: 'keyframe' };
         }
@@ -241,6 +277,8 @@ export async function shotGenerate(deps: HandlerDeps, ctx: JobContext) {
           shot,
           characters,
           references: judgeRefs,
+          elements: judgedElements,
+          elementReferences: elementJudgeRefs,
           frames: frameBufs,
           frameRefs: [],
           threshold,
@@ -360,6 +398,7 @@ export async function shotGenerate(deps: HandlerDeps, ctx: JobContext) {
         watermarkId,
         contentCredentials,
         characters,
+        elements,
       });
       ctx.progress(1, 1, `take ${final.report.status}`);
       return { takeId: take.id, status: final.report.status, score: final.report.score };
@@ -403,6 +442,7 @@ async function commitTake(
     watermarkId?: string | null;
     contentCredentials?: ContentCredentialsStamp | null;
     characters: Character[];
+    elements: Element[];
   },
 ): Promise<Take> {
   const take: Take = {
@@ -416,6 +456,7 @@ async function commitTake(
     gatewayTaskIds: t.taskIds,
     consistency: t.report,
     characterLocks: Object.fromEntries(t.characters.map((c) => [c.id, c.lock.version])),
+    elementLocks: Object.fromEntries(t.elements.map((e) => [e.id, e.lock.version])),
     watermarkId: t.watermarkId ?? null,
     contentCredentials: t.contentCredentials ?? null,
     override: null,

@@ -6,6 +6,7 @@ export const VIEW_FOR_KIND: Record<FocusKind, View> = {
   scene: 'story',
   beat: 'story',
   character: 'cast',
+  element: 'elements',
   clip: 'clips',
   shot: 'clips',
   take: 'clips',

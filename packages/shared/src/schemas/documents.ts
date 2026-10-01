@@ -2,6 +2,7 @@ import type { z } from 'zod';
 import { type Analysis, AnalysisSchema } from './analysis';
 import { type Character, CharacterSchema } from './character';
 import { type Clip, ClipSchema } from './clip';
+import { type Element, ElementSchema } from './element';
 import { type Export, ExportSchema } from './job';
 import { type Project, ProjectSchema } from './project';
 import { type Resource, ResourceSchema } from './resource';
@@ -16,6 +17,7 @@ export type DocKind =
   | 'project'
   | 'screenplay'
   | 'character'
+  | 'element'
   | 'clip'
   | 'timeline'
   | 'resource'
@@ -40,6 +42,12 @@ export const DOC_SPECS: DocSpec[] = [
     pattern: new RegExp(`^characters/${ID}\\.json$`),
     schema: CharacterSchema,
     dir: 'characters',
+  },
+  {
+    kind: 'element',
+    pattern: new RegExp(`^elements/${ID}\\.json$`),
+    schema: ElementSchema,
+    dir: 'elements',
   },
   { kind: 'clip', pattern: new RegExp(`^clips/${ID}\\.json$`), schema: ClipSchema, dir: 'clips' },
   {
@@ -76,6 +84,7 @@ export const docPath = {
   screenplay: () => 'screenplay.json',
   timeline: () => 'timeline.json',
   character: (id: string) => `characters/${id}.json`,
+  element: (id: string) => `elements/${id}.json`,
   clip: (id: string) => `clips/${id}.json`,
   resource: (id: string) => `resources/${id}.json`,
   analysis: (id: string) => `analyses/${id}.json`,
@@ -115,6 +124,7 @@ export interface ProjectDocs {
   screenplay: Screenplay | null;
   timeline: Timeline | null;
   characters: Record<string, Character>;
+  elements: Record<string, Element>;
   clips: Record<string, Clip>;
   resources: Record<string, Resource>;
   analyses: Record<string, Analysis>;
@@ -123,6 +133,7 @@ export interface ProjectDocs {
 
 const COLLECTION: Partial<Record<DocKind, keyof ProjectDocs>> = {
   character: 'characters',
+  element: 'elements',
   clip: 'clips',
   resource: 'resources',
   analysis: 'analyses',
@@ -170,6 +181,7 @@ export function docsFromEntries(entries: Iterable<[string, unknown]>): ProjectDo
       screenplay: null,
       timeline: null,
       characters: {},
+      elements: {},
       clips: {},
       resources: {},
       analyses: {},

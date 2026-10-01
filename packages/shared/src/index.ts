@@ -11,6 +11,7 @@ export * from './schemas/clip';
 export * from './schemas/common';
 export * from './schemas/documents';
 export * from './schemas/editor';
+export * from './schemas/element';
 export * from './schemas/gateway';
 export * from './schemas/job';
 export * from './schemas/live';

@@ -7,6 +7,7 @@ const ALPHABET = '0123456789abcdefghjkmnpqrstvwxyz';
 export const ID_PREFIXES = {
   project: 'prj',
   character: 'chr',
+  element: 'ele',
   reference: 'ref',
   wardrobe: 'wdr',
   scene: 'scn',

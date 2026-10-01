@@ -1,5 +1,7 @@
 # Character consistency
 
+Locations, props and styles follow the same rules as characters: see [elements](elements.md).
+
 A 40–60 minute movie is several hundred independent generations. Without enforcement, faces, hair, age and
 wardrobe drift from shot to shot. Rideo treats consistency as an **invariant enforced by the server**, not
 as a prompt-writing tip:

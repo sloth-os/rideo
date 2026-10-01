@@ -10,7 +10,10 @@ import {
   ConsentInputSchema,
   CreateProjectInputSchema,
   clipBlockers,
+  ElementInputSchema,
+  ElementReferenceViewSchema,
   ExportQualitySchema,
+  elementsInUse,
   FocusKindSchema,
   IdentitySchema,
   isTerminalJob,
@@ -78,6 +81,8 @@ export function summarizeState(state: ProjectState) {
             heading: s.heading,
             estDurationSec: s.estDurationSec,
             characterIds: s.characterIds,
+            locationId: s.locationId,
+            elementIds: s.elementIds,
           })),
         }
       : null,
@@ -94,6 +99,15 @@ export function summarizeState(state: ProjectState) {
         source: r.source,
       })),
     })),
+    elements: Object.values(d.elements).map((e) => ({
+      id: e.id,
+      kind: e.kind,
+      name: e.name,
+      locked: e.lock.locked,
+      lockVersion: e.lock.version,
+      inUse: elementsInUse(d).some((x) => x.id === e.id),
+      references: e.references.map((r) => ({ id: r.id, view: r.view, approved: r.approved })),
+    })),
     clips: sortedClips(d).map((c) => ({
       id: c.id,
       index: c.index,
@@ -109,6 +123,7 @@ export function summarizeState(state: ProjectState) {
           status: s.status,
           description: s.description.slice(0, 160),
           characterIds: s.characterIds,
+          elementIds: s.elementIds,
           takes: s.takes.length,
           selectedTake: take
             ? {
@@ -121,7 +136,7 @@ export function summarizeState(state: ProjectState) {
           lastError: s.lastError,
         };
       }),
-      blockers: clipBlockers(c, d.characters).map((b) => b.message),
+      blockers: clipBlockers(c, d.characters, d.elements).map((b) => b.message),
     })),
     timeline: d.timeline
       ? {
@@ -427,6 +442,79 @@ function buildServer(studio: Studio): McpServer {
     { projectId: PROJECT, characterId: z.string() },
     (a, actor) => studio.story.unlockCharacter(actor, a.projectId, a.characterId),
   );
+  // Elements: locations, props, styles (docs/design/elements.md)
+  tool(
+    'element_list',
+    'List locations, props and styles with lock state, references and whether a scene or shot uses them.',
+    { projectId: PROJECT },
+    async (a) => summarizeState(await studio.projects.state(a.projectId)).elements,
+    ro,
+  );
+  tool(
+    'element_create',
+    'Add a location, prop or style element (a recurring place or object kept consistent like a character).',
+    { projectId: PROJECT, ...ElementInputSchema.shape },
+    (a, actor) => studio.elements.create(actor, a.projectId, a),
+  );
+  tool(
+    'element_update',
+    'Edit an element (name and description are frozen while locked; aliases are not).',
+    {
+      projectId: PROJECT,
+      elementId: z.string(),
+      name: z.string().optional(),
+      description: z.string().optional(),
+      aliases: z.array(z.string()).optional(),
+    },
+    (a, actor) => studio.elements.update(actor, a.projectId, a.elementId, a),
+  );
+  tool(
+    'element_delete',
+    'Remove an unlocked element (scenes using it are unlinked).',
+    { projectId: PROJECT, elementId: z.string() },
+    async (a, actor) => {
+      await studio.elements.remove(actor, a.projectId, a.elementId);
+      return { ok: true };
+    },
+    { destructiveHint: true },
+  );
+  tool(
+    'element_generate_refs',
+    'Generate reference images for an element (job): establishing/angle for locations, detail/angle for props.',
+    { projectId: PROJECT, elementId: z.string(), views: z.array(ElementReferenceViewSchema).optional() },
+    (a, actor) => studio.elements.generateReferences(actor, a.projectId, a.elementId, a.views),
+  );
+  tool(
+    'element_add_reference',
+    'Add a reference image of an element from an https or data URI.',
+    {
+      projectId: PROJECT,
+      elementId: z.string(),
+      uri: z.string(),
+      view: ElementReferenceViewSchema.optional(),
+    },
+    (a, actor) =>
+      studio.elements.addReference(actor, a.projectId, a.elementId, { uri: a.uri }, { view: a.view }),
+  );
+  tool(
+    'element_set_reference_approval',
+    'Approve or unapprove an element reference image.',
+    { projectId: PROJECT, elementId: z.string(), referenceId: z.string(), approved: z.boolean() },
+    (a, actor) =>
+      studio.elements.setReferenceApproval(actor, a.projectId, a.elementId, a.referenceId, a.approved),
+  );
+  tool(
+    'element_lock',
+    'Lock an element (needs an approved reference) — required before generating shots that use it (rule E1).',
+    { projectId: PROJECT, elementId: z.string() },
+    (a, actor) => studio.elements.lock(actor, a.projectId, a.elementId),
+  );
+  tool(
+    'element_unlock',
+    'Unlock an element to edit it (relocking with changes marks older takes stale).',
+    { projectId: PROJECT, elementId: z.string() },
+    (a, actor) => studio.elements.unlock(actor, a.projectId, a.elementId),
+  );
   tool(
     'resource_add',
     'Add an image, video or audio resource from an https or data URI. Audio and video are probed by an open studio tab of the project (editor job).',
@@ -487,6 +575,7 @@ function buildServer(studio: Studio): McpServer {
       action: z.string().optional(),
       camera: CameraSchema.partial().optional(),
       characterIds: z.array(z.string()).optional(),
+      elementIds: z.array(z.string()).optional().describe('The location and the props/styles in the shot'),
       durationSec: z.number().positive().max(60).optional(),
       continuity: z.enum(['cut', 'continuous']).optional(),
       promptOverride: z.string().nullable().optional(),

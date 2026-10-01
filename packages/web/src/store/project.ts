@@ -3,6 +3,7 @@ import {
   applyDocChanges,
   applyOps,
   type CommitSummary,
+  type Element,
   emptyTimeline,
   evaluateWorkflow,
   type FocusKind,
@@ -231,3 +232,6 @@ export const useProject = create<ProjectStore>((set, get) => ({
     set({ ...emptySlice, loading: false, error: null, highlight: null, playerCommand: null });
   },
 }));
+
+/** A stable empty element map for selectors (a fresh `{}` would re-render forever). */
+export const NO_ELEMENTS: Readonly<Record<string, Element>> = Object.freeze({});

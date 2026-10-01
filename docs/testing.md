@@ -33,7 +33,9 @@ RIDEO_TEST_WEBDAV_URL=http://rideo:rideo@localhost:8080/ npx vitest run --projec
   the empty ebur128 summary, rule suggestions, chunk planning: frame alignment, transitions kept whole,
   long items split, text/audio shifted into chunk time; per-chunk filtergraphs and the soundtrack graph);
   provenance (consent validation, real-person characters, the disclosure rule for every `label` × real-person
-  case, `withDisclosure` over and beyond an hour, the corner `label` drawtext).
+  case, `withDisclosure` over and beyond an hour, the corner `label` drawtext); elements (library merging by
+  name and alias, scene and shot linking, element prompt sentences, the element share of the image budget and
+  the element sheet, reference-sheet requests, E6 staleness, the `elements.*` requirements).
 - **server**: repository commit, log, diff, restore, branches, tags, coalescing and GC on `MemoryBackend`;
   job queue (lanes, priorities, dedupe, retry classification, cancel propagation, restart recovery; the
   `client` lane: claim order, leases, heartbeats, expiry and session release, cancel, staged files);
@@ -73,7 +75,10 @@ RIDEO_TEST_WEBDAV_URL=http://rideo:rideo@localhost:8080/ npx vitest run --projec
 - **Story workflow** (`story.test.ts`): REST from brief to export on the mock gateway, including a
   consistency failure and retry (`MOCK_FLAKY_EVERY`), R1 rejection, approval gates, batch to a 60 s target,
   timeline assembly, an export rendered by the reference editor worker, watermark detection of the export,
-  and C2PA Content Credentials on every take and on the export (every take and the music as ingredients).
+  and C2PA Content Credentials on every take and on the export (every take and the music as ingredients);
+  elements: the screenplay's locations and props become draft elements linked from scenes and planned shots,
+  E1 (`element_not_locked`) and E2 (`element_locked`), element lock versions on takes, E6 staleness after a
+  relock with changes, E4 judging with `judgeElements`, and the batch stopping for a new prop until it is locked.
 - **Footage workflow** (`footage.test.ts`): upload with a browser-style probe, an inbox/URL import processed
   by the worker, analysis signals from the worker then AI and rule suggestions, review, auto edit, export.
 - **MCP** (`mcp.test.ts`): the official MCP client over Streamable HTTP. Lists tools, runs a production
@@ -87,14 +92,15 @@ RIDEO_TEST_WEBDAV_URL=http://rideo:rideo@localhost:8080/ npx vitest run --projec
 ### End-to-end (Playwright)
 
 Projects: `desktop` (1440×900) runs every spec except `responsive`; `mobile` (412×915, touch) runs
-`responsive`, `mcp-sync` and `provenance`. Specs:
+`responsive`, `mcp-sync`, `provenance` and `elements`. Specs:
 
 | Spec | Flow |
 |---|---|
-| `story.spec.ts` | brief → screenplay → cast (generate, approve, lock) → pilot → approve → batch (30 s target) → approve → editor (assemble, split, inspector trim, edge-drag trim; the preview plays local proxies because H.264 is hidden from WebCodecs) → export rendered in the tab (`auto` → ffmpeg.wasm) → verify watermark |
+| `story.spec.ts` | brief → screenplay → cast (generate, approve, lock; then the locations and props in the Elements view) → pilot → approve → batch (30 s target) → approve → editor (assemble, split, inspector trim, edge-drag trim; the preview plays local proxies because H.264 is hidden from WebCodecs) → export rendered in the tab (`auto` → ffmpeg.wasm) → verify watermark |
 | `mcp-sync.spec.ts` | page open; the test drives MCP tools as “Claude Code” (create character, add reference, lock, `ui_navigate`, `ui_focus`, `ui_notify`) and asserts the page updates live, attributed to the agent, without a reload; an agent's `export_render` is claimed and rendered by the open tab (`auto` → WebCodecs) and watermarked by the server |
 | `footage.spec.ts` | upload (probe + poster in the browser) → analysis signals in the browser → AI suggestions → accept → auto edit → exports with the ffmpeg.wasm and WebCodecs engines → both listed and verified |
 | `history.spec.ts` | edit → history → diff → restore → UI updates |
+| `elements.spec.ts` | (desktop and mobile) the screenplay's location in the Elements view → generate, approve, lock; add a prop and link it to a scene in the Story view |
 | `provenance.spec.ts` | (desktop and mobile) uploading a likeness opens the consent dialog; a real person needs subject, grantor and date and marks the character; the disclosure setting labels the export; the export card and the public Verify page show the Content Credentials |
 | `responsive.spec.ts` | every main view on mobile: no horizontal overflow, navigation reachable, primary actions visible |
 

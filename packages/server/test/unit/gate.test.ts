@@ -4,10 +4,10 @@ import { verifyFrames } from '../../src/consistency/gate';
 import { type ConsistencyJudge, OffJudge } from '../../src/consistency/judge';
 import { Metrics } from '../../src/metrics';
 
-const judgeWith = (score: number): ConsistencyJudge => ({
+const judgeWith = (score: number, elementScore = score): ConsistencyJudge => ({
   id: 'fake',
-  judge: async (req) =>
-    req.frames.map(() =>
+  judge: async (req) => ({
+    characters: req.frames.map(() =>
       req.characters.map((c) => ({
         characterId: c.id,
         present: true,
@@ -15,6 +15,10 @@ const judgeWith = (score: number): ConsistencyJudge => ({
         outfitScore: score,
       })),
     ),
+    elements: req.frames.map(() =>
+      (req.elements ?? []).map((e) => ({ elementId: e.id, present: elementScore > 0, score: elementScore })),
+    ),
+  }),
 });
 
 describe('verifyFrames', () => {
@@ -44,5 +48,30 @@ describe('verifyFrames', () => {
     expect(off.note).toContain('judge unavailable');
     const empty = await verifyFrames({ ...base, characters: [], judge: new OffJudge() });
     expect(empty.status).toBe('passed');
+  });
+
+  it('judges locations and props when asked (rule E4)', async () => {
+    const lamp = f.element({ kind: 'location', name: 'Lamp room' });
+    const withElements = {
+      ...base,
+      elements: [lamp],
+      elementReferences: new Map([[lamp.id, [Buffer.from('e')]]]),
+    };
+    const ok = await verifyFrames({ ...withElements, judge: judgeWith(0.9, 0.85) });
+    expect(ok).toMatchObject({ status: 'passed', score: 0.85 });
+    expect(ok.elements).toEqual([{ elementId: lamp.id, present: true, score: 0.85, issues: [] }]);
+    const drifted = await verifyFrames({ ...withElements, judge: judgeWith(0.9, 0.3) });
+    expect(drifted).toMatchObject({ status: 'failed', score: 0.3 });
+    const missing = await verifyFrames({ ...withElements, judge: judgeWith(0.9, 0) });
+    expect(missing.elements[0]).toMatchObject({
+      present: false,
+      issues: ['element not visible in any sampled frame'],
+    });
+    // a shot without characters is still judged for its location
+    const locationOnly = await verifyFrames({ ...withElements, characters: [], judge: judgeWith(0, 0.9) });
+    expect(locationOnly.status).toBe('passed');
+    expect((await verifyFrames({ ...withElements, characters: [], judge: new OffJudge() })).status).toBe(
+      'unverified',
+    );
   });
 });

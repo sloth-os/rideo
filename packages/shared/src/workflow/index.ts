@@ -2,6 +2,7 @@ import { clipBlockers, isAcceptable, takeState } from '../consistency';
 import { approvedReferences } from '../schemas/character';
 import { clipPlannedDuration } from '../schemas/clip';
 import { type ProjectDocs, sortedClips } from '../schemas/documents';
+import { approvedElementReferences, type Element } from '../schemas/element';
 import type { ProjectKind } from '../schemas/project';
 import { outlineDuration } from '../schemas/screenplay';
 import type { VideoItem } from '../schemas/timeline';
@@ -36,6 +37,9 @@ export type RequirementId =
   | 'characters.nonEmpty'
   | 'characters.allLocked'
   | 'characters.allHaveApprovedRefs'
+  | 'elements.inUseLocked'
+  | 'elements.inUseHaveApprovedRefs'
+  | 'elements.allLocked'
   | 'clips.pilotApproved'
   | 'clips.allApproved'
   | 'duration.targetReached'
@@ -48,6 +52,7 @@ export type RequirementId =
 export type AutoActionId =
   | 'screenplay.generate'
   | 'characters.generateRefs'
+  | 'elements.generateRefs'
   | 'clip.pilot'
   | 'batch.generate'
   | 'timeline.assemble'
@@ -90,15 +95,20 @@ export const STORY_WORKFLOW: WorkflowDefinition = {
     },
     {
       id: 'cast',
-      title: 'Cast',
-      description: 'Generate or upload references and lock every character.',
+      title: 'Cast & elements',
+      description: 'Generate or upload references and lock every character, location and prop in use.',
       gate: {
         id: 'cast_locked',
         title: 'Lock cast',
-        requirements: ['characters.allLocked', 'characters.allHaveApprovedRefs'],
+        requirements: [
+          'characters.allLocked',
+          'characters.allHaveApprovedRefs',
+          'elements.inUseLocked',
+          'elements.inUseHaveApprovedRefs',
+        ],
         tag: 'cast-locked',
       },
-      autoOnEnter: ['characters.generateRefs'],
+      autoOnEnter: ['characters.generateRefs', 'elements.generateRefs'],
     },
     {
       id: 'resources',
@@ -113,7 +123,7 @@ export const STORY_WORKFLOW: WorkflowDefinition = {
       gate: {
         id: 'pilot_approved',
         title: 'Approve pilot',
-        requirements: ['clips.pilotApproved'],
+        requirements: ['clips.pilotApproved', 'elements.allLocked'],
         tag: 'pilot-approved',
       },
       autoOnEnter: ['clip.pilot'],
@@ -215,6 +225,21 @@ export function approvedDuration(docs: Pick<ProjectDocs, 'clips'>): number {
     .reduce((s, c) => s + clipPlannedDuration(c), 0);
 }
 
+/**
+ * Elements a written scene (`locationId`, `elementIds`) or a planned shot (`elementIds`) uses
+ * (docs/design/elements.md#workflow); unused elements never block a gate.
+ */
+export function elementsInUse(docs: Pick<ProjectDocs, 'screenplay' | 'clips' | 'elements'>): Element[] {
+  const ids = new Set<string>();
+  for (const s of docs.screenplay?.scenes ?? []) {
+    if (s.locationId) ids.add(s.locationId);
+    for (const id of s.elementIds ?? []) ids.add(id);
+  }
+  for (const c of Object.values(docs.clips))
+    for (const shot of c.shots) for (const id of shot.elementIds ?? []) ids.add(id);
+  return [...ids].map((id) => docs.elements[id]).filter((e): e is Element => !!e);
+}
+
 type Check = (docs: ProjectDocs) => Omit<RequirementResult, 'id'>;
 
 const CHECKS: Record<RequirementId, Check> = {
@@ -254,6 +279,36 @@ const CHECKS: Record<RequirementId, Check> = {
         ? `${missing.length} character(s) without an approved reference`
         : 'Add references',
       details: missing.map((c) => c.name),
+    };
+  },
+  'elements.inUseLocked': (d) => {
+    const unlocked = elementsInUse(d).filter((e) => !e.lock.locked);
+    return {
+      ok: unlocked.length === 0,
+      message: unlocked.length
+        ? `${unlocked.length} location(s) or prop(s) not locked`
+        : 'Every location and prop in use is locked',
+      details: unlocked.map((e) => e.name),
+    };
+  },
+  'elements.inUseHaveApprovedRefs': (d) => {
+    const missing = elementsInUse(d).filter((e) => approvedElementReferences(e).length === 0);
+    return {
+      ok: missing.length === 0,
+      message: missing.length
+        ? `${missing.length} location(s) or prop(s) without an approved reference`
+        : 'Every location and prop in use has a reference',
+      details: missing.map((e) => e.name),
+    };
+  },
+  'elements.allLocked': (d) => {
+    const unlocked = Object.values(d.elements).filter((e) => !e.lock.locked);
+    return {
+      ok: unlocked.length === 0,
+      message: unlocked.length
+        ? `${unlocked.length} location(s) or prop(s) to lock before production`
+        : 'Every location and prop is locked',
+      details: unlocked.map((e) => e.name),
     };
   },
   'clips.pilotApproved': (d) => {
@@ -303,7 +358,7 @@ const CHECKS: Record<RequirementId, Check> = {
         problems.push(`${item.label ?? item.id}: referenced take no longer exists`);
         continue;
       }
-      const state = takeState(take, shot, d.characters);
+      const state = takeState(take, shot, d.characters, d.elements);
       if (!isAcceptable(state)) problems.push(`${item.label ?? item.id}: take is ${state}`);
     }
     return {
@@ -408,5 +463,5 @@ export function stageOfGate(kind: ProjectKind, gate: string): { stage: StageDef;
 
 export function blockersForClip(docs: ProjectDocs, clipId: string) {
   const clip = docs.clips[clipId];
-  return clip ? clipBlockers(clip, docs.characters) : [];
+  return clip ? clipBlockers(clip, docs.characters, docs.elements) : [];
 }

@@ -1,10 +1,12 @@
 import {
   type Actor,
+  approvedElementReferences,
   approvedReferences,
   type Character,
   type Clip,
   clipBlockers,
   docPath,
+  type Element,
   isAcceptable,
   type Job,
   type Project,
@@ -18,10 +20,14 @@ import { AppError, invalid, notFound } from '../errors';
 import type { Tx } from '../vcs/repo';
 import { Service } from './base';
 
-/** R1 precondition: every character in the shots is locked with an approved reference. */
+/**
+ * R1 and E1 preconditions: every character, location and prop in the shots is locked with an approved
+ * reference (docs/design/character-consistency.md, docs/design/elements.md).
+ */
 export function assertCastReady(
-  shots: Pick<Shot, 'characterIds'>[],
+  shots: (Pick<Shot, 'characterIds'> & Partial<Pick<Shot, 'elementIds'>>)[],
   characters: Record<string, Character>,
+  elements: Record<string, Element> = {},
 ): void {
   const problems = new Set<string>();
   for (const s of shots) {
@@ -37,6 +43,23 @@ export function assertCastReady(
       'character_not_locked',
       `Lock the cast before generating: ${[...problems].join('; ')} (rule R1)`,
       [...problems],
+    );
+  }
+  const elementProblems = new Set<string>();
+  for (const s of shots) {
+    for (const id of s.elementIds ?? []) {
+      const e = elements[id];
+      if (!e) elementProblems.add(`unknown element ${id}`);
+      else if (!e.lock.locked) elementProblems.add(`${e.name} is not locked`);
+      else if (approvedElementReferences(e).length === 0)
+        elementProblems.add(`${e.name} has no approved reference`);
+    }
+  }
+  if (elementProblems.size) {
+    throw new AppError(
+      'element_not_locked',
+      `Lock the locations and props before generating: ${[...elementProblems].join('; ')} (rule E1)`,
+      [...elementProblems],
     );
   }
 }
@@ -88,7 +111,7 @@ export class ClipService extends Service {
     const clip = docs.clips[clipId];
     if (!clip) throw notFound(`clip ${clipId}`);
     if (!clip.shots.length) throw invalid('the clip has no shots; plan it first');
-    assertCastReady(clip.shots, docs.characters);
+    assertCastReady(clip.shots, docs.characters, docs.elements);
     return this.deps.jobs.enqueue({
       projectId,
       kind: 'clip.generate',
@@ -115,6 +138,8 @@ export class ClipService extends Service {
         const shot = this.requireShot(clip, shotId);
         for (const id of input.characterIds ?? [])
           if (!tx.get(docPath.character(id))) throw notFound(`character ${id}`);
+        for (const id of input.elementIds ?? [])
+          if (!tx.get(docPath.element(id))) throw notFound(`element ${id}`);
         Object.assign(
           shot,
           Object.fromEntries(Object.entries(input).filter(([k, v]) => v !== undefined && k !== 'camera')),
@@ -134,7 +159,7 @@ export class ClipService extends Service {
     const clip = docs.clips[clipId];
     if (!clip) throw notFound(`clip ${clipId}`);
     const shot = this.requireShot(clip, shotId);
-    assertCastReady([shot], docs.characters);
+    assertCastReady([shot], docs.characters, docs.elements);
     return this.deps.jobs.enqueue({
       projectId,
       kind: 'shot.generate',
@@ -162,8 +187,9 @@ export class ClipService extends Service {
         const take = shot.takes.find((t) => t.id === takeId);
         if (!take) throw notFound(`take ${takeId}`);
         const characters = Object.fromEntries(tx.list<Character>('characters/').map((c) => [c.id, c]));
+        const elements = Object.fromEntries(tx.list<Element>('elements/').map((e) => [e.id, e]));
         shot.selectedTakeId = takeId;
-        shot.status = isAcceptable(takeState(take, shot, characters)) ? 'ready' : 'needs_review';
+        shot.status = isAcceptable(takeState(take, shot, characters, elements)) ? 'ready' : 'needs_review';
         if (clip.status === 'approved') {
           clip.status = 'review';
           clip.approvedAt = null;
@@ -197,10 +223,11 @@ export class ClipService extends Service {
         const take = shot.takes.find((t) => t.id === takeId);
         if (!take) throw notFound(`take ${takeId}`);
         const characters = Object.fromEntries(tx.list<Character>('characters/').map((c) => [c.id, c]));
-        if (takeState({ ...take, override: null }, shot, characters) === 'stale') {
+        const elements = Object.fromEntries(tx.list<Element>('elements/').map((e) => [e.id, e]));
+        if (takeState({ ...take, override: null }, shot, characters, elements) === 'stale') {
           throw new AppError(
             'consistency_gate',
-            'Stale takes were generated from an older character lock; regenerate instead of overriding',
+            'Stale takes were generated from an older character or element lock; regenerate instead of overriding',
           );
         }
         take.override = { actor, reason: reason.trim(), at: new Date().toISOString() };
@@ -228,7 +255,8 @@ export class ClipService extends Service {
         this.assertAgentMay(tx.require<Project>('project.json', 'project'), actor, 'approve');
         const clip = structuredClone(this.requireClip(tx, clipId));
         const characters = Object.fromEntries(tx.list<Character>('characters/').map((c) => [c.id, c]));
-        const blockers = clipBlockers(clip, characters);
+        const elements = Object.fromEntries(tx.list<Element>('elements/').map((e) => [e.id, e]));
+        const blockers = clipBlockers(clip, characters, elements);
         if (blockers.length) {
           throw new AppError(
             'consistency_gate',

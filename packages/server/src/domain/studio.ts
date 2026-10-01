@@ -1,7 +1,7 @@
 import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { Actor, AutoActionId, ProjectDocs } from '@rideo/shared';
-import { sortedClips } from '@rideo/shared';
+import { elementsInUse, sortedClips } from '@rideo/shared';
 import { createAdapter, SttClient } from '../ai/llm';
 import { LlmTasks } from '../ai/tasks';
 import type { Config } from '../config';
@@ -16,6 +16,7 @@ import { shotGenerate } from '../jobs/handlers/shot';
 import {
   characterDescribe,
   characterRefs,
+  elementRefs,
   musicGenerate,
   screenplayExtend,
   screenplayGenerate,
@@ -35,6 +36,7 @@ import { ClipService } from './clips';
 import type { Deps, Logger } from './deps';
 import { EditService } from './edit';
 import { EditorService } from './editor';
+import { ElementService } from './elements';
 import { HistoryService } from './history';
 import { ProjectService } from './projects';
 import { ProjectRegistry } from './registry';
@@ -48,6 +50,7 @@ export interface Studio {
   projects: ProjectService;
   workflow: WorkflowService;
   story: StoryService;
+  elements: ElementService;
   clips: ClipService;
   edit: EditService;
   editor: EditorService;
@@ -159,10 +162,11 @@ export function createStudio(
     projects: new ProjectService(deps),
     workflow: new WorkflowService(deps),
     story: new StoryService(deps),
+    elements: new ElementService(deps),
     clips: new ClipService(deps),
     edit: new EditService(deps),
     editor: new EditorService(deps),
-  };
+  } satisfies Record<string, unknown>;
   // Editor jobs: failures and cancellations are recorded on their documents; a closed tab releases its jobs.
   jobs.onEditorJobEnded = (job) => services.editor.ended(job);
   hub.onSessionClosed((sessionId) => void jobs.releaseSession(sessionId));
@@ -175,6 +179,7 @@ export function createStudio(
   reg('screenplay.extend', screenplayExtend);
   reg('character.refs', characterRefs);
   reg('character.describe', characterDescribe);
+  reg('element.refs', elementRefs);
   reg('music.generate', musicGenerate);
   reg('clip.plan', clipPlan);
   reg('clip.generate', clipGenerate);
@@ -196,6 +201,12 @@ export function createStudio(
           for (const c of Object.values(docs.characters)) {
             if (!c.lock.locked && c.references.length === 0)
               await services.story.generateReferences(actor, projectId, c.id);
+          }
+          return;
+        case 'elements.generateRefs':
+          for (const e of elementsInUse(docs)) {
+            if (!e.lock.locked && e.references.length === 0)
+              await services.elements.generateReferences(actor, projectId, e.id);
           }
           return;
         case 'clip.pilot': {

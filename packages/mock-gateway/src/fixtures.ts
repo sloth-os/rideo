@@ -118,6 +118,22 @@ const STOP = new Set([
   'that',
 ]);
 
+const PLACES = ['LIGHTHOUSE LAMP ROOM', 'HARBOUR ROAD', 'POST OFFICE', 'ROCKY SHORE', 'KEEPER COTTAGE'];
+const PLACE_LOOKS: Record<string, string> = {
+  'lighthouse lamp room':
+    'circular brass-framed lantern room, salt-crusted windows, a huge Fresnel lens at the centre',
+  'harbour road': 'wet cobbled road along a stone harbour wall, iron bollards, gas lamps',
+  'post office': 'cramped wooden post office counter, pigeonholes full of letters, green banker lamp',
+  'rocky shore': 'black basalt rocks, white surf, the lighthouse on the headland behind',
+  'keeper cottage': 'low whitewashed stone cottage, peat stove, oilskins on hooks',
+};
+const PROPS = ['brass key', 'storm lantern', 'sealed letter'];
+const PROP_LOOKS: Record<string, string> = {
+  'brass key': 'long antique brass key with a lighthouse-shaped bow',
+  'storm lantern': 'battered red hurricane lantern with a cracked glass chimney',
+  'sealed letter': 'cream envelope sealed with dark green wax and a tide-mark stain',
+};
+
 function sceneFor(
   index: number,
   beat: { title: string; summary: string; estDurationSec: number },
@@ -125,9 +141,7 @@ function sceneFor(
 ): LlmScene {
   const a = names[index % names.length]!;
   const b = names[(index + 1) % names.length]!;
-  const place = ['LIGHTHOUSE LAMP ROOM', 'HARBOUR ROAD', 'POST OFFICE', 'ROCKY SHORE', 'KEEPER COTTAGE'][
-    index % 5
-  ]!;
+  const place = PLACES[index % 5]!;
   const time = index % 2 === 0 ? 'NIGHT' : 'DAY';
   return {
     beatIndex: index,
@@ -144,8 +158,22 @@ function sceneFor(
       },
     ],
     characters: [a, b],
+    props: [PROPS[index % PROPS.length]!],
     estDurationSec: beat.estDurationSec,
   };
+}
+
+/** The locations and props of `scenes` with their looks (docs/design/elements.md). */
+function elementsOf(scenes: LlmScene[]) {
+  const locations = [...new Set(scenes.map((s) => s.location))].map((name) => ({
+    name,
+    description: PLACE_LOOKS[name] ?? name,
+  }));
+  const props = [...new Set(scenes.flatMap((s) => s.props))].map((name) => ({
+    name,
+    description: PROP_LOOKS[name] ?? name,
+  }));
+  return { locations, props };
 }
 
 export function screenplayGenerate(input: ScreenplayGenerateInput): ScreenplayGenerateOutput {
@@ -187,6 +215,8 @@ export function screenplayGenerate(input: ScreenplayGenerateInput): ScreenplayGe
       lighting: 'low-key with warm practicals',
     },
     characters: cast.map((c) => ({ ...c, name: c.name.split(' ')[0]! })),
+    // The element library covers the whole outline, not only the written scenes.
+    ...elementsOf(outline.map((b, i) => sceneFor(i, b, names))),
     outline,
     scenes,
     ended: true,
@@ -195,7 +225,17 @@ export function screenplayGenerate(input: ScreenplayGenerateInput): ScreenplayGe
 
 export function screenplayExtend(input: ScreenplayExtendInput): ScreenplayExtendOutput {
   const names = input.characters.map((c) => c.name);
-  return { scenes: input.beats.map((b) => sceneFor(b.index, b, names.length ? names : ['Someone'])) };
+  const scenes = input.beats.map((b) => sceneFor(b.index, b, names.length ? names : ['Someone']));
+  // Only introduce the places and props the story does not know yet.
+  const known = new Set(
+    [...(input.locations ?? []), ...(input.props ?? [])].map((e) => e.name.toLowerCase()),
+  );
+  const fresh = elementsOf(scenes);
+  return {
+    scenes,
+    locations: fresh.locations.filter((e) => !known.has(e.name.toLowerCase())),
+    props: fresh.props.filter((e) => !known.has(e.name.toLowerCase())),
+  };
 }
 
 export function clipPlan(input: ClipPlanInput): ClipPlanOutput {
@@ -219,6 +259,8 @@ export function clipPlan(input: ClipPlanInput): ClipPlanOutput {
       durationSec: each,
       continuity: i > 0 && i % 2 === 1 ? ('continuous' as const) : ('cut' as const),
       dialogue: input.scene.dialogue[i] ? [input.scene.dialogue[i]!] : [],
+      // The establishing shot shows the scene's props; later shots the first one.
+      props: (input.scene.props ?? []).slice(0, i === 0 ? undefined : 1).map((p) => p.name),
     })),
   };
 }
@@ -253,7 +295,7 @@ export interface LabelledImages {
 /** The judge: signature colours of each character's references must be visible in each frame. */
 export function consistencyJudge(input: JudgeInput, images: LabelledImages): JudgeOutput {
   const sigs = new Map<string, Rgb[]>();
-  for (const c of input.characters) {
+  for (const c of [...input.characters, ...(input.elements ?? [])]) {
     const colours: Rgb[] = [];
     for (const buf of images.references.get(c.id) ?? []) {
       if (!isPng(buf)) continue;
@@ -281,9 +323,21 @@ export function consistencyJudge(input: JudgeInput, images: LabelledImages): Jud
             issues: present ? [] : [`${c.name} does not match the reference (identity drift)`],
           };
         }),
+        elements: (input.elements ?? []).map((e) => {
+          const colours = sigs.get(e.id) ?? [];
+          const ratio =
+            img && colours.length ? Math.max(...colours.map((s) => presenceRatio(img, s, 55))) : 0;
+          const present = ratio > 0.002;
+          return {
+            elementId: e.id,
+            present,
+            score: present ? 0.9 : 0.1,
+            issues: present ? [] : [`${e.name} does not match its reference`],
+          };
+        }),
       };
     });
-  return { frames: frames.length ? frames : [{ index: 0, characters: [] }] };
+  return { frames: frames.length ? frames : [{ index: 0, characters: [], elements: [] }] };
 }
 
 export function footageAnalyze(input: FootageAnalyzeInput): FootageAnalyzeOutput {

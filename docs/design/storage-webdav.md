@@ -58,7 +58,8 @@ All paths are under `RIDEO_WEBDAV_ROOT` (default `/rideo`).
 ├── projects/<projectId>/
 │   ├── project.json              ┐
 │   ├── screenplay.json           │  work tree: pretty-printed copies of the HEAD documents
-│   ├── characters/<id>.json      │  (human-readable; editable, see "External edits")
+│   ├── characters/<id>.json      │
+│   ├── elements/<id>.json        │  locations, props, styles  (human-readable; editable, see "External edits")
 │   ├── clips/<id>.json           │
 │   ├── timeline.json             │
 │   ├── resources/<id>.json       │
@@ -67,6 +68,7 @@ All paths are under `RIDEO_WEBDAV_ROOT` (default `/rideo`).
 │   ├── screenplay.md             derived rendering, regenerated on every screenplay change (read-only)
 │   ├── media/                    immutable, content-addressed media
 │   │   ├── refs/<character>-<view>-<hash12>.png
+│   │   ├── refs/element-<name>-<view>-<hash12>.png
 │   │   ├── keyframes/c<clip>-s<shot>-<hash12>.png
 │   │   ├── takes/c<clip>-s<shot>-<hash12>.mp4        watermarked originals
 │   │   ├── posters/<hash12>.jpg                       posters (generated takes: server; uploads: browser)

@@ -55,6 +55,29 @@ test('idea → screenplay → locked cast → pilot → production → edit → 
     await expect(lock).toHaveCount(left - 1);
   }
   await expect(page.getByTestId('unlock-character')).toHaveCount(cast);
+  // The cast gate also waits for the locations and props in use (docs/design/elements.md)
+  await expect(approveCast).toBeDisabled();
+  await expect(page.getByTestId('cast-unmet')).toContainText('not locked');
+  await page.getByTestId('go-elements').first().click();
+  await expect(page).toHaveURL(/\/elements$/);
+  const generateEls = page.getByTestId('generate-element-refs');
+  const elementCount = await generateEls.count();
+  expect(elementCount).toBeGreaterThan(1);
+  for (let i = 0; i < elementCount; i++) await generateEls.nth(i).click();
+  await api.waitIdle(pid);
+  await expect(page.getByTestId('element-reference').first()).toBeVisible();
+  const approveEls = page.getByTestId('approve-all-element-references');
+  for (let left = await approveEls.count(); left > 0; left--) {
+    await approveEls.first().click();
+    await expect(approveEls).toHaveCount(left - 1);
+  }
+  const lockEls = page.getByTestId('lock-element');
+  for (let left = await lockEls.count(); left > 0; left--) {
+    await lockEls.first().click();
+    await expect(lockEls).toHaveCount(left - 1);
+  }
+  await expect(page.getByTestId('unlock-element')).toHaveCount(elementCount);
+  await page.getByTestId('nav-cast').click();
   await expect(approveCast).toBeEnabled();
   await approveCast.click();
 

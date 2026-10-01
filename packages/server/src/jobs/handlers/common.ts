@@ -3,6 +3,7 @@ import type { GatewayTask, MediaRef, ProjectDocs } from '@rideo/shared';
 import type { ClipService } from '../../domain/clips';
 import type { Deps } from '../../domain/deps';
 import type { EditService } from '../../domain/edit';
+import type { ElementService } from '../../domain/elements';
 import type { ProjectService } from '../../domain/projects';
 import type { StoryService } from '../../domain/story';
 import type { WorkflowService } from '../../domain/workflow';
@@ -16,6 +17,7 @@ export interface HandlerDeps extends Deps {
     projects: ProjectService;
     workflow: WorkflowService;
     story: StoryService;
+    elements: ElementService;
     clips: ClipService;
     edit: EditService;
   };

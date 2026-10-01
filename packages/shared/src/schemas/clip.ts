@@ -13,6 +13,14 @@ export const CharacterVerdictSchema = z.object({
 });
 export type CharacterVerdict = z.infer<typeof CharacterVerdictSchema>;
 
+export const ElementVerdictSchema = z.object({
+  elementId: IdSchema,
+  present: z.boolean(),
+  score: z.number().min(0).max(1),
+  issues: z.array(z.string().max(500)).default([]),
+});
+export type ElementVerdict = z.infer<typeof ElementVerdictSchema>;
+
 export const ConsistencyReportSchema = z.object({
   status: ConsistencyStatusSchema,
   judge: z.string(),
@@ -21,6 +29,8 @@ export const ConsistencyReportSchema = z.object({
   attempts: z.number().int().nonnegative(),
   checkedAt: IsoDateSchema,
   characters: z.array(CharacterVerdictSchema).default([]),
+  /** Locations and props, when the project judges elements (rule E4, docs/design/elements.md). */
+  elements: z.array(ElementVerdictSchema).default([]),
   frames: z.array(MediaRefSchema).default([]),
   note: z.string().max(1000).optional(),
 });
@@ -76,6 +86,8 @@ export const TakeSchema = z.object({
   gatewayTaskIds: z.array(z.string()).default([]),
   consistency: ConsistencyReportSchema,
   characterLocks: z.record(z.string(), z.number().int().nonnegative()).default({}),
+  /** Lock versions of the shot's elements at generation time (rule E6). */
+  elementLocks: z.record(z.string(), z.number().int().nonnegative()).default({}),
   watermarkId: z.string().nullable().default(null),
   /** C2PA manifest embedded in the take's video (docs/design/provenance.md#takes). */
   contentCredentials: ContentCredentialsStampSchema.nullable().default(null),
@@ -105,6 +117,8 @@ export const ShotSchema = z.object({
   action: z.string().max(4000).default(''),
   camera: CameraSchema.default({ framing: 'medium', movement: 'static' }),
   characterIds: z.array(IdSchema).default([]),
+  /** The location and the props/styles in the shot (docs/design/elements.md). */
+  elementIds: z.array(IdSchema).default([]),
   wardrobe: z.record(z.string(), IdSchema).default({}),
   dialogue: z.array(z.object({ characterId: IdSchema.nullable(), line: z.string().max(2000) })).default([]),
   durationSec: z.number().positive().max(60),

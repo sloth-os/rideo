@@ -1,11 +1,19 @@
 import { newId } from '../ids';
-import { characterSeed } from '../prompt';
+import { characterSeed, elementSeed } from '../prompt';
 import type { EditSuggestion } from '../schemas/analysis';
 import { SuggestionParamsSchema } from '../schemas/analysis';
 import type { Character, Identity } from '../schemas/character';
 import type { Shot } from '../schemas/clip';
 import type { TimeRange } from '../schemas/common';
-import type { LlmCharacter, LlmIdentity, LlmScene, LlmShot, ScreenplayGenerateOutput } from '../schemas/llm';
+import { type Element, type ElementKind, elementIndex } from '../schemas/element';
+import type {
+  LlmCharacter,
+  LlmElement,
+  LlmIdentity,
+  LlmScene,
+  LlmShot,
+  ScreenplayGenerateOutput,
+} from '../schemas/llm';
 import type { OutlineBeat, Scene, Screenplay } from '../schemas/screenplay';
 
 /** Case-insensitive name → character, also matching first names ("Mira" ↔ "Mira Vale"). */
@@ -89,13 +97,63 @@ export function mergeCharacters(llm: LlmCharacter[], existing: Character[]): Cha
   return out;
 }
 
+/** A draft (unlocked) element for a name the writer introduced (docs/design/elements.md). */
+function newElement(kind: ElementKind, name: string, description: string): Element {
+  const id = newId('element');
+  return {
+    id,
+    kind,
+    name: name.trim().slice(0, 120),
+    description: description.trim().slice(0, 2000),
+    aliases: [],
+    references: [],
+    seed: elementSeed(id),
+    lock: { locked: false, version: 0 },
+  };
+}
+
+/**
+ * Merges the writer's locations and props, plus every location and prop a scene names, into the element
+ * library: existing elements (by name or alias) are kept (a missing description is filled while unlocked),
+ * new names become draft elements. Returns every element, existing ones first.
+ */
+export function mergeElements(
+  introduced: { locations: LlmElement[]; props: LlmElement[] },
+  scenes: Pick<LlmScene, 'location' | 'props'>[],
+  existing: Element[],
+): Element[] {
+  const out = existing.map((e) => ({ ...e }));
+  const add = (kind: ElementKind, name: string, description = '') => {
+    if (!name.trim()) return;
+    const id = elementIndex(out)(kind, name);
+    const current = id ? out.find((e) => e.id === id) : undefined;
+    if (current) {
+      if (!current.lock.locked && !current.description && description.trim())
+        current.description = description.trim().slice(0, 2000);
+      return;
+    }
+    out.push(newElement(kind, name, description));
+  };
+  for (const l of introduced.locations) add('location', l.name, l.description);
+  for (const p of introduced.props) add('prop', p.name, p.description);
+  for (const s of scenes) {
+    add('location', s.location);
+    for (const p of s.props) add('prop', p);
+  }
+  return out;
+}
+
 export function sceneFromLlm(
   s: LlmScene,
   index: number,
   beatId: string | null,
   resolve: (name: string) => string | null,
+  resolveElement: (kind: ElementKind, name: string) => string | null = () => null,
 ): Scene {
   const characterIds = [...new Set(s.characters.map(resolve).filter((x): x is string => !!x))];
+  const elementIds = [
+    ...new Set(s.props.map((p) => resolveElement('prop', p)).filter((x): x is string => !!x)),
+  ];
   return {
     id: newId('scene'),
     index,
@@ -112,6 +170,8 @@ export function sceneFromLlm(
       ...(d.parenthetical ? { parenthetical: d.parenthetical } : {}),
     })),
     characterIds,
+    locationId: s.location.trim() ? resolveElement('location', s.location) : null,
+    elementIds,
     estDurationSec: Math.min(3600, Math.max(5, s.estDurationSec || 60)),
   };
 }
@@ -129,14 +189,17 @@ export function fitOutline(beats: { estDurationSec: number }[], targetSec: numbe
 export interface ScreenplayResult {
   screenplay: Screenplay;
   characters: Character[];
+  elements: Element[];
 }
 
 export function screenplayFromLlm(
   out: ScreenplayGenerateOutput,
-  opts: { targetDurationSec: number; language: string; existing: Character[] },
+  opts: { targetDurationSec: number; language: string; existing: Character[]; existingElements?: Element[] },
 ): ScreenplayResult {
   const characters = mergeCharacters(out.characters, opts.existing);
   const resolve = nameIndex(characters);
+  const elements = mergeElements(out, out.scenes, opts.existingElements ?? []);
+  const resolveElement = elementIndex(elements);
   const durations = fitOutline(out.outline, opts.targetDurationSec);
   const outline: OutlineBeat[] = out.outline.map((b, i) => ({
     id: newId('beat'),
@@ -149,7 +212,13 @@ export function screenplayFromLlm(
   const scenes: Scene[] = [];
   out.scenes.forEach((s, i) => {
     const beat = outline[s.beatIndex ?? i] ?? outline[i] ?? null;
-    const scene = sceneFromLlm(s, scenes.length, beat && !beat.sceneId ? beat.id : null, resolve);
+    const scene = sceneFromLlm(
+      s,
+      scenes.length,
+      beat && !beat.sceneId ? beat.id : null,
+      resolve,
+      resolveElement,
+    );
     if (beat && !beat.sceneId) {
       beat.sceneId = scene.id;
       scene.estDurationSec = beat.estDurationSec;
@@ -170,23 +239,29 @@ export function screenplayFromLlm(
       ended: out.ended,
     },
     characters,
+    elements,
   };
 }
 
-/** Appends extension scenes to the screenplay, linking each to its outline beat. */
+/** Appends extension scenes to the screenplay, linking each to its outline beat and to its elements. */
 export function appendScenes(
   sp: Screenplay,
   llm: LlmScene[],
   characters: Character[],
-): { screenplay: Screenplay; added: Scene[] } {
+  elements: { existing: Element[]; introduced?: { locations: LlmElement[]; props: LlmElement[] } } = {
+    existing: [],
+  },
+): { screenplay: Screenplay; added: Scene[]; elements: Element[] } {
   const resolve = nameIndex(characters);
+  const library = mergeElements(elements.introduced ?? { locations: [], props: [] }, llm, elements.existing);
+  const resolveElement = elementIndex(library);
   const outline = sp.outline.map((b) => ({ ...b }));
   const scenes = [...sp.scenes];
   const added: Scene[] = [];
   for (const s of llm) {
     const beat =
       outline.find((b) => b.index === s.beatIndex && !b.sceneId) ?? outline.find((b) => !b.sceneId);
-    const scene = sceneFromLlm(s, scenes.length, beat?.id ?? null, resolve);
+    const scene = sceneFromLlm(s, scenes.length, beat?.id ?? null, resolve, resolveElement);
     if (beat) {
       beat.sceneId = scene.id;
       scene.estDurationSec = beat.estDurationSec;
@@ -194,7 +269,7 @@ export function appendScenes(
     scenes.push(scene);
     added.push(scene);
   }
-  return { screenplay: { ...sp, outline, scenes }, added };
+  return { screenplay: { ...sp, outline, scenes }, added, elements: library };
 }
 
 export interface ShotPlanOptions {
@@ -202,6 +277,9 @@ export interface ShotPlanOptions {
   minSec: number;
   maxSec: number;
   targetSec: number;
+  /** The scene's location (on every shot) and its props (a shot keeps those the planner names). */
+  locationId?: string | null;
+  sceneElements?: Element[];
 }
 
 /** Deterministic post-processing of a planned shot list (docs/design/generation-pipeline.md#planning). */
@@ -244,6 +322,11 @@ export function normalizePlannedShots(planned: LlmShot[], opts: ShotPlanOptions)
       const w = c?.wardrobe.find((x) => x.default) ?? c?.wardrobe[0];
       if (w) wardrobe[id] = w.id;
     }
+    const propIndex = elementIndex(opts.sceneElements ?? []);
+    const props = s.props
+      .map((p) => propIndex('prop', p) ?? propIndex('style', p))
+      .filter((x): x is string => !!x);
+    const elementIds = [...new Set([...(opts.locationId ? [opts.locationId] : []), ...props])];
     return {
       id: newId('shot'),
       index,
@@ -251,6 +334,7 @@ export function normalizePlannedShots(planned: LlmShot[], opts: ShotPlanOptions)
       action: s.action,
       camera: s.camera,
       characterIds,
+      elementIds,
       wardrobe,
       dialogue: s.dialogue.map((d) => ({ characterId: resolve(d.character), line: d.line })),
       durationSec: Math.round(s.durationSec * 100) / 100,
