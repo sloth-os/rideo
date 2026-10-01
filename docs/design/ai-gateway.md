@@ -57,6 +57,14 @@ Speech-to-text (optional, used by footage analysis): OpenAI-style
 `POST /proxy/{RIDEO_STT_PROXY_DOMAIN}/v1/audio/transcriptions` (multipart, `response_format=verbose_json`).
 When unset, analysis runs without a transcript.
 
+## Sound effects
+
+Sound effects ([post audio](post-audio.md#effects-from-action-lines)) are not a gateway media modality, so they go
+through the proxy like speech: ElevenLabs sound generation,
+`POST /proxy/{RIDEO_SFX_PROXY_DOMAIN}/v1/sound-generation?output_format=mp3_44100_128`
+`{text, duration_seconds (0.5–22), prompt_influence: 0.4, model_id}` → MP3 (`server/src/ai/sfx.ts`). Outcomes are
+counted in `rideo_post_audio_total{op="sfx"}`; failures are `gateway_error` (retryable on 429 and 5xx).
+
 ## Structured tasks
 
 Every LLM use is a **task** with an id, a zod output schema, a system prompt and a user-content builder
@@ -72,6 +80,8 @@ Every LLM use is a **task** with an id, a zod output schema, a system prompt and
 | `character.describe` | one photo | `{identity, summary, wardrobe[]}` |
 | `consistency.judge` | references per character (and per element when `judgeElements`), candidate frames | `{frames[{index, characters[{characterId, present, identityScore, outfitScore, issues}], elements?[{elementId, present, score, issues}]}]}` |
 | `footage.analyze` | probe stats, scenes, silences, thumbnails, transcript | `{summary, suggestions[]}` |
+| `score.plan` | the film (title, genre, tone, style), the direction, the cues (length, scene, dialogue or not) | `{cues[{index, prompt, bpm?}]}` ([post audio](post-audio.md)) |
+| `sfx.plan` | the takes of the cut (length, description, action, location), `maxPerShot` | `{effects[{shot, description, at, durationSec, kind}]}` |
 
 `runTask()`:
 
@@ -96,6 +106,7 @@ and the offline demo (`npm run dev:demo`).
 | `POST /v1/images`, `/v1/videos`, `/v1/music` + `GET …/{id}` | Real async lifecycle (`pending → running → succeeded`, `Retry-After`, `Idempotency-Key` replay and 409 on body mismatch, `ETag`/`304`). Produces real media: PNGs (pngjs), H.264 MP4 via ffmpeg (a first frame, when given, is animated with a slow zoom), WAV/MP3 tones. |
 | `/proxy/{domain}/{path}` | OpenAI, Gemini and Anthropic request/response shapes. It routes on the `rideo-task:` marker and returns deterministic JSON derived from the input. |
 | `POST /proxy/*/v1/audio/transcriptions` | segments sized to the audio duration |
+| `POST /proxy/*/v1/sound-generation` | a pink-noise burst of `duration_seconds` (MP3) |
 
 **Deterministic consistency model.** Each character name maps to a *signature colour*. Mock reference sheets
 paint that colour into a marker band. Mock keyframes and videos copy the marker bands of the reference

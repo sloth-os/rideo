@@ -227,8 +227,10 @@ export class WatermarkService {
         String(fps),
         '-i',
         '-',
+        // Bounded by the length, not `-shortest`: that ends the file when the sound runs out first and drops the
+        // frames still in x264's lookahead.
         ...(probe.hasAudio
-          ? ['-i', input, '-map', '0:v', '-map', '1:a:0', '-c:a', 'copy', '-shortest']
+          ? ['-i', input, '-map', '0:v', '-map', '1:a:0', '-c:a', 'copy', '-t', String(total / fps)]
           : ['-map', '0:v']),
         '-c:v',
         'libx264',

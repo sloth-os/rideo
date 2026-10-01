@@ -15,8 +15,10 @@ import {
   footageAnalyze,
   type LabelledImages,
   mediaDescribe,
+  scorePlan,
   screenplayExtend,
   screenplayGenerate,
+  sfxPlan,
 } from './fixtures';
 import { parseDataUri } from './png';
 import { voiceJudge } from './speech';
@@ -199,6 +201,12 @@ export function answer(req: ChatRequest): string {
       break;
     case 'footage.analyze':
       out = footageAnalyze(input);
+      break;
+    case 'score.plan':
+      out = scorePlan(input);
+      break;
+    case 'sfx.plan':
+      out = sfxPlan(input);
       break;
     default:
       out = { ok: true, echo: text.slice(0, 200) };

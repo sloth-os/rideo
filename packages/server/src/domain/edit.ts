@@ -13,10 +13,12 @@ import {
   docsFromEntries,
   type EditSuggestion,
   type Export,
+  ExportLoudnessSchema,
   type ExportQuality,
   emptyTimeline,
   isStillMedia,
   type Job,
+  type LoudnessTarget,
   newId,
   type Project,
   type RenderEngineChoice,
@@ -215,6 +217,7 @@ export class EditService extends Service {
           width: s.resolution.width,
           height: s.resolution.height,
           music,
+          speech: a.transcript.map((seg) => ({ start: seg.start, end: seg.end })),
         });
         tx.set('timeline.json', t);
         if (docs.project.kind === 'edit' && docs.project.workflow.stage === 'analysis') {
@@ -281,13 +284,62 @@ export class EditService extends Service {
     });
   }
 
+  /**
+   * Scores the cut: one generated music cue per scene on the Music track (docs/design/post-audio.md#score-one-cue-per-scene).
+   */
+  async scoreCut(actor: Actor, projectId: string, input: { direction?: string } = {}): Promise<Job> {
+    await this.requirePicture(projectId);
+    return this.deps.jobs.enqueue({
+      projectId,
+      kind: 'score.generate',
+      params: { direction: input.direction?.trim() ?? '' },
+      actor,
+      branch: await this.branchOf(projectId),
+      dedupeKey: `score:${projectId}`,
+      priority: 10,
+    });
+  }
+
+  /** Sound effects from the shots' action lines on the Effects track (docs/design/post-audio.md). */
+  async effectsForCut(actor: Actor, projectId: string): Promise<Job> {
+    if (!this.deps.sfx)
+      throw new AppError(
+        'sfx_unavailable',
+        'no sound-effects provider is configured on the server (RIDEO_SFX_PROVIDER)',
+      );
+    await this.requirePicture(projectId);
+    return this.deps.jobs.enqueue({
+      projectId,
+      kind: 'sfx.generate',
+      params: {},
+      actor,
+      branch: await this.branchOf(projectId),
+      dedupeKey: `sfx:${projectId}`,
+      priority: 10,
+    });
+  }
+
+  private async requirePicture(projectId: string): Promise<void> {
+    const docs = await this.deps.projects.docs(projectId);
+    if (!docs.timeline?.tracks.some((t) => t.kind === 'video' && t.items.length))
+      throw invalid('the cut has no picture yet: assemble it or add items first');
+  }
+
   /** Queues an export; a studio tab renders it (`export.render` editor job) and the server watermarks it. */
   async createExport(
     actor: Actor,
     projectId: string,
-    opts: { quality?: ExportQuality; engine?: RenderEngineChoice; source?: 'timeline' | 'animatic' } = {},
+    opts: {
+      quality?: ExportQuality;
+      engine?: RenderEngineChoice;
+      source?: 'timeline' | 'animatic';
+      loudness?: LoudnessTarget;
+      stems?: boolean;
+    } = {},
   ): Promise<{ export: Export; job: Job }> {
     const source = opts.source ?? 'timeline';
+    const loudness = opts.loudness ?? 'streaming';
+    const stems = !!opts.stems;
     await this.exportPrecheck(projectId, source);
     const quality = opts.quality ?? 'standard';
     const engine = opts.engine ?? 'auto';
@@ -307,6 +359,12 @@ export class EditService extends Service {
       contentCredentials: null,
       disclosure,
       timelineCommit,
+      loudness: ExportLoudnessSchema.parse({
+        target: loudness,
+        mode: loudness === 'off' ? 'off' : 'pending',
+      }),
+      stemsRequested: stems,
+      stems: null,
     };
     await this.mutate(actor, projectId, (tx) => tx.set(docPath.export(exp.id), exp), {
       message: `Queue ${quality} ${source === 'animatic' ? 'animatic ' : ''}export`,
@@ -322,6 +380,7 @@ export class EditService extends Service {
         timelineCommit,
         timelinePath: source === 'animatic' ? 'animatic.json' : 'timeline.json',
         disclosure: disclosure.label ? { text: disclosure.text, position: disclosure.position } : null,
+        stems,
       },
       actor,
       branch: await this.branchOf(projectId),

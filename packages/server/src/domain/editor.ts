@@ -219,7 +219,11 @@ export class EditorService extends Service {
     const params = ExportRenderParamsSchema.parse(job.params);
     if (result.width % 2 || result.height % 2 || result.width > 8192 || result.height > 8192)
       throw invalid('render size must be even and at most 8192 px');
-    await this.requireStaged(job, [...result.parts, ...(result.soundtrack ? [result.soundtrack] : [])]);
+    await this.requireStaged(job, [
+      ...result.parts,
+      ...(result.soundtrack ? [result.soundtrack] : []),
+      ...(result.stems ? Object.values(result.stems) : []),
+    ]);
     await this.setExport(
       job,
       params.exportId,

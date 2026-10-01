@@ -20,6 +20,29 @@ export const TransitionSchema = z.object({
 });
 export type Transition = z.infer<typeof TransitionSchema>;
 
+/** The stem an audio source belongs to (docs/design/post-audio.md#stems). */
+export const AudioRoleSchema = z.enum(['dialogue', 'music', 'effects']);
+export type AudioRole = z.infer<typeof AudioRoleSchema>;
+export const AUDIO_ROLES = AudioRoleSchema.options;
+
+/** Spans of speech in source time (seconds of the media), the keys of ducking (docs/design/post-audio.md#ducking). */
+export const SpeechSpansSchema = z
+  .array(z.tuple([z.number().nonnegative(), z.number().nonnegative()]))
+  .max(2000);
+export type SpeechSpans = z.infer<typeof SpeechSpansSchema>;
+
+export const DuckingSchema = z.object({
+  enabled: z.boolean().default(true),
+  /** Music gain under speech. */
+  depthDb: z.number().min(-40).max(0).default(-12),
+  attackSec: z.number().min(0.01).max(2).default(0.25),
+  releaseSec: z.number().min(0.05).max(4).default(0.6),
+});
+export type Ducking = z.infer<typeof DuckingSchema>;
+
+export const MixSchema = z.object({ ducking: DuckingSchema.default(DuckingSchema.parse({})) });
+export type Mix = z.infer<typeof MixSchema>;
+
 export const EffectsSchema = z.object({
   brightness: z.number().min(-1).max(1).optional(),
   contrast: z.number().min(0).max(2).optional(),
@@ -42,6 +65,7 @@ export const VideoItemSchema = z.object({
   transitionIn: TransitionSchema.nullable().optional(),
   effects: EffectsSchema.optional(),
   label: z.string().max(200).optional(),
+  speech: SpeechSpansSchema.optional(),
 });
 export type VideoItem = z.infer<typeof VideoItemSchema>;
 
@@ -56,6 +80,7 @@ export const AudioItemSchema = z.object({
   fadeIn: z.number().nonnegative().max(30).optional(),
   fadeOut: z.number().nonnegative().max(30).optional(),
   label: z.string().max(200).optional(),
+  speech: SpeechSpansSchema.optional(),
 });
 export type AudioItem = z.infer<typeof AudioItemSchema>;
 
@@ -91,6 +116,8 @@ export const TrackSchema = z.object({
   name: z.string().min(1).max(100),
   muted: z.boolean().optional(),
   volume: z.number().min(0).max(2).optional(),
+  /** The stem of the track's sound (audio tracks, and the primary video track's own sound). */
+  role: AudioRoleSchema.optional(),
   items: z.array(ItemSchema).default([]),
 });
 export type Track = z.infer<typeof TrackSchema>;
@@ -101,6 +128,8 @@ export const TimelineSchema = z.object({
   width: z.number().int().min(64).max(4096),
   height: z.number().int().min(64).max(4096),
   tracks: z.array(TrackSchema).min(1),
+  /** How the soundtrack is mixed; absent on older cuts (no ducking). */
+  mix: MixSchema.optional(),
 });
 export type Timeline = z.infer<typeof TimelineSchema>;
 
@@ -159,6 +188,7 @@ export const TimelineOpSchema = z.discriminatedUnion('op', [
       id: IdSchema.optional(),
       kind: z.enum(['audio', 'text']),
       name: z.string().min(1).max(100),
+      role: AudioRoleSchema.optional(),
     }),
   }),
   z.object({ op: z.literal('remove_track'), trackId: IdSchema }),
@@ -168,7 +198,9 @@ export const TimelineOpSchema = z.discriminatedUnion('op', [
     name: z.string().min(1).max(100).optional(),
     muted: z.boolean().optional(),
     volume: z.number().min(0).max(2).optional(),
+    role: AudioRoleSchema.optional(),
   }),
+  z.object({ op: z.literal('set_mix'), ducking: DuckingSchema.partial() }),
   z.object({ op: z.literal('replace_source'), itemId: IdSchema, source: SourceSchema }),
   z.object({
     op: z.literal('set_output'),

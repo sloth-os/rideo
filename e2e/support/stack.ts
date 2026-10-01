@@ -28,6 +28,7 @@ const server = await buildServer(
     RIDEO_WATERMARK_KEY: 'e2e-watermark-key',
     // Dialogue voices through the mock's ElevenLabs endpoints (docs/design/dialogue.md).
     RIDEO_TTS_PROVIDER: 'elevenlabs',
+    RIDEO_SFX_PROVIDER: 'elevenlabs',
     RIDEO_WEBDAV_SYNC_INTERVAL_SEC: '0',
     RIDEO_LOG_LEVEL: 'warn',
     NODE_ENV: 'production',

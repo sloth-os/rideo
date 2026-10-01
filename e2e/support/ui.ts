@@ -6,12 +6,20 @@ import { expect, type Page } from '@playwright/test';
  */
 export async function exportInThisTab(
   page: Page,
-  opts: { quality?: 'draft' | 'standard' | 'high'; engine?: 'auto' | 'ffmpeg' | 'webcodecs' } = {},
+  opts: {
+    quality?: 'draft' | 'standard' | 'high';
+    engine?: 'auto' | 'ffmpeg' | 'webcodecs';
+    /** Loudness target and stems (docs/design/post-audio.md#loudness). */
+    loudness?: 'streaming' | 'broadcast' | 'off';
+    stems?: boolean;
+  } = {},
 ): Promise<void> {
   await page.getByTestId('open-export').click();
   await expect(page.getByTestId('webcodecs-caps')).not.toContainText('detecting');
   if (opts.quality) await page.getByLabel('Quality').selectOption(opts.quality);
   if (opts.engine) await page.getByTestId('export-engine').selectOption(opts.engine);
+  if (opts.loudness) await page.getByTestId('export-loudness').selectOption(opts.loudness);
+  if (opts.stems) await page.getByTestId('export-stems').check();
   await page.getByTestId('export-start').click();
   const status = page.getByTestId('export-status');
   const failed = page.getByTestId('export-error');

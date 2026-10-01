@@ -133,6 +133,10 @@ export class Metrics {
   readonly voiceChecks = this.add(
     new Counter('rideo_voice_checks_total', 'Speaker checks of native-audio takes by result'),
   );
+  /** Post audio (docs/design/post-audio.md): score cues, sound effects and loudness passes by outcome. */
+  readonly postAudio = this.add(
+    new Counter('rideo_post_audio_total', 'Post-audio operations (score_cue, sfx, loudness) by outcome'),
+  );
 
   add<M extends Metric>(m: M): M {
     this.all.push(m);

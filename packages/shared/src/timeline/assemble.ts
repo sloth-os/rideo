@@ -2,9 +2,18 @@ import { newId } from '../ids';
 import type { Character } from '../schemas/character';
 import type { Clip, Shot, TakeAudio } from '../schemas/clip';
 import type { MediaRef } from '../schemas/common';
-import type { AudioItem, Source, TextItem, Timeline, Transition, VideoItem } from '../schemas/timeline';
+import {
+  type AudioItem,
+  MixSchema,
+  type Source,
+  type TextItem,
+  type Timeline,
+  type Transition,
+  type VideoItem,
+} from '../schemas/timeline';
 import {
   DEFAULT_TRACK_IDS,
+  DIALOGUE_TRACK_ID,
   emptyTimeline,
   itemDuration,
   itemEnd,
@@ -24,9 +33,6 @@ export interface AssembleInput {
   /** Only approved clips by default (the production gate); drafts can include review clips. */
   includeUnapproved?: boolean;
 }
-
-/** The track that holds the TTS dialogue of the takes (docs/design/dialogue.md#timeline). */
-export const DIALOGUE_TRACK_ID = 'trk_dialoguetrack01';
 
 /** One picture of an assembled film: a take or a still, with its dialogue. */
 interface Segment {
@@ -49,13 +55,15 @@ function assembleSegments(
 ): Timeline {
   const gen = ctx.newId ?? ((k) => newId(k));
   const timeline = emptyTimeline({ fps: input.fps, width: input.width, height: input.height });
+  // Assembled cuts duck their music under speech (docs/design/post-audio.md#ducking).
+  timeline.mix = MixSchema.parse({});
   const video = primaryTrack(timeline);
   const speaker = (id: string | null) => (id ? (input.characters?.[id]?.name ?? '') : '');
   const captionSpans: {
     itemId: string;
     lines: { speaker: string; line: string; start?: number; end?: number }[];
   }[] = [];
-  const dialogueSpans: { itemId: string; media: MediaRef }[] = [];
+  const dialogueSpans: { itemId: string; media: MediaRef; speech: [number, number][] }[] = [];
   for (const seg of segments) {
     const item: VideoItem = {
       id: gen('item'),
@@ -70,8 +78,16 @@ function assembleSegments(
       transitionIn: video.items.length > 0 ? seg.transitionIn : null,
       label: seg.label,
     };
+    // Native audio speaks the shot's lines somewhere in the take: all of it ducks the music (post-audio.md#ducking).
+    if (seg.audio?.mode === 'native' && seg.shot.dialogue.length > 0)
+      item.speech = [[0, round3(Math.max(0.1, seg.durationSec))]];
     video.items.push(item);
-    if (seg.audio?.dialogue) dialogueSpans.push({ itemId: item.id, media: seg.audio.dialogue });
+    if (seg.audio?.dialogue)
+      dialogueSpans.push({
+        itemId: item.id,
+        media: seg.audio.dialogue,
+        speech: seg.audio.lines.filter((l) => l.end > l.start).map((l) => [l.start, l.end]),
+      });
     if (input.captions && seg.audio?.lines.length) {
       // Real line timings from the speech.
       captionSpans.push({
@@ -122,6 +138,7 @@ function assembleSegments(
         in: 0,
         out: len,
         volume: 1,
+        ...(span.speech.length ? { speech: span.speech } : {}),
       });
     }
     // After the music bed, so lookups of "the audio track" keep finding the music.
@@ -235,3 +252,5 @@ export function assembleAnimatic(input: AssembleInput, ctx: OpContext = {}): Tim
   }
   return assembleSegments(segments, input, ctx);
 }
+
+const round3 = (v: number) => Math.round(v * 1000) / 1000;

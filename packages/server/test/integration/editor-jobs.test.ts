@@ -185,7 +185,7 @@ describe('editor jobs over REST', () => {
       status: 'succeeded',
       attempts: 2,
     });
-    expect(render.staged).toEqual(['part-0001.mp4', 'part-0002.mp4', 'soundtrack.m4a']);
+    expect(render.staged).toEqual(['part-0001.mp4', 'part-0002.mp4', 'soundtrack.flac']);
   }, 180_000);
 
   it('reports cancellation through the heartbeat, fails the export, and requeues expired leases', async () => {

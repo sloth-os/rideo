@@ -25,6 +25,7 @@ const STATUS: Record<ErrorCode, number> = {
   voice_not_locked: 409,
   voice_locked: 409,
   tts_unavailable: 422,
+  sfx_unavailable: 422,
   board_unapprovable: 409,
   internal_error: 500,
 };

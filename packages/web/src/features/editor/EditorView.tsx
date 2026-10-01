@@ -8,6 +8,8 @@ import {
   isTerminalJob,
   itemDuration,
   itemEnd,
+  LOUDNESS_TARGETS,
+  type LoudnessTarget,
   primaryTrack,
   type RenderEngineChoice,
   type TextItem,
@@ -15,6 +17,7 @@ import {
   type TimelineOp,
   type TransitionType,
   timelineDuration,
+  trackRole,
   type VideoItem,
   withDisclosure,
 } from '@rideo/shared';
@@ -57,6 +60,7 @@ import { detectCaps, type EngineCaps } from './engine/capabilities';
 import { MediaPool } from './engine/media-pool';
 import { Player } from './engine/player';
 import { GenerativeExtend } from './GenerativeExtend';
+import { MixPanel } from './MixPanel';
 import { trimOps } from './trim';
 
 const TRACK_COLORS = {
@@ -396,6 +400,8 @@ function ExportDialog({
 }) {
   const [quality, setQuality] = useState<ExportQuality>('standard');
   const [engine, setEngine] = useState<RenderEngineChoice>('auto');
+  const [loudness, setLoudness] = useState<LoudnessTarget>('streaming');
+  const [stems, setStems] = useState(false);
   const [caps, setCaps] = useState<EngineCaps | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -417,7 +423,7 @@ function ExportDialog({
     setBusy(true);
     setError(null);
     try {
-      const r = await api.createExport(projectId, { quality, engine });
+      const r = await api.createExport(projectId, { quality, engine, loudness, stems });
       setQueued({ exportId: r.export.id, jobId: r.job.id });
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -473,6 +479,32 @@ function ExportDialog({
               ))}
             </Select>
           </Field>
+        </div>
+        <div className="grid grid-cols-1 items-end gap-3 sm:grid-cols-2">
+          <Field label="Loudness">
+            <Select
+              value={loudness}
+              onChange={(e) => setLoudness(e.target.value as LoudnessTarget)}
+              data-testid="export-loudness"
+            >
+              {(Object.keys(LOUDNESS_TARGETS) as (keyof typeof LOUDNESS_TARGETS)[]).map((k) => (
+                <option key={k} value={k}>
+                  {LOUDNESS_TARGETS[k].label}
+                </option>
+              ))}
+              <option value="off">Off (as mixed)</option>
+            </Select>
+          </Field>
+          <label className="flex h-9 items-center justify-between gap-2 rounded-[var(--radius-control)] border border-border bg-surface-2 px-2.5 text-[13px]">
+            Dialogue, music and effects stems (WAV)
+            <input
+              type="checkbox"
+              checked={stems}
+              onChange={(e) => setStems(e.target.checked)}
+              className="size-4 accent-[var(--color-accent)]"
+              data-testid="export-stems"
+            />
+          </label>
         </div>
         <div className="flex flex-wrap gap-1.5 text-[12px]" data-testid="webcodecs-caps">
           <Badge tone="success">
@@ -806,7 +838,8 @@ export function EditorView() {
                     className="relative mb-1 h-12 rounded bg-surface-2"
                     data-track={track.kind}
                     data-track-name={track.name}
-                    title={track.name}
+                    data-track-role={trackRole(track) ?? undefined}
+                    title={track.kind === 'text' ? track.name : `${track.name} · ${trackRole(track)} stem`}
                   >
                     {track.items.map((item) => (
                       <Entity
@@ -886,23 +919,26 @@ export function EditorView() {
               ))}
             </ul>
           </Card>
-          <Card className="p-3">
-            {selectedItem ? (
-              <Inspector item={selectedItem} timeline={timeline} apply={apply} time={time} />
-            ) : (
-              <div className="text-[13px] text-muted">
-                Select an item to trim, split, reorder, change speed, fades, transitions or color.
-                <Button
-                  size="sm"
-                  className="mt-3"
-                  icon={<Plus className="size-3.5" />}
-                  onClick={() => setSelected((primary.items[0] as VideoItem | undefined)?.id ?? null)}
-                >
-                  Select first item
-                </Button>
-              </div>
-            )}
-          </Card>
+          <div className="min-w-0 space-y-4">
+            <Card className="p-3">
+              {selectedItem ? (
+                <Inspector item={selectedItem} timeline={timeline} apply={apply} time={time} />
+              ) : (
+                <div className="text-[13px] text-muted">
+                  Select an item to trim, split, reorder, change speed, fades, transitions or color.
+                  <Button
+                    size="sm"
+                    className="mt-3"
+                    icon={<Plus className="size-3.5" />}
+                    onClick={() => setSelected((primary.items[0] as VideoItem | undefined)?.id ?? null)}
+                  >
+                    Select first item
+                  </Button>
+                </div>
+              )}
+            </Card>
+            <MixPanel timeline={timeline} apply={apply} />
+          </div>
         </div>
       )}
       <ExportDialog

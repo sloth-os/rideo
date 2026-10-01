@@ -52,6 +52,15 @@ function ExportCard({ e, projectId }: { e: Export; projectId: string }) {
             </Badge>
           ) : null}
           {e.codec ? <Badge>{e.codec}</Badge> : null}
+          {e.loudness && e.loudness.integratedLufs !== null ? (
+            <Badge
+              tone="info"
+              title={`${e.loudness.target} target · ${e.loudness.mode} normalization · true peak ${e.loudness.truePeakDb} dBTP · from ${e.loudness.inputLufs} LUFS`}
+              testid="export-loudness-badge"
+            >
+              {e.loudness.integratedLufs.toFixed(1)} LUFS
+            </Badge>
+          ) : null}
           {e.durationSec ? <Badge>{formatDuration(e.durationSec)}</Badge> : null}
           {e.contentCredentials ? (
             <Badge tone="success" title={`C2PA manifest ${e.contentCredentials.manifest}`}>
@@ -93,6 +102,22 @@ function ExportCard({ e, projectId }: { e: Export; projectId: string }) {
             >
               Verify
             </Button>
+          </div>
+        ) : null}
+        {e.stems ? (
+          <div className="flex flex-wrap items-center gap-2 text-[12px]" data-testid="export-stems-links">
+            <span className="text-muted">Stems</span>
+            {(['dialogue', 'music', 'effects'] as const).map((role) => (
+              <a
+                key={role}
+                href={mediaUrl(projectId, e.stems![role].path)}
+                download
+                className="inline-flex h-7 items-center gap-1 rounded-[var(--radius-control)] border border-border px-2"
+                data-testid={`download-stem-${role}`}
+              >
+                <Download className="size-3" /> {role}
+              </a>
+            ))}
           </div>
         ) : null}
         {check ? (

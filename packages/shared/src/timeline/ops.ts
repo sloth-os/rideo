@@ -1,8 +1,11 @@
 import { newId } from '../ids';
 import {
   type AudioItem,
+  type AudioRole,
+  DuckingSchema,
   type Item,
   ItemSchema,
+  MixSchema,
   type TextItem,
   type Timeline,
   type TimelineOp,
@@ -35,6 +38,23 @@ export const DEFAULT_TRACK_IDS = {
   audio: 'trk_musicbed000001',
   text: 'trk_titles00000001',
 } as const;
+
+/** The track that holds the TTS dialogue of the takes (docs/design/dialogue.md#timeline). */
+export const DIALOGUE_TRACK_ID = 'trk_dialoguetrack01';
+/** The track of generated sound effects (docs/design/post-audio.md#effects-from-action-lines). */
+export const EFFECTS_TRACK_ID = 'trk_effectstrack01';
+
+/**
+ * The stem of a track's sound (docs/design/post-audio.md#stems): its `role`, else the primary video's production
+ * sound and the Dialogue track are dialogue, the Music track is music and other audio tracks are effects.
+ */
+export function trackRole(track: Pick<Track, 'id' | 'kind' | 'role'>): AudioRole | null {
+  if (track.kind === 'text') return null;
+  if (track.role) return track.role;
+  if (track.kind === 'video' || track.id === DIALOGUE_TRACK_ID) return 'dialogue';
+  if (track.id === DEFAULT_TRACK_IDS.audio) return 'music';
+  return 'effects';
+}
 
 export function emptyTimeline(opts: { fps: number; width: number; height: number }): Timeline {
   return {
@@ -341,7 +361,13 @@ function applyOne(t: Timeline, op: TimelineOp, i: number, gen: (k: 'item' | 'tra
     case 'add_track': {
       const id = op.track.id ?? gen('track');
       if (t.tracks.some((tr) => tr.id === id)) throw new TimelineOpError(`duplicate track id ${id}`, i);
-      t.tracks.push({ id, kind: op.track.kind, name: op.track.name, items: [] });
+      t.tracks.push({
+        id,
+        kind: op.track.kind,
+        name: op.track.name,
+        ...(op.track.role && op.track.kind === 'audio' ? { role: op.track.role } : {}),
+        items: [],
+      });
       return;
     }
     case 'remove_track': {
@@ -355,6 +381,15 @@ function applyOne(t: Timeline, op: TimelineOp, i: number, gen: (k: 'item' | 'tra
       if (op.name !== undefined) track.name = op.name;
       if (op.muted !== undefined) track.muted = op.muted;
       if (op.volume !== undefined) track.volume = op.volume;
+      if (op.role !== undefined) {
+        if (track.kind === 'text') throw new TimelineOpError('text tracks have no sound', i);
+        track.role = op.role;
+      }
+      return;
+    }
+    case 'set_mix': {
+      const cur = t.mix ?? MixSchema.parse({});
+      t.mix = { ...cur, ducking: DuckingSchema.parse({ ...cur.ducking, ...op.ducking }) };
       return;
     }
     case 'replace_source': {

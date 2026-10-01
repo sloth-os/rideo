@@ -1,7 +1,14 @@
 import { newId } from '../ids';
 import type { EditSuggestion, SuggestionParams } from '../schemas/analysis';
 import type { MediaRef, TimeRange } from '../schemas/common';
-import type { AudioItem, Effects, TextItem, Timeline, VideoItem } from '../schemas/timeline';
+import {
+  type AudioItem,
+  type Effects,
+  MixSchema,
+  type TextItem,
+  type Timeline,
+  type VideoItem,
+} from '../schemas/timeline';
 import { emptyTimeline, itemEnd, layoutPrimary, type OpContext, primaryTrack } from './ops';
 
 const MIN_SEGMENT = 0.25;
@@ -48,6 +55,8 @@ export interface ApplySuggestionsInput {
   width: number;
   height: number;
   music?: Record<string, MediaRef>;
+  /** Where people speak in the source (the transcript): the items' speech spans, the keys of ducking. */
+  speech?: TimeRange[];
 }
 
 /** Kept source ranges after cuts, silence tightening and highlights (before speed changes). */
@@ -77,6 +86,7 @@ export function applySuggestions(input: ApplySuggestionsInput, ctx: OpContext = 
   const gen = ctx.newId ?? ((k) => newId(k));
   const accepted = input.suggestions.filter((s) => s.status === 'accepted');
   const timeline = emptyTimeline({ fps: input.fps, width: input.width, height: input.height });
+  timeline.mix = MixSchema.parse({});
   const video = primaryTrack(timeline);
   const kept = keptRanges(input.durationSec, accepted);
 
@@ -117,6 +127,13 @@ export function applySuggestions(input: ApplySuggestionsInput, ctx: OpContext = 
       transitionIn: null,
       ...(effects ? { effects } : {}),
     };
+    const speech = (input.speech ?? [])
+      .filter((r) => r.end > piece.start && r.start < piece.end)
+      .map((r): [number, number] => [
+        round3(Math.max(r.start, piece.start)),
+        round3(Math.min(r.end, piece.end)),
+      ]);
+    if (speech.length) item.speech = speech;
     video.items.push(item);
   }
   const items = video.items as VideoItem[];

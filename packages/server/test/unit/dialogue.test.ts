@@ -1,6 +1,7 @@
 import type { ConsistencyReport } from '@rideo/shared';
 import { describe, expect, it } from 'vitest';
 import { AnthropicAdapter, GeminiAdapter, type LlmRequest, OpenAiAdapter } from '../../src/ai/llm';
+import { SfxClient } from '../../src/ai/sfx';
 import { ElevenLabsTts, OpenAiTts } from '../../src/ai/tts';
 import { type VoiceJudge, verifyVoices } from '../../src/consistency/voice';
 import type { ProxyClient } from '../../src/gateway/proxy-client';
@@ -103,6 +104,44 @@ describe('ElevenLabs through the gateway proxy', () => {
       retryable: true,
     });
     expect(metrics.tts.get({ provider: 'elevenlabs', op: 'speak', outcome: 'error' })).toBe(1);
+  });
+});
+
+describe('sound effects through the gateway proxy (docs/design/post-audio.md)', () => {
+  it('asks ElevenLabs sound generation for the length and counts outcomes', async () => {
+    const mp3 = Buffer.alloc(2048, 7);
+    const proxy = new FakeProxy({
+      'v1/sound-generation': () => new Response(mp3, { headers: { 'content-type': 'audio/mpeg' } }),
+    });
+    const metrics = new Metrics();
+    const sfx = new SfxClient(
+      proxy as unknown as ProxyClient,
+      { provider: 'elevenlabs', domain: 'api.elevenlabs.io', model: 'eleven_text_to_sound_v2' },
+      metrics,
+    );
+    const out = await sfx.generate({ text: 'a door slams in a stone hallway', durationSec: 31 });
+    expect(out).toEqual({ audio: mp3, mime: 'audio/mpeg' });
+    expect(proxy.calls.at(-1)).toMatchObject({
+      domain: 'api.elevenlabs.io',
+      path: 'v1/sound-generation?output_format=mp3_44100_128',
+      body: {
+        text: 'a door slams in a stone hallway',
+        duration_seconds: 22,
+        prompt_influence: 0.4,
+        model_id: 'eleven_text_to_sound_v2',
+      },
+    });
+    const failing = new SfxClient(
+      new FakeProxy({ 'v1/sound-generation': () => json({ detail: 'busy' }, 503) }) as unknown as ProxyClient,
+      { provider: 'elevenlabs', domain: 'api.elevenlabs.io', model: 'm' },
+      metrics,
+    );
+    await expect(failing.generate({ text: 'rain', durationSec: 2 })).rejects.toMatchObject({
+      code: 'gateway_error',
+      retryable: true,
+    });
+    expect(metrics.render()).toContain('rideo_post_audio_total{op="sfx",outcome="ok"} 1');
+    expect(metrics.render()).toContain('rideo_post_audio_total{op="sfx",outcome="error"} 1');
   });
 });
 

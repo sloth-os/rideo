@@ -2,6 +2,8 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
   type Analysis,
+  type AudioRole,
+  audioSegments,
   type ContentCredentialsStamp,
   docPath,
   type EditSuggestion,
@@ -15,6 +17,7 @@ import {
 import { z } from 'zod';
 import type { LabelledImage } from '../../ai/tasks';
 import { AppError, notFound } from '../../errors';
+import { normalizeSoundtrack } from '../../media/loudness';
 import type { ExportIngredient } from '../../provenance/c2pa';
 import { runFramePipeline } from '../../watermark/pipeline';
 import type { JobContext } from '../queue';
@@ -169,12 +172,14 @@ async function exportIngredients(
   projectId: string,
   docs: ProjectDocs,
   timeline: Timeline,
+  only?: Set<string>,
 ): Promise<ExportIngredient[]> {
   const seen = new Set<string>();
   const out: ExportIngredient[] = [];
   for (const track of timeline.tracks) {
     for (const item of track.items) {
       if (item.kind === 'text' || seen.has(item.source.media.hash)) continue;
+      if (only && !only.has(item.source.media.hash)) continue;
       seen.add(item.source.media.hash);
       const media = item.source.media;
       const resource =
@@ -205,6 +210,7 @@ async function publishExport(
   watermarkId: string | null,
   codec: string,
   contentCredentials: ContentCredentialsStamp | null = null,
+  audio: Pick<Export, 'loudness' | 'stems'> | null = null,
 ) {
   const projectId = ctx.job.projectId;
   const media = await deps.media.putFile(projectId, file, {
@@ -239,6 +245,7 @@ async function publishExport(
       width: media.width,
       height: media.height,
       codec,
+      ...(audio ?? {}),
     },
     `Export ${exp.id.slice(-6)} ready${watermarkId ? ` (watermark ${watermarkId})` : ''}`,
   );
@@ -274,7 +281,26 @@ export async function exportFinish(deps: HandlerDeps, ctx: JobContext) {
           .map((name) => `file '${deps.staging.path(p.renderJobId, name).replace(/'/g, "'\\''")}'`)
           .join('\n'),
       );
-      const soundtrack = p.soundtrack ? deps.staging.path(p.renderJobId, p.soundtrack) : null;
+      const staged = p.soundtrack ? deps.staging.path(p.renderJobId, p.soundtrack) : null;
+      // Loudness (docs/design/post-audio.md#loudness): normalized lossless audio and stems, encoded below.
+      const target = exp.loudness?.target ?? 'off';
+      const finished = staged
+        ? await normalizeSoundtrack(deps, {
+            soundtrack: staged,
+            stems:
+              p.stems && exp.stemsRequested
+                ? {
+                    dialogue: deps.staging.path(p.renderJobId, p.stems.dialogue),
+                    music: deps.staging.path(p.renderJobId, p.stems.music),
+                    effects: deps.staging.path(p.renderJobId, p.stems.effects),
+                  }
+                : null,
+            target,
+            dir,
+            signal: ctx.signal,
+          })
+        : null;
+      const soundtrack = finished?.audio ?? null;
       const { width, height, fps } = p;
       const total = Math.max(1, Math.round(p.durationSec * fps));
       const watermarkId = docs.project.settings.watermark.enabled ? await deps.watermark.allocateId() : null;
@@ -313,8 +339,25 @@ export async function exportFinish(deps: HandlerDeps, ctx: JobContext) {
           String(fps),
           '-i',
           '-',
+          // The film's length bounds the mux: `-shortest` ends the file when the sound runs out first and drops
+          // the frames still in the encoder's lookahead.
           ...(soundtrack
-            ? ['-i', soundtrack, '-map', '0:v', '-map', '1:a', '-c:a', 'copy', '-shortest']
+            ? [
+                '-i',
+                soundtrack,
+                '-map',
+                '0:v',
+                '-map',
+                '1:a',
+                '-c:a',
+                'aac',
+                '-b:a',
+                '192k',
+                '-ar',
+                '48000',
+                '-t',
+                String(total / fps),
+              ]
             : ['-map', '0:v']),
           '-c:v',
           'libx264',
@@ -357,6 +400,43 @@ export async function exportFinish(deps: HandlerDeps, ctx: JobContext) {
           disclosure: exp.disclosure,
         });
       }
+      let stems: Export['stems'] = null;
+      if (finished?.stems) {
+        // Each stem carries Content Credentials placing its own sources (docs/design/post-audio.md#stems).
+        const timeline = deps.c2pa.enabled
+          ? ((await deps.services.projects.getDoc(
+              ctx.job.projectId,
+              exp.source === 'animatic' ? 'animatic.json' : 'timeline.json',
+              exp.timelineCommit ?? undefined,
+            )) as Timeline)
+          : null;
+        const put = async (role: AudioRole) => {
+          let file = finished.stems![role];
+          if (timeline) {
+            const signed = join(dir, `stem-${role}-signed.wav`);
+            const sources = new Set(
+              audioSegments(timeline).flatMap((a) => (a.role === role ? [a.media.hash] : [])),
+            );
+            await deps.c2pa.signStem({
+              input: file,
+              output: signed,
+              title: `${docs.project.title} — ${role} stem.wav`,
+              projectId: ctx.job.projectId,
+              exportId: exp.id,
+              role,
+              timelineCommit: exp.timelineCommit,
+              ingredients: await exportIngredients(deps, ctx.job.projectId, docs, timeline, sources),
+            });
+            file = signed;
+          }
+          return deps.media.putFile(ctx.job.projectId, file, {
+            kind: 'stems',
+            name: `${exp.id}-${role}`,
+            mime: 'audio/wav',
+          });
+        };
+        stems = { dialogue: await put('dialogue'), music: await put('music'), effects: await put('effects') };
+      }
       const media = await publishExport(
         deps,
         ctx,
@@ -365,6 +445,7 @@ export async function exportFinish(deps: HandlerDeps, ctx: JobContext) {
         watermarkId,
         `h264/aac (browser ${p.engine})`,
         contentCredentials,
+        { loudness: finished?.loudness ?? exp.loudness, stems },
       );
       await deps.staging.remove(p.renderJobId);
       return { exportId: p.exportId, path: media.path, watermarkId, psnr: embed?.stats().psnr };

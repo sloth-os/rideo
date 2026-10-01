@@ -56,6 +56,7 @@ export async function startStack(
       RIDEO_WEB_DIST: join(dataDir, 'no-web'),
       // Dialogue voices through the mock's ElevenLabs endpoints (docs/design/dialogue.md).
       RIDEO_TTS_PROVIDER: 'elevenlabs',
+      RIDEO_SFX_PROVIDER: 'elevenlabs',
       ...opts.env,
     });
     const server = await buildServer(config, { logger: false });

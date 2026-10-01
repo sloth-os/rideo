@@ -110,6 +110,7 @@ export const ERROR_CODES = [
   'voice_not_locked',
   'voice_locked',
   'tts_unavailable',
+  'sfx_unavailable',
   'board_unapprovable',
   'internal_error',
 ] as const;

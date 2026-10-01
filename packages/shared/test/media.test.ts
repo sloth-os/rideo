@@ -298,9 +298,14 @@ describe('render plan', () => {
     const s = soundtrackGraph(t, { inputPath });
     const graph = s.args[s.args.indexOf('-filter_complex') + 1]!;
     expect(s.durationSec).toBe(60);
-    expect(graph).toContain('amix=inputs=3:normalize=0');
+    // one bus per stem (the clips' sound is dialogue, the bed is music), then the buses summed
+    expect(graph).toContain(
+      '[a0][a1]amix=inputs=2:normalize=0:dropout_transition=0,apad,atrim=0:60[bus_dialogue]',
+    );
+    expect(graph).toContain('[a2]apad,atrim=0:60[bus_music]');
+    expect(graph).toContain('[bus_dialogue][bus_music]amix=inputs=2:normalize=0:dropout_transition=0[aout]');
     expect(graph).toContain('atempo=2');
-    expect(graph).toContain('atrim=0:60[aout]');
+    expect(s.stems).toBeNull();
     expect(renderInputs(t)).toHaveLength(3);
     expect(atempoChain(0.25)).toBe('atempo=0.5,atempo=0.5,');
     const silent = soundtrackGraph(emptyTimeline({ fps: 24, width: 320, height: 180 }), { inputPath });

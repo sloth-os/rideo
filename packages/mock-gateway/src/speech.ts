@@ -65,6 +65,31 @@ async function tone(dir: string, pitch: number, durationSec: number, format: 'mp
   }
 }
 
+async function noise(dir: string, durationSec: number): Promise<Buffer> {
+  const out = join(dir, `sfx-${randomBytes(6).toString('hex')}.mp3`);
+  const d = Math.round(durationSec * 1000) / 1000;
+  await runFfmpeg([
+    '-f',
+    'lavfi',
+    '-i',
+    `anoisesrc=d=${d}:c=pink:a=0.5:r=44100`,
+    '-af',
+    `afade=t=in:d=0.02,afade=t=out:st=${Math.max(0, d - 0.1)}:d=0.1`,
+    '-ac',
+    '2',
+    '-c:a',
+    'libmp3lame',
+    '-b:a',
+    '128k',
+    out,
+  ]);
+  try {
+    return await readFile(out);
+  } finally {
+    await rm(out, { force: true });
+  }
+}
+
 /** Decodes any audio (or video with sound) to 16 kHz mono WAV. */
 export async function toWav(dir: string, data: Buffer): Promise<Buffer> {
   const id = randomBytes(6).toString('hex');
@@ -203,6 +228,13 @@ export async function handleSpeech(
       character_end_times_seconds: ends,
     };
     return json({ audio_base64: audio.toString('base64'), alignment, normalized_alignment: alignment });
+  }
+  if (/^v1\/sound-generation$/.test(path)) {
+    // Sound effects (docs/design/post-audio.md#mock-gateway): a pink-noise burst of the asked length.
+    const text = String(b.text ?? '');
+    if (!text) return json({ detail: { message: 'text is required' } }, 422);
+    const duration = Math.min(30, Math.max(0.5, Number(b.duration_seconds ?? 2) || 2));
+    return { status: 200, headers: { 'content-type': 'audio/mpeg' }, body: await noise(dir, duration) };
   }
   if (/^v1\/audio\/speech$/.test(path)) {
     const text = String(b.input ?? '');

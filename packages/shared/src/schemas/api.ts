@@ -10,7 +10,7 @@ import {
 } from './clip';
 import { AspectRatioSchema, IdSchema } from './common';
 import { ElementKindSchema, ElementReferenceViewSchema } from './element';
-import { ExportQualitySchema, RenderEngineChoiceSchema } from './job';
+import { ExportQualitySchema, LoudnessTargetSchema, RenderEngineChoiceSchema } from './job';
 import { DialogueModeSchema, DisclosurePositionSchema, ProjectKindSchema } from './project';
 import { ResourceKindSchema, ResourceRoleSchema } from './resource';
 import { DialogueLineSchema, StyleBibleSchema } from './screenplay';
@@ -269,7 +269,14 @@ export const ExportInputSchema = z.object({
   engine: RenderEngineChoiceSchema.optional(),
   /** `animatic` renders the storyboard's animatic (docs/design/storyboard.md#animatic). */
   source: z.enum(['timeline', 'animatic']).optional(),
+  /** Loudness target (docs/design/post-audio.md#loudness); default `streaming`. */
+  loudness: LoudnessTargetSchema.optional(),
+  /** Also deliver the dialogue, music and effects stems. */
+  stems: z.boolean().optional(),
 });
+
+/** Post audio (docs/design/post-audio.md#surfaces). */
+export const ScoreInputSchema = z.object({ direction: z.string().max(300).optional() });
 
 /** Storyboard (docs/design/storyboard.md#surfaces). */
 export const StoryboardGenerateInputSchema = z.object({ sceneIds: z.array(IdSchema).max(50).optional() });

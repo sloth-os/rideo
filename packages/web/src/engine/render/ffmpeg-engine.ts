@@ -1,10 +1,15 @@
 import {
+  AUDIO_ROLES,
+  type AudioRole,
   chunkEncodeArgs,
   chunkGraph,
   type ExportQuality,
   type RenderChunk,
+  SOUNDTRACK_FILE,
   soundtrackEncodeArgs,
   soundtrackGraph,
+  stemFile,
+  stemOutputArgs,
   type Timeline,
 } from '@rideo/shared';
 import { FONT_PATH, ffmpeg } from '../ffmpeg';
@@ -38,20 +43,35 @@ export async function renderChunkFfmpeg(opts: {
   return new Blob([r.outputs[out]! as BlobPart], { type: 'video/mp4' });
 }
 
-/** The whole film's soundtrack → AAC (both engines use it). */
+/**
+ * The whole film's soundtrack, lossless (both engines use it), and with `stems` the dialogue, music and effects
+ * stems from the same run (docs/design/post-audio.md#stems). The server normalizes loudness and encodes.
+ */
 export async function renderSoundtrack(opts: {
   timeline: Timeline;
   inputs: Record<string, Blob>;
+  stems?: boolean;
   signal?: AbortSignal;
   onTime?: (sec: number) => void;
-}): Promise<Blob> {
-  const s = soundtrackGraph(opts.timeline, { inputPath });
-  const out = '/out/soundtrack.m4a';
-  const r = await ffmpeg.run([...s.args, ...soundtrackEncodeArgs(), out], {
+}): Promise<{ soundtrack: Blob; stems: Record<AudioRole, Blob> | null }> {
+  const s = soundtrackGraph(opts.timeline, { inputPath, stems: opts.stems });
+  const out = `/out/${SOUNDTRACK_FILE}`;
+  const stemPath = (role: AudioRole) => `/out/${stemFile(role)}`;
+  const outputs = [out, ...(s.stems ? AUDIO_ROLES.map(stemPath) : [])];
+  const r = await ffmpeg.run([...s.args, ...soundtrackEncodeArgs(), out, ...stemOutputArgs(s, stemPath)], {
     inputs: opts.inputs,
-    outputs: [out],
+    outputs,
     signal: opts.signal,
     onTime: opts.onTime,
   });
-  return new Blob([r.outputs[out]! as BlobPart], { type: 'audio/mp4' });
+  const blob = (path: string) => new Blob([r.outputs[path]! as BlobPart], { type: 'audio/flac' });
+  return {
+    soundtrack: blob(out),
+    stems: s.stems
+      ? (Object.fromEntries(AUDIO_ROLES.map((role) => [role, blob(stemPath(role))])) as Record<
+          AudioRole,
+          Blob
+        >)
+      : null,
+  };
 }

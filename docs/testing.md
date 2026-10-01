@@ -49,7 +49,11 @@ RIDEO_TEST_WEBDAV_URL=http://rideo:rideo@localhost:8080/ npx vitest run --projec
   edit phrases, extensions from the first frame or into the last frame, legacy takes without lineage);
   multi-shot (groups bounded by shot count and length, continuations and shots with their own request kept
   alone, gaps; detected versus planned split points; one request listing every shot with the cast and elements
-  once).
+  once); post audio (track stems by role and id, `set_track`/`set_mix`, the per-stem buses and stem outputs,
+  speech spans in timeline time and their merging, the duck envelope, its breakpoints and its ffmpeg expression
+  evaluated against `duckGainAt`, no duck without mix, music or speech, speech spans and the mix written by
+  assembly and the auto edit, loudnorm statistics and passes, score cues per scene with short cues merged and
+  laid with crossfades, spot and ambience effect placement).
 - **server**: repository commit, log, diff, restore, branches, tags, coalescing and GC on `MemoryBackend`;
   job queue (lanes, priorities, dedupe, retry classification, cancel propagation, restart recovery; the
   `client` lane: claim order, leases, heartbeats, expiry and session release, cancel, staged files);
@@ -57,14 +61,17 @@ RIDEO_TEST_WEBDAV_URL=http://rideo:rideo@localhost:8080/ npx vitest run --projec
   adapters' request shapes and JSON repair (and audio parts for the speaker check); live hub sequencing,
   replay and resync; config parsing (TTS and speaker-check endpoints); the ElevenLabs and OpenAI TTS clients
   against a fake proxy (design, save, clone, speech with timings and seeds, retryable failures, metrics); the
-  speaker-check merge (V4: same, different, missing and silent voices, no judge, judge outage).
+  speaker-check merge (V4: same, different, missing and silent voices, no judge, judge outage); sound effects
+  through a fake proxy (request shape, length clamp, retryable failures, `rideo_post_audio_total`) and the
+  `RIDEO_SFX_*` config.
 - **web**: live-event store reducer and optimistic timeline edits (apply, confirm, roll back), live client
   (sequence dedupe, UI-command acks, restart resync), UI command dispatch, WebCodecs codec/container
   selection, render engine choice, the editor-job worker against a fake API (claims only with a project and a
   session, one job at a time, progress heartbeats, failures reported with their code, cancellations and
   lost leases not reported, claim retry when the claim overtakes the live subscription), timeline edge-drag
   ops, and rendering of the workflow stepper, consistency badge, job rows and take badges (lineage and
-  multi-shot segments). Resuming an interrupted render
+  multi-shot segments), and the preview's duck automation (`automateDuck`, the shared breakpoints from any
+  playback start). Resuming an interrupted render
   is covered by the editor-jobs integration test, local proxies by the story e2e spec.
 
 ### Integration
@@ -89,7 +96,8 @@ RIDEO_TEST_WEBDAV_URL=http://rideo:rideo@localhost:8080/ npx vitest run --projec
   after x264 CRF 23 and 28, VP9, a 2 s trim, a metadata strip, and a downscale/upscale. Assert no detection
   on the unmarked source.
 - **SDK contract** (`mock-gateway/test/contract.test.ts`): the real `@sloth-os/mm-gateway-js` SDK against the
-  mock. Responses are validated against the vendored gateway `openapi.json`.
+  mock. Responses are validated against the vendored gateway `openapi.json`. The proxy answers the post-audio
+  tasks (`score.plan`, `sfx.plan`) and ElevenLabs sound generation.
 - **Story workflow** (`story.test.ts`): REST from brief to export on the mock gateway, including a
   consistency failure and retry (`MOCK_FLAKY_EVERY`), R1 rejection, approval gates, batch to a 60 s target,
   timeline assembly, an export rendered by the reference editor worker, watermark detection of the export,
@@ -117,6 +125,16 @@ RIDEO_TEST_WEBDAV_URL=http://rideo:rideo@localhost:8080/ npx vitest run --projec
 - **Multi-shot** (`multishot.test.ts`): with `mock-multishot-v1`, a three-shot clip renders its first two shots
   in one request (one keyframe, 20 s), split at the detected cut into two verified, watermarked takes with TTS
   dialogue, the third alone; the setting turned off and a shot with an end frame generate shot by shot.
+- **Post audio** (`post-audio.test.ts`): an assembled cut ducks under its TTS lines; *score* lays one generated
+  cue per scene (the direction reaches the prompt, instrumental requests); *effects* puts one spot per take on the
+  Effects track after the Dialogue track through the mock's ElevenLabs sound generation; an export at broadcast
+  loudness with stems (−23 LUFS ± 1 measured on the file, true peak ≤ −1 dBTP, three WAV stems as long as the
+  film, the music stem's Content Credentials placing the cues, every frame of the cut in the export);
+  `sfx_unavailable` and `features.sfx` without a provider. `post-audio-render.test.ts` runs the shared graphs with
+  native ffmpeg: the music stem is −12 dB under speech and follows the ramps, the stems sum to the mix, loudness
+  normalization to −14 and −23 LUFS keeps the stems summing, silence and `off` are left alone.
+- **Watermark** (`watermark.test.ts`) also checks that a watermarked video with sound keeps every frame (the mux
+  is bounded by the length, not `-shortest`).
 - **Storyboard** (`storyboard.test.ts`): the storyboard plans the first scenes and draws a verified frame (and
   dialogue) per shot; approving one and all; the gate; editing a shot makes its frame outdated
   (`board_unapprovable`) and relocking a character makes frames stale until redrawn; reordering keeps the first
@@ -139,8 +157,8 @@ RIDEO_TEST_WEBDAV_URL=http://rideo:rideo@localhost:8080/ npx vitest run --projec
 ### End-to-end (Playwright)
 
 Projects: `desktop` (1440×900) runs every spec except `responsive`; `mobile` (412×915, touch) runs
-`responsive`, `mcp-sync`, `provenance`, `elements`, `dialogue`, `storyboard`, `directing`, `take-editing` and
-`multi-shot`. The
+`responsive`, `mcp-sync`, `provenance`, `elements`, `dialogue`, `storyboard`, `directing`, `take-editing`,
+`multi-shot` and `post-audio`. The
 web server stops with SIGTERM so the stack removes its data; stale stack directories older than an hour are removed
 when a new stack starts. Specs:
 
@@ -151,6 +169,7 @@ when a new stack starts. Specs:
 | `footage.spec.ts` | upload (probe + poster in the browser) → analysis signals in the browser → AI suggestions → accept → auto edit → exports with the ffmpeg.wasm and WebCodecs engines → both listed and verified |
 | `history.spec.ts` | edit → history → diff → restore → UI updates |
 | `take-editing.spec.ts` | (desktop and mobile) relight a take and extend another by 2 s from the take tiles (lineage badges); generative extend of the first item in the editor (the lanes on desktop, the item list on phones) |
+| `post-audio.spec.ts` | (desktop and mobile) the Mix card: ducking on after assembly, depth −18 dB, *Score the cut* with a direction (Cue 1 on the Music track), *Add sound effects* (an Effects track, its lane on desktop); an export rendered in the tab at broadcast loudness with stems; the export card shows about −23 LUFS and the three stem downloads |
 | `multi-shot.spec.ts` | (desktop and mobile) the multi-shot setting off and on in the project settings; a clip on `mock-multishot-v1` renders two shots in one request (`shot 1 of 2`, `shot 2 of 2` badges) and the third alone |
 | `directing.spec.ts` | (desktop and mobile) the Direct panel sets a push-in, an 85 mm lens, f/2 and a generated end frame; two variations are generated, compared side by side and B is chosen |
 | `storyboard.spec.ts` | (desktop and mobile) generate the storyboard, approve a frame, move it later, approve all; download the shot list CSV and PDF; build the animatic, play it, export it in the tab (listed as an animatic export); approve the storyboard; import a Fountain screenplay in the Story view |

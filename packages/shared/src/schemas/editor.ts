@@ -37,6 +37,8 @@ export const ExportRenderParamsSchema = z.object({
     .object({ text: z.string().min(1).max(60), position: DisclosurePositionSchema })
     .nullable()
     .default(null),
+  /** Also render the dialogue, music and effects stems (docs/design/post-audio.md#stems). */
+  stems: z.boolean().default(false),
 });
 
 export const EditorParamsSchemas = {
@@ -84,7 +86,12 @@ export const ExportRenderResultSchema = z.object({
   fps: z.number().positive(),
   durationSec: z.number().positive(),
   parts: z.array(StagedNameSchema).min(1).max(10_000),
+  /** Lossless (`soundtrack.flac`); older tabs staged AAC (`soundtrack.m4a`). */
   soundtrack: StagedNameSchema.nullable(),
+  stems: z
+    .object({ dialogue: StagedNameSchema, music: StagedNameSchema, effects: StagedNameSchema })
+    .nullable()
+    .default(null),
 });
 export type ExportRenderResult = z.infer<typeof ExportRenderResultSchema>;
 

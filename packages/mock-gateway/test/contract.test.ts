@@ -6,7 +6,9 @@ import {
   JUDGE_FRAME_LABEL,
   JUDGE_REFERENCE_LABEL,
   JudgeOutputSchema,
+  ScorePlanOutputSchema,
   ScreenplayGenerateOutputSchema,
+  SfxPlanOutputSchema,
 } from '@rideo/shared';
 import MmGateway from '@sloth-os/mm-gateway-js';
 import Ajv2020 from 'ajv/dist/2020.js';
@@ -295,5 +297,62 @@ describe('proxy LLM formats', () => {
     expect(ScreenplayGenerateOutputSchema.parse(JSON.parse(`{${claude.json.content[0].text}`)).title).toBe(
       openai.title,
     );
+  });
+});
+
+describe('post audio (docs/design/post-audio.md#mock-gateway)', () => {
+  it('plans a cue per scene and a spot effect per shot', async () => {
+    const score = ScorePlanOutputSchema.parse(
+      await chat('score.plan', {
+        film: { title: 'T', logline: '', genre: 'drama', tone: 'melancholic', style: '' },
+        direction: 'sparse piano',
+        cues: [
+          {
+            index: 0,
+            durationSec: 12,
+            heading: 'INT. LIGHTHOUSE - NIGHT',
+            summary: '',
+            action: '',
+            dialogue: true,
+          },
+          {
+            index: 1,
+            durationSec: 9,
+            heading: 'EXT. CLIFF - DAWN',
+            summary: '',
+            action: '',
+            dialogue: false,
+          },
+        ],
+      }),
+    );
+    expect(score.cues.map((c) => c.index)).toEqual([0, 1]);
+    expect(score.cues[0]!.prompt).toContain('INT. LIGHTHOUSE - NIGHT');
+    expect(score.cues[0]!.prompt).toContain('sparse piano');
+    const sfx = SfxPlanOutputSchema.parse(
+      await chat('sfx.plan', {
+        maxPerShot: 3,
+        shots: [{ index: 0, durationSec: 5, description: 'd', action: 'The door slams shut.', location: '' }],
+      }),
+    );
+    expect(sfx.effects).toEqual([
+      { shot: 0, description: 'the sound of the door slams shut', at: 1.5, durationSec: 2, kind: 'spot' },
+    ]);
+  });
+
+  it('generates a sound effect of the asked length through the ElevenLabs proxy', async () => {
+    const res = await fetch(
+      `${gw.url}/proxy/api.elevenlabs.io/v1/sound-generation?output_format=mp3_44100_128`,
+      {
+        method: 'POST',
+        headers: auth,
+        body: JSON.stringify({ text: 'a door slams', duration_seconds: 1.5 }),
+      },
+    );
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toBe('audio/mpeg');
+    expect((await res.arrayBuffer()).byteLength).toBeGreaterThan(1000);
+    const bad = await post('/proxy/api.elevenlabs.io/v1/sound-generation', { duration_seconds: 1 });
+    expect(bad.res.status).toBe(422);
   });
 });

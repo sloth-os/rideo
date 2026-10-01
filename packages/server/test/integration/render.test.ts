@@ -161,7 +161,7 @@ describe('render plan through native ffmpeg', () => {
   it('renders one continuous soundtrack as long as the video', async () => {
     const t = film();
     const s = soundtrackGraph(t, { inputPath });
-    const out = join(dir, 'soundtrack.m4a');
+    const out = join(dir, 'soundtrack.flac');
     await ff.run([...s.args, ...soundtrackEncodeArgs(), out]);
     const probe = await ff.probe(out);
     expect(probe.hasAudio).toBe(true);

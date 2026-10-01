@@ -1,3 +1,4 @@
+export * from './audio';
 export * from './consistency';
 export * from './dialogue';
 export * from './diff/json-diff';

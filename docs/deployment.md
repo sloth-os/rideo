@@ -67,6 +67,8 @@ editor-job staging area and, without a configured certificate, the development C
 | `RIDEO_VISION_PROVIDER` / `_PROXY_DOMAIN` / `_MODEL` | LLM values | vision model for the judge and descriptions |
 | `RIDEO_STT_PROXY_DOMAIN` / `RIDEO_STT_MODEL` | – / `whisper-1` | optional speech-to-text |
 | `RIDEO_TTS_PROVIDER` | `off` | dialogue voices ([dialogue](design/dialogue.md)): `elevenlabs` (design, clone, speech with timings), `openai` (preset voices) or `off`; new projects speak their dialogue when set |
+| `RIDEO_SFX_PROVIDER` | `off` | generated sound effects ([post audio](design/post-audio.md)): `elevenlabs` (sound generation through the proxy) or `off` (`sfx_unavailable`) |
+| `RIDEO_SFX_PROXY_DOMAIN` / `RIDEO_SFX_MODEL` | `api.elevenlabs.io` / `eleven_text_to_sound_v2` | sound-effects endpoint behind the gateway proxy |
 | `RIDEO_TTS_PROXY_DOMAIN` / `RIDEO_TTS_MODEL` | provider default (`api.elevenlabs.io` / `eleven_multilingual_v2`, `api.openai.com` / `gpt-4o-mini-tts`) | TTS endpoint behind the gateway proxy |
 | `RIDEO_EDIT_MODEL` | `auto` | video-to-video model of take edits ([take editing](design/take-editing.md)); projects can override `models.edit` |
 | `RIDEO_LIPSYNC_MODEL` | `auto` | video model of the lip-sync pass (projects can override `models.lipSync`) |

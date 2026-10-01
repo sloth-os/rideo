@@ -1,6 +1,7 @@
+import { duckEnvelope, duckExpression } from '../audio/mix';
 import type { MediaRef } from '../schemas/common';
 import type { ExportQuality } from '../schemas/job';
-import type { TextItem, Timeline } from '../schemas/timeline';
+import { AUDIO_ROLES, type AudioRole, type TextItem, type Timeline } from '../schemas/timeline';
 import {
   audioSegments,
   isStillMedia,
@@ -300,8 +301,19 @@ export function atempoChain(speed: number): string {
   return `${parts.join(',')},`;
 }
 
-/** The soundtrack of the whole film (as long as the video: `totalFrames / fps`). */
-export function soundtrackGraph(t: Timeline, opts: GraphInput): { args: string[]; durationSec: number } {
+export interface SoundtrackGraph {
+  /** Inputs, `-filter_complex` and `-map [aout]`: append the encoder options and the mix's output path. */
+  args: string[];
+  durationSec: number;
+  /** With `stems`: the label of each stem's output, mapped to its own file (`stemOutputArgs`). */
+  stems: Record<AudioRole, string> | null;
+}
+
+/**
+ * The soundtrack of the whole film (as long as the video: `totalFrames / fps`). Each stem is mixed on its own bus,
+ * the music bus is ducked under speech, and the buses are summed (docs/design/post-audio.md#stems).
+ */
+export function soundtrackGraph(t: Timeline, opts: GraphInput & { stems?: boolean }): SoundtrackGraph {
   const len = totalFrames(t) / t.fps;
   const audio = audioSegments(t).filter((a) => a.media.hasAudio !== false);
   const args: string[] = [];
@@ -318,17 +330,65 @@ export function soundtrackGraph(t: Timeline, opts: GraphInput): { args: string[]
     chain += `,adelay=${delay}|${delay}[a${k}]`;
     af.push(chain);
   });
-  if (audio.length === 0) af.push(`anullsrc=r=48000:cl=stereo,atrim=0:${n(len)}[aout]`);
-  else if (audio.length === 1) af.push(`[a0]apad,atrim=0:${n(len)}[aout]`);
+  const silence = `anullsrc=r=48000:cl=stereo,atrim=0:${n(len)}`;
+  const duck = duckEnvelope(t);
+  const buses: string[] = [];
+  const stems: Partial<Record<AudioRole, string>> = {};
+  for (const role of AUDIO_ROLES) {
+    const ks = audio.flatMap((a, k) => (a.role === role ? [k] : []));
+    if (!ks.length) {
+      if (opts.stems) {
+        af.push(`${silence}[stem_${role}]`);
+        stems[role] = `stem_${role}`;
+      }
+      continue;
+    }
+    let chain =
+      ks.length === 1
+        ? `[a${ks[0]}]apad,atrim=0:${n(len)}`
+        : `${ks.map((k) => `[a${k}]`).join('')}amix=inputs=${ks.length}:normalize=0:dropout_transition=0,apad,atrim=0:${n(len)}`;
+    // 10 ms frames: `eval=frame` steps the gain once per frame, so the ramps stay smooth.
+    if (role === 'music' && duck)
+      chain += `,asetnsamples=n=480:p=0,volume='${duckExpression(duck)}':eval=frame`;
+    if (opts.stems) {
+      af.push(`${chain},asplit=2[bus_${role}][stem_${role}]`);
+      stems[role] = `stem_${role}`;
+    } else af.push(`${chain}[bus_${role}]`);
+    buses.push(`bus_${role}`);
+  }
+  if (buses.length === 0) af.push(`${silence}[aout]`);
+  else if (buses.length === 1) af.push(`[${buses[0]}]anull[aout]`);
   else
     af.push(
-      `${audio.map((_, k) => `[a${k}]`).join('')}amix=inputs=${audio.length}:normalize=0:dropout_transition=0,apad,atrim=0:${n(len)}[aout]`,
+      `${buses.map((b) => `[${b}]`).join('')}amix=inputs=${buses.length}:normalize=0:dropout_transition=0[aout]`,
     );
-  return { args: [...args, '-filter_complex', af.join(';'), '-map', '[aout]'], durationSec: len };
+  return {
+    args: [...args, '-filter_complex', af.join(';'), '-map', '[aout]'],
+    durationSec: len,
+    stems: opts.stems ? (stems as Record<AudioRole, string>) : null,
+  };
 }
 
+/**
+ * The staged soundtrack and stems are lossless: `export.finish` normalizes their loudness and encodes the
+ * deliverables (docs/design/post-audio.md#loudness).
+ */
 export function soundtrackEncodeArgs(): string[] {
-  return ['-vn', '-c:a', 'aac', '-b:a', '192k', '-ar', '48000'];
+  return ['-vn', '-c:a', 'flac', '-sample_fmt', 's16', '-ar', '48000'];
+}
+
+export const SOUNDTRACK_FILE = 'soundtrack.flac';
+export const stemFile = (role: AudioRole) => `stem-${role}.flac`;
+
+/** The outputs of the stems after the mix's: `-map [stem_role] <encoder> <path>` for each stem. */
+export function stemOutputArgs(g: SoundtrackGraph, path: (role: AudioRole) => string): string[] {
+  if (!g.stems) return [];
+  return AUDIO_ROLES.flatMap((role) => [
+    '-map',
+    `[${g.stems![role]}]`,
+    ...soundtrackEncodeArgs(),
+    path(role),
+  ]);
 }
 
 /** Every distinct media file a render reads. */

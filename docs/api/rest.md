@@ -26,6 +26,7 @@ Errors are RFC 9457 problem details (`application/problem+json`) with a stable `
 | `voice_locked` | 409 | V2: change a locked voice |
 | `board_unapprovable` | 409 | approving a storyboard frame that is missing, failed, stale or outdated ([storyboard](../design/storyboard.md)) |
 | `tts_unavailable` | 422 | voices or TTS dialogue without a TTS provider on the server (or cloning with one that cannot clone) |
+| `sfx_unavailable` | 422 | sound effects without a sound-effects provider on the server (`RIDEO_SFX_PROVIDER`) |
 | `consistency_gate` | 409 | R7: approval or export blocked by unverified, failed or stale takes |
 | `gate_unmet` | 409 | workflow gate requirements not satisfied (`errors[]` lists them) |
 | `timeline_op_invalid` | 422 | a timeline op failed (`errors[0].opIndex`) |
@@ -140,11 +141,13 @@ Errors are RFC 9457 problem details (`application/problem+json`) with a stable `
 |---|---|---|---|
 | GET | `/api/projects/:id/timeline` | – | `Timeline` |
 | POST | `/api/projects/:id/timeline/ops` | `{ops[]}` | `{timeline, commit}` |
-| POST | `/api/projects/:id/timeline/assemble` | `{captions?, musicResourceId?}` | `{timeline, commit}` |
+| POST | `/api/projects/:id/timeline/assemble` | `{captions?, musicResourceId?}` | `{timeline, commit}` (with the default mix: ducking on) |
+| POST | `/api/projects/:id/timeline/score` | `{direction?}` | `202 Job` (`score.generate`: a cue per scene on the Music track, [post audio](../design/post-audio.md)) |
+| POST | `/api/projects/:id/timeline/effects` | – | `202 Job` (`sfx.generate`; `sfx_unavailable`) |
 | POST | `/api/projects/:id/analyses` | `{resourceId}` | `{analysis, job}` (`analysis.signals` editor job) |
 | PATCH | `/api/projects/:id/analyses/:aid/suggestions` | `{decisions: [{id, status}]}` | `Analysis` |
 | POST | `/api/projects/:id/analyses/:aid/auto-edit` | – | `{timeline, commit}` |
-| POST | `/api/projects/:id/exports` | `{quality?, engine?: "auto" \| "ffmpeg" \| "webcodecs", source?: "timeline" \| "animatic"}` | `{export, job}` (`export.render` editor job) |
+| POST | `/api/projects/:id/exports` | `{quality?, engine?: "auto" \| "ffmpeg" \| "webcodecs", source?: "timeline" \| "animatic", loudness?: "streaming" \| "broadcast" \| "off", stems?}` | `{export, job}` (`export.render` editor job; the export records `loudness` and, with `stems`, the three stem WAVs) |
 | GET | `/api/projects/:id/exports` | – | `Export[]` |
 
 ## History

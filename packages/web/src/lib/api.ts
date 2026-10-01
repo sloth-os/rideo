@@ -14,6 +14,7 @@ import type {
   Export,
   ExportQuality,
   Job,
+  LoudnessTarget,
   Probe,
   Project,
   ProjectDocs,
@@ -73,6 +74,8 @@ export interface PublicConfig {
     auth: boolean;
     tts: { provider: string; clone: boolean } | null;
     voiceJudge: boolean;
+    /** Generated sound effects (docs/design/post-audio.md). */
+    sfx?: { provider: string } | null;
   };
   llm: { provider: string; model: string; vision: string };
   models: Record<'image' | 'video' | 'music', { id: string; limits?: Record<string, unknown> | null }[]>;
@@ -334,6 +337,10 @@ export const api = {
     ),
   assemble: (id: string, body: { captions?: boolean; musicResourceId?: string }) =>
     request<{ timeline: Timeline }>('POST', `${p(id)}/timeline/assemble`, body),
+  /** Post audio (docs/design/post-audio.md#surfaces): a cue per scene, effects from the action lines. */
+  scoreCut: (id: string, body: { direction?: string }) =>
+    request<Job>('POST', `${p(id)}/timeline/score`, body),
+  generateEffects: (id: string) => request<Job>('POST', `${p(id)}/timeline/effects`, {}),
   analyze: (id: string, resourceId: string) =>
     request<{ analysis: Analysis; job: Job }>('POST', `${p(id)}/analyses`, { resourceId }),
   reviewSuggestions: (
@@ -346,7 +353,13 @@ export const api = {
   /** Queues an export; an editor tab renders it and the server watermarks it. */
   createExport: (
     id: string,
-    body: { quality: ExportQuality; engine: RenderEngineChoice; source?: 'timeline' | 'animatic' },
+    body: {
+      quality: ExportQuality;
+      engine: RenderEngineChoice;
+      source?: 'timeline' | 'animatic';
+      loudness?: LoudnessTarget;
+      stems?: boolean;
+    },
   ) => request<{ export: Export; job: Job }>('POST', `${p(id)}/exports`, body),
   // Storyboard and animatic (docs/design/storyboard.md#surfaces)
   generateStoryboard: (id: string) => request<Job>('POST', `${p(id)}/storyboard/generate`, {}),

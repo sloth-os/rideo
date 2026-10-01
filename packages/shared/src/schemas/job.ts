@@ -20,6 +20,8 @@ export const JOB_KINDS = [
   'shot.group',
   'batch.generate',
   'music.generate',
+  'score.generate',
+  'sfx.generate',
   'media.process',
   'analysis.signals',
   'analysis.suggest',
@@ -54,6 +56,8 @@ export const JOB_LANES: Record<JobKind, Lane> = {
   'shot.group': 'video',
   'batch.generate': 'control',
   'music.generate': 'music',
+  'score.generate': 'music',
+  'sfx.generate': 'music',
   'media.process': 'client',
   'analysis.signals': 'client',
   'analysis.suggest': 'llm',
@@ -125,6 +129,29 @@ export function isTerminalJob(job: Pick<Job, 'status'>): boolean {
 
 export const ExportQualitySchema = z.enum(['draft', 'standard', 'high']);
 export type ExportQuality = z.infer<typeof ExportQualitySchema>;
+/** Loudness targets of an export (docs/design/post-audio.md#loudness). */
+export const LoudnessTargetSchema = z.enum(['streaming', 'broadcast', 'off']);
+export type LoudnessTarget = z.infer<typeof LoudnessTargetSchema>;
+
+/** The loudness of an export: the target, and what `export.finish` measured after normalizing. */
+export const ExportLoudnessSchema = z.object({
+  target: LoudnessTargetSchema,
+  mode: z.enum(['pending', 'linear', 'dynamic', 'silent', 'off']).default('pending'),
+  integratedLufs: z.number().nullable().default(null),
+  truePeakDb: z.number().nullable().default(null),
+  lra: z.number().nullable().default(null),
+  inputLufs: z.number().nullable().default(null),
+});
+export type ExportLoudness = z.infer<typeof ExportLoudnessSchema>;
+
+/** Dialogue, music and effects stems of an export (docs/design/post-audio.md#stems). */
+export const ExportStemsSchema = z.object({
+  dialogue: MediaRefSchema,
+  music: MediaRefSchema,
+  effects: MediaRefSchema,
+});
+export type ExportStems = z.infer<typeof ExportStemsSchema>;
+
 export const RenderEngineSchema = z.enum(['ffmpeg', 'webcodecs']);
 export type RenderEngine = z.infer<typeof RenderEngineSchema>;
 export const RenderEngineChoiceSchema = z.enum(['auto', 'ffmpeg', 'webcodecs']);
@@ -145,6 +172,11 @@ export const ExportSchema = z.object({
   contentCredentials: ContentCredentialsStampSchema.nullable().default(null),
   disclosure: DisclosureStampSchema.nullable().default(null),
   timelineCommit: z.string().nullable().default(null),
+  /** Null on exports from before post audio (docs/design/post-audio.md). */
+  loudness: ExportLoudnessSchema.nullable().default(null),
+  /** Asked for with `stems`; null until published. */
+  stemsRequested: z.boolean().default(false),
+  stems: ExportStemsSchema.nullable().default(null),
   durationSec: z.number().nonnegative().optional(),
   width: z.number().int().positive().optional(),
   height: z.number().int().positive().optional(),

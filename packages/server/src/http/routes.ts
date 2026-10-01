@@ -30,6 +30,7 @@ import {
   ReorderShotsInputSchema,
   ResourceInputSchema,
   RestoreInputSchema,
+  ScoreInputSchema,
   ScreenplayPatchInputSchema,
   SelectVoiceInputSchema,
   ShotUpdateInputSchema,
@@ -651,6 +652,15 @@ export function registerRoutes(app: FastifyInstance, studio: Studio): void {
   );
   app.post('/api/projects/:id/timeline/assemble', async (req) =>
     studio.edit.assemble(actor(), pid(req), parse(AssembleInputSchema, req.body)),
+  );
+  // Post audio (docs/design/post-audio.md#surfaces)
+  app.post('/api/projects/:id/timeline/score', async (req, reply) =>
+    reply
+      .code(202)
+      .send(await studio.edit.scoreCut(actor(), pid(req), parse(ScoreInputSchema, req.body ?? {}))),
+  );
+  app.post('/api/projects/:id/timeline/effects', async (req, reply) =>
+    reply.code(202).send(await studio.edit.effectsForCut(actor(), pid(req))),
   );
   app.post('/api/projects/:id/analyses', async (req, reply) =>
     reply

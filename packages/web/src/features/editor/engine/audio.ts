@@ -1,9 +1,19 @@
-import { type AudioSegment, audioSegments, type Timeline } from '@rideo/shared';
+import {
+  AUDIO_ROLES,
+  type AudioRole,
+  type AudioSegment,
+  audioSegments,
+  type DuckEnvelope,
+  duckEnvelope,
+  duckPoints,
+  type Timeline,
+} from '@rideo/shared';
 import type { MediaPool } from './media-pool';
 
 /**
  * Schedules the timeline's audio segments on an (Offline)AudioContext from `from` seconds: each decoded
- * buffer gets a gain envelope for volume and fades; speed maps to playbackRate.
+ * buffer gets a gain envelope for volume and fades; speed maps to playbackRate. Segments play into their stem's
+ * bus, and the music bus ducks under speech exactly like the render (docs/design/post-audio.md#ducking).
  */
 export async function scheduleAudio(
   ctx: BaseAudioContext,
@@ -15,10 +25,31 @@ export async function scheduleAudio(
 ): Promise<AudioScheduledSourceNode[]> {
   const nodes: AudioScheduledSourceNode[] = [];
   const segments = audioSegments(timeline).filter((s) => s.end > from);
+  const buses = {} as Record<AudioRole, GainNode>;
+  for (const role of AUDIO_ROLES) {
+    buses[role] = ctx.createGain();
+    buses[role].connect(ctx.destination);
+  }
+  const duck = duckEnvelope(timeline);
+  if (duck) automateDuck(buses.music.gain, duck, from, startAt);
   await Promise.all(
-    segments.map((seg) => scheduleSegment(ctx, seg, pool, from, startAt, nodes, isCancelled)),
+    segments.map((seg) =>
+      scheduleSegment(ctx, seg, pool, from, startAt, nodes, isCancelled, buses[seg.role]),
+    ),
   );
   return nodes;
+}
+
+/** The duck as gain automation from timeline second `from` (played at context time `startAt`). */
+export function automateDuck(
+  param: Pick<AudioParam, 'setValueAtTime' | 'linearRampToValueAtTime'>,
+  env: DuckEnvelope,
+  from: number,
+  startAt: number,
+): void {
+  const [first, ...rest] = duckPoints(env, from);
+  param.setValueAtTime(first!.gain, startAt);
+  for (const p of rest) param.linearRampToValueAtTime(p.gain, startAt + (p.time - from));
 }
 
 async function scheduleSegment(
@@ -29,11 +60,12 @@ async function scheduleSegment(
   startAt: number,
   nodes: AudioScheduledSourceNode[],
   isCancelled: () => boolean,
+  bus: AudioNode,
 ): Promise<void> {
   const entry = await pool.get(seg.media);
   if (!entry.audio) return;
   const gain = ctx.createGain();
-  gain.connect(ctx.destination);
+  gain.connect(bus);
   const at = (timelineTime: number) => startAt + (timelineTime - from);
   // Envelope: volume with fade in/out, in context time.
   const t0 = Math.max(seg.start, from);

@@ -215,6 +215,39 @@ export const FootageAnalyzeOutputSchema = z.object({
 });
 export type FootageAnalyzeOutput = z.infer<typeof FootageAnalyzeOutputSchema>;
 
+/** A composition per cue of the score (docs/design/post-audio.md#score-one-cue-per-scene). */
+export const ScorePlanOutputSchema = z.object({
+  cues: z
+    .array(
+      z.object({
+        index: z.coerce.number().int().nonnegative(),
+        prompt: z.string().min(3).max(800),
+        bpm: z.coerce.number().int().min(40).max(220).optional().catch(undefined),
+      }),
+    )
+    .min(1)
+    .max(200),
+});
+export type ScorePlanOutput = z.infer<typeof ScorePlanOutputSchema>;
+
+/** Sound effects planned from the shots' action lines (docs/design/post-audio.md#effects-from-action-lines). */
+export const SfxPlanOutputSchema = z.object({
+  effects: z
+    .array(
+      z.object({
+        shot: z.coerce.number().int().nonnegative(),
+        description: z.string().min(3).max(300),
+        at: z.coerce.number().nonnegative().catch(0).default(0),
+        durationSec: z.coerce.number().min(0.5).max(22).catch(2).default(2),
+        kind: z.enum(['spot', 'ambience']).catch('spot').default('spot'),
+      }),
+    )
+    .max(600)
+    .catch([])
+    .default([]),
+});
+export type SfxPlanOutput = z.infer<typeof SfxPlanOutputSchema>;
+
 export const LLM_TASKS = [
   'media.describe',
   'screenplay.generate',
@@ -224,6 +257,8 @@ export const LLM_TASKS = [
   'consistency.judge',
   'voice.judge',
   'footage.analyze',
+  'score.plan',
+  'sfx.plan',
 ] as const;
 export type LlmTaskId = (typeof LLM_TASKS)[number];
 
@@ -315,6 +350,26 @@ export type VoiceJudgeOutput = z.infer<typeof VoiceJudgeOutputSchema>;
 export interface VoiceJudgeInput {
   speakers: { characterId: string; name: string; description: string }[];
   lines: { speaker: string; text: string }[];
+}
+
+export interface ScorePlanInput {
+  film: { title: string; logline: string; genre: string; tone: string; style: string };
+  /** The user's direction for the whole score ('' when none). */
+  direction: string;
+  cues: {
+    index: number;
+    durationSec: number;
+    heading: string;
+    summary: string;
+    action: string;
+    /** People speak in the scene: keep the cue under the dialogue. */
+    dialogue: boolean;
+  }[];
+}
+
+export interface SfxPlanInput {
+  maxPerShot: number;
+  shots: { index: number; durationSec: number; description: string; action: string; location: string }[];
 }
 
 export const INPUT_PREFIX = 'INPUT:\n';

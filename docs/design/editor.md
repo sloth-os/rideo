@@ -24,9 +24,12 @@ type VideoItem = {
   transitionIn?: { type: 'crossfade' | 'wipe' | 'dip_to_black'; duration: number } | null;
   effects?: { brightness?: number; contrast?: number; saturation?: number };
   label?: string;
+  speech?: [number, number][];                 // speech spans in source seconds (ducking keys)
 };
 type AudioItem = { id: string; kind: 'audio'; source: Source; start: number; in: number; out: number;
-                   volume: number; fadeIn?: number; fadeOut?: number };
+                   volume: number; fadeIn?: number; fadeOut?: number; speech?: [number, number][] };
+// Tracks: { id, kind, name, muted?, volume?, role?: 'dialogue' | 'music' | 'effects', items }
+// Timeline: { version, fps, width, height, tracks, mix?: { ducking: { enabled, depthDb, attackSec, releaseSec } } }
 type TextItem  = { id: string; kind: 'text'; start: number; duration: number; text: string;
                    style: { preset: 'title' | 'lower_third' | 'caption' | 'label';
                             position?: 'top' | 'center' | 'bottom'; align?: 'left' | 'center' | 'right';
@@ -61,7 +64,8 @@ committed.
 | `set_fades` | `itemId`, `fadeIn?`, `fadeOut?` | |
 | `set_effects` | `itemId`, `effects` | |
 | `add_text` / `update_text` | text item fields | |
-| `add_track` / `remove_track` / `set_track` | track fields | the primary track cannot be removed |
+| `add_track` / `remove_track` / `set_track` | track fields (`role`: the stem of an audio track or of the primary track's sound) | the primary track cannot be removed |
+| `set_mix` | `ducking: {enabled?, depthDb?, attackSec?, releaseSec?}` | the music ducks under speech ([post audio](post-audio.md#ducking)) |
 | `replace_source` | `itemId`, `source` | swap to a regenerated take, keeping in/out when possible |
 | `set_output` | `fps?`, `width?`, `height?` | |
 
@@ -235,8 +239,11 @@ so every chunk has exactly `round(LEN·FPS)` frames and the chunks join without 
 
 The audio is planned for the whole film (audio is cheap, and one continuous encode avoids AAC priming gaps
 at chunk joins): item audio (when `hasAudio`, not muted) and audio tracks,
-`atrim → asetpts → atempo chain → volume → afade → adelay`, then `amix=normalize=0`, `apad`, and trim to the
-length (`anullsrc` when silent). ffmpeg.wasm renders it to AAC (`soundtrack.m4a`, 192 kb/s).
+`atrim → asetpts → atempo chain → volume → afade → adelay`, mixed per stem (dialogue, music, effects) with
+`amix=normalize=0`, `apad` and trimmed to the length; the music bus is ducked under speech; the buses are summed
+([post audio](post-audio.md#stems)). ffmpeg.wasm renders it losslessly (`soundtrack.flac`) and, when the export
+asks for stems, each bus to `stem-<role>.flac` in the same run. The preview plays the same buses with the same
+duck automation (`automateDuck`).
 
 ### Engines
 
@@ -253,8 +260,9 @@ speed and quality over size.
 ### Finishing (server)
 
 When the last part arrives, the `export.finish` job concatenates the chunks (concat demuxer), runs the
-watermark frame pipeline (decode → `embedLuma` → x264 at the export quality), muxes the soundtrack
-(`-c:a copy`), writes provenance metadata, registers the watermark, publishes
+watermark frame pipeline (decode → `embedLuma` → x264 at the export quality), normalizes the soundtrack's
+loudness to the export's target ([post audio](post-audio.md#loudness)) and muxes it as AAC 192 kb/s, bounded by the
+film's length (`-t`, never `-shortest`), publishes the stems as signed WAVs when asked, writes provenance metadata, registers the watermark, publishes
 `media/exports/<exportId>-<hash12>.mp4` and tags the commit. The final encode follows the quality presets:
 
 | Preset | Video | Max size |
@@ -301,8 +309,10 @@ before it is closed. Without an open tab, editor jobs wait in `queued`; MCP resu
   locally at once (optimistic) and are confirmed by the server.
 - Inspector for the selected item (in/out, speed, volume, fades, effects, transition, text and timing).
 - Undo restores `timeline.json` from the previous timeline commit (a new commit; history is never rewritten).
+- Mix card ([post audio](post-audio.md#surfaces)): ducking on/off and depth, every audio track's stem,
+  *Score the cut* (with an optional direction) and *Add sound effects*. Lanes carry `data-track-role`.
 - Export dialog: quality and engine (*Auto*, *ffmpeg.wasm*, *WebCodecs*) with the detected capabilities,
-  chunk progress, and failures that stay visible in the dialog. The render runs in this tab; the export
+  the loudness target and *Stems*, chunk progress, and failures that stay visible in the dialog. The render runs in this tab; the export
   appears in Exports once the server has watermarked it.
 - An engine indicator in the header shows whether ffmpeg.wasm is loaded and what this tab is working on.
-- On phones the timeline collapses into a vertical list and the inspector sits under the preview.
+- On phones the timeline collapses into a vertical list; the inspector and the Mix card sit under it.

@@ -48,6 +48,23 @@ describe('config', () => {
     expect(() => loadConfig({ RIDEO_TTS_PROVIDER: 'mystery' })).toThrow();
   });
 
+  it('configures sound effects through the gateway proxy (docs/design/post-audio.md)', () => {
+    expect(loadConfig({}).sfx).toBeUndefined();
+    expect(loadConfig({ RIDEO_SFX_PROVIDER: 'elevenlabs' }).sfx).toEqual({
+      provider: 'elevenlabs',
+      domain: 'api.elevenlabs.io',
+      model: 'eleven_text_to_sound_v2',
+    });
+    expect(
+      loadConfig({
+        RIDEO_SFX_PROVIDER: 'elevenlabs',
+        RIDEO_SFX_PROXY_DOMAIN: 'sfx.internal',
+        RIDEO_SFX_MODEL: 'x',
+      }).sfx,
+    ).toEqual({ provider: 'elevenlabs', domain: 'sfx.internal', model: 'x' });
+    expect(() => loadConfig({ RIDEO_SFX_PROVIDER: 'mystery' })).toThrow();
+  });
+
   it('switches to an external WebDAV server and provider domains', () => {
     const c = loadConfig({
       RIDEO_WEBDAV_URL: 'https://dav.example/remote.php',

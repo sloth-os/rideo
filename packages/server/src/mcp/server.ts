@@ -23,6 +23,7 @@ import {
   IdentitySchema,
   isTerminalJob,
   LENS_PRESETS,
+  LoudnessTargetSchema,
   MotionReferenceSchema,
   ProjectSettingsPatchSchema,
   ReferenceViewSchema,
@@ -841,7 +842,7 @@ function buildServer(studio: Studio): McpServer {
   );
   tool(
     'timeline_apply',
-    'Apply timeline operations atomically (insert, remove, move, trim, split, set_transition, set_speed, set_volume, set_fades, set_effects, add_text, update_text, add_track, remove_track, set_track, replace_source, set_output).',
+    'Apply timeline operations atomically (insert, remove, move, trim, split, set_transition, set_speed, set_volume, set_fades, set_effects, add_text, update_text, add_track, remove_track, set_track (name, mute, volume, stem role), set_mix (ducking), replace_source, set_output).',
     { projectId: PROJECT, ops: z.array(TimelineOpSchema).min(1) },
     (a, actor) => studio.edit.applyOps(actor, a.projectId, a.ops),
   );
@@ -850,6 +851,18 @@ function buildServer(studio: Studio): McpServer {
     'Build the timeline from approved clips (optional captions and music bed).',
     { projectId: PROJECT, captions: z.boolean().optional(), musicResourceId: z.string().optional() },
     (a, actor) => studio.edit.assemble(actor, a.projectId, a),
+  );
+  tool(
+    'score_generate',
+    'Score the cut: one generated music cue per scene, laid on the Music track with crossfades; an optional direction steers the whole score (job).',
+    { projectId: PROJECT, direction: z.string().max(300).optional() },
+    (a, actor) => studio.edit.scoreCut(actor, a.projectId, { direction: a.direction }),
+  );
+  tool(
+    'effects_generate',
+    'Add sound effects planned from the shots’ action lines to the Effects track (job; needs a sound-effects provider).',
+    { projectId: PROJECT },
+    (a, actor) => studio.edit.effectsForCut(actor, a.projectId),
   );
   tool(
     'footage_analyze',
@@ -886,6 +899,10 @@ function buildServer(studio: Studio): McpServer {
       quality: ExportQualitySchema.optional(),
       engine: RenderEngineChoiceSchema.optional(),
       source: z.enum(['timeline', 'animatic']).optional(),
+      loudness: LoudnessTargetSchema.optional().describe(
+        'streaming (−14 LUFS, default), broadcast (EBU R128, −23 LUFS) or off',
+      ),
+      stems: z.boolean().optional().describe('also deliver dialogue, music and effects stems (WAV)'),
     },
     async (a, actor) => ({
       ...(await studio.edit.createExport(actor, a.projectId, a)),

@@ -96,6 +96,9 @@ describe('invisible watermark with real codecs', () => {
     expect(r.provenance?.brand.owner).toBe('Test Studio');
     expect(r.metadata.comment).toBe(`rideo-wm:v1:${id}`);
     expect((await ff.probe(marked)).hasAudio).toBe(true);
+    // every frame survives the mux with the sound (x264's lookahead is not cut off)
+    const log = await ff.run(['-i', marked, '-map', '0:v', '-f', 'null', '-'], { logLevel: 'info' });
+    expect(Number([...log.matchAll(/frame=\s*(\d+)/g)].at(-1)?.[1])).toBe(96);
   });
 
   it('does not detect anything in the unmarked source', async () => {

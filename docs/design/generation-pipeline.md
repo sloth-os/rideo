@@ -39,6 +39,8 @@ type Job = {
 | `shot.group` | video | several consecutive shots in one multi-shot request, split at the cuts, one verified take per shot ([multi-shot](multi-shot.md)) |
 | `batch.generate` | control | extend, plan and generate until the target length |
 | `music.generate` | music | SDK music task → resource |
+| `score.generate` | music | score the cut: a cue per scene planned by the LLM, generated with the music model, laid on the Music track ([post audio](post-audio.md)) |
+| `sfx.generate` | music | sound effects planned from the action lines, generated through the proxy, placed on the Effects track |
 | `media.process` | client | probe + poster of an imported resource (runs in a studio tab) |
 | `analysis.signals` | client | footage analysis signals with ffmpeg.wasm (runs in a studio tab) |
 | `analysis.suggest` | llm | transcript, AI summary and suggestions + rule suggestions from the signals |

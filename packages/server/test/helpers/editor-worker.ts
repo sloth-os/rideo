@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import {
   AnalysisSignalsParamsSchema,
+  AUDIO_ROLES,
   analysisCommand,
   chunkEncodeArgs,
   chunkGraph,
@@ -19,9 +20,12 @@ import {
   probeCommand,
   renderInputs,
   renderSize,
+  SOUNDTRACK_FILE,
   soundtrackEncodeArgs,
   soundtrackGraph,
   speechCommand,
+  stemFile,
+  stemOutputArgs,
   type Timeline,
   thumbnailCommand,
   thumbnailPicks,
@@ -211,11 +215,18 @@ export async function startEditorWorker(
         staged++;
         if (opts.dieAfterParts !== undefined && staged >= opts.dieAfterParts) throw new Died();
       }
-      if (!job.staged.includes('soundtrack.m4a')) {
-        const s = soundtrackGraph(t, { inputPath: (m) => paths.get(m.hash)! });
-        const out = join(dir, `${job.id}-soundtrack.m4a`);
-        await mustRun([...s.args, ...soundtrackEncodeArgs(), out]);
-        await upload(job, 'soundtrack.m4a', out);
+      // The soundtrack (lossless) and, when asked, the stems from the same run (docs/design/post-audio.md#stems).
+      const audioFiles = [SOUNDTRACK_FILE, ...(params.stems ? AUDIO_ROLES.map(stemFile) : [])];
+      if (!audioFiles.every((f) => job.staged.includes(f))) {
+        const s = soundtrackGraph(t, { inputPath: (m) => paths.get(m.hash)!, stems: params.stems });
+        const local = (name: string) => join(dir, `${job.id}-${name}`);
+        await mustRun([
+          ...s.args,
+          ...soundtrackEncodeArgs(),
+          local(SOUNDTRACK_FILE),
+          ...stemOutputArgs(s, (role) => local(stemFile(role))),
+        ]);
+        for (const f of audioFiles) await upload(job, f, local(f));
       }
       const size = renderSize(t, params.quality);
       return {
@@ -225,7 +236,10 @@ export async function startEditorWorker(
         fps: t.fps,
         durationSec: totalFrames(t) / t.fps,
         parts,
-        soundtrack: 'soundtrack.m4a',
+        soundtrack: SOUNDTRACK_FILE,
+        stems: params.stems
+          ? { dialogue: stemFile('dialogue'), music: stemFile('music'), effects: stemFile('effects') }
+          : null,
       };
     },
   };

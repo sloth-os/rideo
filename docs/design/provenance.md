@@ -58,6 +58,10 @@ Signed by `export.finish` after watermarking, encoding and muxing, before the ex
 | `org.rideo.provenance` | `{project, asset: {kind: "export", exportId}, timelineCommit}` |
 | `org.rideo.disclosure` | `{label: boolean, text, reason: "policy" \| "real_person" \| null}` |
 
+**Stems** of an export ([post audio](post-audio.md#stems)) are signed the same way as WAV files: `c2pa.created`
+(composite, AI when a source is generated), `c2pa.placed` with that stem's own sources as ingredients, and
+`org.rideo.provenance` `{project, asset: {kind: "stem", exportId, stem}, timelineCommit}`. They carry no watermark.
+
 Manifests never contain names of real people, consent details or prompts: they travel with the file to
 the public.
 

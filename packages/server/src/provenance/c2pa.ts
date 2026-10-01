@@ -79,6 +79,18 @@ export interface ExportManifest {
   disclosure: DisclosureStamp | null;
 }
 
+/** A stem of an export (docs/design/post-audio.md#stems): the audio sources of one stem, mixed. */
+export interface StemManifest {
+  input: string;
+  output: string;
+  title: string;
+  projectId: string;
+  exportId: string;
+  role: 'dialogue' | 'music' | 'effects';
+  timelineCommit: string | null;
+  ingredients: ExportIngredient[];
+}
+
 export interface ContentCredentials {
   present: boolean;
   state?: 'invalid' | 'valid' | 'trusted';
@@ -171,14 +183,15 @@ export class C2paService {
       path: string;
       mime: string;
     }[],
+    mime = 'video/mp4',
   ): Promise<ContentCredentialsStamp> {
     if (!this.signer) throw new Error('C2PA signing is not configured');
     try {
       const builder = await Builder.withJsonAsync(definition as never);
       for (const ing of ingredients)
         await builder.addIngredient(JSON.stringify(ing.json), { path: ing.path, mimeType: ing.mime });
-      builder.sign(this.signer, { path: input, mimeType: 'video/mp4' }, { path: output });
-      const reader = await Reader.fromAsset({ path: output, mimeType: 'video/mp4' }, this.fastContext!);
+      builder.sign(this.signer, { path: input, mimeType: mime }, { path: output });
+      const reader = await Reader.fromAsset({ path: output, mimeType: mime }, this.fastContext!);
       const manifest = String((reader?.json() as Json | undefined)?.active_manifest ?? '');
       this.deps.metrics.c2pa.inc({ op: 'sign', result: 'ok' });
       return {
@@ -418,6 +431,50 @@ export class C2paService {
         path: ing.path,
         mime: ing.mime,
       })),
+    );
+  }
+
+  /** A stem of an export: a WAV composite placing the stem's audio sources (no watermark: that is in the picture). */
+  async signStem(m: StemManifest): Promise<ContentCredentialsStamp> {
+    const labels = m.ingredients.map((_, i) => `ingredient-${i + 1}`);
+    const ai = m.ingredients.some((i) => i.generated);
+    return this.sign(
+      {
+        claim_generator_info: this.generatorInfo(),
+        title: m.title,
+        format: 'audio/wav',
+        assertions: [
+          {
+            label: 'c2pa.actions.v2',
+            data: {
+              actions: [
+                {
+                  action: 'c2pa.created',
+                  digitalSourceType: ai ? COMPOSITE_AI : COMPOSITE,
+                  softwareAgent: { name: this.cfg.generator.name },
+                },
+                ...(labels.length ? [{ action: 'c2pa.placed', parameters: { ingredientIds: labels } }] : []),
+              ],
+            },
+          },
+          {
+            label: 'org.rideo.provenance',
+            data: {
+              project: m.projectId,
+              asset: { kind: 'stem', exportId: m.exportId, stem: m.role },
+              timelineCommit: m.timelineCommit,
+            },
+          },
+        ],
+      },
+      m.input,
+      m.output,
+      m.ingredients.map((ing, i) => ({
+        json: { title: ing.title, format: ing.mime, relationship: 'componentOf', label: labels[i] },
+        path: ing.path,
+        mime: ing.mime,
+      })),
+      'audio/wav',
     );
   }
 

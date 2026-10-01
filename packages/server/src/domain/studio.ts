@@ -10,6 +10,7 @@ import {
   voiceOf,
 } from '@rideo/shared';
 import { createAdapter, SttClient } from '../ai/llm';
+import { SfxClient } from '../ai/sfx';
 import { LlmTasks } from '../ai/tasks';
 import { createTts } from '../ai/tts';
 import type { Config } from '../config';
@@ -21,6 +22,7 @@ import { ProxyClient } from '../gateway/proxy-client';
 import { batchGenerate, clipGenerate, clipPlan } from '../jobs/handlers/clips';
 import type { HandlerDeps } from '../jobs/handlers/common';
 import { analysisSuggest, editAuto, exportFinish, timelineAssemble } from '../jobs/handlers/media';
+import { scoreGenerate, sfxGenerate } from '../jobs/handlers/post-audio';
 import { shotGenerate } from '../jobs/handlers/shot';
 import { shotGroup } from '../jobs/handlers/shot-group';
 import {
@@ -176,6 +178,7 @@ export function createStudio(
     staging,
     ...(config.stt ? { stt: new SttClient(proxy, config.stt.domain, config.stt.model) } : {}),
     ...(config.tts ? { tts: createTts(proxy, config.tts, metrics) } : {}),
+    ...(config.sfx ? { sfx: new SfxClient(proxy, config.sfx, metrics) } : {}),
     voiceJudge: config.voiceJudge ? new LlmVoiceJudge(llm) : null,
   };
   const services = {
@@ -209,6 +212,8 @@ export function createStudio(
   reg('take.extend', takeExtend);
   reg('timeline.extend', timelineExtend);
   reg('music.generate', musicGenerate);
+  reg('score.generate', scoreGenerate);
+  reg('sfx.generate', sfxGenerate);
   reg('clip.plan', clipPlan);
   reg('clip.generate', clipGenerate);
   reg('shot.generate', shotGenerate);

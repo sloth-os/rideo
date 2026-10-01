@@ -11,10 +11,14 @@ import type {
   LlmScene,
   MediaDescribeInput,
   MediaDescribeOutput,
+  ScorePlanInput,
+  ScorePlanOutput,
   ScreenplayExtendInput,
   ScreenplayExtendOutput,
   ScreenplayGenerateInput,
   ScreenplayGenerateOutput,
+  SfxPlanInput,
+  SfxPlanOutput,
 } from '@rideo/shared';
 import { decodePng, isPng } from './png';
 import { allSignatures, colorDistance, presenceRatio, type Rgb } from './signature';
@@ -385,5 +389,40 @@ export function footageAnalyze(input: FootageAnalyzeInput): FootageAnalyzeOutput
   return {
     summary: `${Math.round(input.durationSec)}s of footage in ${input.scenes.length} scene(s) with ${input.silences.length} silence(s) and ${input.blackSegments.length} black segment(s).`,
     suggestions,
+  };
+}
+
+/** Score plan (docs/design/post-audio.md#mock-gateway): a cue prompt from the scene heading and the film's tone. */
+export function scorePlan(input: ScorePlanInput): ScorePlanOutput {
+  const tone = input.film.tone || 'cinematic';
+  return {
+    cues: input.cues.map((c) => ({
+      index: c.index,
+      prompt:
+        `Instrumental underscore for “${c.heading}”: ${tone}, warm strings and soft piano` +
+        `${c.dialogue ? ', sparse and low under the dialogue' : ', a gentle melody'}` +
+        `${input.direction ? `; ${input.direction}` : ''}. Opens quietly, swells, resolves into the next scene.`,
+      bpm: 70 + ((c.index * 7) % 40),
+    })),
+  };
+}
+
+/** Sound effects plan: one spot effect per shot at 30% of it, named after the action's first words. */
+export function sfxPlan(input: SfxPlanInput): SfxPlanOutput {
+  return {
+    effects: input.shots.map((s) => {
+      const words = (s.action || s.description)
+        .replace(/[^\p{L}\p{N}\s'-]/gu, ' ')
+        .split(/\s+/)
+        .filter(Boolean);
+      const what = words.slice(0, 6).join(' ').toLowerCase() || 'a footstep';
+      return {
+        shot: s.index,
+        description: `the sound of ${what}`,
+        at: Math.round(s.durationSec * 0.3 * 10) / 10,
+        durationSec: Math.round(Math.min(2, Math.max(0.5, s.durationSec / 2)) * 10) / 10,
+        kind: 'spot' as const,
+      };
+    }),
   };
 }

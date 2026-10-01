@@ -155,7 +155,7 @@ describe('footage → edit workflow', () => {
     expect(done).toMatchObject({ status: 'succeeded', method: 'browser', engine: 'ffmpeg' });
     expect(done.durationSec).toBeCloseTo(53.5, 0);
     const render = await stack.api<Job>('GET', `/projects/${p.id}/jobs/${out.job.id}`);
-    expect(render.staged).toEqual(['part-0001.mp4', 'part-0002.mp4', 'soundtrack.m4a']);
+    expect(render.staged).toEqual(['part-0001.mp4', 'part-0002.mp4', 'soundtrack.flac']);
     expect(
       (await stack.api<any>('POST', '/watermark/detect', { projectId: p.id, mediaPath: done.media.path })).id,
     ).toBe(done.watermarkId);

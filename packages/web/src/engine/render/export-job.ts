@@ -1,9 +1,12 @@
 import {
+  AUDIO_ROLES,
   ExportRenderParamsSchema,
   type ExportRenderResult,
   planChunks,
   renderInputs,
   renderSize,
+  SOUNDTRACK_FILE,
+  stemFile,
   type Timeline,
   totalFrames,
   withDisclosure,
@@ -89,10 +92,13 @@ export async function exportRenderJob(ctx: EditorJobContext): Promise<ExportRend
       framesDone += chunk.frames;
       report(0, label);
     }
-    if (!ctx.job.staged.includes('soundtrack.m4a')) {
+    const audioFiles = [SOUNDTRACK_FILE, ...(params.stems ? AUDIO_ROLES.map(stemFile) : [])];
+    if (!audioFiles.every((f) => ctx.job.staged.includes(f))) {
       await loadInputs();
-      report(0, 'soundtrack');
-      await ctx.upload('soundtrack.m4a', await renderSoundtrack({ timeline, inputs, signal: ctx.signal }));
+      report(0, params.stems ? 'soundtrack and stems' : 'soundtrack');
+      const audio = await renderSoundtrack({ timeline, inputs, stems: params.stems, signal: ctx.signal });
+      await ctx.upload(SOUNDTRACK_FILE, audio.soundtrack);
+      if (audio.stems) for (const role of AUDIO_ROLES) await ctx.upload(stemFile(role), audio.stems[role]);
     }
   } finally {
     pool?.dispose();
@@ -104,6 +110,9 @@ export async function exportRenderJob(ctx: EditorJobContext): Promise<ExportRend
     fps,
     durationSec: total / fps,
     parts,
-    soundtrack: 'soundtrack.m4a',
+    soundtrack: SOUNDTRACK_FILE,
+    stems: params.stems
+      ? { dialogue: stemFile('dialogue'), music: stemFile('music'), effects: stemFile('effects') }
+      : null,
   };
 }

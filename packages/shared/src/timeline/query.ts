@@ -2,14 +2,16 @@ import type { z } from 'zod';
 import type { MediaRef } from '../schemas/common';
 import type {
   AudioItem,
+  AudioRole,
   Effects,
+  SpeechSpans,
   TextItem,
   Timeline,
   Track,
   TransitionSchema,
   VideoItem,
 } from '../schemas/timeline';
-import { itemDuration, itemEnd, primaryTrack } from './ops';
+import { itemDuration, itemEnd, primaryTrack, trackRole } from './ops';
 
 type Transition = z.infer<typeof TransitionSchema>;
 
@@ -192,6 +194,12 @@ export interface AudioSegment {
   volume: number;
   fadeIn: number;
   fadeOut: number;
+  /** The stem (docs/design/post-audio.md#stems). */
+  role: AudioRole;
+  /** The primary video's own sound (true) or an audio track item. */
+  primary: boolean;
+  /** Spans of speech in source time, when the item says where its speech is. */
+  speech: SpeechSpans | null;
 }
 
 /**
@@ -205,7 +213,9 @@ export function isStillMedia(media: Pick<MediaRef, 'mime'>): boolean {
 
 export function audioSegments(t: Timeline): AudioSegment[] {
   const out: AudioSegment[] = [];
-  const items = primaryTrack(t).items as VideoItem[];
+  const primary = primaryTrack(t);
+  const primaryRole = trackRole(primary) ?? 'dialogue';
+  const items = primary.items as VideoItem[];
   items.forEach((item, i) => {
     if (item.muted || item.volume <= 0 || item.source.media.hasAudio === false) return;
     if (isStillMedia(item.source.media)) return;
@@ -223,11 +233,15 @@ export function audioSegments(t: Timeline): AudioSegment[] {
       volume: item.volume,
       fadeIn: Math.max(item.fadeIn ?? 0, tin),
       fadeOut: Math.max(item.fadeOut ?? 0, tout),
+      role: primaryRole,
+      primary: true,
+      speech: item.speech ?? null,
     });
   });
   for (const track of t.tracks as Track[]) {
     if (track.kind !== 'audio' || track.muted) continue;
     const tv = track.volume ?? 1;
+    const role = trackRole(track) ?? 'effects';
     for (const item of track.items as AudioItem[]) {
       out.push({
         itemId: item.id,
@@ -240,6 +254,9 @@ export function audioSegments(t: Timeline): AudioSegment[] {
         volume: item.volume * tv,
         fadeIn: item.fadeIn ?? 0,
         fadeOut: item.fadeOut ?? 0,
+        role,
+        primary: false,
+        speech: item.speech ?? null,
       });
     }
   }

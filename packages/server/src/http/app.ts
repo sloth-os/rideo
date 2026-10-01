@@ -193,6 +193,8 @@ export async function buildServer(
           ? { provider: config.tts.provider, clone: config.tts.provider === 'elevenlabs' }
           : null,
         voiceJudge: !!config.voiceJudge,
+        /** Generated sound effects (docs/design/post-audio.md#effects-from-action-lines). */
+        sfx: config.sfx ? { provider: config.sfx.provider } : null,
       },
       llm: { provider: config.llm.provider, model: config.llm.model, vision: config.vision.model },
       defaults: studio.projects.defaultSettings(),

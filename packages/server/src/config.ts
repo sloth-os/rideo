@@ -67,6 +67,9 @@ export const EnvSchema = z.object({
   RIDEO_TTS_PROVIDER: z.enum(['elevenlabs', 'openai', 'off']).optional().default('off'),
   RIDEO_TTS_PROXY_DOMAIN: str(),
   RIDEO_TTS_MODEL: str(),
+  RIDEO_SFX_PROVIDER: z.enum(['elevenlabs', 'off']).optional().default('off'),
+  RIDEO_SFX_PROXY_DOMAIN: str('api.elevenlabs.io'),
+  RIDEO_SFX_MODEL: str('eleven_text_to_sound_v2'),
   RIDEO_LIPSYNC_MODEL: str('auto'),
   RIDEO_EDIT_MODEL: str('auto'),
   RIDEO_VOICE_JUDGE_PROVIDER: z.enum(['openai', 'gemini', 'off']).optional(),
@@ -117,6 +120,13 @@ const TTS_DEFAULTS = {
   openai: { domain: 'api.openai.com', model: 'gpt-4o-mini-tts' },
 } as const;
 
+/** Sound effects through the gateway proxy (docs/design/post-audio.md#effects-from-action-lines). */
+export interface SfxEndpoint {
+  provider: 'elevenlabs';
+  domain: string;
+  model: string;
+}
+
 const VOICE_JUDGE_DEFAULT_MODELS = { openai: 'gpt-4o-audio-preview', gemini: 'gemini-2.5-flash' } as const;
 
 export interface Config {
@@ -154,6 +164,8 @@ export interface Config {
   stt?: { domain: string; model: string };
   /** Dialogue voices; unset when RIDEO_TTS_PROVIDER=off. */
   tts?: TtsEndpoint;
+  /** Generated sound effects; unset when RIDEO_SFX_PROVIDER=off. */
+  sfx?: SfxEndpoint;
   /** The audio-capable LLM that checks speakers of native-audio takes (rule V4). */
   voiceJudge?: { provider: 'openai' | 'gemini'; domain: string; model: string };
   consistency: { judge: 'vision-llm' | 'off'; threshold: number; maxAttempts: number };
@@ -265,6 +277,10 @@ export function loadConfig(
             domain: e.RIDEO_TTS_PROXY_DOMAIN ?? TTS_DEFAULTS[e.RIDEO_TTS_PROVIDER].domain,
             model: e.RIDEO_TTS_MODEL ?? TTS_DEFAULTS[e.RIDEO_TTS_PROVIDER].model,
           },
+    sfx:
+      e.RIDEO_SFX_PROVIDER === 'off'
+        ? undefined
+        : { provider: e.RIDEO_SFX_PROVIDER, domain: e.RIDEO_SFX_PROXY_DOMAIN!, model: e.RIDEO_SFX_MODEL! },
     voiceJudge: (() => {
       // Defaults to the vision provider when it accepts audio (Anthropic models do not).
       const provider =

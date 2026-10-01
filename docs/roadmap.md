@@ -178,7 +178,7 @@ insertion/removal, Veo extend, Premiere Generative Extend. *Fits:* new job `take
 and generate a scene in one request, split it into shots with the existing scene-cut detection, verify each shot.
 Better continuity and fewer calls. *Fits:* `clip.generate` chooses single- vs multi-shot per model limits.
 
-**9. Post audio: mix, score, effects** (M) — dialogue/music/effects stems, ducking and loudness normalization
+**9. Post audio: mix, score, effects** (M) — *done:* [design/post-audio.md](design/post-audio.md) — dialogue/music/effects stems, ducking and loudness normalization
 (EBU R128) in the shared soundtrack graph; a score generated to fit the cut (per-scene cues with music composition
 plans); sound effects generated from the action lines. *Why:* Resolve Audio Assistant, Firefly Generate Soundtrack,
 ElevenLabs SFX/Music, Runway Seed Audio. *Fits:* `shared/media/render-plan.ts` soundtrack graph, `music.generate`.

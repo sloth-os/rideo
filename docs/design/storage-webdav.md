@@ -73,8 +73,10 @@ All paths are under `RIDEO_WEBDAV_ROOT` (default `/rideo`).
 │   │   ├── takes/c<clip>-s<shot>-<hash12>.mp4        watermarked originals
 │   │   ├── posters/<hash12>.jpg                       posters (generated takes: server; uploads: browser)
 │   │   ├── frames/<hash12>.png                       sampled frames (judge evidence, last frames)
-│   │   ├── music/<slug>-<hash12>.<ext>
+│   │   ├── music/<slug>-<hash12>.<ext>                generated music and score cues
+│   │   ├── sfx/<slug>-<hash12>.mp3                    generated sound effects
 │   │   ├── uploads/<slug>-<hash12>.<ext>
+│   │   ├── stems/<exportId>-<role>-<hash12>.wav       export stems (dialogue, music, effects)
 │   │   └── exports/<exportId>-<hash12>.mp4
 │   ├── inbox/                    drop files here over WebDAV → imported as resources
 │   └── .rideo/

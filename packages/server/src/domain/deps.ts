@@ -1,4 +1,5 @@
 import type { SttClient } from '../ai/llm';
+import type { SfxClient } from '../ai/sfx';
 import type { LlmTasks } from '../ai/tasks';
 import type { TtsClient } from '../ai/tts';
 import type { Config } from '../config';
@@ -49,6 +50,8 @@ export interface Deps {
   stt?: SttClient;
   /** Dialogue voices through the gateway proxy (docs/design/dialogue.md); absent when TTS is off. */
   tts?: TtsClient;
+  /** Sound effects through the gateway proxy (docs/design/post-audio.md); absent when SFX is off. */
+  sfx?: SfxClient;
   /** Speaker check of native-audio takes (rule V4); null when no audio-capable model is configured. */
   voiceJudge: VoiceJudge | null;
 }
