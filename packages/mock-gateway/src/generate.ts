@@ -368,6 +368,8 @@ export async function runVideo(body: Record<string, any>, ctx: GenerateContext):
   // A multi-shot prompt (docs/design/multi-shot.md): one segment per shot, hard cuts between them.
   const sequence = /A multi-shot sequence of (\d+) shots/.exec(prompt);
   if (sequence) return multiShot(parts, params, ctx, name, prompt, width, height);
+  // Enhancement (docs/design/finishing.md#mock-gateway): the reference video at the asked size and rate.
+  if (body.model === 'mock-enhance-v1') return enhance(parts, params, ctx, name);
   // Audio-driven lip sync: a reference video and audio without a first frame (a motion reference has a prompt
   // and a first frame).
   if (isLipSyncRequest(parts)) return lipSync(parts, ctx, name);
@@ -422,6 +424,46 @@ export async function runVideo(body: Record<string, any>, ctx: GenerateContext):
       },
     ],
     usage: { output_count: 1, duration_seconds: durationSec },
+  };
+}
+
+/** The mock enhancement model: Lanczos scaling to `dimensions` and frame-rate conversion to `fps`. */
+async function enhance(
+  parts: Part[],
+  params: Record<string, unknown>,
+  ctx: GenerateContext,
+  name: string,
+): Promise<RunResult> {
+  const ref = parts.find((p) => p.type === 'video' && p.role === 'reference_video');
+  if (!ref?.uri) throw new Error('enhancement needs a reference_video');
+  const src = join(ctx.dir, `${name}-src.mp4`);
+  await writeFile(src, await loadUri(ref.uri));
+  const d = (params.dimensions ?? {}) as { width?: number; height?: number };
+  const fps = Number(params.fps ?? 0);
+  const filters = [
+    ...(d.width && d.height
+      ? [`scale=${d.width - (d.width % 2)}:${d.height - (d.height % 2)}:flags=lanczos`]
+      : []),
+    ...(fps > 0 ? [`framerate=fps=${fps}`] : []),
+    'format=yuv420p',
+  ];
+  await runFfmpeg([
+    '-i',
+    src,
+    '-vf',
+    filters.join(','),
+    '-an',
+    '-c:v',
+    'libx264',
+    '-preset',
+    'ultrafast',
+    '-crf',
+    '18',
+    join(ctx.dir, `${name}.mp4`),
+  ]);
+  return {
+    outputs: [{ uri: ctx.fileUrl(`${name}.mp4`), mime_type: 'video/mp4' }],
+    usage: { output_count: 1, duration_seconds: await videoDuration(join(ctx.dir, `${name}.mp4`)) },
   };
 }
 

@@ -78,6 +78,20 @@ export interface ExportManifest {
   watermarkId: string | null;
   ingredients: ExportIngredient[];
   disclosure: DisclosureStamp | null;
+  /** The container (`video/mp4`, or `video/quicktime` for ProRes; docs/design/finishing.md#formats). */
+  mime?: string;
+  /** Enhancements made by AI models after the render (upscale, frame interpolation). */
+  enhancements?: { operation: string; model: string }[];
+}
+
+/** A thumbnail: a frame of an export (docs/design/finishing.md#thumbnails). */
+export interface ThumbnailManifest {
+  input: string;
+  output: string;
+  title: string;
+  projectId: string;
+  exportId: string;
+  parent: { path: string; mime: string };
 }
 
 /** A stem of an export (docs/design/post-audio.md#stems): the audio sources of one stem, mixed. */
@@ -388,11 +402,12 @@ export class C2paService {
     const wm = this.watermarkParts(m.watermarkId);
     const labels = m.ingredients.map((_, i) => `ingredient-${i + 1}`);
     const ai = m.ingredients.some((i) => i.generated);
+    const mime = m.mime ?? 'video/mp4';
     return this.sign(
       {
         claim_generator_info: this.generatorInfo(),
         title: m.title,
-        format: 'video/mp4',
+        format: mime,
         assertions: [
           {
             label: 'c2pa.actions.v2',
@@ -404,6 +419,13 @@ export class C2paService {
                   softwareAgent: { name: this.cfg.generator.name },
                 },
                 ...(labels.length ? [{ action: 'c2pa.placed', parameters: { ingredientIds: labels } }] : []),
+                // Upscaled or interpolated by a model (docs/design/finishing.md#enhancement-upscale-and-frame-interpolation).
+                ...(m.enhancements ?? []).map((e) => ({
+                  action: 'c2pa.edited',
+                  digitalSourceType: TRAINED,
+                  softwareAgent: { name: e.model },
+                  parameters: { operation: e.operation },
+                })),
                 ...wm.actions,
               ],
             },
@@ -432,6 +454,47 @@ export class C2paService {
         path: ing.path,
         mime: ing.mime,
       })),
+      mime,
+    );
+  }
+
+  /** A thumbnail: a frame of the export, opened from it and edited (resized, compressed). */
+  async signThumbnail(m: ThumbnailManifest): Promise<ContentCredentialsStamp> {
+    return this.sign(
+      {
+        claim_generator_info: this.generatorInfo(),
+        title: m.title,
+        format: 'image/jpeg',
+        assertions: [
+          {
+            label: 'c2pa.actions.v2',
+            data: {
+              actions: [
+                { action: 'c2pa.opened', parameters: { ingredientIds: ['parent'] } },
+                {
+                  action: 'c2pa.edited',
+                  softwareAgent: { name: this.cfg.generator.name },
+                  parameters: { operation: 'thumbnail' },
+                },
+              ],
+            },
+          },
+          {
+            label: 'org.rideo.provenance',
+            data: { project: m.projectId, asset: { kind: 'thumbnail', exportId: m.exportId } },
+          },
+        ],
+      },
+      m.input,
+      m.output,
+      [
+        {
+          json: { title: 'export', format: m.parent.mime, relationship: 'parentOf', label: 'parent' },
+          path: m.parent.path,
+          mime: m.parent.mime,
+        },
+      ],
+      'image/jpeg',
     );
   }
 

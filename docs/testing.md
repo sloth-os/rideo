@@ -58,7 +58,10 @@ RIDEO_TEST_WEBDAV_URL=http://rideo:rideo@localhost:8080/ npx vitest run --projec
   windows, `set_caption_style`, `update_text` dropping words, SRT and WebVTT with word timestamps and escaping, the
   `localizations/<lang>.json` and `renders/<id>.json` documents, the cut's lines and takes, stale translations, dub
   currency with edited lines and relocked voices, subtitled and dubbed variants: translated captions on the
-  original or dub timings, dub mixes on the Dialogue track, lip-synced close-ups, `withoutCaptions`).
+  original or dub timings, dub mixes on the Dialogue track, lip-synced close-ups, `withoutCaptions`); finishing
+  (presets and explicit options, delivery sizes by short side and the draft cap, crop sizes, focus interpolation,
+  the crop window clamped to the frame, the ffmpeg crop expression evaluated against `cropWindow` at any speed,
+  reframed timelines and their chunk graph, cut-downs with fades, thumbnail candidates).
 - **server**: repository commit, log, diff, restore, branches, tags, coalescing and GC on `MemoryBackend`;
   job queue (lanes, priorities, dedupe, retry classification, cancel propagation, restart recovery; the
   `client` lane: claim order, leases, heartbeats, expiry and session release, cancel, staged files);
@@ -68,7 +71,9 @@ RIDEO_TEST_WEBDAV_URL=http://rideo:rideo@localhost:8080/ npx vitest run --projec
   against a fake proxy (design, save, clone, speech with timings and seeds, retryable failures, metrics); the
   speaker-check merge (V4: same, different, missing and silent voices, no judge, judge outage); sound effects
   through a fake proxy (request shape, length clamp, retryable failures, `rideo_post_audio_total`) and the
-  `RIDEO_SFX_*` config; ElevenLabs alignments grouped into words.
+  `RIDEO_SFX_*` config; ElevenLabs alignments grouped into words; finishing (enhancement planning by model
+  capabilities, `max_fps`, `off` and pinned models; the finishing filter for models and ffmpeg; the delivery
+  encoders; ustar archives with long names and checksums).
 - **web**: live-event store reducer and optimistic timeline edits (apply, confirm, roll back), live client
   (sequence dedupe, UI-command acks, restart resync), UI command dispatch, WebCodecs codec/container
   selection, render engine choice, the editor-job worker against a fake API (claims only with a project and a
@@ -102,7 +107,8 @@ RIDEO_TEST_WEBDAV_URL=http://rideo:rideo@localhost:8080/ npx vitest run --projec
   on the unmarked source.
 - **SDK contract** (`mock-gateway/test/contract.test.ts`): the real `@sloth-os/mm-gateway-js` SDK against the
   mock. Responses are validated against the vendored gateway `openapi.json`. The proxy answers the post-audio
-  tasks (`score.plan`, `sfx.plan`), ElevenLabs sound generation and `dialogue.translate`.
+  tasks (`score.plan`, `sfx.plan`), ElevenLabs sound generation, `dialogue.translate`, `reframe.focus` and
+  `thumbnail.pick`, and `mock-enhance-v1` upscales and interpolates.
 - **Story workflow** (`story.test.ts`): REST from brief to export on the mock gateway, including a
   consistency failure and retry (`MOCK_FLAKY_EVERY`), R1 rejection, approval gates, batch to a 60 s target,
   timeline assembly, an export rendered by the reference editor worker, watermark detection of the export,
@@ -143,6 +149,12 @@ RIDEO_TEST_WEBDAV_URL=http://rideo:rideo@localhost:8080/ npx vitest run --projec
   line survives translating again and makes only its take's dub stale and redubbed; a dubbed variant with sidecar
   subtitles (its `renders/<id>.json` has no captions and the dub mixes) and a subtitled one rendered by the
   reference worker; `localization_incomplete` for missing translations or stale dubs.
+- **Finishing** (`finishing.test.ts`): a YouTube delivery upscaled and interpolated by `mock-enhance-v1`
+  (1080p, 48 fps, the C2PA `upscale` action, three signed thumbnails); the ffmpeg fallback with `models.enhance:
+  off`; a ProRes master (10-bit 4:2:2, PCM, signed, stems); an image-sequence master (a TAR with every frame, the
+  sound and the subtitles); a vertical cut-down prepared by `export.prepare` (focus tracks on the takes, a 9:16
+  render timeline, the length), and a square one reusing the focus. The reference editor worker pings the live hub
+  like a tab, so long specs keep their session.
 - **Watermark** (`watermark.test.ts`) also checks that a watermarked video with sound keeps every frame (the mux
   is bounded by the length, not `-shortest`).
 - **Storyboard** (`storyboard.test.ts`): the storyboard plans the first scenes and draws a verified frame (and
@@ -168,7 +180,7 @@ RIDEO_TEST_WEBDAV_URL=http://rideo:rideo@localhost:8080/ npx vitest run --projec
 
 Projects: `desktop` (1440×900) runs every spec except `responsive`; `mobile` (412×915, touch) runs
 `responsive`, `mcp-sync`, `provenance`, `elements`, `dialogue`, `storyboard`, `directing`, `take-editing`,
-`multi-shot`, `post-audio` and `localization`. The
+`multi-shot`, `post-audio`, `localization` and `finishing`. The
 web server stops with SIGTERM so the stack removes its data; stale stack directories older than an hour are removed
 when a new stack starts. Specs:
 
@@ -179,6 +191,7 @@ when a new stack starts. Specs:
 | `footage.spec.ts` | upload (probe + poster in the browser) → analysis signals in the browser → AI suggestions → accept → auto edit → exports with the ffmpeg.wasm and WebCodecs engines → both listed and verified |
 | `history.spec.ts` | edit → history → diff → restore → UI updates |
 | `take-editing.spec.ts` | (desktop and mobile) relight a take and extend another by 2 s from the take tiles (lineage badges); generative extend of the first item in the editor (the lanes on desktop, the item list on phones) |
+| `finishing.spec.ts` | (desktop and mobile) a vertical delivery from the export dialog: focus tracks prepared, reframed, cut down, upscaled by the enhancement model, three thumbnails on the card; a ProRes master listed with its download and stems |
 | `localization.spec.ts` | (desktop and mobile) captions set to word by word; Spanish added with dubbing (the close-up lip-synced); a line corrected in the translations dialog makes its dub stale until *Dub* runs again; the dubbed Spanish variant exported with sidecar subtitles (language badge, VTT download) |
 | `post-audio.spec.ts` | (desktop and mobile) the Mix card: ducking on after assembly, depth −18 dB, *Score the cut* with a direction (Cue 1 on the Music track), *Add sound effects* (an Effects track, its lane on desktop); an export rendered in the tab at broadcast loudness with stems; the export card shows about −23 LUFS and the three stem downloads |
 | `multi-shot.spec.ts` | (desktop and mobile) the multi-shot setting off and on in the project settings; a clip on `mock-multishot-v1` renders two shots in one request (`shot 1 of 2`, `shot 2 of 2` badges) and the third alone |

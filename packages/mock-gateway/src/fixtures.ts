@@ -3,6 +3,8 @@ import type {
   CharacterDescribeOutput,
   ClipPlanInput,
   ClipPlanOutput,
+  FocusInput,
+  FocusOutput,
   FootageAnalyzeInput,
   FootageAnalyzeOutput,
   JudgeInput,
@@ -19,6 +21,8 @@ import type {
   ScreenplayGenerateOutput,
   SfxPlanInput,
   SfxPlanOutput,
+  ThumbnailPickInput,
+  ThumbnailPickOutput,
   TranslateInput,
   TranslateOutput,
 } from '@rideo/shared';
@@ -432,4 +436,59 @@ export function sfxPlan(input: SfxPlanInput): SfxPlanOutput {
 /** Translation (docs/design/localization.md#mock-gateway): `«<lang>» <line>`, so tests hear which language speaks. */
 export function translate(input: TranslateInput): TranslateOutput {
   return { lines: input.lines.map((l) => ({ key: l.key, text: `«${input.language}» ${l.text}` })) };
+}
+
+/** Saturation of every pixel (the mock's characters are its most saturated pixels). */
+function saturationMap(png: Buffer): { width: number; height: number; sat: Float32Array } | null {
+  if (!isPng(png)) return null;
+  const img = decodePng(png);
+  const sat = new Float32Array(img.width * img.height);
+  for (let i = 0; i < img.width * img.height; i++) {
+    const r = img.data[i * 4]!;
+    const g = img.data[i * 4 + 1]!;
+    const b = img.data[i * 4 + 2]!;
+    const max = Math.max(r, g, b);
+    const min = Math.min(r, g, b);
+    sat[i] = max === 0 ? 0 : (max - min) / max;
+  }
+  return { width: img.width, height: img.height, sat };
+}
+
+/** Reframe focus (docs/design/finishing.md#mock-gateway): the saturation-weighted centre of every frame. */
+export function reframeFocus(input: FocusInput, images: Buffer[]): FocusOutput {
+  return {
+    frames: input.frames.map((f, i) => {
+      const map = images[i] ? saturationMap(images[i]!) : null;
+      if (!map) return { index: f.index, x: 0.5, y: 0.5 };
+      let sx = 0;
+      let sy = 0;
+      let total = 0;
+      for (let y = 0; y < map.height; y++)
+        for (let x = 0; x < map.width; x++) {
+          const w = map.sat[y * map.width + x]! ** 2;
+          sx += w * x;
+          sy += w * y;
+          total += w;
+        }
+      const r2 = (v: number) => Math.round(v * 100) / 100;
+      return total > 0
+        ? { index: f.index, x: r2(sx / total / map.width), y: r2(sy / total / map.height) }
+        : { index: f.index, x: 0.5, y: 0.5 };
+    }),
+  };
+}
+
+/** Thumbnail picks: the most saturated frames first. */
+export function thumbnailPick(input: ThumbnailPickInput, images: Buffer[]): ThumbnailPickOutput {
+  const scored = input.frames.map((f, i) => {
+    const map = images[i] ? saturationMap(images[i]!) : null;
+    const mean = map ? map.sat.reduce((a, b) => a + b, 0) / map.sat.length : 0;
+    return { index: f.index, mean };
+  });
+  return {
+    picks: scored
+      .sort((a, b) => b.mean - a.mean || a.index - b.index)
+      .slice(0, Math.max(1, input.count))
+      .map((s) => ({ index: s.index, reason: `saturation ${s.mean.toFixed(2)}` })),
+  };
 }

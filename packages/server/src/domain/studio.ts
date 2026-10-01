@@ -21,6 +21,7 @@ import { GatewayClient } from '../gateway/gateway-client';
 import { ProxyClient } from '../gateway/proxy-client';
 import { batchGenerate, clipGenerate, clipPlan } from '../jobs/handlers/clips';
 import type { HandlerDeps } from '../jobs/handlers/common';
+import { exportPrepare } from '../jobs/handlers/finishing';
 import { localizeGenerate } from '../jobs/handlers/localize';
 import { analysisSuggest, editAuto, exportFinish, timelineAssemble } from '../jobs/handlers/media';
 import { scoreGenerate, sfxGenerate } from '../jobs/handlers/post-audio';
@@ -219,6 +220,7 @@ export function createStudio(
   reg('score.generate', scoreGenerate);
   reg('sfx.generate', sfxGenerate);
   reg('localize.generate', localizeGenerate);
+  reg('export.prepare', exportPrepare);
   reg('clip.plan', clipPlan);
   reg('clip.generate', clipGenerate);
   reg('shot.generate', shotGenerate);

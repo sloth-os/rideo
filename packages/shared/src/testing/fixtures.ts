@@ -180,6 +180,7 @@ export function take(overrides: Partial<Take> = {}): Take {
     contentCredentials: null,
     override: null,
     durationSec: 5,
+    focus: null,
     ...overrides,
   };
 }

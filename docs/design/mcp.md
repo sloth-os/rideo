@@ -130,7 +130,7 @@ or keep going and `job_wait` until a tab picks the job up.
 | `footage_analyze` | `projectId`, `resourceId` → `{analysis, job}` (editor job) |
 | `suggestions_review` | `projectId`, `analysisId`, `decisions[{id, status}]` |
 | `edit_auto` | `projectId`, `analysisId` |
-| `export_render` | `projectId`, `quality?` (`draft`, `standard`, `high`), `engine?` (`auto`, `ffmpeg`, `webcodecs`), `source?` (`timeline`, `animatic`), `loudness?` (`streaming`, `broadcast`, `off`), `stems?`, `language?`, `dubbed?`, `captions?` (`burn`, `sidecar`) → `{export, job}` (editor job) |
+| `export_render` | `projectId`, `quality?` (`draft`, `standard`, `high`), `engine?` (`auto`, `ffmpeg`, `webcodecs`), `source?` (`timeline`, `animatic`), `loudness?` (`streaming`, `broadcast`, `off`), `stems?`, `language?`, `dubbed?`, `captions?` (`burn`, `sidecar`), `preset?` (`web`, `youtube`, `broadcast`, `vertical`, `square`, `master_prores`, `master_frames`), `format?`, `resolution?`, `fps?`, `aspect?`, `maxDurationSec?`, `thumbnails?` → `{export, job}` (editor job; `export.prepare` first for a reframe; [finishing](finishing.md)) |
 | `export_list` | `projectId` |
 | `watermark_detect` | `uri` or `projectId` + `mediaPath` → watermark, registry record and `contentCredentials` (C2PA) |
 

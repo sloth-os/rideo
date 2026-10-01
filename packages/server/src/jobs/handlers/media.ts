@@ -1,10 +1,12 @@
-import { readFile, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
   type Analysis,
   type AudioRole,
   audioSegments,
   type ContentCredentialsStamp,
+  type Delivery,
+  DeliverySchema,
   docPath,
   type EditSuggestion,
   type Export,
@@ -17,18 +19,22 @@ import {
 import { z } from 'zod';
 import type { LabelledImage } from '../../ai/tasks';
 import { AppError, notFound } from '../../errors';
+import { extractFrame } from '../../media/frames';
 import { normalizeSoundtrack } from '../../media/loudness';
+import { writeTar } from '../../media/tar';
 import type { ExportIngredient } from '../../provenance/c2pa';
 import { runFramePipeline } from '../../watermark/pipeline';
 import type { JobContext } from '../queue';
 import { commitAs, docsFor, type HandlerDeps } from './common';
-
-/** Final encode of an export (the browser's chunks are intermediates). */
-export const FINISH_QUALITY: Record<Export['quality'], { preset: string; crf: number }> = {
-  draft: { preset: 'veryfast', crf: 26 },
-  standard: { preset: 'medium', crf: 20 },
-  high: { preset: 'slow', crf: 17 },
-};
+import {
+  audioEncodeArgs,
+  DELIVERY_FILE,
+  enhanceParts,
+  finishFilter,
+  makeThumbnails,
+  planEnhance,
+  videoEncodeArgs,
+} from './finishing';
 
 /**
  * The AI half of a footage analysis: the browser has uploaded the signals and thumbnails
@@ -221,13 +227,16 @@ async function publishExport(
   watermarkId: string | null,
   codec: string,
   contentCredentials: ContentCredentialsStamp | null = null,
-  audio: Pick<Export, 'loudness' | 'stems'> | null = null,
+  audio: Partial<Pick<Export, 'loudness' | 'stems' | 'delivery' | 'thumbnails'>> | null = null,
+  container: { mime: string; width?: number; height?: number } = { mime: 'video/mp4' },
 ) {
   const projectId = ctx.job.projectId;
   const media = await deps.media.putFile(projectId, file, {
     kind: 'exports',
     name: exp.id,
-    mime: 'video/mp4',
+    mime: container.mime,
+    // An archive has no media fields to probe.
+    ...(container.mime === 'application/x-tar' ? { probe: false } : {}),
   });
   if (watermarkId) {
     await deps.watermark.register({
@@ -236,8 +245,8 @@ async function publishExport(
       asset: { kind: 'export', id: exp.id },
       media: { path: media.path, hash: media.hash },
       embed: {
-        width: media.width ?? 0,
-        height: media.height ?? 0,
+        width: media.width ?? container.width ?? 0,
+        height: media.height ?? container.height ?? 0,
         strength: deps.watermark.params.strength,
         pair: deps.watermark.params.pair,
       },
@@ -252,9 +261,9 @@ async function publishExport(
       media,
       watermarkId,
       contentCredentials,
-      durationSec: media.durationSec,
-      width: media.width,
-      height: media.height,
+      durationSec: media.durationSec ?? exp.durationSec,
+      width: media.width ?? container.width,
+      height: media.height ?? container.height,
       codec,
       ...(audio ?? {}),
     },
@@ -285,13 +294,6 @@ export async function exportFinish(deps: HandlerDeps, ctx: JobContext) {
   if (!exp) throw notFound(`export ${p.exportId}`);
   try {
     return await deps.media.withTmpDir(async (dir) => {
-      const list = join(dir, 'parts.txt');
-      await writeFile(
-        list,
-        p.parts
-          .map((name) => `file '${deps.staging.path(p.renderJobId, name).replace(/'/g, "'\\''")}'`)
-          .join('\n'),
-      );
       const staged = p.soundtrack ? deps.staging.path(p.renderJobId, p.soundtrack) : null;
       // Loudness (docs/design/post-audio.md#loudness): normalized lossless audio and stems, encoded below.
       const target = exp.loudness?.target ?? 'off';
@@ -312,12 +314,52 @@ export async function exportFinish(deps: HandlerDeps, ctx: JobContext) {
           })
         : null;
       const soundtrack = finished?.audio ?? null;
-      const { width, height, fps } = p;
+      // The delivery (docs/design/finishing.md); exports from before deliveries are the rendered picture as MP4.
+      const delivery: Delivery =
+        exp.delivery ??
+        DeliverySchema.parse({
+          preset: 'web',
+          format: 'mp4',
+          width: p.width,
+          height: p.height,
+          fps: Math.round(p.fps),
+          aspect: 'source',
+        });
+      const to = { width: delivery.width, height: delivery.height, fps: delivery.fps };
+      const plan = await planEnhance(
+        deps,
+        docs.project.settings,
+        { width: p.width, height: p.height, fps: p.fps },
+        to,
+      );
+      let parts = p.parts.map((name) => deps.staging.path(p.renderJobId, name));
+      if (plan.model) parts = await enhanceParts(deps, ctx, { parts, plan, to, dir });
+      else {
+        if (plan.upscale) deps.metrics.finishing.inc({ op: 'upscale_ffmpeg', outcome: 'ok' });
+        if (plan.interpolate) deps.metrics.finishing.inc({ op: 'interpolate_ffmpeg', outcome: 'ok' });
+      }
+      const list = join(dir, 'parts.txt');
+      await writeFile(list, parts.map((path) => `file '${path.replace(/'/g, "'\\''")}'`).join('\n'));
+      const { width, height, fps } = to;
       const total = Math.max(1, Math.round(p.durationSec * fps));
       const watermarkId = docs.project.settings.watermark.enabled ? await deps.watermark.allocateId() : null;
       const embed = watermarkId ? deps.watermark.embedder(watermarkId, width, height) : null;
-      const q = FINISH_QUALITY[exp.quality];
-      const out = join(dir, 'export.mp4');
+      const file = DELIVERY_FILE[delivery.format];
+      const out = join(dir, `export.${file.ext}`);
+      const framesDir = join(dir, 'frames');
+      if (delivery.format === 'frames') await mkdir(framesDir);
+      const raw = [
+        '-f',
+        'rawvideo',
+        '-pix_fmt',
+        'yuv420p',
+        '-s',
+        `${width}x${height}`,
+        '-r',
+        String(fps),
+        '-i',
+        '-',
+      ];
       await runFramePipeline({
         ff: deps.ff,
         width,
@@ -332,81 +374,111 @@ export async function exportFinish(deps: HandlerDeps, ctx: JobContext) {
           '-map',
           '0:v:0',
           '-vf',
-          `scale=${width}:${height},setsar=1,fps=${fps},format=yuv420p`,
+          finishFilter(to, plan),
           '-f',
           'rawvideo',
           '-pix_fmt',
           'yuv420p',
           '-',
         ],
-        encodeArgs: [
-          '-f',
-          'rawvideo',
-          '-pix_fmt',
-          'yuv420p',
-          '-s',
-          `${width}x${height}`,
-          '-r',
-          String(fps),
-          '-i',
-          '-',
-          // The film's length bounds the mux: `-shortest` ends the file when the sound runs out first and drops
-          // the frames still in the encoder's lookahead.
-          ...(soundtrack
+        encodeArgs:
+          delivery.format === 'frames'
             ? [
-                '-i',
-                soundtrack,
-                '-map',
-                '0:v',
-                '-map',
-                '1:a',
-                '-c:a',
-                'aac',
-                '-b:a',
-                '192k',
-                '-ar',
-                '48000',
-                '-t',
-                String(total / fps),
+                ...raw,
+                '-c:v',
+                'png',
+                '-pix_fmt',
+                'rgb24',
+                '-start_number',
+                '1',
+                join(framesDir, 'frame-%06d.png'),
               ]
-            : ['-map', '0:v']),
-          '-c:v',
-          'libx264',
-          '-preset',
-          q.preset,
-          '-crf',
-          String(q.crf),
-          '-pix_fmt',
-          'yuv420p',
-          '-movflags',
-          '+faststart',
-          ...(watermarkId ? deps.watermark.metadataArgs(watermarkId, docs.project.title) : []),
-          out,
-        ],
+            : [
+                ...raw,
+                // The film's length bounds the mux: `-shortest` ends the file when the sound runs out first and
+                // drops the frames still in the encoder's lookahead.
+                ...(soundtrack
+                  ? [
+                      '-i',
+                      soundtrack,
+                      '-map',
+                      '0:v',
+                      '-map',
+                      '1:a',
+                      ...audioEncodeArgs(delivery),
+                      '-t',
+                      String(total / fps),
+                    ]
+                  : ['-map', '0:v']),
+                ...videoEncodeArgs(delivery, exp.quality),
+                ...(watermarkId ? deps.watermark.metadataArgs(watermarkId, docs.project.title) : []),
+                out,
+              ],
         transform: embed ? (y) => embed.transform(y) : () => undefined,
         signal: ctx.signal,
         onProgress: (frames) => ctx.progress(frames, total, `watermarking ${frames}/${total} frames`),
       });
       if (watermarkId) deps.metrics.watermark.inc({ op: 'embed' });
+      if (delivery.format === 'frames') {
+        // The image-sequence master: every frame, the sound and the subtitles in one archive.
+        const frames = (await readdir(framesDir)).filter((f) => f.endsWith('.png')).sort();
+        const entries = frames.map((f) => ({ name: `frames/${f}`, path: join(framesDir, f) }));
+        if (soundtrack) entries.push({ name: 'soundtrack.wav', path: soundtrack });
+        for (const fmt of ['srt', 'vtt'] as const)
+          if (exp.subtitles)
+            entries.push({
+              name: `subtitles.${fmt}`,
+              path: await deps.media.localPath(ctx.job.projectId, exp.subtitles[fmt]),
+            });
+        await writeTar(out, entries);
+      }
       // C2PA Content Credentials: a composite of its takes and resources (docs/design/provenance.md#exports).
       let published = out;
       let contentCredentials: ContentCredentialsStamp | null = null;
-      if (deps.c2pa.enabled) {
+      if (deps.c2pa.enabled && delivery.format !== 'frames') {
         ctx.progress(total, total, 'signing Content Credentials');
         const timeline = await renderedTimeline(deps, ctx.job.projectId, exp);
-        published = join(dir, 'export-signed.mp4');
+        published = join(dir, `export-signed.${file.ext}`);
         contentCredentials = await deps.c2pa.signExport({
           input: out,
           output: published,
-          title: `${docs.project.title}.mp4`,
+          title: `${docs.project.title}.${file.ext}`,
           projectId: ctx.job.projectId,
           exportId: exp.id,
           timelineCommit: exp.timelineCommit,
           watermarkId,
           ingredients: await exportIngredients(deps, ctx.job.projectId, docs, timeline),
           disclosure: exp.disclosure,
+          mime: file.mime,
+          enhancements: plan.model
+            ? [
+                ...(plan.upscale ? [{ operation: 'upscale', model: plan.model }] : []),
+                ...(plan.interpolate ? [{ operation: 'frame_interpolation', model: plan.model }] : []),
+              ]
+            : [],
         });
       }
+      // Thumbnails (docs/design/finishing.md#thumbnails): frames of the finished film.
+      const thumbnails = delivery.thumbnails
+        ? await makeThumbnails(deps, ctx, {
+            exp,
+            timeline: await renderedTimeline(deps, ctx.job.projectId, exp),
+            frameAt: async (sec, png) => {
+              if (delivery.format === 'frames') {
+                const n = Math.min(total, Math.max(1, Math.round(sec * fps) + 1));
+                await copyFile(join(framesDir, `frame-${String(n).padStart(6, '0')}.png`), png);
+              } else await extractFrame(deps.ff, published, sec, png, undefined, ctx.signal);
+            },
+            parent: { path: published, mime: file.mime },
+            title: docs.project.title,
+            dir,
+          })
+        : [];
+      const enhance = {
+        upscale: plan.upscale ? (plan.model ? ('model' as const) : ('ffmpeg' as const)) : null,
+        interpolate: plan.interpolate ? (plan.model ? ('model' as const) : ('ffmpeg' as const)) : null,
+        model: plan.model,
+      };
       let stems: Export['stems'] = null;
       if (finished?.stems) {
         // Each stem carries Content Credentials placing its own sources (docs/design/post-audio.md#stems).
@@ -438,15 +510,24 @@ export async function exportFinish(deps: HandlerDeps, ctx: JobContext) {
         };
         stems = { dialogue: await put('dialogue'), music: await put('music'), effects: await put('effects') };
       }
+      const codec = { mp4: 'h264/aac', prores: 'prores 422 hq/pcm', frames: 'png sequence/wav' }[
+        delivery.format
+      ];
       const media = await publishExport(
         deps,
         ctx,
         exp,
         published,
         watermarkId,
-        `h264/aac (browser ${p.engine})`,
+        `${codec} (browser ${p.engine})`,
         contentCredentials,
-        { loudness: finished?.loudness ?? exp.loudness, stems },
+        {
+          loudness: finished?.loudness ?? exp.loudness,
+          stems,
+          delivery: { ...delivery, enhance },
+          thumbnails,
+        },
+        { mime: file.mime, width, height },
       );
       await deps.staging.remove(p.renderJobId);
       return { exportId: p.exportId, path: media.path, watermarkId, psnr: embed?.stats().psnr };

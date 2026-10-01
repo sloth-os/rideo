@@ -57,6 +57,13 @@ Speech-to-text (optional, used by footage analysis): OpenAI-style
 `POST /proxy/{RIDEO_STT_PROXY_DOMAIN}/v1/audio/transcriptions` (multipart, `response_format=verbose_json`).
 When unset, analysis runs without a transcript.
 
+## Enhancement
+
+Upscaling and frame interpolation of exports ([finishing](finishing.md#enhancement-upscale-and-frame-interpolation))
+are video requests through the SDK to a model whose limits say `supports_upscale` /
+`supports_frame_interpolation` (`max_fps`): the rendered part as a `reference_video`, the delivery's `dimensions`
+and `fps`. Without such a model Rideo uses ffmpeg and says so on the export.
+
 ## Sound effects
 
 Sound effects ([post audio](post-audio.md#effects-from-action-lines)) are not a gateway media modality, so they go
@@ -81,6 +88,8 @@ Every LLM use is a **task** with an id, a zod output schema, a system prompt and
 | `consistency.judge` | references per character (and per element when `judgeElements`), candidate frames | `{frames[{index, characters[{characterId, present, identityScore, outfitScore, issues}], elements?[{elementId, present, score, issues}]}]}` |
 | `footage.analyze` | probe stats, scenes, silences, thumbnails, transcript | `{summary, suggestions[]}` |
 | `score.plan` | the film (title, genre, tone, style), the direction, the cues (length, scene, dialogue or not) | `{cues[{index, prompt, bpm?}]}` ([post audio](post-audio.md)) |
+| `reframe.focus` | three frames of a take, its shot and cast | `{frames[{index, x, y}]}` (the subject's centre, [finishing](finishing.md#auto-reframe-and-cut-downs)) |
+| `thumbnail.pick` | candidate frames of an export, the title, how many | `{picks[{index, reason}]}` best first |
 | `dialogue.translate` | the target language, the film (title, logline, tone), the cast names, the scene and its lines | `{lines[{key, text}]}` ([localization](localization.md#translation)) |
 | `sfx.plan` | the takes of the cut (length, description, action, location), `maxPerShot` | `{effects[{shot, description, at, durationSec, kind}]}` |
 
@@ -103,7 +112,7 @@ and the offline demo (`npm run dev:demo`).
 
 | Surface | Behaviour |
 |---|---|
-| `GET /health`, `/v1/models`, `/v1/models/limits` | `mock-image-v1` (image-to-image, ≤4 input images), `mock-video-v1` (2–10 s, first/last frame, reference images, audio and video), `mock-video-lite-v1` (no last frame, no reference audio or video), `mock-multishot-v1` (`max_shots: 4`, 2–20 s; [multi-shot](multi-shot.md)), `mock-lipsync-v1`, `mock-music-v1` |
+| `GET /health`, `/v1/models`, `/v1/models/limits` | `mock-image-v1` (image-to-image, ≤4 input images), `mock-video-v1` (2–10 s, first/last frame, reference images, audio and video), `mock-video-lite-v1` (no last frame, no reference audio or video), `mock-multishot-v1` (`max_shots: 4`, 2–20 s; [multi-shot](multi-shot.md)), `mock-enhance-v1` (upscale and frame interpolation of a reference video; [finishing](finishing.md)), `mock-lipsync-v1`, `mock-music-v1` |
 | `POST /v1/images`, `/v1/videos`, `/v1/music` + `GET …/{id}` | Real async lifecycle (`pending → running → succeeded`, `Retry-After`, `Idempotency-Key` replay and 409 on body mismatch, `ETag`/`304`). Produces real media: PNGs (pngjs), H.264 MP4 via ffmpeg (a first frame, when given, is animated with a slow zoom), WAV/MP3 tones. |
 | `/proxy/{domain}/{path}` | OpenAI, Gemini and Anthropic request/response shapes. It routes on the `rideo-task:` marker and returns deterministic JSON derived from the input. |
 | `POST /proxy/*/v1/audio/transcriptions` | segments sized to the audio duration |

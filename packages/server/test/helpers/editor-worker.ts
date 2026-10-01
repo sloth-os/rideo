@@ -93,6 +93,10 @@ export async function startEditorWorker(
     ws.addEventListener('error', () => fail(new Error('live connection failed')));
   });
   ws.send(JSON.stringify({ type: 'subscribe', projectId }));
+  // Like a tab: ping the live hub, which drops sessions silent for a minute (and their claims with them).
+  const pinger = setInterval(() => {
+    if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'ping' }));
+  }, 15_000);
   await new Promise((r) => setTimeout(r, 50));
   const dir = await mkdtemp(join(tmpdir(), 'rideo-editor-'));
   const handled: Job[] = [];
@@ -293,6 +297,7 @@ export async function startEditorWorker(
       } catch (err) {
         if (err instanceof Died) {
           running = false;
+          clearInterval(pinger);
           ws.close();
           break;
         }
@@ -318,6 +323,7 @@ export async function startEditorWorker(
     async stop() {
       running = false;
       await stopped;
+      clearInterval(pinger);
       ws.close();
       await rm(dir, { recursive: true, force: true });
     },

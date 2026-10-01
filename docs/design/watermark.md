@@ -67,7 +67,9 @@ bit. The soft clamp limits the influence of strong natural edges (host interfere
 - **CRC-aided list decoding.** When the margin shows a watermark but the CRC fails (heavy compression flips a
   few weak bits), up to 4 of the 24 least reliable bits (lowest margins) are flipped. After x264 CRF 28, 1–4
   wrong bits are typical and they rank among the weakest (measured over 30 random ids on the test clip: 28
-  had errors, at most 4, all within the 24 weakest), so a 3-of-16 search misses about one mark in five. A
+  had errors, at most 4, all within the 24 weakest), so a 3-of-16 search misses about one mark in five. A later
+  measurement (12 random ids, every frame of the clip kept) missed one mark at CRF 28, so recovery at that level
+  depends on the payload; the robustness tests use a fixed id to stay reproducible. A
   CRC-valid candidate is accepted only if its id **exists in the provenance registry**. That verification
   makes a wrong acceptance negligible: about 13 000 candidates × 2⁻¹⁶ CRC collisions (≈ 0.2 per search),
   each of which must also hit a registered 48-bit id. The result reports `corrected: <flips>`.

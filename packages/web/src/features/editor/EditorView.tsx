@@ -1,4 +1,9 @@
 import {
+  DELIVERY_PRESETS,
+  type DeliveryAspect,
+  type DeliveryFormat,
+  type DeliveryPresetId,
+  type DeliveryResolution,
   disclosureFor,
   type ExportQuality,
   emptyTimeline,
@@ -403,6 +408,26 @@ function ExportDialog({
   const [engine, setEngine] = useState<RenderEngineChoice>('auto');
   const [loudness, setLoudness] = useState<LoudnessTarget>('streaming');
   const [stems, setStems] = useState(false);
+  // Deliveries (docs/design/finishing.md#delivery-presets): a preset, then its options.
+  const [preset, setPreset] = useState<DeliveryPresetId>('web');
+  const [format, setFormat] = useState<DeliveryFormat>('mp4');
+  const [resolution, setResolution] = useState<DeliveryResolution>('project');
+  const [fps, setFps] = useState(0);
+  const [aspect, setAspect] = useState<DeliveryAspect>('source');
+  const [maxDuration, setMaxDuration] = useState(0);
+  const [thumbnails, setThumbnails] = useState(false);
+  const choosePreset = (id: DeliveryPresetId) => {
+    const p = DELIVERY_PRESETS[id];
+    setPreset(id);
+    setFormat(p.format);
+    setResolution(p.resolution);
+    setAspect(p.aspect);
+    setMaxDuration(p.maxDurationSec ?? 0);
+    setThumbnails(p.thumbnails);
+    setLoudness(p.loudness);
+    setStems(p.stems);
+    setCaptions(p.captions);
+  };
   // Language variants (docs/design/localization.md#language-variants).
   const [language, setLanguage] = useState('');
   const [dubbed, setDubbed] = useState(false);
@@ -412,9 +437,16 @@ function ExportDialog({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [queued, setQueued] = useState<{ exportId: string; jobId: string } | null>(null);
-  const job = useProject((s) => (queued ? s.jobs[queued.jobId] : undefined));
+  const queuedJob = useProject((s) => (queued ? s.jobs[queued.jobId] : undefined));
+  // A reframed export prepares its focus first (docs/design/finishing.md); the render is a later job.
+  const renderJob = useProject((s) =>
+    queued
+      ? Object.values(s.jobs).find((j) => j.kind === 'export.render' && j.params.exportId === queued.exportId)
+      : undefined,
+  );
+  const job = renderJob ?? queuedJob;
   const exp = useProject((s) => (queued ? s.docs?.exports[queued.exportId] : undefined));
-  const here = useEngine((s) => (queued && s.busy?.jobId === queued.jobId ? s.busy : null));
+  const here = useEngine((s) => (job && s.busy?.jobId === job.id ? s.busy : null));
   useEffect(() => {
     if (!open) return;
     setError(null);
@@ -436,6 +468,13 @@ function ExportDialog({
         stems,
         ...(language ? { language, dubbed } : {}),
         captions,
+        preset,
+        format,
+        resolution,
+        ...(fps ? { fps } : {}),
+        aspect,
+        ...(maxDuration ? { maxDurationSec: maxDuration } : {}),
+        thumbnails,
       });
       setQueued({ exportId: r.export.id, jobId: r.job.id });
     } catch (err) {
@@ -456,9 +495,11 @@ function ExportDialog({
           ? 'Rendered. The server is adding the invisible watermark…'
           : here
             ? `Rendering in this tab — ${here.progress.message ?? 'starting'}. Keep this tab open.`
-            : job?.status === 'running'
-              ? 'Rendering in another studio tab…'
-              : 'Waiting for an editor tab to pick up the render…';
+            : job?.kind === 'export.prepare'
+              ? 'Finding the subject of every take to reframe…'
+              : job?.status === 'running'
+                ? 'Rendering in another studio tab…'
+                : 'Waiting for an editor tab to pick up the render…';
   return (
     <Dialog open={open} onClose={onClose} title="Export">
       <div className="space-y-4">
@@ -466,6 +507,88 @@ function ExportDialog({
           The film is rendered in this browser in chunks — with ffmpeg.wasm or WebCodecs — then the server
           adds the invisible watermark and publishes it.
         </p>
+        <Field label="Delivery">
+          <Select
+            value={preset}
+            onChange={(e) => choosePreset(e.target.value as DeliveryPresetId)}
+            data-testid="export-preset"
+          >
+            {(Object.keys(DELIVERY_PRESETS) as DeliveryPresetId[]).map((id) => (
+              <option key={id} value={id}>
+                {DELIVERY_PRESETS[id].label}
+              </option>
+            ))}
+          </Select>
+        </Field>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          <Field label="Format">
+            <Select
+              value={format}
+              onChange={(e) => setFormat(e.target.value as DeliveryFormat)}
+              data-testid="export-format"
+            >
+              <option value="mp4">MP4 (H.264)</option>
+              <option value="prores">ProRes 422 HQ (MOV)</option>
+              <option value="frames">PNG sequence + WAV</option>
+            </Select>
+          </Field>
+          <Field label="Size">
+            <Select
+              value={resolution}
+              onChange={(e) => setResolution(e.target.value as DeliveryResolution)}
+              data-testid="export-resolution"
+            >
+              <option value="project">Project</option>
+              <option value="hd">HD (1080)</option>
+              <option value="uhd">4K UHD (2160)</option>
+            </Select>
+          </Field>
+          <Field label="Frame rate">
+            <Select value={fps} onChange={(e) => setFps(Number(e.target.value))} data-testid="export-fps">
+              <option value={0}>Project ({timeline.fps} fps)</option>
+              {[30, 48, 50, 60].map((v) => (
+                <option key={v} value={v}>
+                  {v} fps{v > timeline.fps ? ' (interpolated)' : ''}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          <Field label="Aspect">
+            <Select
+              value={aspect}
+              onChange={(e) => setAspect(e.target.value as DeliveryAspect)}
+              data-testid="export-aspect"
+            >
+              <option value="source">As the cut</option>
+              <option value="9:16">9:16 (auto-reframe)</option>
+              <option value="1:1">1:1 (auto-reframe)</option>
+            </Select>
+          </Field>
+          <Field label="Length">
+            <Select
+              value={maxDuration}
+              onChange={(e) => setMaxDuration(Number(e.target.value))}
+              data-testid="export-maxduration"
+            >
+              <option value={0}>The whole cut</option>
+              {[15, 30, 60].map((v) => (
+                <option key={v} value={v}>
+                  Cut down to {v} s
+                </option>
+              ))}
+            </Select>
+          </Field>
+          <label className="flex h-9 items-center justify-between gap-2 self-end rounded-[var(--radius-control)] border border-border bg-surface-2 px-2.5 text-[13px]">
+            Thumbnails
+            <input
+              type="checkbox"
+              checked={thumbnails}
+              onChange={(e) => setThumbnails(e.target.checked)}
+              className="size-4 accent-[var(--color-accent)]"
+              data-testid="export-thumbnails"
+            />
+          </label>
+        </div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Field label="Quality">
             <Select

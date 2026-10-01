@@ -73,6 +73,22 @@ export const MOCK_MODELS: MockModel[] = [
     },
   },
   {
+    id: 'mock-enhance-v1',
+    modality: 'video',
+    limits: {
+      modality: 'video',
+      input_modalities: ['text', 'video'],
+      supports_reference_video: true,
+      supports_upscale: true,
+      supports_frame_interpolation: true,
+      max_fps: 60,
+      max_output_count: 1,
+      min_duration_seconds: 1,
+      max_duration_seconds: 600,
+      notes: 'Rideo mock enhancement model: upscales and interpolates its reference video with ffmpeg.',
+    },
+  },
+  {
     id: 'mock-lipsync-v1',
     modality: 'video',
     limits: {

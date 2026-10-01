@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { CameraMoveIdSchema } from '../directing';
 import { ActorSchema, IdSchema, IsoDateSchema, MediaRefSchema } from './common';
 import { ContentCredentialsStampSchema } from './provenance';
+import { FocusPointSchema } from './timeline';
 
 export const ConsistencyStatusSchema = z.enum(['passed', 'failed', 'unverified']);
 export type ConsistencyStatus = z.infer<typeof ConsistencyStatusSchema>;
@@ -199,6 +200,8 @@ export const TakeSchema = z.object({
     .default(null),
   durationSec: z.number().nonnegative().optional(),
   error: z.string().max(2000).optional(),
+  /** Where the subject is over the take, for auto-reframe (docs/design/finishing.md#auto-reframe-and-cut-downs). */
+  focus: z.array(FocusPointSchema).max(20).nullable().default(null),
 });
 export type Take = z.infer<typeof TakeSchema>;
 

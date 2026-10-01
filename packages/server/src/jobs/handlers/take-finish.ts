@@ -182,6 +182,7 @@ export async function commitTake(
     watermarkId: t.watermarkId ?? null,
     contentCredentials: t.contentCredentials ?? null,
     override: null,
+    focus: null,
     ...(t.video?.durationSec ? { durationSec: t.video.durationSec } : {}),
   };
   const derived = t.derivedFrom

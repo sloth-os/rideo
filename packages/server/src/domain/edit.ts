@@ -8,6 +8,10 @@ import {
   type Clip,
   type CommitSummary,
   checkRequirement,
+  cutDown,
+  type DeliveryAspect,
+  type DeliveryInput,
+  DeliverySchema,
   disclosureFor,
   docPath,
   docsFromEntries,
@@ -16,14 +20,18 @@ import {
   ExportLoudnessSchema,
   type ExportQuality,
   emptyTimeline,
+  type FocusPoint,
   isStillMedia,
   type Job,
   type LoudnessTarget,
   type MediaRef,
   newId,
   type Project,
+  type ProjectDocs,
   type RenderEngineChoice,
   type Resource,
+  reframeTimeline,
+  resolveDelivery,
   sortedClips,
   subtitleCues,
   type Timeline,
@@ -344,28 +352,41 @@ export class EditService extends Service {
       language?: string;
       dubbed?: boolean;
       captions?: 'burn' | 'sidecar';
-    } = {},
+    } & Omit<DeliveryInput, 'loudness' | 'captions' | 'stems'> = {},
   ): Promise<{ export: Export; job: Job }> {
     const source = opts.source ?? 'timeline';
-    const loudness = opts.loudness ?? 'streaming';
-    const stems = !!opts.stems;
-    const language = opts.language ?? null;
-    const dubbed = !!opts.dubbed;
-    const captions = opts.captions ?? 'burn';
-    if (source === 'animatic' && (language || dubbed || captions === 'sidecar'))
-      throw invalid('language variants and sidecar captions are made from the cut');
-    await this.exportPrecheck(projectId, source);
     const quality = opts.quality ?? 'standard';
     const engine = opts.engine ?? 'auto';
+    const language = opts.language ?? null;
+    const dubbed = !!opts.dubbed;
+    await this.exportPrecheck(projectId, source);
     const h = await this.deps.projects.existing(projectId);
     const timelineCommit = (await h.repo.snapshot()).commit;
     const docs = await this.deps.projects.docs(projectId);
+    const base = source === 'animatic' ? docs.animatic! : docs.timeline!;
+    // The delivery: a preset, then explicit options (docs/design/finishing.md#delivery-presets).
+    const delivery = resolveDelivery(
+      { width: base.width, height: base.height, fps: base.fps },
+      opts,
+      quality,
+    );
+    const { loudness, captions, stems } = delivery;
+    const reframed = delivery.aspect !== 'source';
+    if (
+      source === 'animatic' &&
+      (language || dubbed || captions === 'sidecar' || reframed || delivery.maxDurationSec)
+    )
+      throw invalid('language variants, sidecar captions, reframes and cut-downs are made from the cut');
     // The visible disclosure label (docs/design/provenance.md#disclosure-label): resolved here, drawn by the tab.
     const disclosure = disclosureFor(docs);
-    // A language variant or sidecar captions render a derived timeline (docs/design/localization.md).
-    const shown = source === 'animatic' ? docs.animatic! : cutVariant(docs, { language, dubbed });
-    const derived = language || captions === 'sidecar';
-    const render = derived ? (captions === 'sidecar' ? withoutCaptions(shown) : shown) : null;
+    // A language variant (docs/design/localization.md), then the delivered length.
+    let shown = source === 'animatic' ? base : cutVariant(docs, { language, dubbed });
+    if (delivery.maxDurationSec) shown = cutDown(shown, delivery.maxDurationSec);
+    const derived = !!(language || captions === 'sidecar' || reframed || delivery.maxDurationSec);
+    let render = derived ? (captions === 'sidecar' ? withoutCaptions(shown) : shown) : null;
+    // Reframing needs every take's focus; missing ones are prepared by `export.prepare` first.
+    const missingFocus = render && reframed ? this.takesWithoutFocus(render, docs) : [];
+    if (render && reframed && !missingFocus.length) render = this.reframe(render, delivery.aspect, docs);
     const exportId = newId('export');
     const subtitles = await this.subtitleFiles(
       projectId,
@@ -394,6 +415,17 @@ export class EditService extends Service {
       dubbed,
       captions,
       subtitles: subtitles ? { language, ...subtitles } : null,
+      delivery: DeliverySchema.parse({
+        preset: delivery.preset,
+        format: delivery.format,
+        width: delivery.width,
+        height: delivery.height,
+        fps: delivery.fps,
+        aspect: delivery.aspect,
+        maxDurationSec: delivery.maxDurationSec,
+        thumbnails: delivery.thumbnails,
+      }),
+      thumbnails: [],
     };
     await this.mutate(
       actor,
@@ -403,33 +435,80 @@ export class EditService extends Service {
         if (render) tx.set(docPath.render(exp.id), render);
       },
       {
-        message: `Queue ${quality} ${source === 'animatic' ? 'animatic ' : ''}export${language ? ` (${language}${dubbed ? ', dubbed' : ''})` : ''}`,
+        message: `Queue ${quality} ${source === 'animatic' ? 'animatic ' : ''}${delivery.preset} export${language ? ` (${language}${dubbed ? ', dubbed' : ''})` : ''}`,
       },
     );
-    const job = await this.deps.jobs.enqueue({
+    const renderParams = {
+      exportId: exp.id,
+      quality,
+      engine,
+      chunkSec: 30,
+      // A derived timeline is the tab's to read as it is when the render starts.
+      timelineCommit: render ? null : timelineCommit,
+      timelinePath: render
+        ? docPath.render(exp.id)
+        : source === 'animatic'
+          ? 'animatic.json'
+          : 'timeline.json',
+      disclosure: disclosure.label ? { text: disclosure.text, position: disclosure.position } : null,
+      stems,
+    };
+    const branch = await this.branchOf(projectId);
+    const job = missingFocus.length
+      ? await this.deps.jobs.enqueue({
+          projectId,
+          kind: 'export.prepare',
+          params: { exportId: exp.id, aspect: delivery.aspect, render: renderParams },
+          actor,
+          branch,
+          dedupeKey: `prepare:${exp.id}`,
+          maxAttempts: 3,
+        })
+      : await this.startRender(actor, projectId, branch, renderParams);
+    return { export: exp, job };
+  }
+
+  /** Queues the tab's render of an export (docs/design/editor.md#editor-jobs). */
+  async startRender(
+    actor: Actor,
+    projectId: string,
+    branch: string,
+    params: Record<string, unknown> & { exportId: string },
+  ): Promise<Job> {
+    return this.deps.jobs.enqueue({
       projectId,
       kind: 'export.render',
-      params: {
-        exportId: exp.id,
-        quality,
-        engine,
-        chunkSec: 30,
-        // A derived timeline is never rewritten: the tab reads it as it is.
-        timelineCommit: render ? null : timelineCommit,
-        timelinePath: render
-          ? docPath.render(exp.id)
-          : source === 'animatic'
-            ? 'animatic.json'
-            : 'timeline.json',
-        disclosure: disclosure.label ? { text: disclosure.text, position: disclosure.position } : null,
-        stems,
-      },
+      params,
       actor,
-      branch: await this.branchOf(projectId),
-      dedupeKey: `export:${exp.id}`,
+      branch,
+      dedupeKey: `export:${params.exportId}`,
       maxAttempts: 5,
     });
-    return { export: exp, job };
+  }
+
+  /** The takes of a timeline that have no focus track yet (docs/design/finishing.md#auto-reframe-and-cut-downs). */
+  takesWithoutFocus(
+    t: Timeline,
+    docs: Pick<ProjectDocs, 'clips'>,
+  ): { clipId: string; shotId: string; takeId: string }[] {
+    const out = new Map<string, { clipId: string; shotId: string; takeId: string }>();
+    for (const item of t.tracks.find((x) => x.kind === 'video')?.items ?? []) {
+      if (item.kind !== 'video' || item.source.type !== 'take') continue;
+      const { clipId, shotId, takeId } = item.source;
+      const take = docs.clips[clipId]?.shots.find((s) => s.id === shotId)?.takes.find((x) => x.id === takeId);
+      if (take && !take.focus?.length && !isStillMedia(item.source.media))
+        out.set(takeId, { clipId, shotId, takeId });
+    }
+    return [...out.values()];
+  }
+
+  /** The timeline reframed to the aspect with the takes' focus tracks. */
+  reframe(t: Timeline, aspect: DeliveryAspect, docs: Pick<ProjectDocs, 'clips'>): Timeline {
+    if (aspect === 'source') return t;
+    const focusByTake: Record<string, FocusPoint[] | null> = {};
+    for (const clip of Object.values(docs.clips))
+      for (const shot of clip.shots) for (const take of shot.takes) focusByTake[take.id] = take.focus;
+    return reframeTimeline(t, { aspect, focusByTake });
   }
 
   /** SRT and WebVTT of a timeline's captions as project media (null without captions). */

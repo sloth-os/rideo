@@ -31,8 +31,16 @@ function ExportCard({ e, projectId }: { e: Export; projectId: string }) {
       as="article"
       className="overflow-hidden rounded-[var(--radius-card)] border border-border bg-surface"
     >
-      {e.media ? (
+      {e.media && e.media.mime === 'video/mp4' ? (
         <MediaVideo projectId={projectId} media={e.media} className="aspect-video w-full" />
+      ) : e.media ? (
+        // Masters (ProRes, image sequences) are for other tools; the browser shows what they are.
+        <div className="flex aspect-video flex-col items-center justify-center gap-1 bg-surface-2 text-[13px] text-muted">
+          <span className="font-medium text-text">
+            {e.delivery?.format === 'frames' ? 'Image-sequence master' : 'ProRes master'}
+          </span>
+          <span>{e.media.mime}</span>
+        </div>
       ) : (
         <div className="flex aspect-video items-center justify-center bg-surface-2 text-[13px] text-muted">
           {e.status}…
@@ -52,6 +60,35 @@ function ExportCard({ e, projectId }: { e: Export; projectId: string }) {
             </Badge>
           ) : null}
           {e.codec ? <Badge>{e.codec}</Badge> : null}
+          {e.delivery ? (
+            <Badge testid="export-delivery">
+              {e.delivery.preset} ·{' '}
+              {e.delivery.format === 'frames' ? 'png+wav' : e.delivery.format === 'prores' ? 'prores' : 'mp4'}
+              {' · '}
+              {e.delivery.width}×{e.delivery.height} · {e.delivery.fps} fps
+              {e.delivery.aspect !== 'source' ? ` · ${e.delivery.aspect}` : ''}
+            </Badge>
+          ) : null}
+          {e.delivery?.enhance && (e.delivery.enhance.upscale || e.delivery.enhance.interpolate) ? (
+            <Badge
+              tone="info"
+              title={
+                e.delivery.enhance.model
+                  ? `Enhanced by ${e.delivery.enhance.model}`
+                  : 'Enhanced with ffmpeg (no enhancement model)'
+              }
+              testid="export-enhance"
+            >
+              {[
+                e.delivery.enhance.upscale ? 'upscaled' : null,
+                e.delivery.enhance.interpolate ? 'interpolated' : null,
+              ]
+                .filter(Boolean)
+                .join(' + ')}
+              {' · '}
+              {e.delivery.enhance.model ?? 'ffmpeg'}
+            </Badge>
+          ) : null}
           {e.language ? (
             <Badge tone="accent" testid="export-language-badge">
               {languageName(e.language)}
@@ -109,6 +146,19 @@ function ExportCard({ e, projectId }: { e: Export; projectId: string }) {
             >
               Verify
             </Button>
+          </div>
+        ) : null}
+        {e.thumbnails.length ? (
+          <div className="grid grid-cols-3 gap-1.5" data-testid="export-thumbnails">
+            {e.thumbnails.map((t, k) => (
+              <a key={t.path} href={mediaUrl(projectId, t.path)} download data-testid="download-thumbnail">
+                <img
+                  src={mediaUrl(projectId, t.path)}
+                  alt={`Thumbnail ${k + 1}`}
+                  className="aspect-video w-full rounded object-cover"
+                />
+              </a>
+            ))}
           </div>
         ) : null}
         {e.subtitles ? (

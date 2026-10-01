@@ -13,6 +13,10 @@ import {
   ConsentInputSchema,
   CreateProjectInputSchema,
   clipBlockers,
+  DeliveryAspectSchema,
+  DeliveryFormatSchema,
+  DeliveryPresetIdSchema,
+  DeliveryResolutionSchema,
   EditKindSchema,
   ElementInputSchema,
   ElementReferenceViewSchema,
@@ -954,6 +958,21 @@ function buildServer(studio: Studio): McpServer {
         .enum(['burn', 'sidecar'])
         .optional()
         .describe('captions burned in (default) or only as SRT/VTT'),
+      preset: DeliveryPresetIdSchema.optional().describe(
+        'delivery preset: web (default), youtube (4K, thumbnails), broadcast (ProRes HD, EBU R128), vertical/square (auto-reframed 60 s cut-downs), master_prores, master_frames',
+      ),
+      format: DeliveryFormatSchema.optional().describe(
+        'mp4, prores (MOV) or frames (PNG sequence + WAV in a TAR)',
+      ),
+      resolution: DeliveryResolutionSchema.optional().describe(
+        'project, hd (1080) or uhd (2160): upscaled by a gateway model when one can',
+      ),
+      fps: z.number().int().min(12).max(120).optional().describe('a higher rate is interpolated'),
+      aspect: DeliveryAspectSchema.optional().describe(
+        'source, 9:16 or 1:1 (auto-reframed around the subject)',
+      ),
+      maxDurationSec: z.number().min(5).max(3600).optional().describe('a cut-down to this length'),
+      thumbnails: z.boolean().optional(),
     },
     async (a, actor) => ({
       ...(await studio.edit.createExport(actor, a.projectId, a)),

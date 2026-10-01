@@ -4,6 +4,7 @@ export * from './consistency';
 export * from './dialogue';
 export * from './diff/json-diff';
 export * from './directing';
+export * from './finishing';
 export * from './ids';
 export * from './localization';
 export * from './media';

@@ -23,6 +23,7 @@ export const JOB_KINDS = [
   'score.generate',
   'sfx.generate',
   'localize.generate',
+  'export.prepare',
   'media.process',
   'analysis.signals',
   'analysis.suggest',
@@ -60,6 +61,7 @@ export const JOB_LANES: Record<JobKind, Lane> = {
   'score.generate': 'music',
   'sfx.generate': 'music',
   'localize.generate': 'music',
+  'export.prepare': 'llm',
   'media.process': 'client',
   'analysis.signals': 'client',
   'analysis.suggest': 'llm',
@@ -154,6 +156,42 @@ export const ExportStemsSchema = z.object({
 });
 export type ExportStems = z.infer<typeof ExportStemsSchema>;
 
+/** Deliveries (docs/design/finishing.md#delivery-presets). */
+export const DeliveryPresetIdSchema = z.enum([
+  'web',
+  'youtube',
+  'broadcast',
+  'vertical',
+  'square',
+  'master_prores',
+  'master_frames',
+]);
+export type DeliveryPresetId = z.infer<typeof DeliveryPresetIdSchema>;
+export const DeliveryFormatSchema = z.enum(['mp4', 'prores', 'frames']);
+export type DeliveryFormat = z.infer<typeof DeliveryFormatSchema>;
+export const DeliveryResolutionSchema = z.enum(['project', 'hd', 'uhd']);
+export type DeliveryResolution = z.infer<typeof DeliveryResolutionSchema>;
+export const DeliveryAspectSchema = z.enum(['source', '9:16', '1:1']);
+export type DeliveryAspect = z.infer<typeof DeliveryAspectSchema>;
+export const EnhanceMethodSchema = z.enum(['model', 'ffmpeg']).nullable();
+
+export const DeliverySchema = z.object({
+  preset: DeliveryPresetIdSchema,
+  format: DeliveryFormatSchema,
+  width: z.number().int().positive(),
+  height: z.number().int().positive(),
+  fps: z.number().int().min(12).max(120),
+  aspect: DeliveryAspectSchema,
+  maxDurationSec: z.number().positive().nullable().default(null),
+  thumbnails: z.boolean().default(false),
+  /** How the picture was enhanced, filled by `export.finish`. */
+  enhance: z
+    .object({ upscale: EnhanceMethodSchema, interpolate: EnhanceMethodSchema, model: z.string().nullable() })
+    .nullable()
+    .default(null),
+});
+export type Delivery = z.infer<typeof DeliverySchema>;
+
 export const RenderEngineSchema = z.enum(['ffmpeg', 'webcodecs']);
 export type RenderEngine = z.infer<typeof RenderEngineSchema>;
 export const RenderEngineChoiceSchema = z.enum(['auto', 'ffmpeg', 'webcodecs']);
@@ -188,6 +226,9 @@ export const ExportSchema = z.object({
     .object({ language: z.string().max(20).nullable(), srt: MediaRefSchema, vtt: MediaRefSchema })
     .nullable()
     .default(null),
+  /** The resolved delivery (docs/design/finishing.md); null on exports from before deliveries. */
+  delivery: DeliverySchema.nullable().default(null),
+  thumbnails: z.array(MediaRefSchema).max(10).default([]),
   durationSec: z.number().nonnegative().optional(),
   width: z.number().int().positive().optional(),
   height: z.number().int().positive().optional(),

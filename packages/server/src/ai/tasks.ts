@@ -5,6 +5,10 @@ import {
   type ClipPlanInput,
   type ClipPlanOutput,
   ClipPlanOutputSchema,
+  FOCUS_FRAME_LABEL,
+  type FocusInput,
+  type FocusOutput,
+  FocusOutputSchema,
   type FootageAnalyzeInput,
   type FootageAnalyzeOutput,
   FootageAnalyzeOutputSchema,
@@ -32,6 +36,9 @@ import {
   type SfxPlanOutput,
   SfxPlanOutputSchema,
   TAKE_AUDIO_LABEL,
+  type ThumbnailPickInput,
+  type ThumbnailPickOutput,
+  ThumbnailPickOutputSchema,
   type TranslateInput,
   type TranslateOutput,
   TranslateOutputSchema,
@@ -137,6 +144,15 @@ For every shot list at most maxPerShot effects that the action implies and a vie
 - "ambience": the room tone or environment under the whole shot (wind, rain, a busy street, a ticking clock): at 0, durationSec = the shot length.
 "description" says concretely what is heard, its material and acoustic space (e.g. "a heavy wooden door creaks open in a stone hallway"), at most 200 characters. "shot" is the shot's index.
 Return only JSON: {"effects":[{"shot":0,"description":"...","at":1.5,"durationSec":2,"kind":"spot"}]}`,
+
+  'reframe.focus': `rideo-task: reframe.focus
+You are an editor reframing a shot for a narrower screen (vertical 9:16 or square). For every frame, say where the main subject is, so a crop centred there keeps what matters: the speaking or acting character's face, or the object the shot is about.
+x and y are the subject's centre in the frame, from 0 (left, top) to 1 (right, bottom).
+Return only JSON: {"frames":[{"index":0,"x":0.5,"y":0.4}]}`,
+
+  'thumbnail.pick': `rideo-task: thumbnail.pick
+You are choosing thumbnails for a film. Rank the candidate frames: a clear, sharp subject (ideally a face with an expression), strong contrast and colour, no motion blur, nothing cut awkwardly at the edges, readable at a small size. Return the best "count" frames, best first, each with a short reason.
+Return only JSON: {"picks":[{"index":0,"reason":"..."}]}`,
 
   'dialogue.translate': `rideo-task: dialogue.translate
 You are a film translator writing dialogue for subtitles and dubbing. Translate every line into the target language (languageName, code "language").
@@ -382,6 +398,28 @@ export class LlmTasks {
 
   planSfx(input: SfxPlanInput, signal?: AbortSignal): Promise<SfxPlanOutput> {
     return this.run('sfx.plan', SfxPlanOutputSchema, input, { temperature: 0.4, signal });
+  }
+
+  /** Where the subject is in each frame (docs/design/finishing.md#auto-reframe-and-cut-downs). */
+  focus(input: FocusInput, frames: Buffer[], signal?: AbortSignal): Promise<FocusOutput> {
+    return this.run('reframe.focus', FocusOutputSchema, input, {
+      images: frames.map((data, i) => ({ label: `${FOCUS_FRAME_LABEL} ${i}:`, data, mime: 'image/png' })),
+      temperature: 0,
+      signal,
+    });
+  }
+
+  /** The best thumbnails among candidate frames (docs/design/finishing.md#thumbnails). */
+  pickThumbnails(
+    input: ThumbnailPickInput,
+    frames: Buffer[],
+    signal?: AbortSignal,
+  ): Promise<ThumbnailPickOutput> {
+    return this.run('thumbnail.pick', ThumbnailPickOutputSchema, input, {
+      images: frames.map((data, i) => ({ label: `${FOCUS_FRAME_LABEL} ${i}:`, data, mime: 'image/png' })),
+      temperature: 0,
+      signal,
+    });
   }
 
   translate(input: TranslateInput, signal?: AbortSignal): Promise<TranslateOutput> {

@@ -1,5 +1,6 @@
 import { duckEnvelope, duckExpression } from '../audio/mix';
 import { textFrames } from '../captions';
+import { cropFilter } from '../finishing';
 import type { MediaRef } from '../schemas/common';
 import type { ExportQuality } from '../schemas/job';
 import { AUDIO_ROLES, type AudioRole, type TextItem, type Timeline } from '../schemas/timeline';
@@ -197,9 +198,13 @@ export function chunkGraph(t: Timeline, chunk: RenderChunk, opts: ChunkGraphOpti
       args.push('-ss', n(seek), '-t', n(srcOut - seek + 0.25), '-i', opts.inputPath(s.media));
       head = `[${k}:v]trim=start=${n(srcIn - seek)}:end=${n(srcOut - seek)},setpts=(PTS-STARTPTS)/${n(s.speed)},`;
     }
+    // A reframed item crops around its subject (docs/design/finishing.md); others are letterboxed.
+    const fit = s.crop
+      ? `${cropFilter(s.crop, width / height, isStillMedia(s.media) ? 0 : srcIn, isStillMedia(s.media) ? 1 : s.speed)},scale=${width}:${height},`
+      : `scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:color=black,`;
     let chain =
       head +
-      `scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:color=black,` +
+      fit +
       // settb: concat outputs AV_TIME_BASE, and xfade needs both inputs on the same timebase
       `setsar=1,fps=${fps},format=yuv420p,settb=AVTB`;
     const e = s.effects;

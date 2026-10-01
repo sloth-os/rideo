@@ -133,6 +133,13 @@ export class Metrics {
   readonly voiceChecks = this.add(
     new Counter('rideo_voice_checks_total', 'Speaker checks of native-audio takes by result'),
   );
+  /** Finishing (docs/design/finishing.md): enhanced parts, focus tracks and thumbnails. */
+  readonly finishing = this.add(
+    new Counter(
+      'rideo_finishing_total',
+      'Finishing operations (upscale, interpolate, focus, thumbnail) by outcome',
+    ),
+  );
   /** Localization (docs/design/localization.md): translated lines, dubbed takes and lip-sync passes. */
   readonly localization = this.add(
     new Counter('rideo_localization_total', 'Localization operations (translate, dub, lipsync) by outcome'),

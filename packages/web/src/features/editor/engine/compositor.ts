@@ -1,5 +1,6 @@
 import {
   activeAt,
+  cropWindow,
   type Effects,
   isStillMedia,
   type TextItem,
@@ -174,7 +175,12 @@ export class Compositor {
         ctx.rect(0, 0, w * layer.wipe, h);
         ctx.clip();
       }
-      drawContain(ctx, img as CanvasImageSource & { width: number; height: number }, w, h);
+      const frame = img as CanvasImageSource & { width: number; height: number };
+      if (layer.item.crop) {
+        // Reframed around the subject, the same window as the ffmpeg crop (docs/design/finishing.md).
+        const r = cropWindow(frame, w / h, layer.item.crop.focus, layer.sourceTime);
+        ctx.drawImage(frame, r.x, r.y, r.width, r.height, 0, 0, w, h);
+      } else drawContain(ctx, frame, w, h);
       ctx.filter = 'none';
       if (layer.dim < 1) {
         ctx.globalAlpha = layer.opacity * (1 - layer.dim);

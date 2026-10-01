@@ -58,6 +58,12 @@ Signed by `export.finish` after watermarking, encoding and muxing, before the ex
 | `org.rideo.provenance` | `{project, asset: {kind: "export", exportId}, timelineCommit}` |
 | `org.rideo.disclosure` | `{label: boolean, text, reason: "policy" \| "real_person" \| null}` |
 
+**Deliveries** ([finishing](finishing.md#formats)): ProRes masters are signed like MP4 exports (`video/quicktime`);
+an image-sequence archive has no manifest, but every frame carries the watermark. An export enhanced by a model
+adds a `c2pa.edited` action (trained algorithmic media) per operation (`upscale`, `frame_interpolation`) with the
+model as software agent. **Thumbnails** are signed JPEGs: `c2pa.opened` with the export as parent ingredient and
+`c2pa.edited` (`operation: "thumbnail"`).
+
 **Lip-synced dubs** ([localization](localization.md#dubbing)) are signed like derived takes: `c2pa.opened` and
 `c2pa.edited` (`operation: "dub"`) with the take as parent ingredient; their watermark is registered as a `dub`
 asset of the take, with its language.

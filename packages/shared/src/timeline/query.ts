@@ -5,6 +5,7 @@ import type {
   AudioItem,
   AudioRole,
   Effects,
+  FocusPoint,
   SpeechSpans,
   TextItem,
   Timeline,
@@ -168,6 +169,8 @@ export interface VideoSegment {
   fadeIn: number;
   fadeOut: number;
   effects?: Effects;
+  /** Reframed around these focus points (docs/design/finishing.md). */
+  crop: FocusPoint[] | null;
 }
 
 /** Primary-track segments in order (server render input). */
@@ -184,6 +187,7 @@ export function videoSegments(t: Timeline): VideoSegment[] {
     fadeIn: item.fadeIn ?? 0,
     fadeOut: item.fadeOut ?? 0,
     effects: item.effects,
+    crop: item.crop?.focus ?? null,
   }));
 }
 

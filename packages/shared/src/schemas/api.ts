@@ -10,7 +10,15 @@ import {
 } from './clip';
 import { AspectRatioSchema, IdSchema } from './common';
 import { ElementKindSchema, ElementReferenceViewSchema } from './element';
-import { ExportQualitySchema, LoudnessTargetSchema, RenderEngineChoiceSchema } from './job';
+import {
+  DeliveryAspectSchema,
+  DeliveryFormatSchema,
+  DeliveryPresetIdSchema,
+  DeliveryResolutionSchema,
+  ExportQualitySchema,
+  LoudnessTargetSchema,
+  RenderEngineChoiceSchema,
+} from './job';
 import { LanguageCodeSchema } from './localization';
 import { DialogueModeSchema, DisclosurePositionSchema, ProjectKindSchema } from './project';
 import { ResourceKindSchema, ResourceRoleSchema } from './resource';
@@ -36,6 +44,7 @@ export const ProjectSettingsPatchSchema = z
         music: z.string().min(1),
         lipSync: z.string().min(1),
         edit: z.string().min(1),
+        enhance: z.string().min(1),
       })
       .partial(),
     consistency: z
@@ -278,6 +287,14 @@ export const ExportInputSchema = z.object({
   language: LanguageCodeSchema.optional(),
   dubbed: z.boolean().optional(),
   captions: z.enum(['burn', 'sidecar']).optional(),
+  /** A delivery (docs/design/finishing.md): a preset, then explicit options. */
+  preset: DeliveryPresetIdSchema.optional(),
+  format: DeliveryFormatSchema.optional(),
+  resolution: DeliveryResolutionSchema.optional(),
+  fps: z.number().int().min(12).max(120).optional(),
+  aspect: DeliveryAspectSchema.optional(),
+  maxDurationSec: z.number().min(5).max(3600).optional(),
+  thumbnails: z.boolean().optional(),
 });
 
 /** Localization (docs/design/localization.md#surfaces). */

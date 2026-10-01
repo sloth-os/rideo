@@ -12,6 +12,8 @@ export async function exportInThisTab(
     /** Loudness target and stems (docs/design/post-audio.md#loudness). */
     loudness?: 'streaming' | 'broadcast' | 'off';
     stems?: boolean;
+    /** A delivery preset (docs/design/finishing.md#delivery-presets). */
+    preset?: string;
     /** A language variant (docs/design/localization.md#language-variants). */
     language?: string;
     dubbed?: boolean;
@@ -20,6 +22,8 @@ export async function exportInThisTab(
 ): Promise<void> {
   await page.getByTestId('open-export').click();
   await expect(page.getByTestId('webcodecs-caps')).not.toContainText('detecting');
+  // The preset first: it sets the options below it.
+  if (opts.preset) await page.getByTestId('export-preset').selectOption(opts.preset);
   if (opts.quality) await page.getByLabel('Quality').selectOption(opts.quality);
   if (opts.engine) await page.getByTestId('export-engine').selectOption(opts.engine);
   if (opts.loudness) await page.getByTestId('export-loudness').selectOption(opts.loudness);
@@ -30,7 +34,7 @@ export async function exportInThisTab(
   await page.getByTestId('export-start').click();
   const status = page.getByTestId('export-status');
   const failed = page.getByTestId('export-error');
-  await expect(status).toContainText(/Rendering in this tab|Rendered|Ready/, { timeout: 60_000 });
+  await expect(status).toContainText(/Rendering in this tab|Rendered|Ready/, { timeout: 90_000 });
   await expect(status.getByText(/^Ready/).or(failed)).toBeVisible({ timeout: 240_000 });
   if (await failed.isVisible()) throw new Error(`export failed: ${await failed.innerText()}`);
   await page.getByTestId('export-close').click();

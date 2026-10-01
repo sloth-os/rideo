@@ -15,10 +15,12 @@ import {
   footageAnalyze,
   type LabelledImages,
   mediaDescribe,
+  reframeFocus,
   scorePlan,
   screenplayExtend,
   screenplayGenerate,
   sfxPlan,
+  thumbnailPick,
   translate,
 } from './fixtures';
 import { parseDataUri } from './png';
@@ -165,6 +167,9 @@ function labelledAudio(parts: Part[]): { references: Map<string, Buffer>; take: 
   return { references, take };
 }
 
+const imagesOf = (parts: Part[]) =>
+  parts.filter((p): p is Extract<Part, { kind: 'image' }> => p.kind === 'image').map((p) => p.data);
+
 /** Routes a chat request to the fixture for its `rideo-task:` marker; unknown tasks get a small echo. */
 export function answer(req: ChatRequest): string {
   const text = [
@@ -211,6 +216,12 @@ export function answer(req: ChatRequest): string {
       break;
     case 'dialogue.translate':
       out = translate(input);
+      break;
+    case 'reframe.focus':
+      out = reframeFocus(input, imagesOf(req.parts));
+      break;
+    case 'thumbnail.pick':
+      out = thumbnailPick(input, imagesOf(req.parts));
       break;
     default:
       out = { ok: true, echo: text.slice(0, 200) };

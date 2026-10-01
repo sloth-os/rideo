@@ -28,6 +28,7 @@ type VideoItem = {
 };
 type AudioItem = { id: string; kind: 'audio'; source: Source; start: number; in: number; out: number;
                    volume: number; fadeIn?: number; fadeOut?: number; speech?: [number, number][] };
+// VideoItem.crop?: { focus: { t, x, y }[] }   reframed around the subject (docs/design/finishing.md)
 // Tracks: { id, kind, name, muted?, volume?, role?: 'dialogue' | 'music' | 'effects', items }
 // Timeline: { version, fps, width, height, tracks, mix?: { ducking: { enabled, depthDb, attackSec, releaseSec } } }
 type TextItem  = { id: string; kind: 'text'; start: number; duration: number; text: string;
@@ -228,6 +229,11 @@ WebCodecs compositor and the preview draw it as an `ImageBitmap`, and audio quer
      eq=brightness=B:contrast=C:saturation=S,fade=t=in:st=0:d=FI,fade=t=out:st=D-FO:d=FO[vk]
 ```
 
+A reframed item (`item.crop`, an auto-reframed delivery, [finishing](finishing.md#auto-reframe-and-cut-downs)) is
+cropped around its subject instead of letterboxed: `crop=w='min(iw,ih*A)':h='min(ih,iw/A)':x='…':y='…'` with the
+focus as a piecewise-linear expression of the source time, then `scale=W:H`; the compositor and the preview draw the
+same window (`cropWindow`).
+
 Segments are chained left to right: `xfade` (`fade`, `wipeleft`, `fadeblack`) at `offset = accumulated − d`
 for transitions, `concat` for cuts. Every stream is on `AV_TIME_BASE` (`settb=AVTB`) because `concat`
 outputs that timebase and `xfade` rejects inputs whose timebases differ. Text items overlapping the chunk
@@ -262,11 +268,14 @@ speed and quality over size.
 
 ### Finishing (server)
 
-When the last part arrives, the `export.finish` job concatenates the chunks (concat demuxer), runs the
-watermark frame pipeline (decode → `embedLuma` → x264 at the export quality), normalizes the soundtrack's
-loudness to the export's target ([post audio](post-audio.md#loudness)) and muxes it as AAC 192 kb/s, bounded by the
-film's length (`-t`, never `-shortest`), publishes the stems as signed WAVs when asked, writes provenance metadata, registers the watermark, publishes
-`media/exports/<exportId>-<hash12>.mp4` and tags the commit. The final encode follows the quality presets:
+When the last part arrives, the `export.finish` job enhances the parts when the delivery is larger or faster than
+the render (a gateway model, else ffmpeg; [finishing](finishing.md#enhancement-upscale-and-frame-interpolation)),
+concatenates them (concat demuxer), runs the watermark frame pipeline at the delivery's size and rate (decode →
+`embedLuma` → the delivery's encoder: x264, ProRes 422 HQ, or PNG frames), normalizes the soundtrack's loudness to
+the export's target ([post audio](post-audio.md#loudness)) and muxes it (AAC, or PCM for ProRes), bounded by the
+film's length (`-t`, never `-shortest`), publishes the stems as signed WAVs and the thumbnails when asked, writes
+provenance metadata, registers the watermark, publishes `media/exports/<exportId>-<hash12>.mp4` (`.mov`, `.tar`)
+and tags the commit. MP4 encodes follow the quality presets:
 
 | Preset | Video | Max size |
 |---|---|---|
@@ -317,9 +326,10 @@ before it is closed. Without an open tab, editor jobs wait in `queued`; MCP resu
 - Captions & languages card ([localization](localization.md#surfaces)): the caption style, SRT/VTT downloads,
   every language with its progress (lines, dubs, lip-synced close-ups) and actions (translate, dub, edit), and
   adding a language.
-- Export dialog: quality and engine (*Auto*, *ffmpeg.wasm*, *WebCodecs*) with the detected capabilities,
-  the loudness target and *Stems*, the language (with dubbed voices) and burned-in or sidecar captions, chunk
-  progress, and failures that stay visible in the dialog. The render runs in this tab; the export
+- Export dialog: the delivery preset and its options (format, size, frame rate, aspect, length, thumbnails;
+  [finishing](finishing.md)), quality and engine (*Auto*, *ffmpeg.wasm*, *WebCodecs*) with the detected
+  capabilities, the loudness target and *Stems*, the language (with dubbed voices) and burned-in or sidecar
+  captions, chunk progress (or the subject being found for a reframe), and failures that stay visible in the dialog. The render runs in this tab; the export
   appears in Exports once the server has watermarked it.
 - An engine indicator in the header shows whether ffmpeg.wasm is loaded and what this tab is working on.
 - On phones the timeline collapses into a vertical list; the inspector and the Mix card sit under it.

@@ -254,6 +254,29 @@ export const TranslateOutputSchema = z.object({
 });
 export type TranslateOutput = z.infer<typeof TranslateOutputSchema>;
 
+/** Where the main subject is in each frame (docs/design/finishing.md#auto-reframe-and-cut-downs). */
+export const FocusOutputSchema = z.object({
+  frames: z
+    .array(
+      z.object({
+        index: z.coerce.number().int().nonnegative(),
+        x: z.coerce.number().min(0).max(1).catch(0.5),
+        y: z.coerce.number().min(0).max(1).catch(0.5),
+      }),
+    )
+    .max(20),
+});
+export type FocusOutput = z.infer<typeof FocusOutputSchema>;
+
+/** The best thumbnails among candidate frames, best first (docs/design/finishing.md#thumbnails). */
+export const ThumbnailPickOutputSchema = z.object({
+  picks: z
+    .array(z.object({ index: z.coerce.number().int().nonnegative(), reason: str(300) }))
+    .min(1)
+    .max(10),
+});
+export type ThumbnailPickOutput = z.infer<typeof ThumbnailPickOutputSchema>;
+
 export const LLM_TASKS = [
   'media.describe',
   'screenplay.generate',
@@ -266,6 +289,8 @@ export const LLM_TASKS = [
   'score.plan',
   'sfx.plan',
   'dialogue.translate',
+  'reframe.focus',
+  'thumbnail.pick',
 ] as const;
 export type LlmTaskId = (typeof LLM_TASKS)[number];
 
@@ -389,6 +414,21 @@ export interface TranslateInput {
   scene: string;
   lines: { key: string; speaker: string; text: string }[];
 }
+
+export interface FocusInput {
+  shot: string;
+  characters: string[];
+  frames: { index: number; t: number }[];
+}
+
+export interface ThumbnailPickInput {
+  title: string;
+  count: number;
+  frames: { index: number; t: number }[];
+}
+
+/** Labels of the frames sent to the reframe and thumbnail tasks. */
+export const FOCUS_FRAME_LABEL = 'Frame';
 
 export const INPUT_PREFIX = 'INPUT:\n';
 export const VOICE_REFERENCE_LABEL = 'Reference voice for character';

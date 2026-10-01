@@ -40,6 +40,7 @@ type Job = {
 | `batch.generate` | control | extend, plan and generate until the target length |
 | `music.generate` | music | SDK music task → resource |
 | `score.generate` | music | score the cut: a cue per scene planned by the LLM, generated with the music model, laid on the Music track ([post audio](post-audio.md)) |
+| `export.prepare` | llm | the focus track of every take a reframed export needs (`reframe.focus`), then its render timeline, then `export.render` ([finishing](finishing.md#auto-reframe-and-cut-downs)) |
 | `localize.generate` | music | translate the cut's dialogue into a language, dub its speaking takes with the locked voices and lip-sync close-ups ([localization](localization.md)) |
 | `sfx.generate` | music | sound effects planned from the action lines, generated through the proxy, placed on the Effects track |
 | `media.process` | client | probe + poster of an imported resource (runs in a studio tab) |

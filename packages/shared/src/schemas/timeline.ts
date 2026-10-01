@@ -43,6 +43,14 @@ export type Ducking = z.infer<typeof DuckingSchema>;
 export const MixSchema = z.object({ ducking: DuckingSchema.default(DuckingSchema.parse({})) });
 export type Mix = z.infer<typeof MixSchema>;
 
+/** Where the main subject is at a time (normalized frame coordinates; docs/design/finishing.md#auto-reframe-and-cut-downs). */
+export const FocusPointSchema = z.object({
+  t: z.number().nonnegative(),
+  x: z.number().min(0).max(1),
+  y: z.number().min(0).max(1),
+});
+export type FocusPoint = z.infer<typeof FocusPointSchema>;
+
 export const EffectsSchema = z.object({
   brightness: z.number().min(-1).max(1).optional(),
   contrast: z.number().min(0).max(2).optional(),
@@ -66,6 +74,8 @@ export const VideoItemSchema = z.object({
   effects: EffectsSchema.optional(),
   label: z.string().max(200).optional(),
   speech: SpeechSpansSchema.optional(),
+  /** Reframed to the timeline's aspect around the subject (source seconds; docs/design/finishing.md). */
+  crop: z.object({ focus: z.array(FocusPointSchema).min(1).max(50) }).optional(),
 });
 export type VideoItem = z.infer<typeof VideoItemSchema>;
 

@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   ClipPlanOutputSchema,
+  FocusOutputSchema,
   INPUT_PREFIX,
   JUDGE_FRAME_LABEL,
   JUDGE_REFERENCE_LABEL,
@@ -9,6 +10,7 @@ import {
   ScorePlanOutputSchema,
   ScreenplayGenerateOutputSchema,
   SfxPlanOutputSchema,
+  ThumbnailPickOutputSchema,
   TranslateOutputSchema,
 } from '@rideo/shared';
 import MmGateway from '@sloth-os/mm-gateway-js';
@@ -16,6 +18,7 @@ import Ajv2020 from 'ajv/dist/2020.js';
 import addFormats from 'ajv-formats';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { type RunningMockGateway, startMockGateway } from '../src';
+import { encodePng } from '../src/png';
 
 const spec = JSON.parse(
   readFileSync(join(import.meta.dirname, '../openapi/mm-gateway.openapi.json'), 'utf8'),
@@ -87,6 +90,7 @@ describe('public contract', () => {
       'mock-video-v1',
       'mock-video-lite-v1',
       'mock-multishot-v1',
+      'mock-enhance-v1',
       'mock-lipsync-v1',
     ]);
     const limits = (await (await fetch(`${gw.url}/v1/models/limits`, { headers: auth })).json()) as any;
@@ -353,6 +357,95 @@ describe('post audio (docs/design/post-audio.md#mock-gateway)', () => {
       }),
     );
     expect(out.lines).toEqual([{ key: 'sht_0000000001:0', text: '«es» Who writes?' }]);
+  });
+
+  it('finds the subject and ranks thumbnails by saturation (docs/design/finishing.md#mock-gateway)', async () => {
+    // grey frames with a saturated patch on the right (frame 0) or on the left (frame 1)
+    const frame = (right: boolean, patch: number) => {
+      const width = 40;
+      const height = 20;
+      const data = Buffer.alloc(width * height * 4);
+      for (let y = 0; y < height; y++)
+        for (let x = 0; x < width; x++) {
+          const i = (y * width + x) * 4;
+          const inPatch = (right ? x >= width - patch : x < patch) && y < patch;
+          data.set(inPatch ? [220, 30, 30, 255] : [120, 120, 120, 255], i);
+        }
+      return encodePng({ width, height, data });
+    };
+    const image = (png: Buffer) => ({
+      type: 'image_url',
+      image_url: { url: `data:image/png;base64,${png.toString('base64')}` },
+    });
+    const focus = FocusOutputSchema.parse(
+      await chat(
+        'reframe.focus',
+        {
+          shot: 's',
+          characters: [],
+          frames: [
+            { index: 0, t: 0 },
+            { index: 1, t: 1 },
+          ],
+        },
+        [image(frame(true, 8)), image(frame(false, 8))],
+      ),
+    );
+    expect(focus.frames[0]!.x).toBeGreaterThan(0.8);
+    expect(focus.frames[1]!.x).toBeLessThan(0.2);
+    expect(focus.frames[0]!.y).toBeLessThan(0.3);
+    const picks = ThumbnailPickOutputSchema.parse(
+      await chat(
+        'thumbnail.pick',
+        {
+          title: 't',
+          count: 1,
+          frames: [
+            { index: 0, t: 0 },
+            { index: 1, t: 1 },
+          ],
+        },
+        [image(frame(true, 2)), image(frame(false, 12))],
+      ),
+    );
+    expect(picks.picks.map((p) => p.index)).toEqual([1]);
+  });
+
+  it('upscales and interpolates a reference video with the enhancement model', async () => {
+    const { json } = await post('/v1/videos', {
+      input: [{ type: 'text', text: 'waves' }],
+      parameters: { duration_seconds: 2, dimensions: { width: 160, height: 96 } },
+    });
+    const source = await waitTask(`/v1/videos/${json.id}`);
+    const mp4 = Buffer.from(await (await fetch(source.outputs[0].uri)).arrayBuffer());
+    const enhanced = await post('/v1/videos', {
+      model: 'mock-enhance-v1',
+      input: [
+        { type: 'text', text: 'Enhance' },
+        { type: 'video', uri: `data:video/mp4;base64,${mp4.toString('base64')}`, role: 'reference_video' },
+      ],
+      parameters: { dimensions: { width: 320, height: 192 }, fps: 48 },
+    });
+    const done = await waitTask(`/v1/videos/${enhanced.json.id}`);
+    expect(done.status).toBe('succeeded');
+    const out = Buffer.from(await (await fetch(done.outputs[0].uri)).arrayBuffer());
+    const { execFileSync } = await import('node:child_process');
+    const { writeFileSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const path = join(tmpdir(), `mock-enhanced-${enhanced.json.id}.mp4`);
+    writeFileSync(path, out);
+    const probe = JSON.parse(
+      execFileSync('ffprobe', [
+        '-v',
+        'error',
+        '-show_entries',
+        'stream=width,height,r_frame_rate',
+        '-of',
+        'json',
+        path,
+      ]).toString(),
+    ).streams[0];
+    expect(probe).toMatchObject({ width: 320, height: 192, r_frame_rate: '48/1' });
   });
 
   it('generates a sound effect of the asked length through the ElevenLabs proxy', async () => {

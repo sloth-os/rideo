@@ -5,6 +5,7 @@ import type {
   Clip,
   CommitSummary,
   ConsentInput,
+  DeliveryInput,
   Diff,
   EditKind,
   EditorJobKind,
@@ -379,7 +380,7 @@ export const api = {
       language?: string;
       dubbed?: boolean;
       captions?: 'burn' | 'sidecar';
-    },
+    } & Omit<DeliveryInput, 'loudness' | 'captions' | 'stems'>,
   ) => request<{ export: Export; job: Job }>('POST', `${p(id)}/exports`, body),
   // Storyboard and animatic (docs/design/storyboard.md#surfaces)
   generateStoryboard: (id: string) => request<Job>('POST', `${p(id)}/storyboard/generate`, {}),

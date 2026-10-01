@@ -65,8 +65,10 @@ export const ProjectSettingsSchema = z.object({
       lipSync: z.string().min(1).default('auto'),
       /** The video-to-video model of take edits (docs/design/take-editing.md). */
       edit: z.string().min(1).default('auto'),
+      /** Upscale and frame interpolation of exports (docs/design/finishing.md); `off` uses ffmpeg. */
+      enhance: z.string().min(1).default('auto'),
     })
-    .default({ image: 'auto', video: 'auto', music: 'auto', lipSync: 'auto', edit: 'auto' }),
+    .default({ image: 'auto', video: 'auto', music: 'auto', lipSync: 'auto', edit: 'auto', enhance: 'auto' }),
   consistency: ConsistencySettingsSchema.default({
     threshold: 0.75,
     maxAttempts: 3,

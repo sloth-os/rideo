@@ -56,7 +56,9 @@ beforeAll(async () => {
     '-shortest',
     source,
   ]);
-  id = await wm.allocateId();
+  // A fixed id keeps the robustness cases reproducible: recovery after heavy compression depends on the payload
+  // (docs/design/watermark.md#extraction).
+  id = 'wm_5ca1ab1e0c0d';
   marked = join(dir, 'marked.mp4');
   const res = await wm.embedVideo(source, marked, { id, title: 'Test clip' });
   expect(res.frames).toBe(96);

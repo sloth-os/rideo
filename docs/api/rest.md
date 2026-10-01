@@ -153,7 +153,7 @@ Errors are RFC 9457 problem details (`application/problem+json`) with a stable `
 | POST | `/api/projects/:id/analyses` | `{resourceId}` | `{analysis, job}` (`analysis.signals` editor job) |
 | PATCH | `/api/projects/:id/analyses/:aid/suggestions` | `{decisions: [{id, status}]}` | `Analysis` |
 | POST | `/api/projects/:id/analyses/:aid/auto-edit` | – | `{timeline, commit}` |
-| POST | `/api/projects/:id/exports` | `{quality?, engine?: "auto" \| "ffmpeg" \| "webcodecs", source?: "timeline" \| "animatic", loudness?: "streaming" \| "broadcast" \| "off", stems?, language?, dubbed?, captions?: "burn" \| "sidecar"}` | `{export, job}` (`export.render` editor job; the export records `loudness`, with `stems` the three stem WAVs, `subtitles` (SRT and VTT) and, for a language variant, `language`, `dubbed` and its `renders/<id>.json` timeline) |
+| POST | `/api/projects/:id/exports` | `{quality?, engine?: "auto" \| "ffmpeg" \| "webcodecs", source?: "timeline" \| "animatic", loudness?: "streaming" \| "broadcast" \| "off", stems?, language?, dubbed?, captions?: "burn" \| "sidecar", preset?, format?: "mp4" \| "prores" \| "frames", resolution?: "project" \| "hd" \| "uhd", fps?, aspect?: "source" \| "9:16" \| "1:1", maxDurationSec?, thumbnails?}` | `{export, job}` (the job is `export.prepare` when a reframe needs focus tracks first; the export records its resolved `delivery`, how it was enhanced and its `thumbnails`, [finishing](../design/finishing.md)) (`export.render` editor job; the export records `loudness`, with `stems` the three stem WAVs, `subtitles` (SRT and VTT) and, for a language variant, `language`, `dubbed` and its `renders/<id>.json` timeline) |
 | GET | `/api/projects/:id/exports` | – | `Export[]` |
 
 ## History

@@ -188,7 +188,7 @@ dialogue translation; dubbed audio tracks per language with the character's voic
 close-ups. *Why:* Resolve animated subtitles, Premiere caption translation, ElevenLabs Dubbing v2, HeyGen.
 *Fits:* timeline text items from dialogue timing; exports gain language variants.
 
-**11. Finishing and deliverables** (M) — 4K upscale and 24→48/60 fps interpolation through gateway models, ProRes
+**11. Finishing and deliverables** (M) — *done:* [design/finishing.md](design/finishing.md) — 4K upscale and 24→48/60 fps interpolation through gateway models, ProRes
 and image-sequence masters, delivery presets (YouTube, broadcast), social cut-downs with auto-reframe to 9:16 and
 1:1, thumbnails. *Why:* Runway Enhance Frame Rate/Ruby HDR, Ray3 EXR, Premiere auto reframe. *Fits:* export options
 + server finishing presets.

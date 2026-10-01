@@ -80,7 +80,8 @@ All paths are under `RIDEO_WEBDAV_ROOT` (default `/rideo`).
 │   │   ├── uploads/<slug>-<hash12>.<ext>
 │   │   ├── stems/<exportId>-<role>-<hash12>.wav       export stems (dialogue, music, effects)
 │   │   ├── subtitles/<exportId>[-<lang>]-<hash12>.srt|.vtt  export subtitles
-│   │   └── exports/<exportId>-<hash12>.mp4
+│   │   ├── thumbs/<exportId>-thumbnail-<n>-<hash12>.jpg  export thumbnails
+│   │   └── exports/<exportId>-<hash12>.mp4|.mov|.tar   deliveries (MP4, ProRes master, PNG+WAV archive)
 │   ├── inbox/                    drop files here over WebDAV → imported as resources
 │   └── .rideo/
 │       ├── HEAD                  "ref: refs/heads/main"
