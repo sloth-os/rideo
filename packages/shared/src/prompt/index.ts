@@ -1,3 +1,4 @@
+import { cameraMove, lensFragment, MOTION_REFERENCE_PHRASES, VARIATION_SEED_STEP } from '../directing';
 import {
   approvedReferences,
   type Character,
@@ -39,10 +40,23 @@ export function elementSeed(elementId: string): number {
   return fnv1a32(`element:${elementId}`) % MAX_SEED;
 }
 
-export function shotSeed(shot: Pick<Shot, 'id'>, characters: Pick<Character, 'seed'>[], attempt = 0): number {
-  let s = fnv1a32(`shot:${shot.id}`);
-  for (const c of characters) s = (s ^ c.seed) >>> 0;
-  return (s + attempt * 7919) % MAX_SEED;
+/**
+ * R3: the seed of a shot generation: the shot's fixed seed, or one derived from the shot and its cast; attempts and
+ * variations offset it (docs/design/directing.md#variations-and-comparison).
+ */
+export function shotSeed(
+  shot: Pick<Shot, 'id'> & { seed?: number | null },
+  characters: Pick<Character, 'seed'>[],
+  attempt = 0,
+  variation = 0,
+): number {
+  let s: number;
+  if (shot.seed != null) s = shot.seed;
+  else {
+    s = fnv1a32(`shot:${shot.id}`);
+    for (const c of characters) s = (s ^ c.seed) >>> 0;
+  }
+  return (s + attempt * 7919 + variation * VARIATION_SEED_STEP) % MAX_SEED;
 }
 
 function clean(s: string | undefined): string {
@@ -172,7 +186,11 @@ export function elementLines(elements: Element[]): string[] {
   return lines;
 }
 
-export function compileShotPrompt(ctx: ShotContext, mode: 'keyframe' | 'video'): string {
+export function compileShotPrompt(
+  ctx: ShotContext,
+  mode: 'keyframe' | 'video',
+  opts: { motionReference?: boolean } = {},
+): string {
   const { shot } = ctx;
   const lines: string[] = [
     styleHeader(ctx.screenplay, ctx.settings, mode === 'keyframe' ? 'still' : 'motion'),
@@ -183,9 +201,14 @@ export function compileShotPrompt(ctx: ShotContext, mode: 'keyframe' | 'video'):
     lines.push(`${clean(shot.description)}.`);
     if (mode === 'video' && clean(shot.action)) lines.push(`Action: ${clean(shot.action)}.`);
   }
+  // Directing controls (docs/design/directing.md): a move of the library replaces the movement; lens and aperture.
+  const move = cameraMove(shot.camera.move);
+  const lens = lensFragment(shot.camera);
   lines.push(
-    `Camera: ${FRAMING[shot.camera.framing]}${mode === 'video' ? `, ${MOVEMENT[shot.camera.movement]}` : ''}.`,
+    `Camera: ${FRAMING[shot.camera.framing]}${mode === 'video' ? `, ${move ? move.phrase : MOVEMENT[shot.camera.movement]}` : ''}${lens ? `; ${lens}` : ''}.`,
   );
+  if (mode === 'video' && opts.motionReference && shot.motionReference)
+    lines.push(MOTION_REFERENCE_PHRASES[shot.motionReference.mode]);
   if (ctx.characters.length) {
     lines.push(
       `Characters (keep identities exactly as described and as in the reference images): ${ctx.characters.map((c) => identityFragment(c, shot)).join(' ')}`,
@@ -343,7 +366,7 @@ export function clampDuration(
 
 export function compileKeyframeRequest(
   ctx: ShotContext,
-  opts: { referenceUris: string[]; attempt: number; model?: string },
+  opts: { referenceUris: string[]; attempt: number; model?: string; variation?: number },
 ): GatewayImageRequest {
   const { shot, settings } = ctx;
   return {
@@ -354,7 +377,7 @@ export function compileKeyframeRequest(
     ],
     parameters: {
       dimensions: { width: settings.resolution.width, height: settings.resolution.height },
-      seed: shotSeed(shot, ctx.characters, opts.attempt),
+      seed: shotSeed(shot, ctx.characters, opts.attempt, opts.variation),
       negative_prompt: [BASE_NEGATIVE, clean(shot.negativePrompt ?? '')].filter(Boolean).join(', '),
       output_count: 1,
     },
@@ -374,15 +397,28 @@ export function compileVideoRequest(
     includeAudio?: boolean;
     /** The shot's length when its dialogue needs more time than planned. */
     durationSec?: number;
+    /** Directing controls (docs/design/directing.md): the end frame, the motion reference, the variation. */
+    lastFrameUri?: string;
+    referenceVideoUri?: string;
+    variation?: number;
   },
 ): GatewayVideoRequest {
   const { shot, settings } = ctx;
   const refs = opts.limits?.supports_reference_image === false ? [] : opts.referenceUris;
-  const input: GatewayVideoRequest['input'] = [{ type: 'text', text: compileShotPrompt(ctx, 'video') }];
+  const referenceVideo =
+    opts.referenceVideoUri && opts.limits?.supports_reference_video !== false
+      ? opts.referenceVideoUri
+      : undefined;
+  const input: GatewayVideoRequest['input'] = [
+    { type: 'text', text: compileShotPrompt(ctx, 'video', { motionReference: !!referenceVideo }) },
+  ];
   if (opts.firstFrameUri && opts.limits?.supports_first_frame !== false) {
     input.push({ type: 'image', uri: opts.firstFrameUri, role: 'first_frame' });
   }
+  if (opts.lastFrameUri && opts.limits?.supports_last_frame !== false)
+    input.push({ type: 'image', uri: opts.lastFrameUri, role: 'last_frame' });
   for (const uri of refs) input.push({ type: 'image', uri, role: 'reference_image' });
+  if (referenceVideo) input.push({ type: 'video', uri: referenceVideo, role: 'reference_video' });
   for (const uri of opts.referenceAudioUris ?? [])
     input.push({ type: 'audio', uri, role: 'reference_audio' });
   return {
@@ -391,10 +427,11 @@ export function compileVideoRequest(
     parameters: {
       duration_seconds: clampDuration(opts.durationSec ?? shot.durationSec, opts.limits),
       dimensions: { width: settings.resolution.width, height: settings.resolution.height },
-      seed: shotSeed(shot, ctx.characters, opts.attempt),
+      seed: shotSeed(shot, ctx.characters, opts.attempt, opts.variation),
       negative_prompt: [BASE_NEGATIVE, clean(shot.negativePrompt ?? '')].filter(Boolean).join(', '),
       include_audio: opts.includeAudio ?? settings.generation.includeAudio,
-      camera_motion: shot.camera.movement === 'static' ? 'fixed' : 'auto',
+      camera_motion:
+        cameraMove(shot.camera.move)?.cameraMotion ?? (shot.camera.movement === 'static' ? 'fixed' : 'auto'),
     },
   };
 }

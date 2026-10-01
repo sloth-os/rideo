@@ -1,6 +1,7 @@
 export * from './consistency';
 export * from './dialogue';
 export * from './diff/json-diff';
+export * from './directing';
 export * from './ids';
 export * from './media';
 export * from './prompt';

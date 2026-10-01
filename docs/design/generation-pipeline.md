@@ -94,9 +94,10 @@ music 10 min (`RIDEO_GATEWAY_TIMEOUT_*`).
 | Step | Progress | Action |
 |---|---|---|
 | precheck | 0.02 | R1, E1 and V1 (character, element and voice locks, approved refs), resolve models, fetch model limits (5 min cache) |
-| keyframe | 0.05–0.35 | skip if continuous and the previous take passed (its last frame is the first frame) or if the shot has an approved, current storyboard frame (it is the first frame); otherwise image task → download → judge → retry |
+| keyframe | 0.05–0.35 | skip if the director chose an image resource as the start frame, if continuous and the previous take passed (its last frame is the first frame) or if the shot has an approved, current storyboard frame (it is the first frame); otherwise image task → download → judge → retry |
+| end frame | 0.30 | the shot's end frame ([directing](directing.md)): a generated keyframe verified like the start one, or an image resource; sent as `last_frame` when the model accepts it |
 | dialogue | 0.33 | `tts`: reuse the storyboard frame's mix when it is current, else speak every voiced line with its locked voice and mix them (ffmpeg); `native`: the speakers' voice samples ([dialogue](dialogue.md)) |
-| video | 0.35–0.80 | video task with `first_frame`, references, the dialogue as `reference_audio` when the model accepts it, and the clamped duration (long enough for the lines) → download |
+| video | 0.35–0.80 | video task with `first_frame`, `last_frame`, references, the motion reference as `reference_video`, the dialogue as `reference_audio` (each when the model accepts it), the seed (fixed or derived, offset by attempt and variation) and the clamped duration (long enough for the lines) → download |
 | verify | 0.80–0.90 | sample frames (ffmpeg) → judge; native audio: the speaker check (V4) → retry the video up to `maxAttempts` |
 | lip sync | 0.86 | `tts` takes whose model could not take the mix: lip-sync pass (`reference_video` + `reference_audio`) → judge again |
 | watermark | 0.90–0.96 | embed the invisible watermark (raw frame pipe) + provenance metadata, register the id |

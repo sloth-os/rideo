@@ -5,7 +5,9 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
 import {
   type Actor,
+  APERTURE_PRESETS,
   boardState,
+  CAMERA_MOVES,
   CameraSchema,
   CharacterInputSchema,
   ConsentInputSchema,
@@ -13,11 +15,14 @@ import {
   clipBlockers,
   ElementInputSchema,
   ElementReferenceViewSchema,
+  EndFrameSchema,
   ExportQualitySchema,
   elementsInUse,
   FocusKindSchema,
   IdentitySchema,
   isTerminalJob,
+  LENS_PRESETS,
+  MotionReferenceSchema,
   ProjectSettingsPatchSchema,
   ReferenceViewSchema,
   RenderEngineChoiceSchema,
@@ -26,6 +31,7 @@ import {
   renderScreenplayMarkdown,
   SceneInputSchema,
   ScriptFormatSchema,
+  StartFrameSchema,
   slugify,
   sortedClips,
   storyboardProgress,
@@ -689,7 +695,7 @@ function buildServer(studio: Studio): McpServer {
   );
   tool(
     'shot_update',
-    'Edit a shot (description, action, camera, characters, duration, continuity, prompt override).',
+    'Edit a shot: description, action, camera (framing, movement, lensMm, aperture, move from camera_moves), characters, duration, continuity, prompt override, start/end frames, motion reference, seed (docs/design/directing.md).',
     {
       projectId: PROJECT,
       clipId: z.string(),
@@ -703,11 +709,34 @@ function buildServer(studio: Studio): McpServer {
       continuity: z.enum(['cut', 'continuous']).optional(),
       promptOverride: z.string().nullable().optional(),
       negativePrompt: z.string().nullable().optional(),
+      startFrame: StartFrameSchema.optional().describe(
+        '{mode: auto | resource, resourceId}: an image resource',
+      ),
+      endFrame: EndFrameSchema.optional().describe(
+        '{mode: none | generate | resource, description, resourceId}: the last frame',
+      ),
+      motionReference: MotionReferenceSchema.nullable()
+        .optional()
+        .describe('{resourceId, mode: motion | pose | camera}: a video resource to follow'),
+      seed: z.number().int().min(0).nullable().optional().describe('A fixed seed (null: derived)'),
     },
     (a, actor) => {
       const { projectId, clipId, shotId, ...fields } = a;
       return studio.clips.updateShot(actor, projectId, clipId, shotId, fields);
     },
+  );
+  tool(
+    'shot_variations',
+    'Generate 2–4 takes of a shot with different seeds, to compare and pick (jobs).',
+    { projectId: PROJECT, clipId: z.string(), shotId: z.string(), count: z.number().int().min(2).max(4) },
+    (a, actor) => studio.clips.variations(actor, a.projectId, a.clipId, a.shotId, a.count),
+  );
+  tool(
+    'camera_moves',
+    'The camera move library (ids for camera.move), lens and aperture presets.',
+    {},
+    async () => ({ moves: CAMERA_MOVES, lenses: LENS_PRESETS, apertures: APERTURE_PRESETS }),
+    ro,
   );
   tool(
     'shot_regenerate',

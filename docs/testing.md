@@ -42,7 +42,10 @@ RIDEO_TEST_WEBDAV_URL=http://rideo:rideo@localhost:8080/ npx vitest run --projec
   (frame states from missing to approved and back when the shot or a lock changes, the `storyboard.approved`
   requirement and progress, the animatic's stills, dialogue and captions, stills looped in the chunk graph and
   skipped by audio, Fountain/FDX parsing and PDF lines rebuilt into Fountain, heading parsing, the import's
-  characters and locations, the shot list CSV quoting).
+  characters and locations, the shot list CSV quoting); directing (lens and aperture fragments, the move phrase
+  in videos and the lens in keyframes, `camera_motion` from moves, last frames and reference videos only for
+  models that take them, fixed seeds with attempt and variation offsets, legacy shots, frames outdated by a lens
+  change).
 - **server**: repository commit, log, diff, restore, branches, tags, coalescing and GC on `MemoryBackend`;
   job queue (lanes, priorities, dedupe, retry classification, cancel propagation, restart recovery; the
   `client` lane: claim order, leases, heartbeats, expiry and session release, cancel, staged files);
@@ -97,6 +100,10 @@ RIDEO_TEST_WEBDAV_URL=http://rideo:rideo@localhost:8080/ npx vitest run --projec
   the mix); the lip-sync pass with `mock-video-lite-v1`; native audio with the speaker check passing and failing
   (V4); V1 and V6 (relock with another voice marks takes stale, regeneration speaks with the new voice); the
   Dialogue track and timed captions; dialogue off; a server without TTS (`tts_unavailable`).
+- **Directing** (`directing.test.ts`): moves, lens and aperture in the prompts and `camera_motion`, a fixed seed;
+  a generated, verified end frame and an image end frame as `last_frame` (dropped for a model without last
+  frames); an image start frame and a pose reference video; resource validation; variations with offset seeds
+  and continued numbering (the mock records every request it gets).
 - **Storyboard** (`storyboard.test.ts`): the storyboard plans the first scenes and draws a verified frame (and
   dialogue) per shot; approving one and all; the gate; editing a shot makes its frame outdated
   (`board_unapprovable`) and relocking a character makes frames stale until redrawn; reordering keeps the first
@@ -119,7 +126,7 @@ RIDEO_TEST_WEBDAV_URL=http://rideo:rideo@localhost:8080/ npx vitest run --projec
 ### End-to-end (Playwright)
 
 Projects: `desktop` (1440×900) runs every spec except `responsive`; `mobile` (412×915, touch) runs
-`responsive`, `mcp-sync`, `provenance`, `elements`, `dialogue` and `storyboard`. Specs:
+`responsive`, `mcp-sync`, `provenance`, `elements`, `dialogue`, `storyboard` and `directing`. Specs:
 
 | Spec | Flow |
 |---|---|
@@ -127,6 +134,7 @@ Projects: `desktop` (1440×900) runs every spec except `responsive`; `mobile` (4
 | `mcp-sync.spec.ts` | page open; the test drives MCP tools as “Claude Code” (create character, add reference, lock, `ui_navigate`, `ui_focus`, `ui_notify`) and asserts the page updates live, attributed to the agent, without a reload; an agent's `export_render` is claimed and rendered by the open tab (`auto` → WebCodecs) and watermarked by the server |
 | `footage.spec.ts` | upload (probe + poster in the browser) → analysis signals in the browser → AI suggestions → accept → auto edit → exports with the ffmpeg.wasm and WebCodecs engines → both listed and verified |
 | `history.spec.ts` | edit → history → diff → restore → UI updates |
+| `directing.spec.ts` | (desktop and mobile) the Direct panel sets a push-in, an 85 mm lens, f/2 and a generated end frame; two variations are generated, compared side by side and B is chosen |
 | `storyboard.spec.ts` | (desktop and mobile) generate the storyboard, approve a frame, move it later, approve all; download the shot list CSV and PDF; build the animatic, play it, export it in the tab (listed as an animatic export); approve the storyboard; import a Fountain screenplay in the Story view |
 | `dialogue.spec.ts` | (desktop and mobile) the Cast view's voice panel: design three voices, the previews play, pick one, lock it; clone a recording of a real person through the consent dialog and lock it; the gate stops asking for voices; the dialogue mode setting |
 | `elements.spec.ts` | (desktop and mobile) the screenplay's location in the Elements view → generate, approve, lock; add a prop and link it to a scene in the Story view |

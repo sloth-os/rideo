@@ -6,7 +6,14 @@ import { tmpdir } from 'node:os';
 import { extname, join } from 'node:path';
 import { promisify } from 'node:util';
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
-import { type GenerateContext, runImage, runMusic, runVideo, validateRequest } from './generate';
+import {
+  type GenerateContext,
+  isLipSyncRequest,
+  runImage,
+  runMusic,
+  runVideo,
+  validateRequest,
+} from './generate';
 import { handleChat, multipartFile } from './llm';
 import { MOCK_MODELS, type Modality } from './models';
 import { handleSpeech } from './speech';
@@ -123,9 +130,7 @@ export async function buildMockGateway(opts: MockGatewayOptions = {}): Promise<M
       if (issues.length)
         return problem(req, reply, 422, 'validation_error', 'Request validation failed.', issues);
       // Auto routing (like mm-gateway's fit step): a reference video goes to the lip-sync model.
-      const lipSync = (body.input as { type?: string; role?: string }[] | undefined)?.some(
-        (p) => p?.type === 'video' && p.role === 'reference_video',
-      );
+      const lipSync = isLipSyncRequest((body.input as { type?: string; role?: string }[] | undefined) ?? []);
       const model =
         body.model && body.model !== 'auto'
           ? body.model

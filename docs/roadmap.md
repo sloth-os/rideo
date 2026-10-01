@@ -163,7 +163,7 @@ items below are mostly Rideo-side work.
 
 ### P1 — quality and control
 
-**6. Directing controls in the shot editor** (M) — first/last frame (`last_frame`), several keyframes, camera
+**6. Directing controls in the shot editor** (M) — *done:* [design/directing.md](design/directing.md) — first/last frame (`last_frame`), several keyframes, camera
 presets (lens, focal length, aperture, move library mapped to `camera_motion`), motion reference and pose reference
 from a video (`reference_video`), seeds and N variations per shot with an A/B compare view. *Why:* Veo 3.1, Ray3,
 Higgsfield, Marey. *Fits:* `ShotSchema`, prompt compiler, clips view.

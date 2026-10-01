@@ -38,6 +38,7 @@ import {
   TimelineOpsInputSchema,
   UpdateProjectInputSchema,
   UploadMetaSchema,
+  VariationsInputSchema,
 } from '@rideo/shared';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
@@ -526,6 +527,19 @@ export function registerRoutes(app: FastifyInstance, studio: Studio): void {
       p(req, 'shotId'),
       parse(ShotUpdateInputSchema, req.body),
     ),
+  );
+  app.post('/api/projects/:id/clips/:clipId/shots/:shotId/variations', async (req, reply) =>
+    reply
+      .code(202)
+      .send(
+        await studio.clips.variations(
+          actor(),
+          pid(req),
+          p(req, 'clipId'),
+          p(req, 'shotId'),
+          parse(VariationsInputSchema, req.body).count,
+        ),
+      ),
   );
   app.post('/api/projects/:id/clips/:clipId/shots/reorder', async (req) =>
     studio.storyboard.reorder(

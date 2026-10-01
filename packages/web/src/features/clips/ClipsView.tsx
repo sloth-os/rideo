@@ -17,6 +17,7 @@ import {
   Check,
   CirclePause,
   Clapperboard,
+  Columns2,
   Eye,
   Play,
   RefreshCcw,
@@ -46,6 +47,7 @@ import {
 import { api, mediaUrl } from '../../lib/api';
 import { NO_ELEMENTS, useProject } from '../../store/project';
 import { reportError, useUi } from '../../store/ui';
+import { CompareDialog, DirectPanel } from './DirectPanel';
 
 const LIP_SYNC = { conditioned: 'lips from the mix', pass: 'lip-synced', none: 'no lip sync' } as const;
 
@@ -261,6 +263,7 @@ function TakeTile({
   projectId,
   onEvidence,
   onOverride,
+  compare,
 }: {
   clip: Clip;
   shot: Shot;
@@ -269,6 +272,7 @@ function TakeTile({
   projectId: string;
   onEvidence: () => void;
   onOverride: () => void;
+  compare?: { checked: boolean; disabled: boolean; toggle: () => void };
 }) {
   const selected = shot.selectedTakeId === take.id;
   const elements = useProject((s) => s.docs?.elements ?? NO_ELEMENTS);
@@ -296,6 +300,10 @@ function TakeTile({
         <div className="flex flex-wrap items-center gap-1">
           <ConsistencyBadge take={take} shot={shot} characters={characters} />
           {selected ? <Badge tone="accent">selected</Badge> : null}
+          {take.variation ? <Badge testid="take-variation">v{take.variation}</Badge> : null}
+          {take.request.lastFrameSource ? (
+            <Badge title="Ends on the chosen last frame">end frame</Badge>
+          ) : null}
           {take.watermarkId ? (
             <Badge title={`Invisible watermark ${take.watermarkId}`}>
               <ShieldCheck className="size-3" />
@@ -313,6 +321,19 @@ function TakeTile({
           ) : null}
         </div>
         <div className="flex flex-wrap gap-1">
+          {compare && take.video ? (
+            <label className="flex h-7 items-center gap-1 px-1 text-[11px] text-muted">
+              <input
+                type="checkbox"
+                checked={compare.checked}
+                disabled={compare.disabled}
+                onChange={compare.toggle}
+                className="accent-[var(--color-accent)]"
+                data-testid="compare-take"
+              />
+              compare
+            </label>
+          ) : null}
           {!selected && take.video ? (
             <Button
               size="sm"
@@ -370,6 +391,10 @@ function ShotRow({
       (j) => j.kind === 'shot.generate' && j.params.shotId === shot.id && !isTerminalJob(j),
     ),
   );
+  const [directing, setDirecting] = useState(false);
+  const [compare, setCompare] = useState<string[]>([]);
+  const [comparing, setComparing] = useState(false);
+  const compared = compare.map((id) => shot.takes.find((t) => t.id === id)).filter((t): t is Take => !!t);
   const tone =
     shot.status === 'ready'
       ? 'success'
@@ -401,6 +426,26 @@ function ShotRow({
           </Badge>
         ))}
         <span className="flex-1" />
+        {compared.length === 2 ? (
+          <Button
+            size="sm"
+            icon={<Columns2 className="size-3.5" />}
+            onClick={() => setComparing(true)}
+            data-testid="open-compare"
+          >
+            Compare
+          </Button>
+        ) : null}
+        <Button
+          size="sm"
+          variant={directing ? 'secondary' : 'ghost'}
+          icon={<Clapperboard className="size-3.5" />}
+          onClick={() => setDirecting((v) => !v)}
+          aria-expanded={directing}
+          data-testid="shot-direct"
+        >
+          Direct
+        </Button>
         <Button
           size="sm"
           variant="ghost"
@@ -432,6 +477,15 @@ function ShotRow({
           testid="shot-elements"
         />
       </div>
+      {directing ? <DirectPanel clip={clip} shot={shot} /> : null}
+      {comparing && compared.length === 2 ? (
+        <CompareDialog
+          clip={clip}
+          shot={shot}
+          takes={[compared[0]!, compared[1]!]}
+          onClose={() => setComparing(false)}
+        />
+      ) : null}
       {shot.lastError ? <p className="mt-1 text-[12px] text-danger">{shot.lastError}</p> : null}
       {job ? (
         <div className="mt-2">
@@ -450,6 +504,14 @@ function ShotRow({
               projectId={projectId}
               onEvidence={() => onEvidence(t)}
               onOverride={() => onOverride(t)}
+              compare={{
+                checked: compare.includes(t.id),
+                disabled: !compare.includes(t.id) && compare.length >= 2,
+                toggle: () =>
+                  setCompare((c) =>
+                    c.includes(t.id) ? c.filter((x) => x !== t.id) : [...c, t.id].slice(-2),
+                  ),
+              }}
             />
           ))}
         </div>

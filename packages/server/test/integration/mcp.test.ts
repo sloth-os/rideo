@@ -38,6 +38,8 @@ describe('MCP server', () => {
       'shot_board_approve',
       'animatic_build',
       'shotlist_get',
+      'shot_variations',
+      'camera_moves',
       'clip_generate',
       'clip_approve',
       'timeline_apply',
@@ -73,6 +75,10 @@ describe('MCP server', () => {
     await expect(call('animatic_build', { projectId: project.id })).rejects.toMatchObject({
       body: { code: 'validation_error' },
     });
+    // Directing controls (docs/design/directing.md)
+    const moves = await call<{ moves: { id: string }[]; lenses: { mm: number }[] }>('camera_moves', {});
+    expect(moves.moves.map((m) => m.id)).toContain('dolly_zoom');
+    expect(moves.lenses.map((l) => l.mm)).toContain(85);
   });
 
   it('drives a production, attributes commits to the agent and steers the live UI', async () => {

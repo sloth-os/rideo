@@ -105,6 +105,8 @@ export async function generateKeyframe(
     name: string;
     /** Gateway idempotency step (`keyframe` in the shot pipeline, `board` for storyboard frames). */
     step: string;
+    /** Variations offset the seed (docs/design/directing.md#variations-and-comparison). */
+    variation?: number;
     progress: (attempt: number) => void;
   },
 ): Promise<KeyframeResult> {
@@ -118,6 +120,7 @@ export async function generateKeyframe(
       referenceUris: refs.referenceUris,
       attempt,
       model: shotCtx.settings.models.image,
+      variation: input.variation,
     });
     out.prompt = (req.input[0] as { text: string }).text;
     out.seed = req.parameters?.seed ?? 0;

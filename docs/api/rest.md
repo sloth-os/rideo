@@ -119,7 +119,8 @@ Errors are RFC 9457 problem details (`application/problem+json`) with a stable `
 |---|---|---|---|
 | POST | `/api/projects/:id/clips/plan` | `{sceneId}` | `Job` |
 | POST | `/api/projects/:id/clips/:clipId/generate` | – | `Job` |
-| PATCH | `/api/projects/:id/clips/:clipId/shots/:shotId` | shot fields | `Clip` |
+| PATCH | `/api/projects/:id/clips/:clipId/shots/:shotId` | shot fields, including `camera.{lensMm, aperture, move}`, `startFrame`, `endFrame`, `motionReference`, `seed` ([directing](../design/directing.md)) | `Clip` |
+| POST | `/api/projects/:id/clips/:clipId/shots/:shotId/variations` | `{count: 2–4}` | `Job[]` (`shot.generate` with `variation`) |
 | POST | `/api/projects/:id/clips/:clipId/shots/:shotId/regenerate` | – | `Job` |
 | POST | `/api/projects/:id/clips/:clipId/shots/reorder` | `{shotIds}` (every shot once) | `Clip` |
 | POST | `/api/projects/:id/clips/:clipId/shots/:shotId/board/generate` | – | `Job` (`shot.board`) |

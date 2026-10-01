@@ -72,6 +72,8 @@ or keep going and `job_wait` until a tab picks the job up.
 | `shot_board_approve` | `projectId`, `clipId`, `shotId`, `approved` |
 | `storyboard_approve_all` | `projectId` |
 | `shot_reorder` | `projectId`, `clipId`, `shotIds[]` |
+| `shot_variations` | `projectId`, `clipId`, `shotId`, `count` (2–4) → jobs ([directing](directing.md)) |
+| `camera_moves` | – → the move library, lens and aperture presets |
 | `animatic_build` | `projectId`, `musicResourceId?`, `captions?` → `{frames, durationSec}` |
 | `shotlist_get` | `projectId` → `{csv}` |
 | `character_create` | `projectId`, `name`, `role?`, `summary?`, `identity?`, `wardrobe?[]` |

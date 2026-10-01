@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { CameraMoveIdSchema } from '../directing';
 import { ActorSchema, IdSchema, IsoDateSchema, MediaRefSchema } from './common';
 import { ContentCredentialsStampSchema } from './provenance';
 
@@ -75,8 +76,34 @@ export const CameraSchema = z.object({
       'orbit',
     ])
     .default('static'),
+  /** Directing controls (docs/design/directing.md): focal length, f-number and a move of the library. */
+  lensMm: z.number().int().min(8).max(800).nullish(),
+  aperture: z.number().min(0.7).max(32).nullish(),
+  move: CameraMoveIdSchema.nullish(),
 });
 export type Camera = z.infer<typeof CameraSchema>;
+
+/** The frame a shot starts on: the keyframe, board or previous shot (`auto`) or an image resource. */
+export const StartFrameSchema = z.object({
+  mode: z.enum(['auto', 'resource']).default('auto'),
+  resourceId: IdSchema.nullable().default(null),
+});
+export type StartFrame = z.infer<typeof StartFrameSchema>;
+
+/** The frame a shot ends on (`last_frame`): none, a generated and verified keyframe, or an image resource. */
+export const EndFrameSchema = z.object({
+  mode: z.enum(['none', 'generate', 'resource']).default('none'),
+  description: z.string().max(2000).default(''),
+  resourceId: IdSchema.nullable().default(null),
+});
+export type EndFrame = z.infer<typeof EndFrameSchema>;
+
+/** A video resource whose motion, poses or camera movement the shot follows (`reference_video`). */
+export const MotionReferenceSchema = z.object({
+  resourceId: IdSchema,
+  mode: z.enum(['motion', 'pose', 'camera']).default('motion'),
+});
+export type MotionReference = z.infer<typeof MotionReferenceSchema>;
 
 /** One spoken line of a take, placed on the take's own clock (seconds). */
 export const TakeLineSchema = z.object({
@@ -116,10 +143,17 @@ export const TakeSchema = z.object({
     seed: z.number().int(),
     durationSec: z.number().positive(),
     /** `storyboard`: the shot's approved board frame (docs/design/storyboard.md#video-pass). */
-    firstFrameSource: z.enum(['keyframe', 'previous_shot', 'storyboard', 'none']),
+    firstFrameSource: z.enum(['keyframe', 'previous_shot', 'storyboard', 'resource', 'none']),
     referenceCount: z.number().int().nonnegative(),
+    /** What the model was given as the last frame and as the reference video (docs/design/directing.md). */
+    lastFrameSource: z.enum(['generated', 'resource']).nullable().default(null),
+    motionReference: MotionReferenceSchema.nullable().default(null),
   }),
   gatewayTaskIds: z.array(z.string()).default([]),
+  /** The generated end frame (`endFrame.mode: generate`). */
+  endKeyframe: MediaRefSchema.nullable().default(null),
+  /** 0 for a single take; 1… for the takes of a variations request. */
+  variation: z.number().int().nonnegative().default(0),
   consistency: ConsistencyReportSchema,
   characterLocks: z.record(z.string(), z.number().int().nonnegative()).default({}),
   /** Lock versions of the shot's elements at generation time (rule E6). */
@@ -187,6 +221,11 @@ export const ShotSchema = z.object({
   continuity: z.enum(['cut', 'continuous']).default('cut'),
   promptOverride: z.string().max(8000).nullable().default(null),
   negativePrompt: z.string().max(2000).nullable().default(null),
+  startFrame: StartFrameSchema.default({ mode: 'auto', resourceId: null }),
+  endFrame: EndFrameSchema.default({ mode: 'none', description: '', resourceId: null }),
+  motionReference: MotionReferenceSchema.nullable().default(null),
+  /** A fixed seed for the keyframes and the video (null: derived from the shot and the cast, R3). */
+  seed: z.number().int().min(0).max(4294967295).nullable().default(null),
   status: ShotStatusSchema.default('planned'),
   takes: z.array(TakeSchema).default([]),
   selectedTakeId: IdSchema.nullable().default(null),

@@ -13,6 +13,7 @@ import {
   type Project,
   type ProjectDocs,
   type ProjectSettings,
+  type Resource,
   type Screenplay,
   type Shot,
   type ShotUpdateInput,
@@ -94,6 +95,25 @@ export function assertVoicesReady(
   }
 }
 
+/** Frames must be image resources and motion references video resources (docs/design/directing.md). */
+export function assertDirectingResources(
+  shot: Pick<Partial<Shot>, 'startFrame' | 'endFrame' | 'motionReference'>,
+  resource: (id: string | null | undefined) => Resource | null | undefined,
+): void {
+  const need = (id: string | null | undefined, kind: Resource['kind'], what: string) => {
+    if (!id) throw invalid(`${what}: choose a ${kind} resource`);
+    const r = resource(id);
+    if (!r) throw notFound(`resource ${id}`);
+    if (r.kind !== kind) throw invalid(`${what} must be a ${kind} resource, not ${r.kind}`);
+    if (r.status !== 'ready') throw invalid(`${what}: resource ${r.name} is not ready`);
+  };
+  if (shot.startFrame?.mode === 'resource') need(shot.startFrame.resourceId, 'image', 'the start frame');
+  if (shot.endFrame?.mode === 'resource') need(shot.endFrame.resourceId, 'image', 'the end frame');
+  if (shot.endFrame?.mode === 'generate' && !shot.endFrame.description.trim())
+    throw invalid('the end frame needs a description to generate it');
+  if (shot.motionReference) need(shot.motionReference.resourceId, 'video', 'the motion reference');
+}
+
 export function clipStatusOf(clip: Clip): Clip['status'] {
   if (clip.status === 'approved') return 'approved';
   if (clip.shots.some((s) => s.status === 'generating' || s.status === 'queued')) return 'generating';
@@ -171,6 +191,10 @@ export class ClipService extends Service {
           if (!tx.get(docPath.character(id))) throw notFound(`character ${id}`);
         for (const id of input.elementIds ?? [])
           if (!tx.get(docPath.element(id))) throw notFound(`element ${id}`);
+        // Directing controls reference project resources (docs/design/directing.md).
+        const resource = (id: string | null | undefined) =>
+          id ? tx.get<Resource>(docPath.resource(id)) : null;
+        assertDirectingResources(input, resource);
         Object.assign(
           shot,
           Object.fromEntries(Object.entries(input).filter(([k, v]) => v !== undefined && k !== 'camera')),
@@ -183,6 +207,41 @@ export class ClipService extends Service {
       { message: `Edit shot ${clipId.slice(-4)}/${shotId.slice(-4)}`, coalesce: { key: `shot:${shotId}` } },
     );
     return result;
+  }
+
+  /** N takes with offset seeds to compare (docs/design/directing.md#variations-and-comparison). */
+  async variations(
+    actor: Actor,
+    projectId: string,
+    clipId: string,
+    shotId: string,
+    count: number,
+  ): Promise<Job[]> {
+    const docs = await this.docs(projectId);
+    const clip = docs.clips[clipId];
+    if (!clip) throw notFound(`clip ${clipId}`);
+    const shot = this.requireShot(clip, shotId);
+    assertCastReady([shot], docs.characters, docs.elements);
+    assertVoicesReady(this.deps, [shot], docs.characters, docs.project.settings);
+    assertDirectingResources(shot, (id) => (id ? (docs.resources[id] ?? null) : null));
+    const from = Math.max(0, ...shot.takes.map((t) => t.variation)) + 1;
+    const branch = await this.branchOf(projectId);
+    const jobs: Job[] = [];
+    for (let k = 0; k < count; k++) {
+      const variation = from + k;
+      jobs.push(
+        await this.deps.jobs.enqueue({
+          projectId,
+          kind: 'shot.generate',
+          params: { clipId, shotId, variation },
+          actor,
+          branch,
+          dedupeKey: `shot:${shotId}:v${variation}`,
+          priority: 10,
+        }),
+      );
+    }
+    return jobs;
   }
 
   async regenerateShot(actor: Actor, projectId: string, clipId: string, shotId: string): Promise<Job> {

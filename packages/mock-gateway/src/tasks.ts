@@ -44,6 +44,8 @@ export class TaskError extends Error {
 
 /** Async task lifecycle shared by the three modalities: pending → running → terminal, with idempotency. */
 export class TaskStore {
+  /** The request body of every task by id (for tests). */
+  readonly requests = new Map<string, unknown>();
   private readonly tasks = new Map<string, TaskRecord>();
   private readonly idempotency = new Map<string, { fingerprint: string; taskId: string }>();
   readonly created: TaskRecord[] = [];
@@ -84,6 +86,8 @@ export class TaskStore {
     };
     this.tasks.set(id, task);
     this.created.push(task);
+    // Tests read what Rideo asked for (never part of the public task).
+    this.requests.set(id, opts.body);
     if (opts.idempotencyKey) {
       this.idempotency.set(`${opts.owner}:${opts.idempotencyKey}`, {
         fingerprint: this.fingerprint(opts.body),

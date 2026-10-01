@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { EditSuggestionSchema } from './analysis';
 import { CharacterRoleSchema, ConsentInputSchema, IdentitySchema, ReferenceViewSchema } from './character';
-import { CameraSchema } from './clip';
+import { CameraSchema, EndFrameSchema, MotionReferenceSchema, StartFrameSchema } from './clip';
 import { AspectRatioSchema, IdSchema } from './common';
 import { ElementKindSchema, ElementReferenceViewSchema } from './element';
 import { ExportQualitySchema, RenderEngineChoiceSchema } from './job';
@@ -217,9 +217,17 @@ export const ShotUpdateInputSchema = z
     continuity: z.enum(['cut', 'continuous']),
     promptOverride: z.string().max(8000).nullable(),
     negativePrompt: z.string().max(2000).nullable(),
+    /** Directing controls (docs/design/directing.md). */
+    startFrame: StartFrameSchema,
+    endFrame: EndFrameSchema,
+    motionReference: MotionReferenceSchema.nullable(),
+    seed: z.number().int().min(0).max(4294967295).nullable(),
   })
   .partial();
 export type ShotUpdateInput = z.infer<typeof ShotUpdateInputSchema>;
+
+/** N takes of one shot with offset seeds, to compare (docs/design/directing.md#variations-and-comparison). */
+export const VariationsInputSchema = z.object({ count: z.number().int().min(2).max(4) });
 
 export const TimelineOpsInputSchema = z.object({ ops: z.array(TimelineOpSchema).min(1).max(500) });
 

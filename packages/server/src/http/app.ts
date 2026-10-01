@@ -5,6 +5,7 @@ import { join, resolve } from 'node:path';
 import multipart from '@fastify/multipart';
 import fastifyStatic from '@fastify/static';
 import websocket from '@fastify/websocket';
+import { APERTURE_PRESETS, CAMERA_MOVES, LENS_PRESETS } from '@rideo/shared';
 import Fastify, { type FastifyError, type FastifyInstance } from 'fastify';
 import type { Config } from '../config';
 import type { Logger } from '../domain/deps';
@@ -195,6 +196,8 @@ export async function buildServer(
       },
       llm: { provider: config.llm.provider, model: config.llm.model, vision: config.vision.model },
       defaults: studio.projects.defaultSettings(),
+      // Directing controls (docs/design/directing.md).
+      directing: { moves: CAMERA_MOVES, lenses: LENS_PRESETS, apertures: APERTURE_PRESETS },
       models: { image, video, music },
     };
   });

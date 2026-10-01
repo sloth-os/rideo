@@ -128,6 +128,8 @@ export const ModelLimitsSchema = z.looseObject({
   supports_last_frame: z.boolean().optional(),
   supports_reference_image: z.boolean().optional(),
   supports_reference_audio: z.boolean().optional(),
+  supports_reference_video: z.boolean().optional(),
+  supports_audio_output: z.boolean().optional(),
   notes: z.string().optional(),
 });
 export type ModelLimits = z.infer<typeof ModelLimitsSchema>;

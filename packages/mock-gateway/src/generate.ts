@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { writeFile } from 'node:fs/promises';
+import { rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { runFfmpeg, synthesizeFrame, synthesizeMusic, synthesizeVideo } from './media';
@@ -301,7 +301,10 @@ export async function runVideo(body: Record<string, any>, ctx: GenerateContext):
   const durationSec = Math.max(2, Math.min(10, Number(params.duration_seconds ?? 5)));
   const first = parts.find((p) => p.type === 'image' && p.role === 'first_frame');
   const name = randomBytes(8).toString('hex');
-  if (parts.some((p) => p.type === 'video' && p.role === 'reference_video')) return lipSync(parts, ctx, name);
+  // Audio-driven lip sync: a reference video and audio without a first frame (a motion reference has a prompt
+  // and a first frame).
+  if (isLipSyncRequest(parts)) return lipSync(parts, ctx, name);
+  const last = parts.find((p) => p.type === 'image' && p.role === 'last_frame');
   // A drifting generation also loses the voices: its sound is the plain tone.
   const audioPath =
     params.include_audio && !ctx.flaky ? await referenceAudio(parts, ctx.dir, name) : undefined;
@@ -316,6 +319,8 @@ export async function runVideo(body: Record<string, any>, ctx: GenerateContext):
       includeAudio: !!params.include_audio,
       audioPath,
     });
+    if (last?.uri)
+      await endOn(join(ctx.dir, `${name}.mp4`), await loadUri(last.uri), ctx.dir, name, durationSec);
   } else {
     const sigs = ctx.flaky ? [] : await signaturesFromImages(parts);
     const frame = synthesizeFrame(
@@ -345,6 +350,63 @@ export async function runVideo(body: Record<string, any>, ctx: GenerateContext):
     ],
     usage: { output_count: 1, duration_seconds: durationSec },
   };
+}
+
+export function isLipSyncRequest(parts: { type?: string; role?: string }[]): boolean {
+  const has = (type: string, role: string) => parts.some((p) => p.type === type && (p.role ?? role) === role);
+  return has('video', 'reference_video') && has('audio', 'reference_audio') && !has('image', 'first_frame');
+}
+
+/** The video ends on the given last frame: a one-second crossfade into it (`last_frame`). */
+async function endOn(video: string, lastFrame: Buffer, dir: string, name: string, durationSec: number) {
+  const still = join(dir, `${name}-last.png`);
+  await writeFile(still, lastFrame);
+  const tmp = join(dir, `${name}-main.mp4`);
+  await rename(video, tmp);
+  const fade = Math.min(1, durationSec / 3);
+  const probe = await execFileP(process.env.RIDEO_FFPROBE_PATH ?? 'ffprobe', [
+    '-v',
+    'error',
+    '-select_streams',
+    'v:0',
+    '-show_entries',
+    'stream=width,height',
+    '-of',
+    'csv=p=0',
+    tmp,
+  ]);
+  const [w, h] = probe.stdout.trim().split(',');
+  await runFfmpeg([
+    '-i',
+    tmp,
+    '-loop',
+    '1',
+    '-framerate',
+    '24',
+    '-t',
+    String(fade + 0.5),
+    '-i',
+    still,
+    '-filter_complex',
+    `[1:v]scale=${w}:${h},setsar=1,format=yuv420p,fps=24[l];[0:v]setsar=1,format=yuv420p,fps=24[m];[m][l]xfade=transition=fade:duration=${fade}:offset=${Math.max(0, durationSec - fade)}[v]`,
+    '-map',
+    '[v]',
+    '-map',
+    '0:a?',
+    '-c:v',
+    'libx264',
+    '-preset',
+    'ultrafast',
+    '-crf',
+    '20',
+    '-c:a',
+    'copy',
+    '-t',
+    String(durationSec),
+    '-movflags',
+    '+faststart',
+    video,
+  ]);
 }
 
 export async function runMusic(body: Record<string, any>, ctx: GenerateContext): Promise<RunResult> {

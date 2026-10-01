@@ -23,7 +23,12 @@ import {
 } from '@rideo/shared';
 import { verifyFrames } from '../../consistency/gate';
 import { verifyVoices } from '../../consistency/voice';
-import { assertCastReady, assertVoicesReady, clipStatusOf } from '../../domain/clips';
+import {
+  assertCastReady,
+  assertDirectingResources,
+  assertVoicesReady,
+  clipStatusOf,
+} from '../../domain/clips';
 import { notFound } from '../../errors';
 import { extractLastFrame, sampleFrames } from '../../media/frames';
 import { throwIfAborted } from '../../util/abort';
@@ -49,7 +54,15 @@ function label(clip: Clip, shot: Shot): string {
  * R1 (locks), R3 (deterministic conditioning), R4 (judge gate with retries), R5 (continuity) and R9.
  */
 export async function shotGenerate(deps: HandlerDeps, ctx: JobContext) {
-  const { clipId, shotId } = ctx.job.params as { clipId: string; shotId: string };
+  const {
+    clipId,
+    shotId,
+    variation = 0,
+  } = ctx.job.params as {
+    clipId: string;
+    shotId: string;
+    variation?: number;
+  };
   const projectId = ctx.job.projectId;
   const docs = await docsFor(deps, ctx);
   const clip = docs.clips[clipId];
@@ -58,6 +71,8 @@ export async function shotGenerate(deps: HandlerDeps, ctx: JobContext) {
   if (!shot) throw notFound(`shot ${shotId}`);
   const existing = shot.takes.find((t) => t.jobId === ctx.job.id);
   if (existing) return { takeId: existing.id, status: existing.consistency.status, reused: true };
+  // Directing controls (docs/design/directing.md): frames and motion references are project resources.
+  assertDirectingResources(shot, (id) => (id ? (docs.resources[id] ?? null) : null));
   assertCastReady([shot], docs.characters, docs.elements);
   assertVoicesReady(deps, [shot], docs.characters, docs.project.settings);
 
@@ -125,12 +140,21 @@ export async function shotGenerate(deps: HandlerDeps, ctx: JobContext) {
         }
       }
 
-      // An approved, current storyboard frame is the first frame: no second image generation
-      // (docs/design/storyboard.md#video-pass).
       let keyframeRef: MediaRef | null = null;
       let keyframeReport: ConsistencyReport | null = null;
       let imageModel: string | undefined;
       const taskIds: string[] = [];
+      const resourceUri = async (id: string, image: boolean) => {
+        const r = docs.resources[id]!;
+        return image
+          ? deps.media.pngDataUri(projectId, r.media, 1920)
+          : deps.media.dataUri(projectId, r.media);
+      };
+      // A start frame chosen by the director wins over continuity, the board and the keyframe.
+      if (shot.startFrame.mode === 'resource' && shot.startFrame.resourceId)
+        firstFrame = { uri: await resourceUri(shot.startFrame.resourceId, true), source: 'resource' };
+      // An approved, current storyboard frame is the first frame: no second image generation
+      // (docs/design/storyboard.md#video-pass).
       if (!firstFrame && shot.board && boardState(shot, docs) === 'approved') {
         keyframeRef = shot.board.keyframe;
         keyframeReport = shot.board.consistency;
@@ -147,6 +171,7 @@ export async function shotGenerate(deps: HandlerDeps, ctx: JobContext) {
           maxAttempts,
           name,
           step: 'keyframe',
+          variation,
           progress: (attempt) =>
             ctx.progress(
               0.05 + (0.3 * attempt) / maxAttempts,
@@ -160,7 +185,11 @@ export async function shotGenerate(deps: HandlerDeps, ctx: JobContext) {
         taskIds.push(...kf.taskIds);
         if (keyframeReport?.status === 'failed') {
           // Never spend a video generation on an unverified identity: save the evidence for review.
-          const kfRequest = compileKeyframeRequest(shotCtx, { referenceUris: [], attempt: maxAttempts - 1 });
+          const kfRequest = compileKeyframeRequest(shotCtx, {
+            referenceUris: [],
+            attempt: maxAttempts - 1,
+            variation,
+          });
           const take = await commitTake(deps, ctx, clipId, shotId, {
             keyframe: keyframeRef,
             video: null,
@@ -173,11 +202,14 @@ export async function shotGenerate(deps: HandlerDeps, ctx: JobContext) {
               durationSec: shot.durationSec,
               firstFrameSource: 'none',
               referenceCount: referenceUris.length,
+              lastFrameSource: null,
+              motionReference: null,
             },
             taskIds,
             characters,
             elements,
             audio: null,
+            variation,
           });
           return { takeId: take.id, status: 'failed', stage: 'keyframe' };
         }
@@ -185,6 +217,76 @@ export async function shotGenerate(deps: HandlerDeps, ctx: JobContext) {
           ? { uri: await deps.media.pngDataUri(projectId, keyframeRef, 1920), source: 'keyframe' }
           : null;
       }
+
+      // The end frame (docs/design/directing.md): generated and verified like the start keyframe (R4), or a resource.
+      let endFrameInput: { uri: string; source: 'generated' | 'resource' } | null = null;
+      let endKeyframe: MediaRef | null = null;
+      const lastFrameAccepted = videoLimits.limits?.supports_last_frame !== false;
+      if (shot.endFrame.mode === 'resource' && shot.endFrame.resourceId && lastFrameAccepted)
+        endFrameInput = { uri: await resourceUri(shot.endFrame.resourceId, true), source: 'resource' };
+      if (shot.endFrame.mode === 'generate' && lastFrameAccepted) {
+        const endCtx: ShotContext = {
+          ...shotCtx,
+          shot: { ...shot, description: shot.endFrame.description, promptOverride: null },
+        };
+        const end = await generateKeyframe(deps, ctx, {
+          shotCtx: endCtx,
+          refs,
+          judge,
+          judgedElements,
+          threshold,
+          maxAttempts,
+          name: `${name}-end`,
+          step: 'end-keyframe',
+          variation: variation + 50,
+          progress: (attempt) => ctx.progress(0.3, 1, `end frame attempt ${attempt + 1}/${maxAttempts}`),
+        });
+        taskIds.push(...end.taskIds);
+        endKeyframe = end.keyframe;
+        if (end.report?.status === 'failed') {
+          const take = await commitTake(deps, ctx, clipId, shotId, {
+            keyframe: keyframeRef,
+            endKeyframe,
+            video: null,
+            lastFrame: null,
+            report: { ...end.report, note: 'end frame failed the consistency gate; no video generated' },
+            request: {
+              imageModel: end.imageModel ?? imageModel,
+              prompt: end.prompt,
+              seed: end.seed,
+              durationSec: shot.durationSec,
+              firstFrameSource: firstFrame?.source ?? 'none',
+              referenceCount: referenceUris.length,
+              lastFrameSource: 'generated',
+              motionReference: null,
+            },
+            taskIds,
+            characters,
+            elements,
+            audio: null,
+            variation,
+          });
+          return { takeId: take.id, status: 'failed', stage: 'end-keyframe' };
+        }
+        if (endKeyframe)
+          endFrameInput = {
+            uri: await deps.media.pngDataUri(projectId, endKeyframe, 1920),
+            source: 'generated',
+          };
+      }
+      if (shot.endFrame.mode !== 'none' && !lastFrameAccepted)
+        ctx.log.warn(
+          { model: videoLimits.model },
+          'the video model takes no last frame; the end frame is not used',
+        );
+      // The motion reference, when the model accepts reference videos.
+      const motionReference =
+        shot.motionReference && videoLimits.limits?.supports_reference_video !== false
+          ? shot.motionReference
+          : null;
+      const referenceVideoUri = motionReference
+        ? await resourceUri(motionReference.resourceId, false)
+        : undefined;
 
       // Dialogue (docs/design/dialogue.md): TTS lines and their mix, or the speakers' samples for native audio.
       const dialogue = await prepareDialogue(deps, ctx, {
@@ -197,6 +299,9 @@ export async function shotGenerate(deps: HandlerDeps, ctx: JobContext) {
       });
       const videoOpts = (attempt: number) => ({
         firstFrameUri: firstFrame?.uri,
+        lastFrameUri: endFrameInput?.uri,
+        referenceVideoUri,
+        variation,
         referenceUris,
         attempt,
         model: settings.models.video,
@@ -428,6 +533,8 @@ export async function shotGenerate(deps: HandlerDeps, ctx: JobContext) {
           durationSec: videoReq.parameters?.duration_seconds ?? shot.durationSec,
           firstFrameSource: firstFrame?.source ?? 'none',
           referenceCount: referenceUris.length,
+          lastFrameSource: endFrameInput?.source ?? null,
+          motionReference,
         },
         taskIds,
         watermarkId,
@@ -435,6 +542,8 @@ export async function shotGenerate(deps: HandlerDeps, ctx: JobContext) {
         characters,
         elements,
         audio: dialogue ? takeAudio(dialogue, lipSync) : null,
+        endKeyframe,
+        variation,
       });
       ctx.progress(1, 1, `take ${final.report.status}`);
       return { takeId: take.id, status: final.report.status, score: final.report.score };
@@ -480,6 +589,8 @@ async function commitTake(
     characters: Character[];
     elements: Element[];
     audio: TakeAudio | null;
+    endKeyframe?: MediaRef | null;
+    variation: number;
   },
 ): Promise<Take> {
   const take: Take = {
@@ -491,6 +602,8 @@ async function commitTake(
     lastFrame: t.lastFrame,
     request: t.request,
     gatewayTaskIds: t.taskIds,
+    endKeyframe: t.endKeyframe ?? null,
+    variation: t.variation,
     consistency: t.report,
     characterLocks: Object.fromEntries(t.characters.map((c) => [c.id, c.lock.version])),
     elementLocks: Object.fromEntries(t.elements.map((e) => [e.id, e.lock.version])),

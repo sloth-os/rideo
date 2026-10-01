@@ -290,6 +290,9 @@ export const api = {
   generateClip: (id: string, clipId: string) => request<Job>('POST', `${p(id)}/clips/${clipId}/generate`),
   updateShot: (id: string, clipId: string, shotId: string, body: Record<string, unknown>) =>
     request<Clip>('PATCH', `${p(id)}/clips/${clipId}/shots/${shotId}`, body),
+  /** N takes with offset seeds (docs/design/directing.md#variations-and-comparison). */
+  variations: (id: string, clipId: string, shotId: string, count: number) =>
+    request<Job[]>('POST', `${p(id)}/clips/${clipId}/shots/${shotId}/variations`, { count }),
   regenerateShot: (id: string, clipId: string, shotId: string) =>
     request<Job>('POST', `${p(id)}/clips/${clipId}/shots/${shotId}/regenerate`),
   selectTake: (id: string, clipId: string, shotId: string, takeId: string) =>
