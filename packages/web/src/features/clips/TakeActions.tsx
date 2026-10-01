@@ -24,6 +24,20 @@ export function LineageBadge({ take }: { take: Take }) {
   );
 }
 
+/** A take cut from a multi-shot render (docs/design/multi-shot.md#splitting-and-verification). */
+export function MultiShotBadge({ take }: { take: Take }) {
+  const m = take.request.multiShot;
+  if (!m) return null;
+  return (
+    <Badge
+      title={`Rendered with the group's other shots in one request; split at the ${m.cut === 'detected' ? 'detected cut' : 'planned length'}`}
+      testid="take-multishot"
+    >
+      shot {m.index + 1} of {m.of}
+    </Badge>
+  );
+}
+
 /** Edit (video-to-video) and Extend (+N s) a take (docs/design/take-editing.md). */
 export function TakeActions({
   projectId,

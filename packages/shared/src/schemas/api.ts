@@ -50,7 +50,9 @@ export const ProjectSettingsPatchSchema = z
     dialogue: z.object({ mode: DialogueModeSchema, lipSync: z.boolean() }).partial(),
     /** The storyboard stage (docs/design/storyboard.md). */
     storyboard: z.object({ enabled: z.boolean(), scenes: z.number().int().min(1).max(50) }).partial(),
-    generation: z.object({ includeAudio: z.boolean(), keyframes: z.boolean() }).partial(),
+    generation: z
+      .object({ includeAudio: z.boolean(), keyframes: z.boolean(), multiShot: z.enum(['auto', 'off']) })
+      .partial(),
     batch: z.object({ maxGenerations: z.number().int().min(1).max(100000) }).partial(),
     watermark: z.object({ enabled: z.boolean() }).partial(),
     disclosure: z

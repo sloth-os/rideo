@@ -43,10 +43,18 @@ function mulberry(seed: number) {
  * A textured, desaturated frame (so signatures stand out) with one "figure" per signature colour:
  * a head circle and a torso block, laid out left to right like people in a shot.
  */
-export function synthesizeFrame(width: number, height: number, seed: number, signatures: Rgb[]): Rgba {
+export function synthesizeFrame(
+  width: number,
+  height: number,
+  seed: number,
+  signatures: Rgb[],
+  /** The background's grey level (multi-shot segments alternate dark and light so cuts are detectable). */
+  baseGray?: number,
+): Rgba {
   const rand = mulberry(seed);
   const data = Buffer.alloc(width * height * 4);
-  const base = 70 + Math.floor(rand() * 60);
+  const drawn = 70 + Math.floor(rand() * 60);
+  const base = baseGray ?? drawn;
   const tilt = rand() * 0.6 - 0.3;
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {

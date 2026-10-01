@@ -77,8 +77,13 @@ export const ProjectSettingsSchema = z.object({
   dialogue: DialogueSettingsSchema.default({ mode: 'off', lipSync: true }),
   storyboard: StoryboardSettingsSchema.default({ enabled: true, scenes: 3 }),
   generation: z
-    .object({ includeAudio: z.boolean().default(false), keyframes: z.boolean().default(true) })
-    .default({ includeAudio: false, keyframes: true }),
+    .object({
+      includeAudio: z.boolean().default(false),
+      keyframes: z.boolean().default(true),
+      /** Groups of shots in one request on multi-shot models (docs/design/multi-shot.md). */
+      multiShot: z.enum(['auto', 'off']).default('auto'),
+    })
+    .default({ includeAudio: false, keyframes: true, multiShot: 'auto' }),
   batch: z
     .object({ maxGenerations: z.number().int().min(1).max(100000).default(2000) })
     .default({ maxGenerations: 2000 }),

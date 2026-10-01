@@ -256,6 +256,70 @@ async function videoDuration(path: string): Promise<number> {
   return Number.parseFloat(stdout) || 5;
 }
 
+/**
+ * The mock multi-shot model: each `Shot k (D s)` of the prompt becomes a segment of D seconds (the first from the
+ * first frame), with its own texture and the identity signatures of the references, joined by hard cuts.
+ */
+async function multiShot(
+  parts: Part[],
+  params: Record<string, unknown>,
+  ctx: GenerateContext,
+  name: string,
+  prompt: string,
+  width: number,
+  height: number,
+): Promise<RunResult> {
+  const durations = [...prompt.matchAll(/Shot \d+ \(([\d.]+) s\)/g)].map((m) => Math.max(1, Number(m[1])));
+  const first = parts.find((p) => p.type === 'image' && p.role === 'first_frame');
+  const sigs = ctx.flaky ? [] : await signaturesFromImages(parts);
+  const files: string[] = [];
+  for (const [k, d] of durations.entries()) {
+    const seg = `${name}-seg${k}`;
+    const frame = synthesizeFrame(
+      width - (width % 2),
+      height - (height % 2),
+      hash(prompt) ^ Number(params.seed ?? 0) ^ ((k + 1) * 7919),
+      sigs,
+      k % 2 === 1 ? 200 : 30,
+    );
+    await synthesizeVideo({
+      dir: ctx.dir,
+      name: seg,
+      width,
+      height,
+      durationSec: d,
+      ...(k === 0 && first?.uri && !ctx.flaky ? { firstFrame: await loadUri(first.uri) } : { frame }),
+    });
+    files.push(join(ctx.dir, `${seg}.mp4`));
+  }
+  const list = join(ctx.dir, `${name}-list.txt`);
+  await writeFile(list, files.map((f) => `file '${f}'`).join('\n'));
+  await runFfmpeg([
+    '-f',
+    'concat',
+    '-safe',
+    '0',
+    '-i',
+    list,
+    '-c:v',
+    'libx264',
+    '-preset',
+    'ultrafast',
+    '-crf',
+    '20',
+    '-pix_fmt',
+    'yuv420p',
+    '-movflags',
+    '+faststart',
+    join(ctx.dir, `${name}.mp4`),
+  ]);
+  const total = durations.reduce((n, d) => n + d, 0);
+  return {
+    outputs: [{ uri: ctx.fileUrl(`${name}.mp4`), mime_type: 'video/mp4' }],
+    usage: { output_count: 1, duration_seconds: total },
+  };
+}
+
 /** Audio-driven lip sync: the reference video's pictures with the reference audio as its sound. */
 async function lipSync(parts: Part[], ctx: GenerateContext, name: string): Promise<RunResult> {
   const video = parts.find((p) => p.type === 'video' && p.role === 'reference_video')!;
@@ -301,6 +365,9 @@ export async function runVideo(body: Record<string, any>, ctx: GenerateContext):
   const durationSec = Math.max(2, Math.min(10, Number(params.duration_seconds ?? 5)));
   const first = parts.find((p) => p.type === 'image' && p.role === 'first_frame');
   const name = randomBytes(8).toString('hex');
+  // A multi-shot prompt (docs/design/multi-shot.md): one segment per shot, hard cuts between them.
+  const sequence = /A multi-shot sequence of (\d+) shots/.exec(prompt);
+  if (sequence) return multiShot(parts, params, ctx, name, prompt, width, height);
   // Audio-driven lip sync: a reference video and audio without a first frame (a motion reference has a prompt
   // and a first frame).
   if (isLipSyncRequest(parts)) return lipSync(parts, ctx, name);

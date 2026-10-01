@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { ConsistencyBadge } from '../src/components/ConsistencyBadge';
 import { JobRow } from '../src/components/JobProgress';
 import { WorkflowStepper } from '../src/components/WorkflowStepper';
+import { LineageBadge, MultiShotBadge } from '../src/features/clips/TakeActions';
 
 afterEach(cleanup);
 
@@ -84,5 +85,29 @@ describe('JobRow', () => {
       />,
     );
     expect(screen.getByText('Mira is not locked')).toBeTruthy();
+  });
+});
+
+describe('take badges', () => {
+  it('marks multi-shot segments and derived takes; plain takes stay unmarked', () => {
+    const take = f.readyShot([f.character()]).takes[0]!;
+    const { container, rerender } = render(<MultiShotBadge take={take} />);
+    expect(container.textContent).toBe('');
+    rerender(
+      <MultiShotBadge
+        take={{ ...take, request: { ...take.request, multiShot: { index: 1, of: 3, cut: 'planned' } } }}
+      />,
+    );
+    expect(screen.getByTestId('take-multishot').textContent).toBe('shot 2 of 3');
+    expect(screen.getByTestId('take-multishot').getAttribute('title')).toContain('planned length');
+    render(
+      <LineageBadge
+        take={{
+          ...take,
+          derivedFrom: { takeId: 'tk_parent', op: 'extend', seconds: 2 },
+        }}
+      />,
+    );
+    expect(screen.getByTestId('take-lineage').textContent).toBe('extended +2s');
   });
 });

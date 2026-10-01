@@ -5,6 +5,7 @@ export * from './directing';
 export * from './ids';
 export * from './media';
 export * from './prompt';
+export * from './prompt/multishot';
 export * from './provenance/disclosure';
 export * from './schemas/analysis';
 export * from './schemas/api';

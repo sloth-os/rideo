@@ -22,6 +22,7 @@ import { batchGenerate, clipGenerate, clipPlan } from '../jobs/handlers/clips';
 import type { HandlerDeps } from '../jobs/handlers/common';
 import { analysisSuggest, editAuto, exportFinish, timelineAssemble } from '../jobs/handlers/media';
 import { shotGenerate } from '../jobs/handlers/shot';
+import { shotGroup } from '../jobs/handlers/shot-group';
 import {
   characterDescribe,
   characterRefs,
@@ -211,6 +212,7 @@ export function createStudio(
   reg('clip.plan', clipPlan);
   reg('clip.generate', clipGenerate);
   reg('shot.generate', shotGenerate);
+  reg('shot.group', shotGroup);
   reg('batch.generate', batchGenerate);
   reg('analysis.suggest', analysisSuggest);
   reg('export.finish', exportFinish);

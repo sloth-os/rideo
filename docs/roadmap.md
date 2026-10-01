@@ -174,9 +174,9 @@ object/background, new angle) re-verified by the judge; "extend take" (+N s cont
 insertion/removal, Veo extend, Premiere Generative Extend. *Fits:* new job `take.edit`, takes keep lineage
 (`derivedFrom`), watermark/C2PA on every derived take.
 
-**8. Multi-shot generation** (M) — for models that render several shots per call (Kling 3.0, Seedance 2.5), plan
+**8. Multi-shot generation** (M) — *done:* [design/multi-shot.md](design/multi-shot.md) (models publish `max_shots` in mm-gateway) — for models that render several shots per call (Kling 3.0, Seedance 2.5), plan
 and generate a scene in one request, split it into shots with the existing scene-cut detection, verify each shot.
-Better continuity and fewer calls. *Fits:* `clip.plan` chooses single- vs multi-shot per model limits.
+Better continuity and fewer calls. *Fits:* `clip.generate` chooses single- vs multi-shot per model limits.
 
 **9. Post audio: mix, score, effects** (M) — dialogue/music/effects stems, ducking and loudness normalization
 (EBU R128) in the shared soundtrack graph; a score generated to fit the cut (per-scene cues with music composition

@@ -118,7 +118,7 @@ Errors are RFC 9457 problem details (`application/problem+json`) with a stable `
 | Method | Path | Body | Result |
 |---|---|---|---|
 | POST | `/api/projects/:id/clips/plan` | `{sceneId}` | `Job` |
-| POST | `/api/projects/:id/clips/:clipId/generate` | – | `Job` |
+| POST | `/api/projects/:id/clips/:clipId/generate` | – | `Job` (`clip.generate`: `shot.generate` per shot, or `shot.group` for consecutive shots of a multi-shot model unless `settings.generation.multiShot` is `off`, [multi-shot](../design/multi-shot.md)) |
 | PATCH | `/api/projects/:id/clips/:clipId/shots/:shotId` | shot fields, including `camera.{lensMm, aperture, move}`, `startFrame`, `endFrame`, `motionReference`, `seed` ([directing](../design/directing.md)) | `Clip` |
 | POST | `/api/projects/:id/clips/:clipId/shots/:shotId/variations` | `{count: 2–4}` | `Job[]` (`shot.generate` with `variation`) |
 | POST | `/api/projects/:id/clips/:clipId/shots/:shotId/takes/:takeId/edit` | `{kind: "restyle" \| "relight" \| "replace" \| "angle" \| "remove", instruction}` | `Job` (`take.edit`, [take editing](../design/take-editing.md)) |

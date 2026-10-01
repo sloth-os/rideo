@@ -92,7 +92,7 @@ and the offline demo (`npm run dev:demo`).
 
 | Surface | Behaviour |
 |---|---|
-| `GET /health`, `/v1/models`, `/v1/models/limits` | `mock-image-v1` (image-to-image, ≤4 input images), `mock-video-v1` (2–10 s, first/last frame, reference images), `mock-music-v1` |
+| `GET /health`, `/v1/models`, `/v1/models/limits` | `mock-image-v1` (image-to-image, ≤4 input images), `mock-video-v1` (2–10 s, first/last frame, reference images, audio and video), `mock-video-lite-v1` (no last frame, no reference audio or video), `mock-multishot-v1` (`max_shots: 4`, 2–20 s; [multi-shot](multi-shot.md)), `mock-lipsync-v1`, `mock-music-v1` |
 | `POST /v1/images`, `/v1/videos`, `/v1/music` + `GET …/{id}` | Real async lifecycle (`pending → running → succeeded`, `Retry-After`, `Idempotency-Key` replay and 409 on body mismatch, `ETag`/`304`). Produces real media: PNGs (pngjs), H.264 MP4 via ffmpeg (a first frame, when given, is animated with a slow zoom), WAV/MP3 tones. |
 | `/proxy/{domain}/{path}` | OpenAI, Gemini and Anthropic request/response shapes. It routes on the `rideo-task:` marker and returns deterministic JSON derived from the input. |
 | `POST /proxy/*/v1/audio/transcriptions` | segments sized to the audio duration |

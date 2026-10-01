@@ -48,7 +48,7 @@ import { api, mediaUrl } from '../../lib/api';
 import { NO_ELEMENTS, useProject } from '../../store/project';
 import { reportError, useUi } from '../../store/ui';
 import { CompareDialog, DirectPanel } from './DirectPanel';
-import { LineageBadge, TakeActions } from './TakeActions';
+import { LineageBadge, MultiShotBadge, TakeActions } from './TakeActions';
 
 const LIP_SYNC = { conditioned: 'lips from the mix', pass: 'lip-synced', none: 'no lip sync' } as const;
 
@@ -303,6 +303,7 @@ function TakeTile({
           {selected ? <Badge tone="accent">selected</Badge> : null}
           {take.variation ? <Badge testid="take-variation">v{take.variation}</Badge> : null}
           <LineageBadge take={take} />
+          <MultiShotBadge take={take} />
           {take.request.lastFrameSource ? (
             <Badge title="Ends on the chosen last frame">end frame</Badge>
           ) : null}

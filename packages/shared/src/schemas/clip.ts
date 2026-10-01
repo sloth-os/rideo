@@ -162,6 +162,15 @@ export const TakeSchema = z.object({
     /** What the model was given as the last frame and as the reference video (docs/design/directing.md). */
     lastFrameSource: z.enum(['generated', 'resource']).nullable().default(null),
     motionReference: MotionReferenceSchema.nullable().default(null),
+    /** A segment of a multi-shot render (docs/design/multi-shot.md#splitting-and-verification). */
+    multiShot: z
+      .object({
+        index: z.number().int().nonnegative(),
+        of: z.number().int().min(2),
+        cut: z.enum(['detected', 'planned']),
+      })
+      .nullable()
+      .default(null),
   }),
   gatewayTaskIds: z.array(z.string()).default([]),
   /** The generated end frame (`endFrame.mode: generate`). */

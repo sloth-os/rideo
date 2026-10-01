@@ -83,6 +83,7 @@ describe('public contract', () => {
     expect(models.data.map((m: any) => m.id)).toEqual([
       'mock-video-v1',
       'mock-video-lite-v1',
+      'mock-multishot-v1',
       'mock-lipsync-v1',
     ]);
     const limits = (await (await fetch(`${gw.url}/v1/models/limits`, { headers: auth })).json()) as any;

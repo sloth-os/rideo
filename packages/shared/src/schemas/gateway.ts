@@ -130,6 +130,11 @@ export const ModelLimitsSchema = z.looseObject({
   supports_reference_audio: z.boolean().optional(),
   supports_reference_video: z.boolean().optional(),
   supports_audio_output: z.boolean().optional(),
+  /** Multi-shot models (docs/design/multi-shot.md) and enhancement models (docs/design/finishing.md). */
+  max_shots: z.number().optional(),
+  max_fps: z.number().optional(),
+  supports_upscale: z.boolean().optional(),
+  supports_frame_interpolation: z.boolean().optional(),
   notes: z.string().optional(),
 });
 export type ModelLimits = z.infer<typeof ModelLimitsSchema>;

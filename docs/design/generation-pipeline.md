@@ -34,8 +34,9 @@ type Job = {
 | `take.edit` / `take.extend` | video | a derived take: a video-to-video edit, or a continuation from the last frame ([take editing](take-editing.md)) |
 | `timeline.extend` | video | generative extend: frames before or after an item of the cut, inserted as a resource |
 | `clip.plan` | llm | break a scene into shots sized to model limits |
-| `clip.generate` | control | enqueue `shot.generate` for every shot without a passing take and wait |
+| `clip.generate` | control | enqueue `shot.generate` for every shot without a passing take (or `shot.group` for consecutive shots a multi-shot model renders together) and wait |
 | `shot.generate` | video | the shot pipeline below |
+| `shot.group` | video | several consecutive shots in one multi-shot request, split at the cuts, one verified take per shot ([multi-shot](multi-shot.md)) |
 | `batch.generate` | control | extend, plan and generate until the target length |
 | `music.generate` | music | SDK music task → resource |
 | `media.process` | client | probe + poster of an imported resource (runs in a studio tab) |
@@ -49,7 +50,7 @@ type Job = {
 Lane concurrency defaults: `control=16, llm=2, image=2, video=2, music=1, media=1`. Override with
 `RIDEO_LANES="video=3,image=2"`. The `client` lane has no server concurrency: its jobs are claimed and run
 by studio tabs ([editor jobs](editor.md#editor-jobs)), one job per tab at a time. Within a lane, jobs run by priority (user-initiated regenerate = 10,
-pilot = 5, batch = 1), then FIFO. A job that waits for its children (`clip.generate` → `shot.generate`,
+pilot = 5, batch = 1), then FIFO. A job that waits for its children (`clip.generate` → `shot.generate` or `shot.group`,
 `batch.generate` → `clip.generate`) releases its lane slot while waiting, so orchestration can never
 deadlock a lane.
 

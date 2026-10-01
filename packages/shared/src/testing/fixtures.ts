@@ -166,6 +166,7 @@ export function take(overrides: Partial<Take> = {}): Take {
       referenceCount: 1,
       lastFrameSource: null,
       motionReference: null,
+      multiShot: null,
     },
     gatewayTaskIds: [],
     endKeyframe: null,

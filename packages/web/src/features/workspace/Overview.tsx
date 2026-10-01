@@ -152,6 +152,12 @@ function SettingsDialog({
           (v) => setS({ ...s, generation: { ...s.generation, includeAudio: v } }),
           'includeAudio',
         )}
+        {toggle(
+          'Render consecutive shots in one request when the video model is multi-shot',
+          s.generation.multiShot === 'auto',
+          (v) => setS({ ...s, generation: { ...s.generation, multiShot: v ? 'auto' : 'off' } }),
+          'multiShot',
+        )}
         <div className="rounded-[var(--radius-control)] border border-border p-3">
           <p className="mb-2 text-[13px] font-medium">Storyboard</p>
           <div className="grid grid-cols-1 items-end gap-3 sm:grid-cols-2">

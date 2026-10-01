@@ -57,6 +57,22 @@ export const MOCK_MODELS: MockModel[] = [
     },
   },
   {
+    id: 'mock-multishot-v1',
+    modality: 'video',
+    limits: {
+      modality: 'video',
+      input_modalities: ['text', 'image'],
+      supports_first_frame: true,
+      supports_reference_image: true,
+      max_input_images: 5,
+      max_output_count: 1,
+      max_shots: 4,
+      min_duration_seconds: 2,
+      max_duration_seconds: 20,
+      notes: 'Rideo mock multi-shot model: the shots of the prompt as segments separated by hard cuts.',
+    },
+  },
+  {
     id: 'mock-lipsync-v1',
     modality: 'video',
     limits: {

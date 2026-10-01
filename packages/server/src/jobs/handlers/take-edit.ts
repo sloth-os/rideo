@@ -166,6 +166,7 @@ async function commitDerived(
       referenceCount,
       lastFrameSource: null,
       motionReference: null,
+      multiShot: null,
     },
     taskIds,
     watermarkId: done.watermarkId,

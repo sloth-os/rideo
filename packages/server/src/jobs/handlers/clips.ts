@@ -6,10 +6,12 @@ import {
   docPath,
   isAcceptable,
   type Job,
+  needsOwnRequest,
   newId,
   nextUnwrittenBeats,
   normalizePlannedShots,
   plannedDuration,
+  planShotGroups,
   type Screenplay,
   sortedClips,
   TARGET_REACHED_RATIO,
@@ -136,15 +138,35 @@ export async function clipGenerate(deps: HandlerDeps, ctx: JobContext) {
     },
     `Queue ${todo.length} shot(s) of clip ${clip.index + 1}`,
   );
+  // Multi-shot models render groups of consecutive shots in one request (docs/design/multi-shot.md#when).
+  const settings = docs.project.settings;
+  const limits = (await deps.gateway.limitsFor('video', settings.models.video)).limits;
+  const maxShots = limits?.max_shots ?? 0;
+  const units =
+    maxShots >= 2 && settings.generation.multiShot !== 'off' && dialogueMode(settings) !== 'native'
+      ? planShotGroups(todo, {
+          maxShots,
+          maxDurationSec: limits?.max_duration_seconds ?? 10,
+          eligible: (id) => !needsOwnRequest(todo.find((s) => s.id === id)!),
+        })
+      : todo.map((s) => [s.id]);
   const jobs: Job[] = [];
   let prev: Job | null = null;
-  for (const shot of todo) {
+  for (const unit of units) {
     throwIfAborted(ctx.signal);
+    const shot = todo.find((s) => s.id === unit[0])!;
     if (shot.continuity === 'continuous' && prev) await ctx.waitFor([prev.id]);
-    const j = await ctx.spawn('shot.generate', { clipId, shotId: shot.id }, { dedupeKey: `shot:${shot.id}` });
+    const j =
+      unit.length > 1
+        ? await ctx.spawn('shot.group', { clipId, shotIds: unit }, { dedupeKey: `group:${unit.join(',')}` })
+        : await ctx.spawn('shot.generate', { clipId, shotId: shot.id }, { dedupeKey: `shot:${shot.id}` });
     jobs.push(j);
     prev = j;
-    ctx.progress(jobs.length, todo.length * 2, `shot ${shot.index + 1} queued`);
+    ctx.progress(
+      jobs.length,
+      units.length * 2,
+      `shot ${shot.index + 1}${unit.length > 1 ? `–${shot.index + unit.length}` : ''} queued`,
+    );
   }
   const results = await ctx.waitFor(jobs.map((j) => j.id));
   const failed = results.filter((r) => r.status !== 'succeeded');

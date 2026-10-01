@@ -46,7 +46,10 @@ RIDEO_TEST_WEBDAV_URL=http://rideo:rideo@localhost:8080/ npx vitest run --projec
   in videos and the lens in keyframes, `camera_motion` from moves, last frames and reference videos only for
   models that take them, fixed seeds with attempt and variation offsets, legacy shots, frames outdated by a lens
   change); take editing (edit requests with the take as the reference video and the cast references, the five
-  edit phrases, extensions from the first frame or into the last frame, legacy takes without lineage).
+  edit phrases, extensions from the first frame or into the last frame, legacy takes without lineage);
+  multi-shot (groups bounded by shot count and length, continuations and shots with their own request kept
+  alone, gaps; detected versus planned split points; one request listing every shot with the cast and elements
+  once).
 - **server**: repository commit, log, diff, restore, branches, tags, coalescing and GC on `MemoryBackend`;
   job queue (lanes, priorities, dedupe, retry classification, cancel propagation, restart recovery; the
   `client` lane: claim order, leases, heartbeats, expiry and session release, cancel, staged files);
@@ -60,7 +63,8 @@ RIDEO_TEST_WEBDAV_URL=http://rideo:rideo@localhost:8080/ npx vitest run --projec
   selection, render engine choice, the editor-job worker against a fake API (claims only with a project and a
   session, one job at a time, progress heartbeats, failures reported with their code, cancellations and
   lost leases not reported, claim retry when the claim overtakes the live subscription), timeline edge-drag
-  ops, and rendering of the workflow stepper, consistency badge and job rows. Resuming an interrupted render
+  ops, and rendering of the workflow stepper, consistency badge, job rows and take badges (lineage and
+  multi-shot segments). Resuming an interrupted render
   is covered by the editor-jobs integration test, local proxies by the story e2e spec.
 
 ### Integration
@@ -110,6 +114,9 @@ RIDEO_TEST_WEBDAV_URL=http://rideo:rideo@localhost:8080/ npx vitest run --projec
   last frame (+N s, trimmed to what was asked); generative extend after a take (a signed, watermarked extension
   resource inserted in the cut) and before footage (`last_frame`); validation, including a model without last
   frames.
+- **Multi-shot** (`multishot.test.ts`): with `mock-multishot-v1`, a three-shot clip renders its first two shots
+  in one request (one keyframe, 20 s), split at the detected cut into two verified, watermarked takes with TTS
+  dialogue, the third alone; the setting turned off and a shot with an end frame generate shot by shot.
 - **Storyboard** (`storyboard.test.ts`): the storyboard plans the first scenes and draws a verified frame (and
   dialogue) per shot; approving one and all; the gate; editing a shot makes its frame outdated
   (`board_unapprovable`) and relocking a character makes frames stale until redrawn; reordering keeps the first
@@ -132,7 +139,8 @@ RIDEO_TEST_WEBDAV_URL=http://rideo:rideo@localhost:8080/ npx vitest run --projec
 ### End-to-end (Playwright)
 
 Projects: `desktop` (1440×900) runs every spec except `responsive`; `mobile` (412×915, touch) runs
-`responsive`, `mcp-sync`, `provenance`, `elements`, `dialogue`, `storyboard`, `directing` and `take-editing`. The
+`responsive`, `mcp-sync`, `provenance`, `elements`, `dialogue`, `storyboard`, `directing`, `take-editing` and
+`multi-shot`. The
 web server stops with SIGTERM so the stack removes its data; stale stack directories older than an hour are removed
 when a new stack starts. Specs:
 
@@ -143,6 +151,7 @@ when a new stack starts. Specs:
 | `footage.spec.ts` | upload (probe + poster in the browser) → analysis signals in the browser → AI suggestions → accept → auto edit → exports with the ffmpeg.wasm and WebCodecs engines → both listed and verified |
 | `history.spec.ts` | edit → history → diff → restore → UI updates |
 | `take-editing.spec.ts` | (desktop and mobile) relight a take and extend another by 2 s from the take tiles (lineage badges); generative extend of the first item in the editor (the lanes on desktop, the item list on phones) |
+| `multi-shot.spec.ts` | (desktop and mobile) the multi-shot setting off and on in the project settings; a clip on `mock-multishot-v1` renders two shots in one request (`shot 1 of 2`, `shot 2 of 2` badges) and the third alone |
 | `directing.spec.ts` | (desktop and mobile) the Direct panel sets a push-in, an 85 mm lens, f/2 and a generated end frame; two variations are generated, compared side by side and B is chosen |
 | `storyboard.spec.ts` | (desktop and mobile) generate the storyboard, approve a frame, move it later, approve all; download the shot list CSV and PDF; build the animatic, play it, export it in the tab (listed as an animatic export); approve the storyboard; import a Fountain screenplay in the Story view |
 | `dialogue.spec.ts` | (desktop and mobile) the Cast view's voice panel: design three voices, the previews play, pick one, lock it; clone a recording of a real person through the consent dialog and lock it; the gate stops asking for voices; the dialogue mode setting |
