@@ -55,7 +55,12 @@ export async function buildMockGateway(opts: MockGatewayOptions = {}): Promise<M
   const store = new TaskStore(opts.latencyMs ?? 200);
   const counters = { generations: 0, flaky: 0, proxyCalls: {} as Record<string, number> };
   const flakyEvery = opts.flakyEvery ?? Number(process.env.MOCK_FLAKY_EVERY ?? 0);
-  const app = Fastify({ logger: opts.logger ?? false, bodyLimit: 200 * 1024 * 1024 });
+  // Closing ends every connection: a test's gateway stops at once even when a client keeps a socket open
+  const app = Fastify({
+    logger: opts.logger ?? false,
+    bodyLimit: 200 * 1024 * 1024,
+    forceCloseConnections: true,
+  });
   app.addContentTypeParser('*', { parseAs: 'buffer' }, (_req, body, done) => done(null, body));
 
   const problem = (
