@@ -92,7 +92,7 @@ says **why** (evidence from other products), **how** it fits Rideo's architectur
 | Assets and versioning | **WebDAV + git-like history, branches, tags** | Project libraries, versions per asset |
 | Agents | **MCP with 58+ tools and live UI control** | Flow Agent, Runway Agent/MCP, Descript MCP |
 | Provenance | **Invisible keyed watermark + registry + detector**, container metadata | C2PA + SynthID |
-| Review and teams | Single-studio, optional bearer token, presence | Share links, timecoded comments, approvals, SSO |
+| Review and teams | **OIDC accounts, roles, agent tokens, audit log; share links, timecoded comments and drawings, reviews that approve gates, notifications** | Share links, timecoded comments, approvals, SSO |
 | Interchange | MP4 exports | FCPXML / XML / OTIO / EDL, NLE plugins |
 | Model routing and cost | Per-project model settings, `maxGenerations` budget | Router, fallbacks, cost per task, credit analytics |
 
@@ -195,7 +195,7 @@ and image-sequence masters, delivery presets (YouTube, broadcast), social cut-do
 
 ### P2 — teams, ecosystem, scale
 
-**12. Review and approvals with outside reviewers** (M) — share links without accounts, timecoded comments and
+**12. Review and approvals with outside reviewers** (M) — *done:* [design/review.md](design/review.md) — share links without accounts, timecoded comments and
 frame annotations on takes and cuts, approval stages mapped to Rideo gates, @-mentions and notifications; comments
 are versioned documents; MCP tools let agents read and resolve notes. *Why:* Frame.io v4, Runway comments on assets.
 

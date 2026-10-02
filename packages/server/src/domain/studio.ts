@@ -15,6 +15,7 @@ import { LlmTasks } from '../ai/tasks';
 import { createTts } from '../ai/tts';
 import { AccountsService } from '../auth/accounts';
 import { currentPrincipal } from '../auth/context';
+import { NotificationService } from '../auth/notifications';
 import type { Config } from '../config';
 import { OffJudge, VisionLlmJudge } from '../consistency/judge';
 import { LlmVoiceJudge } from '../consistency/voice';
@@ -60,6 +61,7 @@ import { HistoryService } from './history';
 import { LocalizationService } from './localization';
 import { ProjectService } from './projects';
 import { ProjectRegistry } from './registry';
+import { ReviewService } from './review';
 import { StoryService } from './story';
 import { StoryboardService } from './storyboard';
 import { UiService } from './ui';
@@ -78,6 +80,7 @@ export interface Studio {
   clips: ClipService;
   edit: EditService;
   localization: LocalizationService;
+  review: ReviewService;
   editor: EditorService;
   history: HistoryService;
   ui: UiService;
@@ -172,8 +175,10 @@ export function createStudio(
     metrics,
     log: log.child({ component: 'accounts' }),
   });
+  const notifications = new NotificationService(join(config.dataDir, 'notifications'), hub);
   const deps: Deps = {
     accounts,
+    notifications,
     config,
     log,
     metrics,
@@ -196,9 +201,10 @@ export function createStudio(
     ...(config.sfx ? { sfx: new SfxClient(proxy, config.sfx, metrics) } : {}),
     voiceJudge: config.voiceJudge ? new LlmVoiceJudge(llm) : null,
   };
+  const workflow = new WorkflowService(deps);
   const services = {
     projects: new ProjectService(deps),
-    workflow: new WorkflowService(deps),
+    workflow,
     story: new StoryService(deps),
     elements: new ElementService(deps),
     voices: new VoiceService(deps),
@@ -206,6 +212,7 @@ export function createStudio(
     clips: new ClipService(deps),
     edit: new EditService(deps),
     localization: new LocalizationService(deps),
+    review: new ReviewService(deps, workflow),
     editor: new EditorService(deps),
   } satisfies Record<string, unknown>;
   // Editor jobs: failures and cancellations are recorded on their documents; a closed tab releases its jobs.
@@ -364,6 +371,7 @@ export function createStudio(
       await watermark.init();
       await c2pa.init();
       await accounts.init();
+      await notifications.init();
       let recovered = 0;
       for (const id of await projectsRegistry.listIds()) {
         try {

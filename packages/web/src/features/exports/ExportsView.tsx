@@ -1,5 +1,5 @@
 import { type Export, formatDuration, isTerminalJob, languageName } from '@rideo/shared';
-import { Download, ShieldCheck } from 'lucide-react';
+import { Download, MessageSquare, ShieldCheck } from 'lucide-react';
 import { useState } from 'react';
 import { ContentCredentialsPanel } from '../../components/ContentCredentials';
 import { Entity } from '../../components/Entity';
@@ -9,8 +9,13 @@ import { Badge, Button, EmptyState, SectionHeader } from '../../components/ui';
 import { api, mediaUrl, type WatermarkDetection } from '../../lib/api';
 import { useProject } from '../../store/project';
 import { reportError } from '../../store/ui';
+import { openThreads, useReviewDialog } from '../review/ReviewHost';
 
 function ExportCard({ e, projectId }: { e: Export; projectId: string }) {
+  const review = useReviewDialog();
+  const openCount = useProject((s) =>
+    s.docs ? openThreads(s.docs.comments, { kind: 'export', exportId: e.id }) : 0,
+  );
   const [check, setCheck] = useState<WatermarkDetection | null>(null);
   const [busy, setBusy] = useState(false);
   const verify = async () => {
@@ -146,6 +151,17 @@ function ExportCard({ e, projectId }: { e: Export; projectId: string }) {
             >
               Verify
             </Button>
+            {e.media.mime === 'video/mp4' ? (
+              <Button
+                size="sm"
+                icon={<MessageSquare className="size-3.5" />}
+                onClick={() => review?.open({ kind: 'export', exportId: e.id })}
+                data-testid="review-export"
+                data-open={openCount}
+              >
+                Comments{openCount ? ` · ${openCount}` : ''}
+              </Button>
+            ) : null}
           </div>
         ) : null}
         {e.thumbnails.length ? (

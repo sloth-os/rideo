@@ -19,6 +19,7 @@ import { createEmbeddedDav, DAV_PREFIX } from '../storage/embedded-dav';
 import { WebDavBackend } from '../storage/webdav';
 import { VERSION } from '../version';
 import { type AuthedRequest, registerAuthRoutes } from './auth-routes';
+import { registerReviewRoutes } from './review-routes';
 import { registerRoutes } from './routes';
 
 export { VERSION };
@@ -112,7 +113,10 @@ export async function buildServer(
       token: (req.query as { token?: string } | undefined)?.token,
     });
     (req as AuthedRequest).principal = principal;
-    const guarded = (url.startsWith('/api/') && !open.has(url)) || url === '/mcp' || url === '/metrics';
+    // Guests of a review's share link (docs/design/review.md#reviews-and-share-links): the token is the access.
+    const guest = url.startsWith('/api/review/');
+    const guarded =
+      (url.startsWith('/api/') && !open.has(url) && !guest) || url === '/mcp' || url === '/metrics';
     if (!guarded || principal) return;
     // The free detection tool (docs/design/provenance.md#public-detection-tool): file uploads need no token.
     const publicDetect =
@@ -261,6 +265,7 @@ export async function buildServer(
 
   registerAuthRoutes(app, studio);
   registerRoutes(app, studio);
+  registerReviewRoutes(app, studio);
   registerMcp(app, studio);
 
   // Default: packages/web/dist, found from the source tree (src/http) or the bundle (dist/main.js).

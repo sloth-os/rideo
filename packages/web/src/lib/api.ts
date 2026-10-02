@@ -1,10 +1,13 @@
 import type {
   Analysis,
+  Annotation,
   AuditEvent,
   AuthMe,
   BranchInfo,
   Character,
   Clip,
+  CommentTarget,
+  CommentThread,
   CommitSummary,
   ConsentInput,
   DeliveryInput,
@@ -18,6 +21,7 @@ import type {
   ExportQuality,
   Job,
   LoudnessTarget,
+  Notification,
   Probe,
   Project,
   ProjectDocs,
@@ -27,6 +31,9 @@ import type {
   RenderEngineChoice,
   Resource,
   ResourceRole,
+  Review,
+  ReviewItem,
+  ReviewTarget,
   Screenplay,
   TagInfo,
   Timeline,
@@ -505,7 +512,60 @@ export const api = {
     form.set('file', file, file.name);
     return request<WatermarkDetection>('POST', '/watermark/detect', form);
   },
+  // Review and approvals (docs/design/review.md#surfaces)
+  createComment: (id: string, body: CommentInput) =>
+    request<CommentThread>('POST', `${p(id)}/comments`, body),
+  replyComment: (id: string, commentId: string, body: string) =>
+    request<CommentThread>('POST', `${p(id)}/comments/${commentId}/replies`, { body }),
+  setCommentStatus: (id: string, commentId: string, status: 'open' | 'resolved') =>
+    request<CommentThread>('PATCH', `${p(id)}/comments/${commentId}`, { status }),
+  createReview: (
+    id: string,
+    body: {
+      title: string;
+      target: ReviewTarget;
+      gate?: string | null;
+      required?: number;
+      link?: { expiresInDays?: number } | null;
+    },
+  ) => request<{ review: Review; url: string | null }>('POST', `${p(id)}/reviews`, body),
+  decideReview: (id: string, reviewId: string, decision: 'approve' | 'changes', note?: string) =>
+    request<Review>('POST', `${p(id)}/reviews/${reviewId}/decisions`, { decision, note }),
+  revokeReviewLink: (id: string, reviewId: string) =>
+    request<Review>('DELETE', `${p(id)}/reviews/${reviewId}/link`),
+  notifications: (limit = 50) =>
+    request<{ notifications: Notification[]; unread: number }>('GET', `/notifications?limit=${limit}`),
+  markNotificationsRead: (ids?: string[]) =>
+    request<{ unread: number }>('POST', '/notifications/read', ids ? { ids } : {}),
+  // Guests of a share link: the token is the access
+  guestReview: (token: string) => request<GuestReview>('GET', `/review/${token}`),
+  guestComment: (token: string, name: string, body: CommentInput) =>
+    request<CommentThread>('POST', `/review/${token}/comments`, { ...body, name }),
+  guestReply: (token: string, name: string, commentId: string, body: string) =>
+    request<CommentThread>('POST', `/review/${token}/comments/${commentId}/replies`, { name, body }),
+  guestDecide: (token: string, name: string, decision: 'approve' | 'changes', note?: string) =>
+    request<GuestReview['review']>('POST', `/review/${token}/decisions`, { name, decision, note }),
 };
+
+export interface CommentInput {
+  target: CommentTarget;
+  at?: number | null;
+  annotation?: Annotation | null;
+  body: string;
+}
+
+/** What a share link shows (docs/design/review.md#reviews-and-share-links). */
+export interface GuestReview {
+  projectId: string;
+  project: { title: string };
+  review: Omit<Review, 'link'>;
+  items: ReviewItem[];
+  comments: CommentThread[];
+}
+
+export function guestMediaUrl(token: string, path: string): string {
+  return `/api/review/${token}/media/${path}`;
+}
 
 export interface WatermarkDetection {
   found: boolean;

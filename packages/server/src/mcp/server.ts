@@ -5,11 +5,13 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
 import {
   type Actor,
+  AnnotationSchema,
   APERTURE_PRESETS,
   boardState,
   CAMERA_MOVES,
   CameraSchema,
   CharacterInputSchema,
+  CommentTargetSchema,
   ConsentInputSchema,
   CreateProjectInputSchema,
   clipBlockers,
@@ -36,6 +38,7 @@ import {
   RenderEngineChoiceSchema,
   ResourceKindSchema,
   ResourceRoleSchema,
+  ReviewTargetSchema,
   renderScreenplayMarkdown,
   SceneInputSchema,
   ScriptFormatSchema,
@@ -1176,6 +1179,97 @@ function buildServer(studio: Studio): McpServer {
   );
 
   // Resources
+  // Review and approvals (docs/design/review.md)
+  tool(
+    'comments_list',
+    'Review comments of a project: timecoded notes and drawings on takes and exports, with replies; filter by status (open, resolved) and target (docs/design/review.md#comments).',
+    {
+      projectId: PROJECT,
+      status: z.enum(['open', 'resolved']).optional(),
+      target: CommentTargetSchema.optional(),
+    },
+    (a) => studio.review.comments(a.projectId, { status: a.status, target: a.target }),
+    ro,
+  );
+  tool(
+    'comment_create',
+    'Comment on a take or an export, optionally at a time (seconds) and with a drawing (shapes in 0–1 frame coordinates); @name mentions notify members.',
+    {
+      projectId: PROJECT,
+      target: CommentTargetSchema,
+      at: z.number().nonnegative().nullable().optional(),
+      annotation: AnnotationSchema.nullable().optional(),
+      body: z.string().min(1).max(4000),
+    },
+    (a, actor) =>
+      studio.review.createComment(actor, a.projectId, {
+        target: a.target,
+        at: a.at,
+        annotation: a.annotation,
+        body: a.body,
+      }),
+  );
+  tool(
+    'comment_reply',
+    'Reply to a review comment (e.g. to say how a note was addressed).',
+    { projectId: PROJECT, commentId: z.string(), body: z.string().min(1).max(4000) },
+    (a, actor) => studio.review.reply(actor, a.projectId, a.commentId, a.body),
+  );
+  tool(
+    'comment_resolve',
+    'Resolve a review comment once it is addressed (or reopen it with status "open").',
+    { projectId: PROJECT, commentId: z.string(), status: z.enum(['open', 'resolved']).default('resolved') },
+    (a, actor) => studio.review.setStatus(actor, a.projectId, a.commentId, a.status),
+  );
+  tool(
+    'reviews_list',
+    'Reviews of a project: what they ask about, the gate they decide, decisions and status.',
+    { projectId: PROJECT },
+    async (a) =>
+      (await studio.review.reviews(a.projectId)).map(({ link, ...r }) => ({ ...r, hasLink: !!link })),
+    ro,
+  );
+  tool(
+    'review_create',
+    'Ask for a review of an export or a clip (its selected takes), optionally deciding a workflow gate and with a share link for outside reviewers (the URL is returned once).',
+    {
+      projectId: PROJECT,
+      title: z.string().min(1).max(200),
+      target: ReviewTargetSchema,
+      gate: z.string().max(100).nullable().optional(),
+      required: z.number().int().min(1).max(50).optional(),
+      link: z
+        .object({ expiresInDays: z.number().int().min(1).max(365).optional() })
+        .nullable()
+        .optional(),
+    },
+    async (a, actor) => {
+      const r = await studio.review.createReview(actor, a.projectId, a);
+      const { link, ...review } = r.review;
+      return { review: { ...review, hasLink: !!link }, url: r.url };
+    },
+  );
+  tool(
+    'review_decide',
+    'Approve a review or ask for changes, with a note.',
+    {
+      projectId: PROJECT,
+      reviewId: z.string(),
+      decision: z.enum(['approve', 'changes']),
+      note: z.string().max(2000).optional(),
+    },
+    (a, actor) =>
+      studio.review.decide(actor, a.projectId, a.reviewId, { decision: a.decision, note: a.note }),
+  );
+  tool(
+    'notifications_list',
+    'Notifications of the person the agent acts for: mentions, replies, decisions and gates approved through reviews.',
+    { limit: z.number().int().min(1).max(500).optional() },
+    async (a) =>
+      studio.deps.notifications.list(currentPrincipal()?.user.id ?? studio.config.user.id, a.limit ?? 50),
+    ro,
+  );
+
   server.registerResource(
     'projects',
     'rideo://projects',
@@ -1249,6 +1343,11 @@ const TOOL_PERMISSIONS: Record<string, Permission> = {
   branch_create: 'project.manage',
   branch_switch: 'project.manage',
   project_access: 'project.manage',
+  comment_create: 'project.comment',
+  comment_reply: 'project.comment',
+  comment_resolve: 'project.comment',
+  review_decide: 'project.comment',
+  review_create: 'project.approve',
 };
 
 /** Streamable HTTP MCP endpoint at /mcp with stateful sessions (docs/design/mcp.md). */

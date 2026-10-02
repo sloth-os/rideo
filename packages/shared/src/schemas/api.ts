@@ -22,6 +22,7 @@ import {
 import { LanguageCodeSchema } from './localization';
 import { DialogueModeSchema, DisclosurePositionSchema, ProjectKindSchema } from './project';
 import { ResourceKindSchema, ResourceRoleSchema } from './resource';
+import { AnnotationSchema, CommentTargetSchema, ReviewTargetSchema } from './review';
 import { DialogueLineSchema, StyleBibleSchema } from './screenplay';
 import { TimelineOpSchema } from './timeline';
 
@@ -379,3 +380,29 @@ export const AuditQueryInputSchema = z.object({
     .optional(),
   limit: z.coerce.number().int().min(1).max(1000).optional(),
 });
+
+/** Review (docs/design/review.md#surfaces). */
+export const CommentCreateInputSchema = z.object({
+  target: CommentTargetSchema,
+  at: z.number().nonnegative().nullable().optional(),
+  annotation: AnnotationSchema.nullable().optional(),
+  body: z.string().trim().min(1).max(4000),
+});
+export const CommentReplyInputSchema = z.object({ body: z.string().trim().min(1).max(4000) });
+export const CommentStatusInputSchema = z.object({ status: z.enum(['open', 'resolved']) });
+export const ReviewCreateInputSchema = z.object({
+  title: z.string().trim().min(1).max(200),
+  target: ReviewTargetSchema,
+  gate: z.string().max(100).nullable().optional(),
+  required: z.number().int().min(1).max(50).optional(),
+  link: z
+    .object({ expiresInDays: z.number().int().min(1).max(365).optional() })
+    .nullable()
+    .optional(),
+});
+export const ReviewDecisionInputSchema = z.object({
+  decision: z.enum(['approve', 'changes']),
+  note: z.string().max(2000).optional(),
+});
+/** Guests name themselves on every call. */
+export const GuestInputSchema = z.object({ name: z.string().trim().min(1).max(80) });

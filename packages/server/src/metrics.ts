@@ -110,6 +110,10 @@ export class Metrics {
   readonly auth = this.add(
     new Counter('rideo_auth_total', 'Sign-ins, token use and denials by event and outcome'),
   );
+  /** Review (docs/design/review.md): comments, replies, decisions and share-link opens. */
+  readonly review = this.add(
+    new Counter('rideo_review_total', 'Review comments, decisions and link opens by event'),
+  );
   readonly editorJobs = this.add(
     new Counter(
       'rideo_editor_jobs_total',

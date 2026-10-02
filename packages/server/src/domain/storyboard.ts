@@ -95,6 +95,8 @@ export class StoryboardService extends Service {
       analyses: {},
       exports: {},
       localizations: {},
+      comments: {},
+      reviews: {},
     };
   }
 

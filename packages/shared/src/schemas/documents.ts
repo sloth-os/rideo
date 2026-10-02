@@ -7,6 +7,7 @@ import { type Export, ExportSchema } from './job';
 import { type Localization, LocalizationSchema } from './localization';
 import { type Project, ProjectSchema } from './project';
 import { type Resource, ResourceSchema } from './resource';
+import { type CommentThread, CommentThreadSchema, type Review, ReviewSchema } from './review';
 import { type Screenplay, ScreenplaySchema } from './screenplay';
 import { type Timeline, TimelineSchema } from './timeline';
 
@@ -26,7 +27,9 @@ export type DocKind =
   | 'analysis'
   | 'export'
   | 'localization'
-  | 'render';
+  | 'render'
+  | 'comment'
+  | 'review';
 
 interface DocSpec {
   kind: DocKind;
@@ -79,6 +82,14 @@ export const DOC_SPECS: DocSpec[] = [
     dir: 'localizations',
   },
   /** The timeline an export rendered when it differs from the cut (a language variant, sidecar captions). */
+  /** Review comments and reviews (docs/design/review.md). */
+  {
+    kind: 'comment',
+    pattern: new RegExp(`^comments/${ID}\\.json$`),
+    schema: CommentThreadSchema,
+    dir: 'comments',
+  },
+  { kind: 'review', pattern: new RegExp(`^reviews/${ID}\\.json$`), schema: ReviewSchema, dir: 'reviews' },
   {
     kind: 'render',
     pattern: new RegExp(`^renders/${ID}\\.json$`),
@@ -117,6 +128,8 @@ export const docPath = {
   export: (id: string) => `exports/${id}.json`,
   localization: (language: string) => `localizations/${language}.json`,
   render: (exportId: string) => `renders/${exportId}.json`,
+  comment: (id: string) => `comments/${id}.json`,
+  review: (id: string) => `reviews/${id}.json`,
 };
 
 export class DocValidationError extends Error {
@@ -160,6 +173,8 @@ export interface ProjectDocs {
   exports: Record<string, Export>;
   /** By language code. */
   localizations: Record<string, Localization>;
+  comments: Record<string, CommentThread>;
+  reviews: Record<string, Review>;
 }
 
 const COLLECTION: Partial<Record<DocKind, keyof ProjectDocs>> = {
@@ -170,6 +185,8 @@ const COLLECTION: Partial<Record<DocKind, keyof ProjectDocs>> = {
   analysis: 'analyses',
   export: 'exports',
   localization: 'localizations',
+  comment: 'comments',
+  review: 'reviews',
 };
 
 /** Applies document changes (path → doc | null) to a ProjectDocs projection immutably. */
@@ -222,6 +239,8 @@ export function docsFromEntries(entries: Iterable<[string, unknown]>): ProjectDo
       analyses: {},
       exports: {},
       localizations: {},
+      comments: {},
+      reviews: {},
     },
     changes,
   );

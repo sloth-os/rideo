@@ -5,6 +5,7 @@ import { cx } from '../../components/ui';
 import { useEngine } from '../../engine/state';
 import { useAuth } from '../../lib/auth';
 import { useUi } from '../../store/ui';
+import { NotificationsBell } from '../review/NotificationsBell';
 
 export function LiveDot() {
   const live = useUi((s) => s.live);
@@ -163,6 +164,7 @@ export function AppHeader({ children }: { children?: ReactNode }) {
       >
         {theme === 'dark' ? <Sun className="size-4" /> : <Moon className="size-4" />}
       </button>
+      <NotificationsBell />
       <UserMenu />
     </header>
   );

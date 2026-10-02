@@ -1,5 +1,6 @@
 import {
   type ClientMessage,
+  type Notification,
   type Presence,
   type ProjectEvent,
   ServerMessageSchema,
@@ -14,6 +15,8 @@ export interface LiveHandlers {
   onResync: (projectId: string, reason: string) => void;
   onUi: (command: UiCommand) => Promise<void> | void;
   onStatus: (status: LiveStatus) => void;
+  /** Something for the person in this tab (docs/design/review.md#notifications). */
+  onNotification?: (notification: Notification) => void;
 }
 
 /**
@@ -113,6 +116,9 @@ export class LiveClient {
           );
         return;
       }
+      case 'notification':
+        this.handlers.onNotification?.(msg.notification);
+        return;
       default:
         return;
     }

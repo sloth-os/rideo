@@ -25,6 +25,7 @@ import { useProjectRole } from '../../lib/auth';
 import { useConfig } from '../../lib/config';
 import { useProject } from '../../store/project';
 import { reportError, useUi } from '../../store/ui';
+import { ReviewsCard } from '../review/ReviewsCard';
 import { MembersCard } from './MembersCard';
 
 function SettingsDialog({
@@ -495,6 +496,7 @@ export function Overview() {
           </div>
         </Card>
         <MembersCard project={docs.project} />
+        <ReviewsCard docs={docs} />
         <Card className="p-4">
           <div className="mb-2 flex items-center gap-2 font-medium">
             <FolderSync className="size-4 text-muted" /> Assets on WebDAV

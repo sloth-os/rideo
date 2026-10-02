@@ -4,10 +4,12 @@ Base path `/api`. JSON in and out, except uploads (multipart) and media (bytes).
 ([accounts](../design/accounts.md)): without accounts, the configured user (`RIDEO_USER_ID`, `RIDEO_USER_NAME`),
 with `Authorization: Bearer <RIDEO_API_TOKEN>` when that is set; with accounts (`RIDEO_OIDC_ISSUER`), a signed-in
 person (the `rideo_session` cookie), an agent token (`Bearer rdo_…`, acting on behalf of its owner) or the studio
-token. Every route except `/api/health`, `/api/ready`, `/api/auth/*` and file uploads to `/api/watermark/detect`
-(the public detection tool) needs one (401). Project routes also need a permission of the caller's role in the
+token. Every route except `/api/health`, `/api/ready`, `/api/auth/*`, the guest routes of review links
+(`/api/review/*`, where the link's token is the access) and file uploads to `/api/watermark/detect` (the public
+detection tool) needs one (401). Project routes also need a permission of the caller's role in the
 project (`project.read` for reads, `project.edit` for writes, `project.approve` for approvals, `project.manage` for
-settings, access and branches): 403 `forbidden` otherwise, and the project list only shows readable projects.
+settings, access and branches; `project.comment` for review comments and decisions): 403 `forbidden` otherwise, and
+the project list only shows readable projects.
 
 Errors are RFC 9457 problem details (`application/problem+json`) with a stable `code`:
 
@@ -68,6 +70,32 @@ Errors are RFC 9457 problem details (`application/problem+json`) with a stable `
 | POST | `/api/tokens` | `{name, role, projectIds?, expiresInDays?}` | `201 {token, secret}` (signed-in people only; the secret is shown once) |
 | DELETE | `/api/tokens/:id` | – | the token, revoked |
 | GET | `/api/audit` | `?since&until&projectId&actor&type&limit` | audit events, newest first (admins; directors with their `projectId`) |
+
+## Review
+
+[Review and approvals](../design/review.md): comments are `comments/<id>.json` and reviews `reviews/<id>.json`
+documents, so they are also in `state`, history and live updates.
+
+| Method | Path | Body / query | Result |
+|---|---|---|---|
+| GET | `/api/projects/:id/comments` | `?status=open\|resolved&target=take:<clipId>:<shotId>:<takeId>\|export:<exportId>` | threads, oldest first |
+| POST | `/api/projects/:id/comments` | `{target, at?, annotation?: {shapes}, body}` | `201` the thread; `@` mentions of members notify them (`project.comment`) |
+| POST | `/api/projects/:id/comments/:cid/replies` | `{body}` | `201` the thread (`project.comment`) |
+| PATCH | `/api/projects/:id/comments/:cid` | `{status: "open" \| "resolved"}` | the thread; reviewers resolve their own threads, editors any |
+| GET | `/api/projects/:id/reviews` | – | reviews, newest first |
+| POST | `/api/projects/:id/reviews` | `{title, target: {kind: "export", exportId} \| {kind: "clip", clipId}, gate?, required?, link?: {expiresInDays?}}` | `201 {review, url}`: the share link's URL, once (`project.approve`) |
+| POST | `/api/projects/:id/reviews/:rid/decisions` | `{decision: "approve" \| "changes", note?}` | the review; an approved review for a gate approves the gate when it can (`project.comment`) |
+| DELETE | `/api/projects/:id/reviews/:rid/link` | – | the review, its link revoked (`project.approve`) |
+| GET | `/api/review/:token` | – | guests: `{projectId, project: {title}, review (without its link), items[{key, label, target, media}], comments}` |
+| GET | `/api/review/:token/media/*` | `Range` | guests: the review's videos and posters only |
+| POST | `/api/review/:token/comments` | `{name, target, at?, annotation?, body}` | guests: `201` the thread, on what the review shows |
+| POST | `/api/review/:token/comments/:cid/replies` | `{name, body}` | guests: `201` the thread |
+| POST | `/api/review/:token/decisions` | `{name, decision, note?}` | guests: the review |
+| GET | `/api/notifications` | `?limit` | `{notifications, unread}` of the caller, newest first |
+| POST | `/api/notifications/read` | `{ids?}` | `{unread}`; all when `ids` is left out |
+
+An unknown, malformed, wrong, revoked or expired review token is `404 not_found`; a guest comment on anything the
+review does not show is `403 forbidden`.
 
 ## Projects and documents
 

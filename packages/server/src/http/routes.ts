@@ -116,6 +116,40 @@ function coalesceHeader(req: FastifyRequest): string | undefined {
   return typeof v === 'string' && /^[\w:.#/-]{1,120}$/.test(v) ? v : undefined;
 }
 
+/** Streams a project's media file with range support (the studio's player, the guest page of a review). */
+export async function sendMedia(
+  studio: Studio,
+  req: FastifyRequest,
+  reply: FastifyReply,
+  projectId: string,
+  path: string,
+) {
+  if (!path.startsWith('media/')) throw invalid('not a media path');
+  const range = /^bytes=(\d*)-(\d*)$/.exec(String(req.headers.range ?? ''));
+  let r = range
+    ? { start: range[1] ? Number(range[1]) : 0, end: range[2] ? Number(range[2]) : undefined }
+    : undefined;
+  if (range && !range[1] && range[2]) {
+    const probe = await studio.deps.media.stream(projectId, path);
+    if (!probe) throw new AppError('not_found', `media ${path} not found`);
+    probe.stream.destroy();
+    r = { start: Math.max(0, probe.size - Number(range[2])), end: probe.size - 1 };
+  }
+  const res = await studio.deps.media.stream(projectId, path, r);
+  if (!res) throw new AppError('not_found', `media ${path} not found`);
+  reply
+    .header('accept-ranges', 'bytes')
+    .header('cache-control', 'private, max-age=31536000, immutable')
+    .type(res.mime);
+  reply.header('content-length', res.end - res.start + 1);
+  if (r) reply.code(206).header('content-range', `bytes ${res.start}-${res.end}/${res.size}`);
+  if (req.method === 'HEAD') {
+    res.stream.destroy();
+    return reply.send();
+  }
+  return reply.send(res.stream);
+}
+
 export function registerRoutes(app: FastifyInstance, studio: Studio): void {
   const actor = () => studio.userActor();
   const pid = (req: FastifyRequest) => parse(IdParam, req.params).id;
@@ -142,33 +176,8 @@ export function registerRoutes(app: FastifyInstance, studio: Studio): void {
     return studio.projects.getDoc(pid(req), p<string>(req, '*'), at);
   });
 
-  const serveMedia = async (req: FastifyRequest, reply: FastifyReply) => {
-    const path = p<string>(req, '*');
-    if (!path.startsWith('media/')) throw invalid('not a media path');
-    const range = /^bytes=(\d*)-(\d*)$/.exec(String(req.headers.range ?? ''));
-    let r = range
-      ? { start: range[1] ? Number(range[1]) : 0, end: range[2] ? Number(range[2]) : undefined }
-      : undefined;
-    if (range && !range[1] && range[2]) {
-      const probe = await studio.deps.media.stream(pid(req), path);
-      if (!probe) throw new AppError('not_found', `media ${path} not found`);
-      probe.stream.destroy();
-      r = { start: Math.max(0, probe.size - Number(range[2])), end: probe.size - 1 };
-    }
-    const res = await studio.deps.media.stream(pid(req), path, r);
-    if (!res) throw new AppError('not_found', `media ${path} not found`);
-    reply
-      .header('accept-ranges', 'bytes')
-      .header('cache-control', 'private, max-age=31536000, immutable')
-      .type(res.mime);
-    reply.header('content-length', res.end - res.start + 1);
-    if (r) reply.code(206).header('content-range', `bytes ${res.start}-${res.end}/${res.size}`);
-    if (req.method === 'HEAD') {
-      res.stream.destroy();
-      return reply.send();
-    }
-    return reply.send(res.stream);
-  };
+  const serveMedia = async (req: FastifyRequest, reply: FastifyReply) =>
+    sendMedia(studio, req, reply, pid(req), p<string>(req, '*'));
   app.get('/api/projects/:id/media/*', serveMedia);
 
   app.post('/api/projects/:id/uploads', async (req, reply) => {

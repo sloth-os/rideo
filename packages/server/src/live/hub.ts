@@ -99,6 +99,17 @@ export class LiveHub {
     return () => this.closeListeners.delete(listener);
   }
 
+  /** Sends a message to every open tab of a person (notifications, docs/design/review.md#notifications). */
+  notifyUser(userId: string, msg: ServerMessage): number {
+    let sent = 0;
+    for (const s of this.sessions.values())
+      if (s.userId === userId) {
+        this.send(s, msg);
+        sent++;
+      }
+    return sent;
+  }
+
   /** Whether a live session exists and follows the project (editor-job claims). */
   isSubscribed(sessionId: string, projectId: string): boolean {
     const s = this.sessions.get(sessionId);

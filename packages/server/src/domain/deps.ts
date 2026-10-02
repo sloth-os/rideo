@@ -3,6 +3,7 @@ import type { SfxClient } from '../ai/sfx';
 import type { LlmTasks } from '../ai/tasks';
 import type { TtsClient } from '../ai/tts';
 import type { AccountsService } from '../auth/accounts';
+import type { NotificationService } from '../auth/notifications';
 import type { Config } from '../config';
 import type { ConsistencyJudge } from '../consistency/judge';
 import type { VoiceJudge } from '../consistency/voice';
@@ -57,4 +58,6 @@ export interface Deps {
   voiceJudge: VoiceJudge | null;
   /** People, sessions, agent tokens, permissions and the audit log (docs/design/accounts.md). */
   accounts: AccountsService;
+  /** Notifications per person (docs/design/review.md#notifications). */
+  notifications: NotificationService;
 }

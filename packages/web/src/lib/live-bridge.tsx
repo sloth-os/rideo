@@ -3,6 +3,7 @@ import { useEffect, useRef } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 import { detectEngineCaps, editorWorker, useEngine } from '../engine';
 import { enginePresence } from '../engine/state';
+import { useNotifications } from '../store/notifications';
 import { useProject } from '../store/project';
 import { useUi } from '../store/ui';
 import { LiveClient } from './live';
@@ -54,6 +55,10 @@ export function LiveBridge() {
           void store.load(projectId).then((s) => c.resetSeq(projectId, s.seq));
       },
       onUi: (cmd) => handleUiCommand(cmd, (to) => nav.current.navigate(to), nav.current.path),
+      onNotification: (n) => {
+        useNotifications.getState().push(n);
+        useUi.getState().toast(n.title, 'info');
+      },
       onStatus: (s) => {
         useUi.getState().setLive(s);
         if (s === 'live') void editorWorker.poke();

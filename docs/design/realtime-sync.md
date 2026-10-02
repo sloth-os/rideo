@@ -17,6 +17,7 @@ JSON and validated with the zod unions in `shared/src/schemas/live.ts`.
 | `{type: "event", projectId, seq, event}` | A project event (below). `seq` increases per project. |
 | `{type: "resync", projectId, reason}` | The client must refetch `GET /api/projects/:id/state` (a sequence gap it cannot replay). |
 | `{type: "ui", command}` | A UI command from an agent (below). |
+| `{type: "notification", notification}` | Something for the person in this tab: a mention, a reply, a decision on their review, a gate approved through one ([review](review.md#notifications)). Sent to every tab of that person, whatever project it shows. |
 | `{type: "pong"}` | Heartbeat. |
 
 ### Client → server

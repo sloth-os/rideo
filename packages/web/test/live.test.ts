@@ -79,6 +79,33 @@ describe('LiveClient', () => {
     client.close();
   });
 
+  it('hands notifications to their handler (docs/design/review.md#notifications)', () => {
+    const onNotification = vi.fn();
+    const client = new LiveClient({
+      onEvent: vi.fn(),
+      onResync: vi.fn(),
+      onUi: vi.fn(),
+      onStatus: vi.fn(),
+      onNotification,
+    });
+    client.connect();
+    const ws = FakeWebSocket.instances[0]!;
+    ws.open();
+    const notification = {
+      id: 'ntf_000000000001',
+      at: '2026-10-01T10:00:00.000Z',
+      kind: 'mention' as const,
+      projectId: 'prj_000000000001',
+      title: 'Cleo mentioned you',
+      body: '@Ben the lamp',
+      link: '/p/prj_000000000001/clips?comment=cmt_000000000001',
+      read: false,
+    };
+    ws.receive({ type: 'notification', notification });
+    expect(onNotification).toHaveBeenCalledWith(notification);
+    client.close();
+  });
+
   it('resyncs subscriptions when the server restarted', () => {
     const onResync = vi.fn();
     const client = new LiveClient({ onEvent: vi.fn(), onResync, onUi: vi.fn(), onStatus: vi.fn() });

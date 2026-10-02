@@ -64,11 +64,16 @@ export async function startStack(
     return { server, url };
   };
   let { server, url } = await make();
+  // With a studio token configured, the stack's own client is the studio (docs/design/accounts.md#modes).
+  const studioToken = opts.env?.RIDEO_API_TOKEN;
   const api = async <T>(method: string, path: string, body?: unknown): Promise<T> => {
     const isForm = body instanceof FormData;
     const res = await fetch(`${url}/api${path}`, {
       method,
-      headers: body !== undefined && !isForm ? { 'content-type': 'application/json' } : {},
+      headers: {
+        ...(body !== undefined && !isForm ? { 'content-type': 'application/json' } : {}),
+        ...(studioToken ? { authorization: `Bearer ${studioToken}` } : {}),
+      },
       body: body === undefined ? undefined : isForm ? (body as FormData) : JSON.stringify(body),
     });
     const text = await res.text();

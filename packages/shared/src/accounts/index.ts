@@ -75,9 +75,12 @@ export const ROUTE_PERMISSIONS: RoutePermission[] = [
   { method: 'PUT', path: /^\/access$/, permission: 'project.manage' },
   { method: 'POST', path: /^\/branches(\/.*)?$/, permission: 'project.manage' },
   { method: 'DELETE', path: /^\/branches\/.+$/, permission: 'project.manage' },
-  // Review comments (docs/design/review.md)
+  // Review comments and decisions (docs/design/review.md); reviews are asked for by directors
   { method: 'POST', path: /^\/comments(\/.*)?$/, permission: 'project.comment' },
   { method: 'PATCH', path: /^\/comments(\/.*)?$/, permission: 'project.comment' },
+  { method: 'POST', path: /^\/reviews\/[^/]+\/decisions$/, permission: 'project.comment' },
+  { method: 'POST', path: /^\/reviews$/, permission: 'project.approve' },
+  { method: 'DELETE', path: /^\/reviews\/[^/]+\/link$/, permission: 'project.approve' },
 ];
 
 export function routePermission(method: string, rest: string): Permission {

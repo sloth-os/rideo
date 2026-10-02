@@ -13,7 +13,8 @@ resulting change streams live to the frontend.
 - When `RIDEO_API_TOKEN` is set, calls require `Authorization: Bearer <token>`. With accounts
   ([accounts](accounts.md#agent-tokens)) an agent sends its **agent token** (`Bearer rdo_…`): tools act on behalf
   of the token's owner, within the token's role and projects, with the same permissions as REST (approval tools
-  need `project.approve`, settings, branches and access `project.manage`). A session stays bound to the caller that
+  need `project.approve`, settings, branches and access `project.manage`, comments and review decisions
+  `project.comment`). A session stays bound to the caller that
   opened it (403 for anyone else).
 - Clients that only support stdio can bridge with `npx mcp-remote http://HOST:8787/mcp`.
 
@@ -138,6 +139,21 @@ or keep going and `job_wait` until a tab picks the job up.
 | `export_render` | `projectId`, `quality?` (`draft`, `standard`, `high`), `engine?` (`auto`, `ffmpeg`, `webcodecs`), `source?` (`timeline`, `animatic`), `loudness?` (`streaming`, `broadcast`, `off`), `stems?`, `language?`, `dubbed?`, `captions?` (`burn`, `sidecar`), `preset?` (`web`, `youtube`, `broadcast`, `vertical`, `square`, `master_prores`, `master_frames`), `format?`, `resolution?`, `fps?`, `aspect?`, `maxDurationSec?`, `thumbnails?` → `{export, job}` (editor job; `export.prepare` first for a reframe; [finishing](finishing.md)) |
 | `export_list` | `projectId` |
 | `watermark_detect` | `uri` or `projectId` + `mediaPath` → watermark, registry record and `contentCredentials` (C2PA) |
+
+### Review and approvals
+
+[Review](review.md): agents read the notes people left, answer and resolve them, and see the decisions.
+
+| Tool | Arguments |
+|---|---|
+| `comments_list` | `projectId`, `status?` (`open`, `resolved`), `target?` (`{kind: "take", clipId, shotId, takeId}` or `{kind: "export", exportId}`) → threads with replies |
+| `comment_create` | `projectId`, `target`, `at?` (seconds), `annotation?` (`{shapes}` in 0–1 frame coordinates), `body` (`@name` mentions notify members) |
+| `comment_reply` | `projectId`, `commentId`, `body` |
+| `comment_resolve` | `projectId`, `commentId`, `status?` (`resolved` by default, `open` reopens) |
+| `reviews_list` | `projectId` → reviews with their decisions and `hasLink` (never the link's hash) |
+| `review_create` | `projectId`, `title`, `target` (`{kind: "export", exportId}` or `{kind: "clip", clipId}`), `gate?`, `required?`, `link?: {expiresInDays?}` → `{review, url}` (`project.approve`) |
+| `review_decide` | `projectId`, `reviewId`, `decision` (`approve`, `changes`), `note?` |
+| `notifications_list` | `limit?` → the notifications of the person the agent acts for |
 
 ### History and jobs
 

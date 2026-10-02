@@ -6,6 +6,7 @@ import { AdminPage } from './features/account/AdminPage';
 import { LoginPage } from './features/account/LoginPage';
 import { TokensPage } from './features/account/TokensPage';
 import { Dashboard } from './features/dashboard/Dashboard';
+import { GuestReviewPage } from './features/review/GuestReviewPage';
 import { VerifyPage } from './features/verify/VerifyPage';
 import { Workspace } from './features/workspace/Workspace';
 import { loginUrl, useAuth } from './lib/auth';
@@ -27,6 +28,12 @@ function Signed({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+/** Guests of a review link have no live channel (and no session to open one with). */
+function Live() {
+  const location = useLocation();
+  return location.pathname.startsWith('/review/') ? null : <LiveBridge />;
+}
+
 export function App() {
   const theme = useUi((s) => s.theme);
   const load = useAuth((s) => s.load);
@@ -38,9 +45,10 @@ export function App() {
   }, [load]);
   return (
     <BrowserRouter>
-      <LiveBridge />
+      <Live />
       <Routes>
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/review/:token" element={<GuestReviewPage />} />
         <Route path="/verify" element={<VerifyPage />} />
         <Route
           path="/"

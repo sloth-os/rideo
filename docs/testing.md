@@ -63,7 +63,9 @@ RIDEO_TEST_WEBDAV_URL=http://rideo:rideo@localhost:8080/ npx vitest run --projec
   the crop window clamped to the frame, the ffmpeg crop expression evaluated against `cropWindow` at any speed,
   reframed timelines and their chunk graph, cut-downs with fades, thumbnail candidates); accounts (the permission
   table and role order, project roles for members, studio visibility, admins and open projects, agent tokens
-  capped by role and projects, route permissions).
+  capped by role and projects, route permissions); review (mentions by full name, unique first name or email,
+  outcomes from each person's latest decision, what a review shows, share-link tokens, drawings, route
+  permissions).
 - **server**: repository commit, log, diff, restore, branches, tags, coalescing and GC on `MemoryBackend`;
   job queue (lanes, priorities, dedupe, retry classification, cancel propagation, restart recovery; the
   `client` lane: claim order, leases, heartbeats, expiry and session release, cancel, staged files);
@@ -78,7 +80,8 @@ RIDEO_TEST_WEBDAV_URL=http://rideo:rideo@localhost:8080/ npx vitest run --projec
   encoders; ustar archives with long names and checksums); accounts (the PKCE authorization request, RS256 and ES256
   ID tokens and every rejection: signature, issuer, audience, expiry, issue time, nonce, malformed, an unknown key
   read again from the JWKS; sessions by hash across a restart and their expiry; the audit log's filters; cookies
-  and safe return paths); the web's sign-in page.
+  and safe return paths); notifications (per person, newest first, pushed to that person's tabs only, read marks
+  across a restart, the last 500); the web's sign-in page.
 - **web**: live-event store reducer and optimistic timeline edits (apply, confirm, roll back), live client
   (sequence dedupe, UI-command acks, restart resync), UI command dispatch, WebCodecs codec/container
   selection, render engine choice, the editor-job worker against a fake API (claims only with a project and a
@@ -160,6 +163,11 @@ RIDEO_TEST_WEBDAV_URL=http://rideo:rideo@localhost:8080/ npx vitest run --projec
   admins and the studio token; agent tokens capped by role and projects over REST and MCP (commits by the agent on
   behalf of its owner, MCP sessions bound to their caller, revocation); people disabled by an admin; the audit log
   for admins and directors; live subscriptions refused to people without access.
+- **Review** (`review.test.ts`) with the mock identity provider: comments with drawings and mentions, replies and
+  notifications, who may resolve; a review with a share link (the guest view holds only the clip's selected takes,
+  media outside it and project routes are refused, wrong tokens are 404), guest comments, replies and decisions, a
+  gate that cannot be approved yet and then is, in the director's name and audited; revocation; metrics; agents
+  listing, answering and resolving notes over MCP with an editor token (and refused a review).
 - **Finishing** (`finishing.test.ts`): a YouTube delivery upscaled and interpolated by `mock-enhance-v1`
   (1080p, 48 fps, the C2PA `upscale` action, three signed thumbnails); the ffmpeg fallback with `models.enhance:
   off`; a ProRes master (10-bit 4:2:2, PCM, signed, stems); an image-sequence master (a TAR with every frame, the
@@ -191,7 +199,7 @@ RIDEO_TEST_WEBDAV_URL=http://rideo:rideo@localhost:8080/ npx vitest run --projec
 
 Projects: `desktop` (1440×900) runs every spec except `responsive`; `mobile` (412×915, touch) runs
 `responsive`, `mcp-sync`, `provenance`, `elements`, `dialogue`, `storyboard`, `directing`, `take-editing`,
-`multi-shot`, `post-audio`, `localization`, `finishing` and `accounts`. The
+`multi-shot`, `post-audio`, `localization`, `finishing`, `accounts` and `review`. The
 web server stops with SIGTERM so the stack removes its data; stale stack directories older than an hour are removed
 when a new stack starts. Specs:
 
@@ -203,6 +211,7 @@ when a new stack starts. Specs:
 | `history.spec.ts` | edit → history → diff → restore → UI updates |
 | `take-editing.spec.ts` | (desktop and mobile) relight a take and extend another by 2 s from the take tiles (lineage badges); generative extend of the first item in the editor (the lanes on desktop, the item list on phones) |
 | `accounts.spec.ts` | (desktop and mobile, on the stack's second server with accounts and a mock identity provider) sign-in; a director adds a reviewer by email in the Members card; an agent token created, used and revoked; people and the audit log; the reviewer's view (banner, no settings); sign-out |
+| `review.spec.ts` | (desktop and mobile) a note at 0:01.0 with a box drawn on the take, a reply, resolved (the tile's open count); a review of the pilot with a share link deciding `pilot_approved`; the client, in a separate browser without an account, names themselves, draws an arrow, comments and asks for changes (no sideways scroll); the studio's bell leads to the note live; after the pilot clip is approved the client's approval approves the gate; the revoked link opens nothing |
 | `finishing.spec.ts` | (desktop and mobile) a vertical delivery from the export dialog: focus tracks prepared, reframed, cut down, upscaled by the enhancement model, three thumbnails on the card; a ProRes master listed with its download and stems |
 | `localization.spec.ts` | (desktop and mobile) captions set to word by word; Spanish added with dubbing (the close-up lip-synced); a line corrected in the translations dialog makes its dub stale until *Dub* runs again; the dubbed Spanish variant exported with sidecar subtitles (language badge, VTT download) |
 | `post-audio.spec.ts` | (desktop and mobile) the Mix card: ducking on after assembly, depth −18 dB, *Score the cut* with a direction (Cue 1 on the Music track), *Add sound effects* (an Effects track, its lane on desktop); an export rendered in the tab at broadcast loudness with stems; the export card shows about −23 LUFS and the three stem downloads |

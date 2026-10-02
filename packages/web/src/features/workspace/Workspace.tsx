@@ -30,6 +30,7 @@ import { ElementsView } from '../elements/ElementsView';
 import { ExportsView } from '../exports/ExportsView';
 import { HistoryView } from '../history/HistoryView';
 import { ResourcesView } from '../resources/ResourcesView';
+import { ReviewHost } from '../review/ReviewHost';
 import { StoryView } from '../story/StoryView';
 import { StoryboardView } from '../storyboard/StoryboardView';
 import { AppHeader } from './AppHeader';
@@ -208,9 +209,11 @@ export function Workspace() {
               directors.
             </p>
           ) : null}
-          <Suspense fallback={<Spinner className="size-6" />}>
-            <Current />
-          </Suspense>
+          <ReviewHost>
+            <Suspense fallback={<Spinner className="size-6" />}>
+              <Current />
+            </Suspense>
+          </ReviewHost>
         </main>
         <ContextPanel projectId={projectId} />
       </div>

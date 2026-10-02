@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { ActorSchema, IsoDateSchema } from './common';
 import { JobSchema } from './job';
+import { NotificationSchema } from './review';
 import { CommitSummarySchema } from './vcs';
 
 export const VIEWS = [
@@ -91,6 +92,8 @@ export const ServerMessageSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('ui'), command: UiCommandSchema }),
   z.object({ type: z.literal('pong') }),
   z.object({ type: z.literal('error'), message: z.string() }),
+  /** For the signed-in person (docs/design/review.md#notifications). */
+  z.object({ type: z.literal('notification'), notification: NotificationSchema }),
 ]);
 export type ServerMessage = z.infer<typeof ServerMessageSchema>;
 

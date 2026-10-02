@@ -19,6 +19,7 @@ import {
   Clapperboard,
   Columns2,
   Eye,
+  MessageSquare,
   Play,
   RefreshCcw,
   ShieldCheck,
@@ -48,6 +49,7 @@ import { api, mediaUrl } from '../../lib/api';
 import { useProjectRole } from '../../lib/auth';
 import { NO_ELEMENTS, useProject } from '../../store/project';
 import { reportError, useUi } from '../../store/ui';
+import { openThreads, useReviewDialog } from '../review/ReviewHost';
 import { CompareDialog, DirectPanel } from './DirectPanel';
 import { LineageBadge, MultiShotBadge, TakeActions } from './TakeActions';
 
@@ -257,6 +259,27 @@ function OverrideDialog({
   );
 }
 
+/** Review comments on a take (docs/design/review.md#surfaces): the open count, and the review player. */
+function TakeComments({ clip, shot, take }: { clip: Clip; shot: Shot; take: Take }) {
+  const review = useReviewDialog();
+  const target = { kind: 'take' as const, clipId: clip.id, shotId: shot.id, takeId: take.id };
+  const open = useProject((s) => (s.docs ? openThreads(s.docs.comments, target) : 0));
+  return (
+    <Button
+      size="sm"
+      variant="ghost"
+      className="h-7"
+      icon={<MessageSquare className="size-3.5" />}
+      onClick={() => review?.open(target)}
+      aria-label={open ? `Comments, ${open} open` : 'Comments'}
+      data-testid="take-comments"
+      data-open={open}
+    >
+      {open ? open : null}
+    </Button>
+  );
+}
+
 function TakeTile({
   clip,
   shot,
@@ -349,6 +372,7 @@ function TakeTile({
               Select
             </Button>
           ) : null}
+          {take.video ? <TakeComments clip={clip} shot={shot} take={take} /> : null}
           <Button
             size="sm"
             variant="ghost"
