@@ -12,6 +12,8 @@ const KEEP = 500;
 export class NotificationService {
   private readonly cache = new Map<string, Notification[]>();
   private writes = Promise.resolve();
+  /** Every notification, as it is made (Web Push to the person's devices, docs/design/pwa.md). */
+  onNotify?: (userId: string, notification: Notification) => void;
 
   constructor(
     private readonly dir: string,
@@ -61,6 +63,7 @@ export class NotificationService {
       this.cache.set(userId, list);
       await this.save(userId, list);
       this.hub.notifyUser(userId, { type: 'notification', notification });
+      this.onNotify?.(userId, notification);
     }
   }
 

@@ -26,6 +26,7 @@ export * from './schemas/documents';
 export * from './schemas/editor';
 export * from './schemas/element';
 export * from './schemas/gateway';
+export * from './schemas/inbox';
 export * from './schemas/job';
 export * from './schemas/live';
 export * from './schemas/llm';

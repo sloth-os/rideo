@@ -100,7 +100,8 @@ export type Review = z.infer<typeof ReviewSchema>;
 export const NotificationSchema = z.object({
   id: IdSchema,
   at: IsoDateSchema,
-  kind: z.enum(['mention', 'reply', 'comment', 'decision', 'gate']),
+  /** `job`: an export, a generation or a recipe ended (docs/design/pwa.md#notifications-on-the-phone-web-push). */
+  kind: z.enum(['mention', 'reply', 'comment', 'decision', 'gate', 'job']),
   projectId: z.string().nullable(),
   title: z.string().max(300),
   body: z.string().max(1000).default(''),

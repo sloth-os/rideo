@@ -230,7 +230,7 @@ the source decodes.
 **21. Self-hosted open-weight models** (S–M) — LTX-2 (open weights, native audio, 4K/50 fps, 20 s) and Wan 2.2 as
 mm-gateway backends for cost and privacy, with a documented GPU setup. *Why:* [LTX-2](https://huggingface.co/Lightricks/LTX-2).
 
-**22. Installable mobile app (PWA)** (S) — review, approvals and agent monitoring on phones. *Why:* Flow mobile apps.
+**22. Installable mobile app (PWA)** (S) — *done:* [design/pwa.md](design/pwa.md) — review, approvals and agent monitoring on phones. *Why:* Flow mobile apps.
 
 ## Suggested sequencing
 

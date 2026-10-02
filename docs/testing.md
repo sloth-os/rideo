@@ -104,7 +104,10 @@ RIDEO_TEST_WEBDAV_URL=http://rideo:rideo@localhost:8080/ npx vitest run --projec
   performance set, the camera released, a blocked camera); the engine (threads of ffmpeg.wasm commands, WebGPU
   geometry against the canvas transform, uniforms, half-float LUT texels, the compositor choice, proxy plans,
   the worker ticker, the job lock and wake lock, heartbeats on the ticker, heartbeats sent by a worker with the
-  latest progress and a lost lease stopping the job).
+  latest progress and a lost lease stopping the job); the installable app (the service
+  worker's strategies, pushed messages opening only the app's links, the manifest and its icons, the Inbox's
+  approvals, reviews, jobs and agents with approve and cancel); Web Push messages (RFC 8291 Appendix A byte for
+  byte, round trips with fresh keys, VAPID tokens that verify).
 - **web**: live-event store reducer and optimistic timeline edits (apply, confirm, roll back), live client
   (sequence dedupe, UI-command acks, restart resync), UI command dispatch, WebCodecs codec/container
   selection, render engine choice, the editor-job worker against a fake API (claims only with a project and a
@@ -188,6 +191,9 @@ RIDEO_TEST_WEBDAV_URL=http://rideo:rideo@localhost:8080/ npx vitest run --projec
   admins and the studio token; agent tokens capped by role and projects over REST and MCP (commits by the agent on
   behalf of its owner, MCP sessions bound to their caller, revocation); people disabled by an admin; the audit log
   for admins and directors; live subscriptions refused to people without access.
+- **Installable app** (`pwa.test.ts`): devices subscribed (https only), a failed recipe pushed to them encrypted and
+  VAPID-signed (decrypted as the device would), a device its push service forgot dropped, unsubscribing; the Inbox
+  across projects (an agent's review and commit, the gate, today's failures).
 - **Cross-origin isolation** (`isolation.test.ts`): COOP and COEP on the studio, its assets and its routes;
   none with `RIDEO_CROSS_ORIGIN_ISOLATION=off`.
 - **Performance** (`performance.test.ts`): a WebM recording set as a shot's performance; the model reported, none
@@ -254,7 +260,7 @@ RIDEO_TEST_WEBDAV_URL=http://rideo:rideo@localhost:8080/ npx vitest run --projec
 Projects: `desktop` (1440×900) runs every spec except `responsive`; `mobile` (412×915, touch) runs
 `responsive`, `mcp-sync`, `provenance`, `elements`, `dialogue`, `storyboard`, `directing`, `take-editing`,
 `multi-shot`, `post-audio`, `localization`, `finishing`, `accounts`, `review`, `interchange`, `editor-depth`,
-`recipes`, `brand`, `search`, `performance` and `engine`. The
+`recipes`, `brand`, `search`, `performance`, `engine` and `pwa`. The
 web server stops with SIGTERM so the stack removes its data; stale stack directories older than an hour are removed
 when a new stack starts. Specs:
 
@@ -266,6 +272,7 @@ when a new stack starts. Specs:
 | `history.spec.ts` | edit → history → diff → restore → UI updates |
 | `take-editing.spec.ts` | (desktop and mobile) relight a take and extend another by 2 s from the take tiles (lineage badges); generative extend of the first item in the editor (the lanes on desktop, the item list on phones) |
 | `accounts.spec.ts` | (desktop and mobile, on the stack's second server with accounts and a mock identity provider) sign-in; a director adds a reviewer by email in the Members card; an agent token created, used and revoked; people and the audit log; the reviewer's view (banner, no settings); sign-out |
+| `pwa.spec.ts` | (desktop and mobile) the manifest and the service worker; the Inbox from the header: an agent's commit, a failed recipe, a gate approved; notifications on this device turned on and off (a stand-in subscription: headless browsers have no push service); the shell starting offline |
 | `engine.spec.ts` | (desktop and mobile, WebGPU on SwiftShader through Vulkan) the studio cross-origin isolated; the same graded, overlaid frame from WebGPU and the canvas; an ffmpeg.wasm export on threads; a WebCodecs export composited by WebGPU in a hidden tab (worker heartbeats, the job's Web Lock); a 4K original previewed from a WebCodecs editing proxy in OPFS |
 | `performance.spec.ts` | (desktop and mobile, a fake camera and microphone) a performance recorded on a shot: countdown, recording, stop, playback, used as the shot's performance; the model shown; the regenerated take acted by `mock-performance-v1` and verified |
 | `search.spec.ts` | (desktop and mobile) footage and a still indexed from the Search view, found by words at the matched frame, filtered by kind, *Show* in Resources; the editor's overlay picker finds the still and puts it at the playhead |

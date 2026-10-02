@@ -80,7 +80,8 @@ People are notified when they are mentioned, when someone replies to their threa
 a decision or a comment, and when a review's gate is approved. Notifications are kept per person
 (`<dataDir>/notifications/<userId>.json`, the last 500), pushed to their open tabs over the live WebSocket
 (`{type: "notification", notification}`), and listed with `GET /api/notifications` (`POST
-/api/notifications/read` marks them read). Without accounts the configured user gets them.
+/api/notifications/read` marks them read). Without accounts the configured user gets them. They also reach the
+person's devices through Web Push, and long work that ends adds `job` notifications ([installable app](pwa.md)).
 
 ## Surfaces
 

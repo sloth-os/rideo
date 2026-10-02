@@ -22,6 +22,22 @@ const LABEL: Record<string, string> = {
   'timeline.assemble': 'Assembling timeline',
   'export.render': 'Rendering export',
   'export.finish': 'Finishing export',
+  'export.prepare': 'Preparing export',
+  'element.refs': 'Generating element references',
+  'voice.design': 'Designing voices',
+  'voices.cast': 'Casting voices',
+  'storyboard.generate': 'Drawing the storyboard',
+  'shot.board': 'Drawing a board frame',
+  'shot.group': 'Generating shots together',
+  'take.edit': 'Editing a take',
+  'take.extend': 'Extending a take',
+  'timeline.extend': 'Extending the cut',
+  'mask.generate': 'Removing the background',
+  'score.generate': 'Scoring the cut',
+  'sfx.generate': 'Adding sound effects',
+  'localize.generate': 'Making a language version',
+  'recipe.run': 'Running a recipe',
+  'search.index': 'Indexing for search',
 };
 
 export function jobLabel(job: Job): string {

@@ -78,6 +78,9 @@ export class JobQueue {
   private closed = false;
   /** Called when an editor job ends without success (failed or cancelled), for document side effects. */
   onEditorJobEnded?: (job: Job) => Promise<void>;
+  /** Called once when any job reaches its end: succeeded, failed or cancelled (notifications, docs/design/pwa.md). */
+  onJobSettled?: (job: Job) => void;
+  private readonly settled = new Set<string>();
 
   constructor(
     private readonly deps: {
@@ -145,6 +148,15 @@ export class JobQueue {
 
   /** Publishes a job event; throttled updates get a trailing publish so the latest state always lands. */
   private publish(job: Job, force = true): void {
+    if (isTerminalJob(job) && !this.settled.has(job.id)) {
+      this.settled.add(job.id);
+      if (this.settled.size > 10_000) this.settled.delete(this.settled.values().next().value!);
+      try {
+        this.onJobSettled?.(structuredClone(job));
+      } catch (err) {
+        this.deps.log.warn({ err, jobId: job.id }, 'job settle hook failed');
+      }
+    }
     const now = Date.now();
     const elapsed = now - (this.lastPublish.get(job.id) ?? 0);
     if (!force && elapsed < 250) {

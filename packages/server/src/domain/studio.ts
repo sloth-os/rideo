@@ -53,6 +53,7 @@ import { Staging } from '../media/staging';
 import { MediaStore } from '../media/store';
 import { Metrics } from '../metrics';
 import { C2paService } from '../provenance/c2pa';
+import { PushService } from '../push/service';
 import type { StorageBackend } from '../storage/backend';
 import { Layout } from '../storage/layout';
 import { VERSION } from '../version';
@@ -64,7 +65,9 @@ import { EditService } from './edit';
 import { EditorService } from './editor';
 import { ElementService } from './elements';
 import { HistoryService } from './history';
+import { InboxService } from './inbox';
 import { InterchangeService } from './interchange';
+import { jobNotice, jobRecipient } from './job-notices';
 import { LocalizationService } from './localization';
 import { PerformanceService } from './performance';
 import { ProjectService } from './projects';
@@ -96,6 +99,8 @@ export interface Studio {
   brand: BrandService;
   search: SearchService;
   performance: PerformanceService;
+  inbox: InboxService;
+  push: PushService;
   editor: EditorService;
   history: HistoryService;
   ui: UiService;
@@ -191,6 +196,24 @@ export function createStudio(
     log: log.child({ component: 'accounts' }),
   });
   const notifications = new NotificationService(join(config.dataDir, 'notifications'), hub);
+  // Every notification reaches the person's devices too (docs/design/pwa.md#notifications-on-the-phone-web-push)
+  const push = new PushService({
+    dataDir: config.dataDir,
+    vapid: config.push.vapid,
+    allowHttp: config.push.allowHttp,
+    metrics,
+    log: log.child({ component: 'push' }),
+  });
+  notifications.onNotify = (userId, n) =>
+    void push
+      .send(userId, {
+        title: n.title,
+        body: n.body,
+        link: n.link,
+        tag: n.kind === 'job' ? `job:${n.projectId}` : n.id,
+        urgency: n.kind === 'gate' || n.kind === 'decision' ? 'high' : 'normal',
+      })
+      .catch((err) => log.warn({ err, userId }, 'push failed'));
   const deps: Deps = {
     accounts,
     notifications,
@@ -235,11 +258,35 @@ export function createStudio(
     recipes: new RecipeService(deps),
     search: new SearchService(deps),
     performance: new PerformanceService(deps),
+    inbox: new InboxService(deps),
+    push,
     brand: new BrandService(deps),
     editor: new EditorService(deps),
   } satisfies Record<string, unknown>;
   // Editor jobs: failures and cancellations are recorded on their documents; a closed tab releases its jobs.
   jobs.onEditorJobEnded = (job) => services.editor.ended(job);
+  // Long work that ends tells the person it was for (docs/design/pwa.md#notifications-on-the-phone-web-push)
+  jobs.onJobSettled = (job) => {
+    const notice = jobNotice(job);
+    if (!notice) return;
+    const userId =
+      jobRecipient(job) ?? (accounts.mode === 'oidc' ? null : accounts.studioPrincipal().user.id);
+    if (!userId) return;
+    void projectsRegistry
+      .docs(job.projectId)
+      .then((docs) => docs.project.title)
+      .catch(() => '')
+      .then((title) =>
+        notifications.notify([userId], {
+          kind: 'job',
+          projectId: job.projectId,
+          title: notice.title,
+          body: [title, notice.detail].filter(Boolean).join(' · ').slice(0, 1000),
+          link: notice.link,
+        }),
+      )
+      .catch((err) => log.warn({ err, jobId: job.id, projectId: job.projectId }, 'job notification failed'));
+  };
   // New takes, uploads and references reach the search index of projects that use it (docs/design/search.md).
   projectsRegistry.onCommit = (projectId, docs) => services.search.committed(projectId, docs);
   hub.onSessionClosed((sessionId) => void jobs.releaseSession(sessionId));
@@ -401,6 +448,7 @@ export function createStudio(
       await c2pa.init();
       await accounts.init();
       await notifications.init();
+      await push.init();
       let recovered = 0;
       for (const id of await projectsRegistry.listIds()) {
         try {

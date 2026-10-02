@@ -7,6 +7,7 @@ import { BrandKitsPage } from './features/account/BrandKitsPage';
 import { LoginPage } from './features/account/LoginPage';
 import { TokensPage } from './features/account/TokensPage';
 import { Dashboard } from './features/dashboard/Dashboard';
+import { InboxPage } from './features/inbox/InboxPage';
 import { GuestReviewPage } from './features/review/GuestReviewPage';
 import { VerifyPage } from './features/verify/VerifyPage';
 import { Workspace } from './features/workspace/Workspace';
@@ -80,6 +81,14 @@ export function App() {
           element={
             <Signed>
               <BrandKitsPage />
+            </Signed>
+          }
+        />
+        <Route
+          path="/inbox"
+          element={
+            <Signed>
+              <InboxPage />
             </Signed>
           }
         />

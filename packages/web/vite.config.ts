@@ -28,5 +28,13 @@ export default defineConfig({
     // The ffmpeg cores load their files by URL from our origin: the multi-threaded core's 2 KB pthread worker must
     // not become a data: URL (docs/design/engine-performance.md)
     assetsInlineLimit: (file: string) => (file.includes('@ffmpeg') ? false : undefined),
+    // The service worker is its own entry, at the root so its scope is the whole app (docs/design/pwa.md)
+    rolldownOptions: {
+      input: { index: 'index.html', sw: 'src/pwa/sw.ts' },
+      output: {
+        entryFileNames: (chunk: { name: string }) =>
+          chunk.name === 'sw' ? 'sw.js' : 'assets/[name]-[hash].js',
+      },
+    },
   },
 });

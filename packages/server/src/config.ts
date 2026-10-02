@@ -80,6 +80,12 @@ export const EnvSchema = z.object({
   RIDEO_VISION_MODEL: str(),
   RIDEO_STT_PROXY_DOMAIN: str(),
   RIDEO_STT_MODEL: str('whisper-1'),
+  /** Web Push (docs/design/pwa.md#notifications-on-the-phone-web-push): VAPID keys, made once when unset. */
+  RIDEO_VAPID_PUBLIC_KEY: str(),
+  RIDEO_VAPID_PRIVATE_KEY: str(),
+  RIDEO_VAPID_SUBJECT: str('mailto:rideo@localhost'),
+  /** Plain-HTTP push endpoints (tests only; push services are HTTPS). */
+  RIDEO_PUSH_ALLOW_HTTP: z.enum(['true', 'false']).optional().default('false'),
   /** Cross-origin isolation of the studio (docs/design/engine-performance.md): threads for ffmpeg.wasm. */
   RIDEO_CROSS_ORIGIN_ISOLATION: z
     .enum(['require-corp', 'credentialless', 'off'])
@@ -174,6 +180,8 @@ export interface Config {
   dataDir: string;
   cacheMaxBytes: number;
   webDist?: string;
+  /** Web Push to people's devices (docs/design/pwa.md). */
+  push: { vapid: { publicKey?: string; privateKey?: string; subject: string }; allowHttp: boolean };
   /** COEP of the studio's files (docs/design/engine-performance.md); `off` sends no isolation headers. */
   crossOriginIsolation: 'require-corp' | 'credentialless' | 'off';
   logLevel: string;
@@ -288,6 +296,14 @@ export function loadConfig(
     cacheMaxBytes: e.RIDEO_CACHE_MAX_BYTES,
     webDist: e.RIDEO_WEB_DIST,
     crossOriginIsolation: e.RIDEO_CROSS_ORIGIN_ISOLATION,
+    push: {
+      vapid: {
+        publicKey: e.RIDEO_VAPID_PUBLIC_KEY,
+        privateKey: e.RIDEO_VAPID_PRIVATE_KEY,
+        subject: e.RIDEO_VAPID_SUBJECT!,
+      },
+      allowHttp: e.RIDEO_PUSH_ALLOW_HTTP === 'true',
+    },
     logLevel: e.RIDEO_LOG_LEVEL!,
     production: e.NODE_ENV === 'production',
     webdav: {

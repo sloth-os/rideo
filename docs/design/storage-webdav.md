@@ -128,6 +128,9 @@ The server's ffmpeg (generation and watermarking) needs local files. `MediaStore
 `${RIDEO_DATA_DIR}/cache/media/<hash>.<ext>`, verifies the hash, and serves it from there. The cache is an
 LRU bounded by `RIDEO_CACHE_MAX_BYTES` (default 5 GiB). It is only a cache: deleting it loses nothing.
 
+Web Push keys and devices ([installable app](pwa.md)) are kept in `${RIDEO_DATA_DIR}/push/` (`vapid.json`, and
+`<userId>.json` with each person's subscriptions).
+
 The [search](search.md) index of a project is derived data too: `${RIDEO_DATA_DIR}/search/<projectId>.json`, rebuilt
 by the next index run when lost (at the cost of captioning the frames again).
 

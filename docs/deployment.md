@@ -43,6 +43,8 @@ editor-job staging area and, without a configured certificate, the development C
 | `RIDEO_DATA_DIR` | `./data` | embedded WebDAV root and caches |
 | `RIDEO_CACHE_MAX_BYTES` | `5368709120` | local media cache cap |
 | `RIDEO_WEB_DIST` | `packages/web/dist` | built UI served at `/` |
+| `RIDEO_VAPID_PUBLIC_KEY` / `RIDEO_VAPID_PRIVATE_KEY` | – (made once, `<dataDir>/push/vapid.json`) | the Web Push key pair (P-256, base64url) of [the installable app](design/pwa.md); set both to keep it across data dirs |
+| `RIDEO_VAPID_SUBJECT` | `mailto:rideo@localhost` | the contact push services see (`mailto:` or `https:`) |
 | `RIDEO_CROSS_ORIGIN_ISOLATION` | `require-corp` | the studio's `Cross-Origin-Embedder-Policy` (with `Cross-Origin-Opener-Policy: same-origin`): cross-origin isolation, so ffmpeg.wasm runs multi-threaded ([engine performance](design/engine-performance.md)); `credentialless`, or `off` to send neither |
 | `RIDEO_LOG_LEVEL` | `info` | pino level |
 

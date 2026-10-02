@@ -152,6 +152,18 @@ documents, so they are also in `state`, history and live updates.
 | GET | `/api/notifications` | `?limit` | `{notifications, unread}` of the caller, newest first |
 | POST | `/api/notifications/read` | `{ids?}` | `{unread}`; all when `ids` is left out |
 
+## Inbox and Web Push
+
+[The installable app](../design/pwa.md): what waits for the caller across projects, and notifications on their devices.
+
+| Method | Path | Body / query | Result |
+|---|---|---|---|
+| GET | `/api/inbox` | – | `{approvals[{project, stage, gate}], reviews[{project, review}], jobs[{project, job, canCancel}], agents[{project, commit}], waiting}` |
+| GET | `/api/push/key` | – | `{publicKey}`: the VAPID key devices subscribe with |
+| GET | `/api/push/subscriptions` | – | `{endpoints}`: the caller's devices |
+| POST | `/api/push/subscriptions` | `{endpoint, keys: {p256dh, auth}}` | `201`; `422` for an endpoint that is not https |
+| DELETE | `/api/push/subscriptions` | `{endpoint}` | `204` |
+
 An unknown, malformed, wrong, revoked or expired review token is `404 not_found`; a guest comment on anything the
 review does not show is `403 forbidden`.
 

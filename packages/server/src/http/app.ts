@@ -21,6 +21,7 @@ import { VERSION } from '../version';
 import { type AuthedRequest, registerAuthRoutes } from './auth-routes';
 import { registerBrandRoutes } from './brand-routes';
 import { registerPerformanceRoutes } from './performance-routes';
+import { registerPushRoutes } from './push-routes';
 import { registerReviewRoutes } from './review-routes';
 import { registerRoutes } from './routes';
 import { registerSearchRoutes } from './search-routes';
@@ -274,6 +275,7 @@ export async function buildServer(
   registerBrandRoutes(app, studio);
   registerSearchRoutes(app, studio);
   registerPerformanceRoutes(app, studio);
+  registerPushRoutes(app, studio);
   registerMcp(app, studio);
   // Recipes run their steps through the MCP tools (docs/design/agents.md#recipes)
   studio.recipes.setTools(() => toolRegistry(studio));
@@ -296,6 +298,9 @@ export async function buildServer(
       // hashed build assets (including the 31 MB ffmpeg.wasm core) never change
       setHeaders: (res, path) => {
         if (/[\\/]assets[\\/]/.test(path)) res.header('cache-control', 'public, max-age=31536000, immutable');
+        // the app shell's entry points change with every release (docs/design/pwa.md#the-app-shell)
+        if (/(?:^|[\\/])(?:sw\.js|manifest\.webmanifest|index\.html)$/.test(path))
+          res.header('cache-control', 'no-cache');
         if (isolation !== 'off') {
           res.header('cross-origin-opener-policy', 'same-origin');
           res.header('cross-origin-embedder-policy', isolation);

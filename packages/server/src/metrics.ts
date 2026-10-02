@@ -110,6 +110,10 @@ export class Metrics {
   readonly auth = this.add(
     new Counter('rideo_auth_total', 'Sign-ins, token use and denials by event and outcome'),
   );
+  /** Web Push deliveries and subscriptions by outcome (docs/design/pwa.md). */
+  readonly push = this.add(
+    new Counter('rideo_push_total', 'Web Push: devices subscribed and messages sent, gone or failed'),
+  );
   /** Frames of the search index by outcome: captioned, copied from another source, failed (docs/design/search.md). */
   readonly searchFrames = this.add(
     new Counter(

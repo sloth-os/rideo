@@ -21,6 +21,7 @@ import type {
   ElementReferenceView,
   Export,
   ExportQuality,
+  Inbox,
   Job,
   LoudnessTarget,
   Notification,
@@ -594,6 +595,13 @@ export const api = {
   },
   applyBrand: (id: string, kitId: string | null) =>
     request<{ brand: ProjectBrand | null }>('PUT', `${p(id)}/brand`, { kitId }),
+  // The Inbox and notifications on this device (docs/design/pwa.md)
+  /** `fresh` after an action; the header's badge may get a few seconds old Inbox. */
+  inbox: (fresh = false) => request<Inbox>('GET', fresh ? '/inbox?fresh=1' : '/inbox'),
+  pushKey: () => request<{ publicKey: string }>('GET', '/push/key'),
+  pushSubscribe: (subscription: { endpoint: string; keys: { p256dh: string; auth: string } }) =>
+    request<void>('POST', '/push/subscriptions', subscription),
+  pushUnsubscribe: (endpoint: string) => request<void>('DELETE', '/push/subscriptions', { endpoint }),
   // Performance-driven animation (docs/design/performance.md#surfaces)
   performanceModel: (id: string) =>
     request<{ model: string | null; available: boolean }>('GET', `${p(id)}/performance`),

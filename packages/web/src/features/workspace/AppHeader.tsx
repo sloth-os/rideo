@@ -1,9 +1,11 @@
-import { Cpu, KeyRound, Loader2, LogOut, Moon, Palette, ShieldCheck, Sun, Users } from 'lucide-react';
-import { type ReactNode, useState } from 'react';
+import { Cpu, Inbox, KeyRound, Loader2, LogOut, Moon, Palette, ShieldCheck, Sun, Users } from 'lucide-react';
+import { type ReactNode, useEffect, useState } from 'react';
 import { Link } from 'react-router';
 import { cx } from '../../components/ui';
 import { useEngine } from '../../engine/state';
+import { api } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
+import { useNotifications } from '../../store/notifications';
 import { useUi } from '../../store/ui';
 import { NotificationsBell } from '../review/NotificationsBell';
 
@@ -140,10 +142,50 @@ export function UserMenu() {
   );
 }
 
+/** The Inbox (docs/design/pwa.md#the-inbox), with how many approvals and reviews wait. */
+function InboxButton() {
+  const [waiting, setWaiting] = useState(0);
+  const notifications = useNotifications((s) => s.items.length);
+  useEffect(() => {
+    let live = true;
+    const load = () =>
+      api.inbox().then(
+        (i) => live && setWaiting(i.waiting),
+        () => undefined,
+      );
+    void load();
+    const t = setInterval(load, 60_000);
+    return () => {
+      live = false;
+      clearInterval(t);
+    };
+  }, [notifications]);
+  return (
+    <Link
+      to="/inbox"
+      className="relative rounded p-1.5 text-muted hover:text-text"
+      aria-label={waiting ? `Inbox: ${waiting} waiting` : 'Inbox'}
+      title="Inbox"
+      data-testid="inbox-link"
+    >
+      <Inbox className="size-4" />
+      {waiting ? (
+        <span
+          className="absolute -top-0.5 -right-0.5 min-w-4 rounded-full bg-accent px-1 text-center text-[10px] leading-4 font-semibold text-accent-contrast"
+          data-testid="inbox-count"
+        >
+          {waiting}
+        </span>
+      ) : null}
+    </Link>
+  );
+}
+
 export function AppHeader({ children }: { children?: ReactNode }) {
   const { theme, setTheme } = useUi();
   return (
-    <header className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-border bg-bg/95 px-3 backdrop-blur sm:px-4">
+    // The installed app draws under the status bar: the bar grows by its inset (docs/design/pwa.md#the-app-shell)
+    <header className="sticky top-0 z-30 flex h-[calc(3.5rem+env(safe-area-inset-top))] items-center gap-2 border-b border-border bg-bg/95 px-3 pt-[env(safe-area-inset-top)] backdrop-blur sm:gap-3 sm:px-4">
       <Link to="/" className="flex shrink-0 items-center gap-2 font-semibold tracking-tight">
         <img src="/logo.svg" alt="" className="size-7" />
         <span className="hidden sm:inline">Rideo</span>
@@ -162,7 +204,7 @@ export function AppHeader({ children }: { children?: ReactNode }) {
       </Link>
       <Link
         to="/verify"
-        className="rounded p-1.5 text-muted hover:text-text"
+        className="hidden rounded p-1.5 text-muted hover:text-text sm:inline-flex"
         aria-label="Verify watermark"
         title="Verify watermark"
       >
@@ -176,6 +218,7 @@ export function AppHeader({ children }: { children?: ReactNode }) {
       >
         {theme === 'dark' ? <Sun className="size-4" /> : <Moon className="size-4" />}
       </button>
+      <InboxButton />
       <NotificationsBell />
       <UserMenu />
     </header>
