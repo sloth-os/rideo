@@ -68,8 +68,18 @@ export const ProjectSettingsSchema = z.object({
       edit: z.string().min(1).default('auto'),
       /** Upscale and frame interpolation of exports (docs/design/finishing.md); `off` uses ffmpeg. */
       enhance: z.string().min(1).default('auto'),
+      /** The segmentation model of Remove the background (docs/design/editor.md); `off` disables it. */
+      segment: z.string().min(1).default('auto'),
     })
-    .default({ image: 'auto', video: 'auto', music: 'auto', lipSync: 'auto', edit: 'auto', enhance: 'auto' }),
+    .default({
+      image: 'auto',
+      video: 'auto',
+      music: 'auto',
+      lipSync: 'auto',
+      edit: 'auto',
+      enhance: 'auto',
+      segment: 'auto',
+    }),
   consistency: ConsistencySettingsSchema.default({
     threshold: 0.75,
     maxAttempts: 3,

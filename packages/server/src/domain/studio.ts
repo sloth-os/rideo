@@ -26,6 +26,7 @@ import { batchGenerate, clipGenerate, clipPlan } from '../jobs/handlers/clips';
 import type { HandlerDeps } from '../jobs/handlers/common';
 import { exportPrepare } from '../jobs/handlers/finishing';
 import { localizeGenerate } from '../jobs/handlers/localize';
+import { maskGenerate } from '../jobs/handlers/mask';
 import { analysisSuggest, editAuto, exportFinish, timelineAssemble } from '../jobs/handlers/media';
 import { scoreGenerate, sfxGenerate } from '../jobs/handlers/post-audio';
 import { shotGenerate } from '../jobs/handlers/shot';
@@ -237,6 +238,7 @@ export function createStudio(
   reg('take.edit', takeEdit);
   reg('take.extend', takeExtend);
   reg('timeline.extend', timelineExtend);
+  reg('mask.generate', maskGenerate);
   reg('music.generate', musicGenerate);
   reg('score.generate', scoreGenerate);
   reg('sfx.generate', sfxGenerate);

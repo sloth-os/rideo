@@ -110,6 +110,8 @@ export class Metrics {
   readonly auth = this.add(
     new Counter('rideo_auth_total', 'Sign-ins, token use and denials by event and outcome'),
   );
+  /** Mattes of Remove the background (docs/design/editor.md#segmentation-masks-remove-the-background). */
+  readonly masks = this.add(new Counter('rideo_masks_total', 'Segmentation mattes by outcome'));
   /** NLE interchange (docs/design/interchange.md): cuts handed off and taken back. */
   readonly interchange = this.add(
     new Counter('rideo_interchange_total', 'Interchange files exported and imported by format and direction'),

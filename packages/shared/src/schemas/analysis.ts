@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { TranscriptWordSchema } from '../timeline/transcript';
 import { IdSchema, IsoDateSchema, MediaRefSchema, TimeRangeSchema } from './common';
 
 export const TransitionTypeSchema = z.enum(['crossfade', 'wipe', 'dip_to_black']);
@@ -95,7 +96,16 @@ export const AnalysisSchema = z.object({
   silences: z.array(TimeRangeSchema).default([]),
   blackSegments: z.array(TimeRangeSchema).default([]),
   loudness: z.object({ integratedLufs: z.number() }).nullable().default(null),
-  transcript: z.array(TimeRangeSchema.extend({ text: z.string() })).default([]),
+  /** Segments with their words in source seconds (docs/design/editor.md#transcript-editing); `approx`: spread words. */
+  transcript: z
+    .array(
+      TimeRangeSchema.extend({
+        text: z.string(),
+        words: z.array(TranscriptWordSchema).max(5000).optional(),
+        approx: z.boolean().optional(),
+      }),
+    )
+    .default([]),
   summary: z.string().max(8000).default(''),
   suggestions: z.array(EditSuggestionSchema).default([]),
   error: z.string().max(2000).optional(),

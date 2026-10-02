@@ -1,7 +1,8 @@
 import { z } from 'zod';
 import { IdSchema, IsoDateSchema, MediaRefSchema } from './common';
 
-export const ResourceKindSchema = z.enum(['image', 'video', 'audio']);
+/** `lut`: a `.cube` 3D LUT (docs/design/editor.md#luts). */
+export const ResourceKindSchema = z.enum(['image', 'video', 'audio', 'lut']);
 export type ResourceKind = z.infer<typeof ResourceKindSchema>;
 
 /** `extension`: frames generated to extend an item of the cut (docs/design/take-editing.md). */
@@ -37,5 +38,6 @@ export function kindFromMime(mime: string): ResourceKind | null {
   if (mime.startsWith('image/')) return 'image';
   if (mime.startsWith('video/')) return 'video';
   if (mime.startsWith('audio/')) return 'audio';
+  if (mime === 'application/x-cube') return 'lut';
   return null;
 }

@@ -13,7 +13,8 @@ import type {
   TransitionSchema,
   VideoItem,
 } from '../schemas/timeline';
-import { itemDuration, itemEnd, primaryTrack, trackRole } from './ops';
+import { isIdentity, opacityAt, type TransformState, transformAt } from './keyframes';
+import { isOverlayTrack, itemDuration, itemEnd, primaryTrack, sourceAtItemTime, trackRole } from './ops';
 
 type Transition = z.infer<typeof TransitionSchema>;
 
@@ -34,6 +35,10 @@ export interface VideoLayer {
   /** 0..1 brightness multiplier (fades and dip-to-black); 1 = unchanged. */
   dim: number;
   effects?: Effects;
+  /** Position, scale, rotation and opacity at this time, for transformed items and overlays. */
+  transform?: TransformState;
+  /** On an overlay track (composited over the tracks below; docs/design/editor.md#timeline-model). */
+  overlay?: boolean;
 }
 
 export interface ActiveAudio {
@@ -48,10 +53,15 @@ export interface ActiveState {
   text: TextItem[];
 }
 
-function sourceTimeAt(item: VideoItem | AudioItem, time: number): number {
-  const speed = item.kind === 'video' ? item.speed : 1;
-  const st = item.in + (time - item.start) * speed;
+/** Source seconds an item shows at a timeline time (through its speed or ramp). */
+export function sourceTimeAt(item: VideoItem | AudioItem, time: number): number {
+  const st = sourceAtItemTime(item, time - item.start);
   return Math.min(Math.max(st, item.in), Math.max(item.in, item.out - 1e-3));
+}
+
+/** The transform of a primary item at a time, when it has one. */
+function primaryTransform(item: VideoItem, time: number): TransformState | undefined {
+  return isIdentity(item.transform) ? undefined : transformAt(item.transform, time - item.start);
 }
 
 function fadeFactor(item: VideoItem | AudioItem, time: number): number {
@@ -86,6 +96,7 @@ export function activeAt(t: Timeline, time: number): ActiveState {
       opacity: 1,
       dim: fadeFactor(item, time),
       effects: item.effects,
+      transform: primaryTransform(item, time),
     };
     if (inTransition && tr) {
       const prev = items[i - 1]!;
@@ -96,6 +107,7 @@ export function activeAt(t: Timeline, time: number): ActiveState {
         opacity: 1,
         dim: fadeFactor(prev, time),
         effects: prev.effects,
+        transform: primaryTransform(prev, time),
       };
       if (tr.type === 'crossfade') {
         layer.opacity = p;
@@ -113,21 +125,48 @@ export function activeAt(t: Timeline, time: number): ActiveState {
           video.push(layer);
         }
       }
-      if (!prev.muted && prev.volume > 0 && prev.source.media.hasAudio !== false) {
+      if (!prev.muted && !prev.ramp && prev.volume > 0 && prev.source.media.hasAudio !== false) {
         audio.push({
           item: prev,
           sourceTime: sourceTimeAt(prev, time),
           gain: prev.volume * (1 - p) * fadeFactor(prev, time),
         });
       }
-      if (!item.muted && item.volume > 0 && item.source.media.hasAudio !== false) {
+      if (!item.muted && !item.ramp && item.volume > 0 && item.source.media.hasAudio !== false) {
         audio.push({ item, sourceTime: layer.sourceTime, gain: item.volume * p * fadeFactor(item, time) });
       }
     } else {
       video.push(layer);
-      if (!item.muted && item.volume > 0 && item.source.media.hasAudio !== false) {
+      if (!item.muted && !item.ramp && item.volume > 0 && item.source.media.hasAudio !== false) {
         audio.push({ item, sourceTime: layer.sourceTime, gain: item.volume * fadeFactor(item, time) });
       }
+    }
+  }
+
+  // Overlay tracks over the primary one, in track order (docs/design/editor.md#multitrack-transforms-and-keyframes)
+  for (const track of t.tracks) {
+    if (!isOverlayTrack(t, track)) continue;
+    const tv = track.muted ? 0 : (track.volume ?? 1);
+    for (const item of track.items as VideoItem[]) {
+      if (time < item.start || time >= itemEnd(item)) continue;
+      const local = time - item.start;
+      const transform = transformAt(item.transform, local);
+      transform.opacity = opacityAt(item.transform, item, itemDuration(item), local);
+      video.push({
+        item,
+        sourceTime: sourceTimeAt(item, time),
+        opacity: transform.opacity,
+        dim: 1,
+        effects: item.effects,
+        transform,
+        overlay: true,
+      });
+      if (tv > 0 && !item.muted && !item.ramp && item.volume > 0 && item.source.media.hasAudio !== false)
+        audio.push({
+          item,
+          sourceTime: sourceTimeAt(item, time),
+          gain: item.volume * tv * transform.opacity,
+        });
     }
   }
 
@@ -171,11 +210,14 @@ export interface VideoSegment {
   effects?: Effects;
   /** Reframed around these focus points (docs/design/finishing.md). */
   crop: FocusPoint[] | null;
+  /** The item: its transform, ramp, LUT and mask (docs/design/editor.md#multitrack-transforms-and-keyframes). */
+  item: VideoItem;
 }
 
 /** Primary-track segments in order (server render input). */
 export function videoSegments(t: Timeline): VideoSegment[] {
   return (primaryTrack(t).items as VideoItem[]).map((item, i) => ({
+    item,
     itemId: item.id,
     media: item.source.media,
     start: item.start,
@@ -189,6 +231,33 @@ export function videoSegments(t: Timeline): VideoSegment[] {
     effects: item.effects,
     crop: item.crop?.focus ?? null,
   }));
+}
+
+/** Items of the overlay tracks, bottom track first, each in time order. */
+export function overlaySegments(t: Timeline): { trackIndex: number; segments: VideoSegment[] }[] {
+  return t.tracks
+    .filter((tr) => isOverlayTrack(t, tr))
+    .map((tr, k) => ({
+      trackIndex: k,
+      segments: (tr.items as VideoItem[])
+        .slice()
+        .sort((a, b) => a.start - b.start)
+        .map((item) => ({
+          item,
+          itemId: item.id,
+          media: item.source.media,
+          start: item.start,
+          end: itemEnd(item),
+          in: item.in,
+          out: item.out,
+          speed: item.speed,
+          transitionIn: null,
+          fadeIn: item.fadeIn ?? 0,
+          fadeOut: item.fadeOut ?? 0,
+          effects: item.effects,
+          crop: item.crop?.focus ?? null,
+        })),
+    }));
 }
 
 export interface AudioSegment {
@@ -226,7 +295,8 @@ export function audioSegments(t: Timeline): AudioSegment[] {
   const items = primary.items as VideoItem[];
   items.forEach((item, i) => {
     if (item.muted || item.volume <= 0 || item.source.media.hasAudio === false) return;
-    if (isStillMedia(item.source.media)) return;
+    // A ramped item's sound is muted (docs/design/editor.md#speed-ramps).
+    if (isStillMedia(item.source.media) || item.ramp) return;
     const next = items[i + 1];
     const tin = i > 0 && item.transitionIn ? item.transitionIn.duration : 0;
     const tout = next?.transitionIn ? next.transitionIn.duration : 0;
@@ -246,6 +316,30 @@ export function audioSegments(t: Timeline): AudioSegment[] {
       speech: item.speech ?? null,
     });
   });
+  // The sound of overlay items, on their track's stem (effects unless set)
+  for (const track of t.tracks as Track[]) {
+    if (!isOverlayTrack(t, track) || track.muted) continue;
+    const tv = track.volume ?? 1;
+    for (const item of track.items as VideoItem[]) {
+      if (item.muted || item.ramp || item.volume <= 0 || item.source.media.hasAudio === false) continue;
+      if (isStillMedia(item.source.media)) continue;
+      out.push({
+        itemId: item.id,
+        media: item.source.media,
+        start: item.start,
+        end: itemEnd(item),
+        in: item.in,
+        out: item.out,
+        speed: item.speed,
+        volume: item.volume * tv,
+        fadeIn: item.fadeIn ?? 0,
+        fadeOut: item.fadeOut ?? 0,
+        role: track.role ?? 'effects',
+        primary: false,
+        speech: item.speech ?? null,
+      });
+    }
+  }
   for (const track of t.tracks as Track[]) {
     if (track.kind !== 'audio' || track.muted) continue;
     const tv = track.volume ?? 1;
@@ -280,7 +374,10 @@ export function referencedMedia(t: Timeline): MediaRef[] {
   const seen = new Map<string, MediaRef>();
   for (const track of t.tracks) {
     for (const item of track.items) {
-      if (item.kind !== 'text') seen.set(item.source.media.hash, item.source.media);
+      if (item.kind === 'text') continue;
+      seen.set(item.source.media.hash, item.source.media);
+      if (item.kind === 'video' && item.lut) seen.set(item.lut.media.hash, item.lut.media);
+      if (item.kind === 'video' && item.mask) seen.set(item.mask.media.hash, item.mask.media);
     }
   }
   return [...seen.values()];

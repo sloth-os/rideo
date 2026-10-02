@@ -67,7 +67,11 @@ RIDEO_TEST_WEBDAV_URL=http://rideo:rideo@localhost:8080/ npx vitest run --projec
   outcomes from each person's latest decision, what a review shows, share-link tokens, drawings, route
   permissions); interchange (timecode, media locations, the picture on frames with the transition handles, OTIO
   tracks, clips, transitions, time warps, notes and titles, OTIO round trip to the same cut, a foreign OTIO with
-  handles, gaps, extra tracks, unknown media and speed limits, FCPXML, XML and EDL output).
+  handles, gaps, extra tracks, unknown media and speed limits, FCPXML, XML and EDL output); editor depth (keyframe
+  interpolation and ffmpeg expressions, overlay opacity with fades, ramp time maps against the exact integral,
+  transcript words with punctuation and standalone fillers, `.cube` parsing and the trilinear lookup, overlay tracks,
+  ramps, splits and `remove_ranges` in the reducer, overlay layers and sound in the queries, the chunk graph with a
+  LUT, an inverted matte, keyframed position and fades as `sendcmd` commands, and ramps).
 - **server**: repository commit, log, diff, restore, branches, tags, coalescing and GC on `MemoryBackend`;
   job queue (lanes, priorities, dedupe, retry classification, cancel propagation, restart recovery; the
   `client` lane: claim order, leases, heartbeats, expiry and session release, cancel, staged files);
@@ -84,7 +88,9 @@ RIDEO_TEST_WEBDAV_URL=http://rideo:rideo@localhost:8080/ npx vitest run --projec
   read again from the JWKS; sessions by hash across a restart and their expiry; the audit log's filters; cookies
   and safe return paths); notifications (per person, newest first, pushed to that person's tabs only, read marks
   across a restart, the last 500); interchange (the default WebDAV root, embedded or external; review notes on
-  takes as markers); the web's sign-in page; FCPXML and XML parsed as XML with awkward titles and labels.
+  takes as markers); the web's sign-in page; FCPXML and XML parsed as XML with awkward titles and labels; the
+  inspector's transform keyframes and ramp presets, the transcript panel's filler and selection cuts, waveform
+  drawing, and the compositor's overlay placement, opacity, matte alpha and LUT (a recording canvas).
 - **web**: live-event store reducer and optimistic timeline edits (apply, confirm, roll back), live client
   (sequence dedupe, UI-command acks, restart resync), UI command dispatch, WebCodecs codec/container
   selection, render engine choice, the editor-job worker against a fake API (claims only with a project and a
@@ -166,6 +172,12 @@ RIDEO_TEST_WEBDAV_URL=http://rideo:rideo@localhost:8080/ npx vitest run --projec
   admins and the studio token; agent tokens capped by role and projects over REST and MCP (commits by the agent on
   behalf of its owner, MCP sessions bound to their caller, revocation); people disabled by an admin; the audit log
   for admins and directors; live subscriptions refused to people without access.
+- **Editor depth** (`editor-depth.test.ts`): `.cube` LUT uploads (and a broken one refused); a cut with a LUT, a
+  ramped item and a keyframed picture-in-picture on an overlay track rendered by the reference worker and checked
+  pixel by pixel (the LUT's colour, the overlay where its keyframes put it, the ramp's source frames, the length);
+  *Remove the background* on an overlay with the mock's segmentation model (the matte stored, the tracks below around
+  the subject in the render), `segmentation_unavailable`, metrics; word timings with punctuation from speech-to-text
+  and the filler words cut with `remove_ranges`; MCP `timeline_apply` and `timeline_remove_background`.
 - **Interchange** (`interchange.test.ts`): an edit project's cut handed off in the four formats (the OTIO's clip URL
   fetched from the embedded WebDAV server is the uploaded file, byte for byte; mounted paths as `file://` URLs; the
   EDL's events, dissolve and speed line); an empty animatic refused; a re-edited OTIO (clips swapped and trimmed, a
@@ -207,7 +219,7 @@ RIDEO_TEST_WEBDAV_URL=http://rideo:rideo@localhost:8080/ npx vitest run --projec
 
 Projects: `desktop` (1440×900) runs every spec except `responsive`; `mobile` (412×915, touch) runs
 `responsive`, `mcp-sync`, `provenance`, `elements`, `dialogue`, `storyboard`, `directing`, `take-editing`,
-`multi-shot`, `post-audio`, `localization`, `finishing`, `accounts`, `review` and `interchange`. The
+`multi-shot`, `post-audio`, `localization`, `finishing`, `accounts`, `review`, `interchange` and `editor-depth`. The
 web server stops with SIGTERM so the stack removes its data; stale stack directories older than an hour are removed
 when a new stack starts. Specs:
 
@@ -219,6 +231,7 @@ when a new stack starts. Specs:
 | `history.spec.ts` | edit → history → diff → restore → UI updates |
 | `take-editing.spec.ts` | (desktop and mobile) relight a take and extend another by 2 s from the take tiles (lineage badges); generative extend of the first item in the editor (the lanes on desktop, the item list on phones) |
 | `accounts.spec.ts` | (desktop and mobile, on the stack's second server with accounts and a mock identity provider) sign-in; a director adds a reviewer by email in the Members card; an agent token created, used and revoked; people and the audit log; the reviewer's view (banner, no settings); sign-out |
+| `editor-depth.spec.ts` | (desktop and mobile) footage added as an overlay at the playhead, the picture-in-picture preset, *Remove the background* (the mock's segmentation model); an ease-in ramp and a `.cube` LUT uploaded from the inspector on the primary item; filmstrips and waveforms in the lanes (desktop); the layered cut exported with ffmpeg.wasm; the analysis's transcript and *Remove filler words* splitting the picture track |
 | `interchange.spec.ts` | (desktop and mobile) the Exports view's hand-off card with a mounted media location: the OTIO download points into it (remembered after a reload), FCPXML, XML and EDL download; a re-edited OTIO (trimmed, plus a clip from elsewhere) imported: one clip placed, the stranger listed |
 | `review.spec.ts` | (desktop and mobile) a note at 0:01.0 with a box drawn on the take, a reply, resolved (the tile's open count); a review of the pilot with a share link deciding `pilot_approved`; the client, in a separate browser without an account, names themselves, draws an arrow, comments and asks for changes (no sideways scroll); the studio's bell leads to the note live; after the pilot clip is approved the client's approval approves the gate; the revoked link opens nothing |
 | `finishing.spec.ts` | (desktop and mobile) a vertical delivery from the export dialog: focus tracks prepared, reframed, cut down, upscaled by the enhancement model, three thumbnails on the card; a ProRes master listed with its download and stems |

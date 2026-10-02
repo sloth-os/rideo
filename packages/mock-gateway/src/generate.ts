@@ -370,6 +370,8 @@ export async function runVideo(body: Record<string, any>, ctx: GenerateContext):
   if (sequence) return multiShot(parts, params, ctx, name, prompt, width, height);
   // Enhancement (docs/design/finishing.md#mock-gateway): the reference video at the asked size and rate.
   if (body.model === 'mock-enhance-v1') return enhance(parts, params, ctx, name);
+  // Segmentation (docs/design/editor.md#segmentation-masks-remove-the-background): a matte of the reference video.
+  if (body.model === 'mock-segment-v1') return segment(parts, ctx, name);
   // Audio-driven lip sync: a reference video and audio without a first frame (a motion reference has a prompt
   // and a first frame).
   if (isLipSyncRequest(parts)) return lipSync(parts, ctx, name);
@@ -459,6 +461,35 @@ async function enhance(
     'ultrafast',
     '-crf',
     '18',
+    join(ctx.dir, `${name}.mp4`),
+  ]);
+  return {
+    outputs: [{ uri: ctx.fileUrl(`${name}.mp4`), mime_type: 'video/mp4' }],
+    usage: { output_count: 1, duration_seconds: await videoDuration(join(ctx.dir, `${name}.mp4`)) },
+  };
+}
+
+/**
+ * The mock segmentation model: a matte the size, length and frame rate of the reference video, white in an ellipse
+ * around the middle (where the mock's subjects stand), black elsewhere.
+ */
+async function segment(parts: Part[], ctx: GenerateContext, name: string): Promise<RunResult> {
+  const ref = parts.find((p) => p.type === 'video' && p.role === 'reference_video');
+  if (!ref?.uri) throw new Error('segmentation needs a reference_video');
+  const src = join(ctx.dir, `${name}-src.mp4`);
+  await writeFile(src, await loadUri(ref.uri));
+  await runFfmpeg([
+    '-i',
+    src,
+    '-vf',
+    "format=gray,geq=lum='if(lt(hypot((X-W/2)/(W*0.25),(Y-H*0.55)/(H*0.4)),1),255,0)',format=yuv420p",
+    '-an',
+    '-c:v',
+    'libx264',
+    '-preset',
+    'ultrafast',
+    '-crf',
+    '12',
     join(ctx.dir, `${name}.mp4`),
   ]);
   return {

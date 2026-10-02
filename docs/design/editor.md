@@ -6,7 +6,7 @@
 type Timeline = {
   version: 1;
   fps: number; width: number; height: number;
-  tracks: Track[];            // exactly one video track (role "primary"); any number of audio and text tracks
+  tracks: Track[];            // the first video track is the primary (magnetic) one; more video tracks are overlays
 };
 type Track = { id: string; kind: 'video' | 'audio' | 'text'; name: string; muted?: boolean; volume?: number; items: Item[] };
 
@@ -25,7 +25,16 @@ type VideoItem = {
   effects?: { brightness?: number; contrast?: number; saturation?: number };
   label?: string;
   speech?: [number, number][];                 // speech spans in source seconds (ducking keys)
+  transform?: { keyframes: Keyframe[] };       // position, scale, rotation, opacity over the item's time
+  ramp?: { points: { at: number; speed: number }[] };  // a speed ramp over source seconds (replaces `speed`)
+  lut?: { media: MediaRef; resourceId?: string; intensity: number };   // a .cube 3D LUT, 0–1 mixed in
+  mask?: { media: MediaRef; offset: number; subject: string; invert: boolean; model: string | null };
 };
+type Keyframe = { t: number;                   // seconds from the item's start
+                  x?: number; y?: number;      // centre of the picture, fractions of the frame (0.5, 0.5)
+                  scale?: number;              // 1 = the picture fitted to the frame
+                  rotation?: number;           // degrees, clockwise
+                  opacity?: number };          // 0–1
 type AudioItem = { id: string; kind: 'audio'; source: Source; start: number; in: number; out: number;
                    volume: number; fadeIn?: number; fadeOut?: number; speech?: [number, number][] };
 // VideoItem.crop?: { focus: { t, x, y }[] }   reframed around the subject (docs/design/finishing.md)
@@ -38,13 +47,17 @@ type TextItem  = { id: string; kind: 'text'; start: number; duration: number; te
                    words?: { from: number; to: number; start: number; end: number }[] };  // timed caption words
 ```
 
-- The **primary video track is magnetic**. Items are ordered and contiguous, and `start` is recomputed by
-  the reducer (`start[i+1] = end[i] − transitionIn[i+1].duration`). Reordering, trimming or deleting ripples
-  automatically.
-- Item length on the timeline = `(out − in) / speed`.
+- The **primary video track** (the first video track) **is magnetic**. Items are ordered and contiguous, and
+  `start` is recomputed by the reducer (`start[i+1] = end[i] − transitionIn[i+1].duration`). Reordering,
+  trimming or deleting ripples automatically.
+- **Overlay tracks** (more video tracks) hold B-roll, picture-in-picture and overlays. Their items are
+  positioned freely, have no transitions, and are composited over the primary track in track order (the last
+  track on top). On an overlay, `fadeIn`/`fadeOut` fade the item's opacity instead of fading to black.
+- Item length on the timeline = `(out − in) / speed`, or the integral of `1 / speed` over the source range for a
+  ramped item.
 - Audio and text items are positioned freely.
-- One video track keeps the browser preview and the server render WYSIWYG-identical (see the non-goals in
-  the architecture doc).
+- The WebCodecs compositor and the ffmpeg filtergraph read the same shared queries, so the preview and both
+  render engines draw the same frames ([multitrack](#multitrack-transforms-and-keyframes)).
 
 ## Operations
 
@@ -71,6 +84,12 @@ committed.
 | `set_caption_style` | `style: {animate?, position?, size?, color?}` | every caption of the cut ([localization](localization.md#captions-and-word-timing)); `update_text` with new text drops a caption's words |
 | `replace_source` | `itemId`, `source` | swap to a regenerated take, keeping in/out when possible |
 | `set_output` | `fps?`, `width?`, `height?` | |
+| `add_track` with `kind: "video"` | `name?` | a new overlay track above the others |
+| `set_transform` | `itemId`, `transform \| null` | keyframes sorted by time, at most 100 |
+| `set_ramp` | `itemId`, `ramp \| null` | 2–50 points inside `[in, out]`, speeds 0.1–8 |
+| `set_lut` | `itemId`, `lut \| null` | a LUT resource ([color](#luts)) |
+| `set_mask` | `itemId`, `mask \| null` | the matte of [Remove the background](#segmentation-masks-remove-the-background) |
+| `remove_ranges` | `media` (a media path), `ranges[[a, b]]` (source seconds) | cuts those parts out of every primary item playing that media and ripples ([transcript editing](#transcript-editing)) |
 
 A committed `timeline.json` change carries `meta.ops` (the op list), so history shows what was done. The
 editor's undo restores `timeline.json` from the previous timeline commit
@@ -84,9 +103,11 @@ round trip.
 
 ### Queries (shared, used by preview and render)
 
-`timelineDuration(t)` and `activeAt(t, time)` return the video layers at a time (one, or two during a
-transition, with `alpha`/`wipe` progress), the audio segments, and the text overlays. The WebCodecs
-compositor and the ffmpeg render planner both consume this output, so they agree on every frame.
+`timelineDuration(t)` and `activeAt(t, time)` return the video layers at a time (the primary track's one, or two
+during a transition, with `alpha`/`wipe` progress, then the overlay items in track order, each with its transform
+evaluated at that time), the audio segments, and the text overlays. `sourceTimeAt(item, time)` maps timeline
+time to source time through the item's speed or ramp. The WebCodecs compositor and the ffmpeg render planner
+both consume this output, so they agree on every frame.
 
 ### Generators
 
@@ -97,6 +118,79 @@ compositor and the ffmpeg render planner both consume this output, so they agree
   `[0, duration]` minus `cut` ranges, minus the tightened part of silences (or only `highlight` segments
   when present). Speed ranges split segments. Transitions, titles, captions, music and fades map to their
   timeline fields. Suggestion times are in source seconds and are mapped to output time.
+
+## Multitrack, transforms and keyframes
+
+A video item's **transform** places its picture: the centre `(x, y)` in frame fractions, `scale` relative to the
+picture fitted into the frame, `rotation` in degrees and `opacity`. Keyframes are in item seconds; each property
+is interpolated linearly between the keyframes that set it and held before the first and after the last
+(defaults: centred, 1, 0°, 1). One keyframe is a static transform (a picture-in-picture in a corner); two or more
+animate it (a push-in, a slide, a fade). The primary track's items can be transformed too (over black).
+
+Typical uses, one click each in the inspector: **picture-in-picture** (scale 0.35, top right), **B-roll** (an
+overlay item at full size over the interview), **push-in** (scale 1 → 1.15 over the item), **fade** (opacity
+0 → 1 over 0.5 s).
+
+| | ffmpeg filtergraph (per chunk) | WebCodecs compositor and preview |
+|---|---|---|
+| overlay item | its own input chain → `format=rgba` → transform → `overlay=x:y:eval=frame:enable='between(t,a,b)':eof_action=pass` over the composite of the tracks below | `drawImage` in track order |
+| position | `x='W*X(t)-w/2'`, `y='H*Y(t)-h/2'` (piecewise-linear expressions of chunk time) | `translate` |
+| scale | `scale=w='trunc(FW*S(t)/2)*2':h=-2:eval=frame` (FW = the fitted width) | the drawn size |
+| rotation | `rotate=a='R(t)*PI/180':c=none:ow='hypot(iw,ih)':oh=ow` | `rotate` |
+| opacity | constant: `colorchannelmixer=aa=O`; keyframed or faded: `sendcmd` (a command per frame while it changes) on a named `colorchannelmixer` | `globalAlpha` |
+
+Expressions are written in chunk time, so an overlay that spans a chunk boundary continues exactly. Neither
+engine needs anything the other lacks: both work at the output size, in the same order, from the same
+interpolation (`transformAt(item, localTime)` in `shared/src/timeline/keyframes.ts`).
+
+### Speed ramps
+
+A **ramp** gives the speed at points of the source (`at` in source seconds, 0.1–8×, linear in between, held
+outside). The item's timeline length is the integral of `1 / speed`; `sourceTimeAt` integrates it in steps of
+1/240 s into a piecewise-linear time map. The ffmpeg chain replaces `setpts=(PTS-STARTPTS)/SPEED` with
+`setpts='MAP(T-STARTT)/TB'`, MAP being that time map inverted (source → output) as nested `if` expressions, and
+`fps=FPS` resamples. A ramped item's own sound is muted (the soundtrack plays sound at constant speeds only);
+presets: *ease in* (0.5× → 2×), *ease out*, *speed up the middle* (1× → 3× → 1×).
+
+### LUTs
+
+Color looks are 3D LUTs in the Resolve/Adobe **`.cube`** format, uploaded as resources of kind `lut` (validated:
+`LUT_3D_SIZE` 2–65, `DOMAIN_MIN`/`DOMAIN_MAX`, size³ RGB rows; `parseCube` in `shared/src/media/cube.ts`). An item's
+`lut` applies before its color effects: ffmpeg `lut3d=file=…:interp=trilinear` (mixed with the original through
+`blend=all_mode=normal:all_opacity=I` when `intensity < 1`); the compositor applies the same trilinear lookup to the
+frame's pixels.
+
+### Segmentation masks (Remove the background)
+
+*Remove the background* on a video item asks a **segmentation model** of the gateway (`supports_segmentation`;
+`settings.models.segment`, `auto` by default) for a **matte** of the subject (a prompt such as "the person"): a
+grayscale video of the same frames, white where the subject is. The server cuts the item's source range (with a
+second of margin) for the request, stores the matte as `media/masks/<name>-<hash12>.mp4`, and sets the item's
+`mask` (`offset` = where the matte starts in source time) with one `set_mask` commit; the `mask.generate` job
+reports progress like any generation. Rendering uses the matte as the item's alpha: ffmpeg seeks the matte with
+the same `trim`/`setpts`/fit as the picture, `format=gray` (`negate` when `invert`), `alphamerge`; the compositor
+copies the matte's luma into the frame's alpha. An overlay item with a mask shows the tracks below around the
+subject; a primary item shows black. Outside the matte's range the item is unmasked. Without a capable model the
+request fails with `segmentation_unavailable` (422).
+
+## Transcript editing
+
+Footage projects edit by text. The analysis transcript carries **word timings** (`transcript[].words[{text,
+start, end}]` in source seconds: the speech-to-text provider's words when it returns them, otherwise spread over
+the segment by length, flagged `approx`). The editor's **Transcript** panel shows the words of the cut's sources,
+struck through where the cut does not play them; selecting words and pressing *Delete* (or *Cut*) sends one
+`remove_ranges` op with their source ranges, which splits and ripples the primary track.
+
+*Remove filler words* finds `um`, `uh`, `erm`, `er`, `ah`, `hmm`, `mm`, and the phrases `you know` and `I mean` when
+they stand alone between pauses or punctuation (`fillerWords` in `shared/src/timeline/transcript.ts`), lists
+them with a count, and removes them all in one op (ranges padded by 30 ms and merged when closer than 150 ms).
+
+## Waveforms and filmstrips
+
+Timeline items show their sound as a **waveform** (peaks per 10 ms, decoded with WebCodecs `AudioBufferSink` from
+the original or the local proxy) and their picture as a **filmstrip** (thumbnails every few seconds at the
+lane's height, `CanvasSink`); both are computed in the tab, kept per media hash for the session, and drawn for the
+visible part of the lane.
 
 ## Where editing runs
 
@@ -235,7 +329,9 @@ focus as a piecewise-linear expression of the source time, then `scale=W:H`; the
 same window (`cropWindow`).
 
 Segments are chained left to right: `xfade` (`fade`, `wipeleft`, `fadeblack`) at `offset = accumulated − d`
-for transitions, `concat` for cuts. Every stream is on `AV_TIME_BASE` (`settb=AVTB`) because `concat`
+for transitions, `concat` for cuts. A transformed, masked or LUT-graded item adds its steps to its chain (a
+transformed or masked primary item is overlaid on black at the output size); overlay tracks are then composited on
+the result ([multitrack](#multitrack-transforms-and-keyframes)); text comes last, on top. Every stream is on `AV_TIME_BASE` (`settb=AVTB`) because `concat`
 outputs that timebase and `xfade` rejects inputs whose timebases differ. Text items overlapping the chunk
 become `drawtext` (bundled DejaVu Sans, `fonts/DejaVuSans.ttf`) with `enable='between(t,a,b)'` in chunk
 time; an animated caption draws one `drawtext` per word frame (`textFrames`), and `activeAt` gives the compositor and
@@ -247,7 +343,8 @@ so every chunk has exactly `round(LEN·FPS)` frames and the chunks join without 
 ### Soundtrack
 
 The audio is planned for the whole film (audio is cheap, and one continuous encode avoids AAC priming gaps
-at chunk joins): item audio (when `hasAudio`, not muted) and audio tracks,
+at chunk joins): item audio (when `hasAudio`, not muted, not ramped; overlay items' sound on their track's stem,
+effects by default) and audio tracks,
 `atrim → asetpts → atempo chain → volume → afade → adelay`, mixed per stem (dialogue, music, effects) with
 `amix=normalize=0`, `apad` and trimmed to the length; the music bus is ducked under speech; the buses are summed
 ([post audio](post-audio.md#stems)). ffmpeg.wasm renders it losslessly (`soundtrack.flac`) and, when the export
@@ -316,10 +413,15 @@ before it is closed. Without an open tab, editor jobs wait in `queued`; MCP resu
 
 - Preview canvas with transport (play/pause, frame step, timecode) and a WebCodecs capability badge.
 - Timeline with zoom, a ruler (click to seek), a playhead, and labelled item blocks (a ⤫ marks a
-  transition). Drag to reorder the primary track, drag item edges to trim, `S` to split at the playhead,
-  `Delete` to remove, arrow keys to step frames, `Space` to play; video, audio and text lanes. Edits apply
-  locally at once (optimistic) and are confirmed by the server.
-- Inspector for the selected item (in/out, speed, volume, fades, effects, transition, text and timing).
+  transition) with waveforms and filmstrips. Drag to reorder the primary track, drag item edges to trim, `S` to
+  split at the playhead, `Delete` to remove, arrow keys to step frames, `Space` to play; overlay video lanes above
+  the primary one (*Add video track*), audio and text lanes. Edits apply locally at once (optimistic) and are
+  confirmed by the server. Footage and takes go onto an overlay lane at the playhead with *Add as overlay*.
+- Inspector for the selected item (in/out, speed, volume, fades, effects, transition, text and timing), with
+  **Transform** (x, y, scale, rotation, opacity at the playhead: *Set keyframe*, *Remove keyframe*, the keyframe
+  list, presets), **Speed ramp** (presets, off), **LUT** (a LUT resource, intensity) and **Remove the background**
+  (subject, invert, remove).
+- **Transcript** panel in footage projects ([transcript editing](#transcript-editing)).
 - Undo restores `timeline.json` from the previous timeline commit (a new commit; history is never rewritten).
 - Mix card ([post audio](post-audio.md#surfaces)): ducking on/off and depth, every audio track's stem,
   *Score the cut* (with an optional direction) and *Add sound effects*. Lanes carry `data-track-role`.

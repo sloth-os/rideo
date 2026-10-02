@@ -823,6 +823,18 @@ function buildServer(studio: Studio): McpServer {
       }),
   );
   tool(
+    'timeline_remove_background',
+    'Remove the background of a video item of the cut: a segmentation model returns a matte of the subject (default "the person"), used as the item\'s alpha; on an overlay track the tracks below show around the subject (job; segmentation_unavailable without a capable model).',
+    {
+      projectId: PROJECT,
+      itemId: z.string(),
+      subject: z.string().max(200).optional(),
+      invert: z.boolean().optional(),
+    },
+    (a, actor) =>
+      studio.edit.removeBackground(actor, a.projectId, a.itemId, { subject: a.subject, invert: a.invert }),
+  );
+  tool(
     'shot_variations',
     'Generate 2–4 takes of a shot with different seeds, to compare and pick (jobs).',
     { projectId: PROJECT, clipId: z.string(), shotId: z.string(), count: z.number().int().min(2).max(4) },

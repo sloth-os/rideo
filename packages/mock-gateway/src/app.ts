@@ -241,16 +241,34 @@ export async function buildMockGateway(opts: MockGatewayOptions = {}): Promise<M
           // not a media file: keep the default duration
         }
       }
+      // Every other line hesitates, for filler-word removal (docs/design/editor.md#transcript-editing).
       const segments = [];
       for (let t = 0, i = 0; t < duration - 0.5; t += 3, i++) {
         segments.push({
           id: i,
           start: t,
           end: Math.min(duration, t + 2.5),
-          text: `Line ${i + 1} of the conversation.`,
+          text:
+            i % 2 ? `Um, line ${i + 1} of the conversation, you know.` : `Line ${i + 1} of the conversation.`,
         });
       }
-      return { text: segments.map((s) => s.text).join(' '), duration, language: 'en', segments };
+      // Word timings (`timestamp_granularities[]=word`): spread over each line by length.
+      const words = segments.flatMap((s) => {
+        const parts = s.text.split(' ');
+        const total = parts.reduce((n, w) => n + w.length + 1, 0);
+        let at = s.start;
+        return parts.map((w) => {
+          const d = ((s.end - s.start) * (w.length + 1)) / total;
+          const word = {
+            word: w.replace(/[,.]+$/, ''),
+            start: Math.round(at * 1000) / 1000,
+            end: Math.round((at + d) * 1000) / 1000,
+          };
+          at += d;
+          return word;
+        });
+      });
+      return { text: segments.map((s) => s.text).join(' '), duration, language: 'en', segments, words };
     }
     let body: unknown = req.body;
     if (Buffer.isBuffer(body)) {

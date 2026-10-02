@@ -1,3 +1,4 @@
+import { attachWords, type TranscriptWord } from '@rideo/shared';
 import type { ProxyClient } from '../gateway/proxy-client';
 
 export type LlmPart =
@@ -232,11 +233,14 @@ export class SttClient {
     audio: Buffer,
     filename: string,
     signal?: AbortSignal,
-  ): Promise<{ start: number; end: number; text: string }[]> {
+  ): Promise<{ start: number; end: number; text: string; words: TranscriptWord[]; approx?: boolean }[]> {
     const form = new FormData();
     form.set('file', new Blob([new Uint8Array(audio)]), filename);
     form.set('model', this.model);
     form.set('response_format', 'verbose_json');
+    // Word timings for transcript editing (docs/design/editor.md#transcript-editing)
+    form.append('timestamp_granularities[]', 'word');
+    form.append('timestamp_granularities[]', 'segment');
     const res = await this.proxy.fetch(this.domain, 'v1/audio/transcriptions', {
       method: 'POST',
       body: form,
@@ -246,13 +250,15 @@ export class SttClient {
     if (!res.ok) throw await failure(res, 'stt');
     const json = (await res.json()) as {
       segments?: { start: number; end: number; text: string }[];
+      words?: { word: string; start: number; end: number }[];
       text?: string;
       duration?: number;
     };
-    if (json.segments?.length)
-      return json.segments
-        .map((s) => ({ start: s.start, end: s.end, text: s.text.trim() }))
-        .filter((s) => s.text);
-    return json.text ? [{ start: 0, end: json.duration ?? 0, text: json.text.trim() }] : [];
+    const segments = json.segments?.length
+      ? json.segments.map((s) => ({ start: s.start, end: s.end, text: s.text.trim() })).filter((s) => s.text)
+      : json.text
+        ? [{ start: 0, end: json.duration ?? 0, text: json.text.trim() }]
+        : [];
+    return attachWords(segments, json.words);
   }
 }

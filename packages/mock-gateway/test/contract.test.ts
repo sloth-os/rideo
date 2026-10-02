@@ -91,11 +91,14 @@ describe('public contract', () => {
       'mock-video-lite-v1',
       'mock-multishot-v1',
       'mock-enhance-v1',
+      'mock-segment-v1',
       'mock-lipsync-v1',
     ]);
     const limits = (await (await fetch(`${gw.url}/v1/models/limits`, { headers: auth })).json()) as any;
     expectSchema('ModelLimitsListResponse', limits);
     expect(limits.data.find((m: any) => m.id === 'mock-video-v1').limits.max_duration_seconds).toBe(10);
+    // a segmentation model (docs/design/editor.md#segmentation-masks-remove-the-background)
+    expect(limits.data.find((m: any) => m.id === 'mock-segment-v1').limits.supports_segmentation).toBe(true);
   });
 
   it('runs an image task with Location, ETag and 304 revalidation', async () => {

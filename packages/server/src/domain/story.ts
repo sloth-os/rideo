@@ -1,3 +1,4 @@
+import { readFile } from 'node:fs/promises';
 import {
   type Actor,
   approvedReferences,
@@ -17,6 +18,7 @@ import {
   type OutlineBeat,
   type Probe,
   type Project,
+  parseCube,
   type ReferenceView,
   type Resource,
   type ResourceInput,
@@ -582,13 +584,27 @@ export class StoryService extends Service {
         ? source.filename
         : (source.uri.startsWith('data:') ? 'upload' : new URL(source.uri).pathname.split('/').pop()) ||
           'resource');
-    let media = await this.importMedia(projectId, source, {
-      kind: 'uploads',
-      name: name.replace(/\.[^.]+$/, ''),
-      maxBytes: 4 * 1024 ** 3,
-      probe: prepared.probe ?? false,
-    });
-    const kind = input.kind ?? kindFromMime(media.mime);
+    // A `.cube` file is a 3D LUT whatever the browser called it (docs/design/editor.md#luts)
+    const cube = /\.cube$/i.test(name) || input.kind === 'lut';
+    let media = await this.importMedia(
+      projectId,
+      cube && 'file' in source ? { ...source, mime: 'application/x-cube' } : source,
+      {
+        kind: cube ? 'luts' : 'uploads',
+        name: name.replace(/\.[^.]+$/, ''),
+        maxBytes: cube ? 16 * 1024 ** 2 : 4 * 1024 ** 3,
+        probe: cube ? false : (prepared.probe ?? false),
+      },
+    );
+    if (cube) {
+      try {
+        parseCube(await readFile(await this.deps.media.localPath(projectId, media), 'utf8'));
+      } catch (err) {
+        throw invalid(`not a 3D LUT: ${(err as Error).message}`);
+      }
+      media = { ...media, mime: 'application/x-cube' };
+    }
+    const kind = cube ? 'lut' : (input.kind ?? kindFromMime(media.mime));
     if (!kind) throw invalid(`unsupported media type ${media.mime}`);
     if (kind === 'image' && !prepared.probe)
       media = {
@@ -613,8 +629,10 @@ export class StoryService extends Service {
           : 'reference'
         : kind === 'audio'
           ? 'music'
-          : 'reference');
-    const needsEditor = kind !== 'image' && !prepared.probe;
+          : kind === 'lut'
+            ? 'other'
+            : 'reference');
+    const needsEditor = kind !== 'image' && kind !== 'lut' && !prepared.probe;
     const mismatch =
       !!prepared.probe &&
       ((kind === 'video' && !prepared.probe.hasVideo) || (kind === 'audio' && !prepared.probe.hasAudio));

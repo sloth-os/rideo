@@ -26,6 +26,7 @@ import {
   JobStatusSchema,
   LanguageCodeSchema,
   LocalizeInputSchema,
+  MaskInputSchema,
   MusicInputSchema,
   OverrideInputSchema,
   ReferenceViewSchema,
@@ -605,6 +606,18 @@ export function registerRoutes(app: FastifyInstance, studio: Studio): void {
           p(req, 'shotId'),
           p(req, 'takeId'),
           parse(TakeExtendInputSchema, req.body),
+        ),
+      ),
+  );
+  app.post('/api/projects/:id/timeline/items/:itemId/mask', async (req, reply) =>
+    reply
+      .code(202)
+      .send(
+        await studio.edit.removeBackground(
+          actor(),
+          pid(req),
+          p<string>(req, 'itemId'),
+          parse(MaskInputSchema, req.body),
         ),
       ),
   );

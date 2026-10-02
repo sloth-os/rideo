@@ -4,14 +4,18 @@ import { cropFilter } from '../finishing';
 import type { MediaRef } from '../schemas/common';
 import type { ExportQuality } from '../schemas/job';
 import { AUDIO_ROLES, type AudioRole, type TextItem, type Timeline } from '../schemas/timeline';
+import { isAnimated, isIdentity, linearExpression, opacityAt, propertyCurve } from '../timeline/keyframes';
+import { sourceAtItemTime } from '../timeline/ops';
 import {
   audioSegments,
   isStillMedia,
+  overlaySegments,
   textItems,
   timelineDuration,
   type VideoSegment,
   videoSegments,
 } from '../timeline/query';
+import { sliceTimeMap, timeMapOf } from '../timeline/ramp';
 
 /**
  * The render plan (docs/design/editor.md#rendering): the film is cut into frame-aligned chunks that never split
@@ -115,7 +119,7 @@ export interface GraphInput {
 export interface ChunkGraph {
   /** Input options + `-filter_complex` + `-map [vout]`; append encoder options and the output path. */
   args: string[];
-  /** Files the drawtext filters read (write them before running). */
+  /** Text files the graph reads, written before running: drawtext texts and `sendcmd` opacity commands. */
   textFiles: { path: string; content: string }[];
   frames: number;
   size: RenderSize;
@@ -170,6 +174,205 @@ export function escapeFilterValue(v: string): string {
     .replace(/;/g, ';');
 }
 
+/** Where a segment's part of a chunk comes from: timeline and source ranges (ramp-aware). */
+function partOf(s: VideoSegment, from: number, to: number) {
+  const clamp = (v: number) => Math.min(s.out, Math.max(s.in, v));
+  return {
+    from,
+    to,
+    d: to - from,
+    srcIn: clamp(sourceAtItemTime(s.item, from - s.start)),
+    srcOut: clamp(sourceAtItemTime(s.item, to - s.start)),
+  };
+}
+
+/** The size a picture takes when fitted into the frame (contain), even. */
+function fittedSize(media: MediaRef, crop: boolean, width: number, height: number): { w: number; h: number } {
+  if (crop || !media.width || !media.height) return { w: width, h: height };
+  const k = Math.min(width / media.width, height / media.height);
+  return { w: even(Math.round(media.width * k)), h: even(Math.round(media.height * k)) };
+}
+
+interface ChainContext {
+  args: string[];
+  filters: string[];
+  files: { path: string; content: string }[];
+  opts: ChunkGraphOptions;
+  fps: number;
+  width: number;
+  height: number;
+  /** A unique label suffix. */
+  label: (base: string) => string;
+}
+
+/**
+ * One segment's part as a stream (docs/design/editor.md#video-graph-per-chunk): input seeking, exact trim, its speed
+ * or ramp, the fit (letterboxed, or fitted without padding when `fitted` for compositing), the LUT, color effects and
+ * the mask. Returns the label of the stream and whether it carries alpha.
+ */
+function segmentStream(
+  c: ChainContext,
+  s: VideoSegment,
+  part: ReturnType<typeof partOf>,
+  mode: 'letterbox' | 'fitted',
+): { label: string; alpha: boolean } {
+  const { fps, width, height } = c;
+  const still = isStillMedia(s.media);
+  const k = c.args.filter((a) => a === '-i').length;
+  let head: string;
+  if (still) {
+    // A still (storyboard frame): loop the image for the segment's part of the chunk.
+    c.args.push(
+      '-loop',
+      '1',
+      '-framerate',
+      String(fps),
+      '-t',
+      n(part.d + 0.25),
+      '-i',
+      c.opts.inputPath(s.media),
+    );
+    head = `[${k}:v]trim=start=0:end=${n(part.d)},setpts=PTS-STARTPTS,`;
+  } else {
+    // Seek a second early and trim exactly: input seeking alone drops the frame that sits on the seek point.
+    const seek = Math.max(0, part.srcIn - SEEK_MARGIN);
+    c.args.push('-ss', n(seek), '-t', n(part.srcOut - seek + 0.25), '-i', c.opts.inputPath(s.media));
+    head = `[${k}:v]trim=start=${n(part.srcIn - seek)}:end=${n(part.srcOut - seek)},${timing(s, part)},`;
+  }
+  const fitted = fittedSize(s.media, !!s.crop, width, height);
+  const fit = s.crop
+    ? `${cropFilter(s.crop, width / height, still ? 0 : part.srcIn, still ? 1 : s.speed)},scale=${width}:${height},`
+    : mode === 'letterbox'
+      ? `scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:color=black,`
+      : `scale=${fitted.w}:${fitted.h},`;
+  // settb: concat outputs AV_TIME_BASE, and xfade needs both inputs on the same timebase
+  let label = c.label('s');
+  c.filters.push(`${head}${fit}setsar=1,fps=${fps},format=yuv420p,settb=AVTB[${label}]`);
+  // LUT, mixed with the original below full intensity (docs/design/editor.md#luts)
+  const lut = s.item.lut;
+  if (lut) {
+    const file = `lut3d=file='${escapeFilterValue(c.opts.inputPath(lut.media))}':interp=trilinear`;
+    const out = c.label('l');
+    if (lut.intensity >= 0.999) c.filters.push(`[${label}]${file}[${out}]`);
+    else {
+      const [a, b, l] = [c.label('la'), c.label('lb'), c.label('ll')];
+      c.filters.push(
+        `[${label}]split=2[${a}][${b}]`,
+        `[${b}]${file}[${l}]`,
+        `[${l}][${a}]blend=all_mode=normal:all_opacity=${n(lut.intensity)}[${out}]`,
+      );
+    }
+    label = out;
+  }
+  const e = s.effects;
+  if (e && (e.brightness !== undefined || e.contrast !== undefined || e.saturation !== undefined)) {
+    const out = c.label('e');
+    c.filters.push(
+      `[${label}]eq=brightness=${n(e.brightness ?? 0)}:contrast=${n(e.contrast ?? 1)}:saturation=${n(e.saturation ?? 1)}[${out}]`,
+    );
+    label = out;
+  }
+  // The matte as alpha, seeked and timed like the picture, inside its own range
+  const mask = s.item.mask;
+  const matteEnd = mask ? mask.offset + (mask.media.durationSec ?? Number.POSITIVE_INFINITY) : 0;
+  if (mask && !still && part.srcIn >= mask.offset - EPS && part.srcOut <= matteEnd + 0.05) {
+    const m = c.args.filter((a) => a === '-i').length;
+    const mIn = part.srcIn - mask.offset;
+    const mOut = part.srcOut - mask.offset;
+    const seek = Math.max(0, mIn - SEEK_MARGIN);
+    c.args.push('-ss', n(seek), '-t', n(mOut - seek + 0.25), '-i', c.opts.inputPath(mask.media));
+    const [matte, out] = [c.label('m'), c.label('a')];
+    const mfit = s.crop
+      ? `${cropFilter(s.crop, width / height, part.srcIn, s.speed)},scale=${width}:${height},`
+      : mode === 'letterbox'
+        ? `scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:color=black,`
+        : `scale=${fitted.w}:${fitted.h},`;
+    c.filters.push(
+      `[${m}:v]trim=start=${n(mIn - seek)}:end=${n(mOut - seek)},${timing(s, part)},${mfit}setsar=1,fps=${fps},format=gray${mask.invert ? ',negate' : ''}[${matte}]`,
+      `[${label}][${matte}]alphamerge[${out}]`,
+    );
+    return { label: out, alpha: true };
+  }
+  return { label, alpha: false };
+}
+
+/** `setpts` for a constant speed, or the ramp's time map inverted (source → item time) as an expression. */
+function timing(s: VideoSegment, part: ReturnType<typeof partOf>): string {
+  if (!s.item.ramp) return `setpts=(PTS-STARTPTS)/${n(s.speed)}`;
+  const slice = sliceTimeMap(timeMapOf(s.item), part.from - s.start, part.to - s.start);
+  const inverse = slice.map(([l, src]) => [src, l] as [number, number]);
+  return `setpts='(${linearExpression(inverse, '(T-STARTT)')})/TB'`;
+}
+
+/**
+ * Transform steps of a picture in chunk time (docs/design/editor.md#multitrack-transforms-and-keyframes): scale,
+ * rotation and opacity; returns the stream and the overlay position expressions.
+ */
+function transformStream(
+  c: ChainContext,
+  s: VideoSegment,
+  input: string,
+  shift: number,
+  fades: boolean,
+  part: ReturnType<typeof partOf>,
+): { label: string; x: string; y: string } {
+  const tr = s.item.transform;
+  const fitted = fittedSize(s.media, !!s.crop, c.width, c.height);
+  const steps: string[] = ['format=rgba'];
+  const scaleCurve = propertyCurve(tr, 'scale');
+  if (scaleCurve && isAnimated(tr, 'scale')) {
+    const e = linearExpression(scaleCurve, 't', shift);
+    steps.push(
+      `scale=w='max(2\\,trunc(${fitted.w}*(${e})/2)*2)':h='max(2\\,trunc(${fitted.h}*(${e})/2)*2)':eval=frame`,
+    );
+  } else if (scaleCurve && Math.abs(scaleCurve[0]![1] - 1) > 1e-6) {
+    const k = scaleCurve[0]![1];
+    steps.push(
+      `scale=${Math.max(2, even(Math.round(fitted.w * k)))}:${Math.max(2, even(Math.round(fitted.h * k)))}`,
+    );
+  }
+  const rotCurve = propertyCurve(tr, 'rotation');
+  if (rotCurve?.some(([, v]) => Math.abs(v) > 1e-6)) {
+    const maxScale = Math.max(1, ...(scaleCurve ?? [[0, 1]]).map(([, v]) => v));
+    const side = even(Math.ceil(Math.hypot(fitted.w * maxScale, fitted.h * maxScale)) + 2);
+    steps.push(`rotate=a='(${linearExpression(rotCurve, 't', shift)})*PI/180':c=none:ow=${side}:oh=${side}`);
+  }
+  // Opacity: constant, or a command per frame while it changes (keyframes, and an overlay's fades)
+  const duration = s.end - s.start;
+  const fadeOf = fades ? { fadeIn: s.fadeIn, fadeOut: s.fadeOut } : {};
+  const frames = Math.max(1, Math.round(part.d * c.fps));
+  // Frame i of the part is at item time (part.from − start) + i/fps
+  const values = Array.from({ length: frames }, (_, i) =>
+    opacityAt(tr, fadeOf, duration, Math.min(duration, part.from - s.start + i / c.fps)),
+  );
+  const first = values[0]!;
+  if (values.every((v) => Math.abs(v - first) < 1e-3)) {
+    if (first < 0.999) steps.push(`colorchannelmixer=aa=${n(first)}`);
+  } else {
+    const name = c.label('op');
+    const path = c.opts.textPath(c.files.length);
+    const t0 = part.from - s.start - shift;
+    let last = Number.NaN;
+    const lines: string[] = [];
+    values.forEach((v, i) => {
+      if (Math.abs(v - last) < 1e-3) return;
+      lines.push(`${n(t0 + i / c.fps)} colorchannelmixer@${name} aa ${n(v)};`);
+      last = v;
+    });
+    c.files.push({ path, content: `${lines.join('\n')}\n` });
+    steps.push(`sendcmd=f='${escapeFilterValue(path)}'`, `colorchannelmixer@${name}=aa=${n(first)}`);
+  }
+  const out = c.label('t');
+  c.filters.push(`[${input}]${steps.join(',')}[${out}]`);
+  const xCurve = propertyCurve(tr, 'x') ?? [[0, 0.5]];
+  const yCurve = propertyCurve(tr, 'y') ?? [[0, 0.5]];
+  return {
+    label: out,
+    x: `'W*(${linearExpression(xCurve, 't', shift)})-w/2'`,
+    y: `'H*(${linearExpression(yCurve, 't', shift)})-h/2'`,
+  };
+}
+
 /** The video graph of one chunk (video only; the soundtrack is separate). */
 export function chunkGraph(t: Timeline, chunk: RenderChunk, opts: ChunkGraphOptions): ChunkGraph {
   const { width, height } = renderSize(t, opts.quality);
@@ -179,46 +382,44 @@ export function chunkGraph(t: Timeline, chunk: RenderChunk, opts: ChunkGraphOpti
   const inChunk = all
     .map((s, k) => ({ s, prev: all[k - 1] }))
     .filter(({ s }) => s.start < chunk.end - EPS && s.end > chunk.start + EPS);
-  const args: string[] = [];
-  const filters: string[] = [];
+  let next = 0;
+  const c: ChainContext = {
+    args: [],
+    filters: [],
+    files: [],
+    opts,
+    fps,
+    width,
+    height,
+    label: (base) => `${base}${next++}`,
+  };
   const local = inChunk.map(({ s, prev }, k) => {
-    const from = Math.max(s.start, chunk.start);
-    const to = Math.min(s.end, chunk.end);
-    const srcIn = Math.min(s.out, s.in + (from - s.start) * s.speed);
-    const srcOut = Math.min(s.out, s.in + (to - s.start) * s.speed);
-    const d = to - from;
-    let head: string;
-    if (isStillMedia(s.media)) {
-      // A still (storyboard frame): loop the image for the segment's part of the chunk.
-      args.push('-loop', '1', '-framerate', String(fps), '-t', n(d + 0.25), '-i', opts.inputPath(s.media));
-      head = `[${k}:v]trim=start=0:end=${n(d)},setpts=PTS-STARTPTS,`;
-    } else {
-      // Seek a second early and trim exactly: input seeking alone drops the frame that sits on the seek point.
-      const seek = Math.max(0, srcIn - SEEK_MARGIN);
-      args.push('-ss', n(seek), '-t', n(srcOut - seek + 0.25), '-i', opts.inputPath(s.media));
-      head = `[${k}:v]trim=start=${n(srcIn - seek)}:end=${n(srcOut - seek)},setpts=(PTS-STARTPTS)/${n(s.speed)},`;
+    const part = partOf(s, Math.max(s.start, chunk.start), Math.min(s.end, chunk.end));
+    const shaped = !isIdentity(s.item.transform) || !!s.item.mask;
+    const stream = segmentStream(c, s, part, shaped ? 'fitted' : 'letterbox');
+    let chain = `[${stream.label}]`;
+    if (shaped) {
+      // A transformed or masked primary picture, over black at the output size; `t` is the part's time here.
+      const shift = part.from - s.start;
+      const tr = transformStream(c, s, stream.label, shift, false, part);
+      const bg = c.label('bg');
+      const over = c.label('ov');
+      c.filters.push(
+        `color=c=black:s=${width}x${height}:r=${fps}:d=${n(part.d)},format=yuv420p,settb=AVTB[${bg}]`,
+        `[${bg}][${tr.label}]overlay=x=${tr.x}:y=${tr.y}:eval=frame:format=auto:shortest=1,format=yuv420p,settb=AVTB[${over}]`,
+      );
+      chain = `[${over}]`;
     }
-    // A reframed item crops around its subject (docs/design/finishing.md); others are letterboxed.
-    const fit = s.crop
-      ? `${cropFilter(s.crop, width / height, isStillMedia(s.media) ? 0 : srcIn, isStillMedia(s.media) ? 1 : s.speed)},scale=${width}:${height},`
-      : `scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:color=black,`;
-    let chain =
-      head +
-      fit +
-      // settb: concat outputs AV_TIME_BASE, and xfade needs both inputs on the same timebase
-      `setsar=1,fps=${fps},format=yuv420p,settb=AVTB`;
-    const e = s.effects;
-    if (e && (e.brightness !== undefined || e.contrast !== undefined || e.saturation !== undefined)) {
-      chain += `,eq=brightness=${n(e.brightness ?? 0)}:contrast=${n(e.contrast ?? 1)}:saturation=${n(e.saturation ?? 1)}`;
-    }
-    const whole = { start: Math.abs(from - s.start) < EPS, end: Math.abs(to - s.end) < EPS };
-    if (s.fadeIn > 0 && whole.start) chain += `,fade=t=in:st=0:d=${n(Math.min(s.fadeIn, d))}`;
+    const whole = { start: Math.abs(part.from - s.start) < EPS, end: Math.abs(part.to - s.end) < EPS };
+    const fades: string[] = [];
+    if (s.fadeIn > 0 && whole.start) fades.push(`fade=t=in:st=0:d=${n(Math.min(s.fadeIn, part.d))}`);
     if (s.fadeOut > 0 && whole.end)
-      chain += `,fade=t=out:st=${n(Math.max(0, d - s.fadeOut))}:d=${n(Math.min(s.fadeOut, d))}`;
-    filters.push(`${chain}[v${k}]`);
+      fades.push(`fade=t=out:st=${n(Math.max(0, part.d - s.fadeOut))}:d=${n(Math.min(s.fadeOut, part.d))}`);
+    c.filters.push(`${chain}${fades.length ? fades.join(',') : 'null'}[v${k}]`);
     const transition = k > 0 && s.transitionIn && prev && whole.start ? s.transitionIn : null;
-    return { from, to, d, transition };
+    return { from: part.from, to: part.to, d: part.d, transition };
   });
+  const filters = c.filters;
   let acc = 'v0';
   let accDur = local[0]?.d ?? 0;
   for (let k = 1; k < local.length; k++) {
@@ -250,8 +451,26 @@ export function chunkGraph(t: Timeline, chunk: RenderChunk, opts: ChunkGraphOpti
     );
     acc = 'padded';
   }
-  const textFiles: ChunkGraph['textFiles'] = [];
-  let drawn = 0;
+  // Overlay tracks, bottom first, over the picture; `t` is chunk time (docs/design/editor.md#multitrack-transforms-and-keyframes)
+  for (const { segments } of overlaySegments(t)) {
+    for (const s of segments) {
+      if (!(s.start < chunk.end - EPS && s.end > chunk.start + EPS)) continue;
+      const part = partOf(s, Math.max(s.start, chunk.start), Math.min(s.end, chunk.end));
+      const stream = segmentStream(c, s, part, 'fitted');
+      const offset = part.from - chunk.start;
+      const placed = c.label('p');
+      filters.push(`[${stream.label}]setpts=PTS-STARTPTS+${n(offset)}/TB[${placed}]`);
+      const tr = transformStream(c, s, placed, chunk.start - s.start, true, part);
+      const out = c.label('o');
+      filters.push(
+        `[${acc}][${tr.label}]overlay=x=${tr.x}:y=${tr.y}:eval=frame:eof_action=pass:format=auto:` +
+          `enable='between(t\\,${n(offset)}\\,${n(offset + part.d)})',format=yuv420p[${out}]`,
+      );
+      acc = out;
+    }
+  }
+  const textFiles: ChunkGraph['textFiles'] = c.files;
+  let drawn = textFiles.length;
   for (const item of textItems(t)) {
     // One drawtext per frame of the item: the whole text, or each word of an animated caption.
     for (const frame of textFrames(item)) {
@@ -277,7 +496,7 @@ export function chunkGraph(t: Timeline, chunk: RenderChunk, opts: ChunkGraphOpti
     `[${acc}]tpad=stop_mode=clone:stop=2,setpts=N/(${fps}*TB),trim=end_frame=${chunk.frames},format=yuv420p[vout]`,
   );
   return {
-    args: [...args, '-filter_complex', filters.join(';'), '-map', '[vout]'],
+    args: [...c.args, '-filter_complex', filters.join(';'), '-map', '[vout]'],
     textFiles,
     frames: chunk.frames,
     size: { width, height },
@@ -407,7 +626,11 @@ export function stemOutputArgs(g: SoundtrackGraph, path: (role: AudioRole) => st
 /** Every distinct media file a render reads. */
 export function renderInputs(t: Timeline): MediaRef[] {
   const seen = new Map<string, MediaRef>();
-  for (const s of videoSegments(t)) seen.set(s.media.hash, s.media);
+  for (const s of [...videoSegments(t), ...overlaySegments(t).flatMap((o) => o.segments)]) {
+    seen.set(s.media.hash, s.media);
+    if (s.item.lut) seen.set(s.item.lut.media.hash, s.item.lut.media);
+    if (s.item.mask) seen.set(s.item.mask.media.hash, s.item.mask.media);
+  }
   for (const a of audioSegments(t)) if (a.media.hasAudio !== false) seen.set(a.media.hash, a.media);
   return [...seen.values()];
 }

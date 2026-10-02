@@ -78,6 +78,8 @@ All paths are under `RIDEO_WEBDAV_ROOT` (default `/rideo`).
 │   │   ├── music/<slug>-<hash12>.<ext>                generated music and score cues
 │   │   ├── sfx/<slug>-<hash12>.mp3                    generated sound effects
 │   │   ├── uploads/<slug>-<hash12>.<ext>
+│   │   ├── luts/<slug>-<hash12>.cube                   3D LUTs (color looks)
+│   │   ├── masks/<label>-matte-<hash12>.mp4           segmentation mattes (Remove the background)
 │   │   ├── stems/<exportId>-<role>-<hash12>.wav       export stems (dialogue, music, effects)
 │   │   ├── subtitles/<exportId>[-<lang>]-<hash12>.srt|.vtt  export subtitles
 │   │   ├── thumbs/<exportId>-thumbnail-<n>-<hash12>.jpg  export thumbnails

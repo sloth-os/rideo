@@ -89,6 +89,20 @@ export const MOCK_MODELS: MockModel[] = [
     },
   },
   {
+    id: 'mock-segment-v1',
+    modality: 'video',
+    limits: {
+      modality: 'video',
+      input_modalities: ['text', 'video'],
+      supports_reference_video: true,
+      supports_segmentation: true,
+      max_output_count: 1,
+      min_duration_seconds: 1,
+      max_duration_seconds: 600,
+      notes: 'Rideo mock segmentation model: a matte of the subject (an ellipse in the middle of the frame).',
+    },
+  },
+  {
     id: 'mock-lipsync-v1',
     modality: 'video',
     limits: {

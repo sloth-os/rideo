@@ -1,6 +1,8 @@
 import { z } from 'zod';
+import { TransformSchema } from '../timeline/keyframes';
+import { RampSchema } from '../timeline/ramp';
 import { TransitionTypeSchema } from './analysis';
-import { IdSchema, MediaRefSchema } from './common';
+import { IdSchema, MediaPathSchema, MediaRefSchema } from './common';
 
 export const SourceSchema = z.discriminatedUnion('type', [
   z.object({
@@ -58,6 +60,26 @@ export const EffectsSchema = z.object({
 });
 export type Effects = z.infer<typeof EffectsSchema>;
 
+/** A 3D LUT on an item (docs/design/editor.md#luts): a `.cube` resource, mixed in by `intensity`. */
+export const ItemLutSchema = z.object({
+  media: MediaRefSchema,
+  resourceId: IdSchema.optional(),
+  intensity: z.number().min(0).max(1).default(1),
+});
+export type ItemLut = z.infer<typeof ItemLutSchema>;
+
+/** A segmentation matte used as the item's alpha (docs/design/editor.md#segmentation-masks-remove-the-background). */
+export const ItemMaskSchema = z.object({
+  /** A grayscale video, white where the subject is. */
+  media: MediaRefSchema,
+  /** Source seconds where the matte starts. */
+  offset: z.number().nonnegative().default(0),
+  subject: z.string().min(1).max(200),
+  invert: z.boolean().default(false),
+  model: z.string().max(200).nullable().default(null),
+});
+export type ItemMask = z.infer<typeof ItemMaskSchema>;
+
 export const VideoItemSchema = z.object({
   id: IdSchema,
   kind: z.literal('video'),
@@ -76,6 +98,12 @@ export const VideoItemSchema = z.object({
   speech: SpeechSpansSchema.optional(),
   /** Reframed to the timeline's aspect around the subject (source seconds; docs/design/finishing.md). */
   crop: z.object({ focus: z.array(FocusPointSchema).min(1).max(50) }).optional(),
+  /** Position, scale, rotation and opacity over the item's time (docs/design/editor.md#multitrack-transforms-and-keyframes). */
+  transform: TransformSchema.optional(),
+  /** A speed ramp over source seconds; replaces `speed` (docs/design/editor.md#speed-ramps). */
+  ramp: RampSchema.optional(),
+  lut: ItemLutSchema.optional(),
+  mask: ItemMaskSchema.optional(),
 });
 export type VideoItem = z.infer<typeof VideoItemSchema>;
 
@@ -208,7 +236,8 @@ export const TimelineOpSchema = z.discriminatedUnion('op', [
     op: z.literal('add_track'),
     track: z.object({
       id: IdSchema.optional(),
-      kind: z.enum(['audio', 'text']),
+      /** `video`: an overlay track above the others (docs/design/editor.md#timeline-model). */
+      kind: z.enum(['audio', 'text', 'video']),
       name: z.string().min(1).max(100),
       role: AudioRoleSchema.optional(),
     }),
@@ -228,6 +257,19 @@ export const TimelineOpSchema = z.discriminatedUnion('op', [
     style: TextStyleSchema.pick({ animate: true, position: true, size: true, color: true }),
   }),
   z.object({ op: z.literal('replace_source'), itemId: IdSchema, source: SourceSchema }),
+  z.object({ op: z.literal('set_transform'), itemId: IdSchema, transform: TransformSchema.nullable() }),
+  z.object({ op: z.literal('set_ramp'), itemId: IdSchema, ramp: RampSchema.nullable() }),
+  z.object({ op: z.literal('set_lut'), itemId: IdSchema, lut: ItemLutSchema.nullable() }),
+  z.object({ op: z.literal('set_mask'), itemId: IdSchema, mask: ItemMaskSchema.nullable() }),
+  /** Cuts source ranges of a media file out of the primary track (docs/design/editor.md#transcript-editing). */
+  z.object({
+    op: z.literal('remove_ranges'),
+    media: MediaPathSchema,
+    ranges: z
+      .array(z.tuple([z.number().nonnegative(), z.number().nonnegative()]))
+      .min(1)
+      .max(2000),
+  }),
   z.object({
     op: z.literal('set_output'),
     fps: z.number().int().min(12).max(60).optional(),

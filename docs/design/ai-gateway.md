@@ -54,8 +54,9 @@ const res = await proxy.fetch(domain, path, { method: 'POST', body, headers, sig
 | `anthropic` | `api.anthropic.com` | `v1/messages` (`anthropic-version: 2023-06-01`) | instructions + prefill `{` | `image` base64 blocks |
 
 Speech-to-text (optional, used by footage analysis): OpenAI-style
-`POST /proxy/{RIDEO_STT_PROXY_DOMAIN}/v1/audio/transcriptions` (multipart, `response_format=verbose_json`).
-When unset, analysis runs without a transcript.
+`POST /proxy/{RIDEO_STT_PROXY_DOMAIN}/v1/audio/transcriptions` (multipart, `response_format=verbose_json`,
+`timestamp_granularities[]` `word` and `segment`: the words' timings drive transcript editing,
+[editor](editor.md#transcript-editing)). When unset, analysis runs without a transcript.
 
 ## Enhancement
 
@@ -63,6 +64,13 @@ Upscaling and frame interpolation of exports ([finishing](finishing.md#enhanceme
 are video requests through the SDK to a model whose limits say `supports_upscale` /
 `supports_frame_interpolation` (`max_fps`): the rendered part as a `reference_video`, the delivery's `dimensions`
 and `fps`. Without such a model Rideo uses ffmpeg and says so on the export.
+
+## Segmentation
+
+*Remove the background* ([editor](editor.md#segmentation-masks-remove-the-background)) is a video request through the
+SDK to a model whose limits say `supports_segmentation` (`settings.models.segment`, `auto` picks the first): the
+item's source range as a `reference_video` and a prompt naming the subject; the model returns a matte of the same
+frames. Without such a model the request fails with `segmentation_unavailable`.
 
 ## Sound effects
 
@@ -112,10 +120,10 @@ and the offline demo (`npm run dev:demo`).
 
 | Surface | Behaviour |
 |---|---|
-| `GET /health`, `/v1/models`, `/v1/models/limits` | `mock-image-v1` (image-to-image, ≤4 input images), `mock-video-v1` (2–10 s, first/last frame, reference images, audio and video), `mock-video-lite-v1` (no last frame, no reference audio or video), `mock-multishot-v1` (`max_shots: 4`, 2–20 s; [multi-shot](multi-shot.md)), `mock-enhance-v1` (upscale and frame interpolation of a reference video; [finishing](finishing.md)), `mock-lipsync-v1`, `mock-music-v1` |
+| `GET /health`, `/v1/models`, `/v1/models/limits` | `mock-image-v1` (image-to-image, ≤4 input images), `mock-video-v1` (2–10 s, first/last frame, reference images, audio and video), `mock-video-lite-v1` (no last frame, no reference audio or video), `mock-multishot-v1` (`max_shots: 4`, 2–20 s; [multi-shot](multi-shot.md)), `mock-enhance-v1` (upscale and frame interpolation of a reference video; [finishing](finishing.md)), `mock-segment-v1` (`supports_segmentation`: an ellipse matte of the reference video; [editor](editor.md#segmentation-masks-remove-the-background)), `mock-lipsync-v1`, `mock-music-v1` |
 | `POST /v1/images`, `/v1/videos`, `/v1/music` + `GET …/{id}` | Real async lifecycle (`pending → running → succeeded`, `Retry-After`, `Idempotency-Key` replay and 409 on body mismatch, `ETag`/`304`). Produces real media: PNGs (pngjs), H.264 MP4 via ffmpeg (a first frame, when given, is animated with a slow zoom), WAV/MP3 tones. |
 | `/proxy/{domain}/{path}` | OpenAI, Gemini and Anthropic request/response shapes. It routes on the `rideo-task:` marker and returns deterministic JSON derived from the input. |
-| `POST /proxy/*/v1/audio/transcriptions` | segments sized to the audio duration |
+| `POST /proxy/*/v1/audio/transcriptions` | segments sized to the audio duration (every other line with filler words) and their word timings (`words`) |
 | `POST /proxy/*/v1/sound-generation` | a pink-noise burst of `duration_seconds` (MP3) |
 
 **Deterministic consistency model.** Each character name maps to a *signature colour*. Mock reference sheets

@@ -10,11 +10,14 @@ import {
   formatDuration,
   formatTimecode,
   type Item,
+  isOverlayTrack,
+  isStillMedia,
   isTerminalJob,
   itemDuration,
   itemEnd,
   LOUDNESS_TARGETS,
   type LoudnessTarget,
+  newId,
   primaryTrack,
   type RenderEngineChoice,
   type TextItem,
@@ -30,6 +33,7 @@ import {
   Clapperboard,
   Cpu,
   Download,
+  Layers,
   Pause,
   Play,
   Plus,
@@ -66,8 +70,12 @@ import { detectCaps, type EngineCaps } from './engine/capabilities';
 import { MediaPool } from './engine/media-pool';
 import { Player } from './engine/player';
 import { GenerativeExtend } from './GenerativeExtend';
+import { LutSection, MaskSection, RampSection, StartField, TransformSection } from './ItemPanels';
+import { Filmstrip, Waveform } from './LaneMedia';
 import { LocalizationPanel } from './LocalizationPanel';
 import { MixPanel } from './MixPanel';
+import { OverlayPicker } from './OverlayPicker';
+import { TranscriptPanel } from './TranscriptPanel';
 import { trimOps } from './trim';
 
 const TRACK_COLORS = {
@@ -155,6 +163,9 @@ function Inspector({
 }) {
   const primary = primaryTrack(timeline);
   const index = primary.items.findIndex((i) => i.id === item.id);
+  const overlay = timeline.tracks.some(
+    (t) => isOverlayTrack(timeline, t) && t.items.some((i) => i.id === item.id),
+  );
   const num = (v: string) => Number.parseFloat(v);
   return (
     <div className="space-y-3" data-testid="inspector">
@@ -295,6 +306,11 @@ function Inspector({
               </Field>
             ))}
           </div>
+          {overlay ? <StartField item={item} apply={apply} /> : null}
+          <TransformSection item={item} time={time} duration={itemDuration(item)} apply={apply} />
+          {isStillMedia(item.source.media) ? null : <RampSection item={item} apply={apply} />}
+          <LutSection item={item} apply={apply} />
+          {isStillMedia(item.source.media) ? null : <MaskSection item={item} apply={apply} />}
         </>
       ) : null}
       {item.kind === 'text' ? (
@@ -748,6 +764,9 @@ export function EditorView() {
   const [selected, setSelected] = useState<string | null>(null);
   const [zoom, setZoom] = useState(40);
   const [exportOpen, setExportOpen] = useState(false);
+  const [overlayOpen, setOverlayOpen] = useState(false);
+  // Small frames and sound for the lanes' filmstrips and waveforms (docs/design/editor.md#waveforms-and-filmstrips)
+  const [lanePool, setLanePool] = useState<MediaPool | null>(null);
   const trimming = useRef(false);
   const [webcodecs] = useState(() => typeof globalThis.VideoDecoder !== 'undefined');
   // Optimistic: the shared reducer updates the timeline at once; the server's result is authoritative.
@@ -798,6 +817,16 @@ export function EditorView() {
   useEffect(() => {
     if (preview) playerRef.current?.setTimeline(preview);
   }, [preview]);
+
+  useEffect(() => {
+    if (!projectId || !webcodecs) return;
+    const pool = new MediaPool(projectId, { width: 160, height: 90 });
+    setLanePool(pool);
+    return () => {
+      pool.dispose();
+      setLanePool(null);
+    };
+  }, [projectId, webcodecs]);
 
   useEffect(() => {
     if (!playerCommand || !playerRef.current) return;
@@ -896,6 +925,14 @@ export function EditorView() {
               Title
             </Button>
             <Button
+              icon={<Layers className="size-4" />}
+              disabled={!access.can('project.edit')}
+              onClick={() => setOverlayOpen(true)}
+              data-testid="overlay-open"
+            >
+              Overlay
+            </Button>
+            <Button
               icon={<Undo2 className="size-4" />}
               disabled={lastTimelineCommits.length === 0}
               onClick={undo}
@@ -979,7 +1016,29 @@ export function EditorView() {
       ) : (
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
           <Card className="min-w-0 p-3">
-            <div className="mb-2 flex items-center gap-2 text-[12px] text-muted">
+            <div className="mb-2 flex flex-wrap items-center gap-2 text-[12px] text-muted">
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-7"
+                icon={<Plus className="size-3.5" />}
+                disabled={!access.can('project.edit')}
+                onClick={() =>
+                  apply([
+                    {
+                      op: 'add_track',
+                      track: {
+                        id: newId('track'),
+                        kind: 'video',
+                        name: `Overlay ${timeline.tracks.filter((t) => t.kind === 'video').length}`,
+                      },
+                    },
+                  ])
+                }
+                data-testid="add-video-track"
+              >
+                Video track
+              </Button>
               Zoom
               <input
                 type="range"
@@ -1051,10 +1110,25 @@ export function EditorView() {
                           data-testid="timeline-item"
                           title={itemLabel(item)}
                         >
-                          {item.kind === 'video' && item.transitionIn ? (
-                            <span className="mr-1 text-accent">⤫</span>
+                          {item.kind === 'video' ? (
+                            <Filmstrip pool={lanePool} item={item} zoom={zoom} height={40} />
                           ) : null}
-                          {itemLabel(item)}
+                          {item.kind === 'audio' ||
+                          (item.kind === 'video' && track.id === primary.id && !item.muted) ? (
+                            <Waveform pool={lanePool} item={item} zoom={zoom} height={18} />
+                          ) : null}
+                          <span className="relative">
+                            {item.kind === 'video' && item.transitionIn ? (
+                              <span className="mr-1 text-accent">⤫</span>
+                            ) : null}
+                            {item.kind === 'video' &&
+                            (item.transform || item.mask || item.lut || item.ramp) ? (
+                              <span className="mr-1 text-info" data-testid="item-shaped">
+                                ◆
+                              </span>
+                            ) : null}
+                            {itemLabel(item)}
+                          </span>
                           {(['start', 'end'] as const).map((side) => (
                             <TrimHandle
                               key={side}
@@ -1076,6 +1150,28 @@ export function EditorView() {
                 />
               </div>
             </div>
+            <ul className="space-y-1.5 md:hidden" data-testid="timeline-list-overlays">
+              {timeline.tracks
+                .filter((t) => isOverlayTrack(timeline, t))
+                .flatMap((t) => t.items)
+                .map((item) => (
+                  <li key={item.id}>
+                    <button
+                      type="button"
+                      onClick={() => setSelected(item.id)}
+                      className={cx(
+                        'flex w-full items-center gap-2 rounded border border-dashed border-info/60 px-2 py-2 text-left text-[13px]',
+                        selected === item.id && 'border-accent',
+                      )}
+                      data-testid="overlay-item"
+                    >
+                      <Layers className="size-3.5 text-info" />
+                      <span className="min-w-0 flex-1 truncate">{itemLabel(item)}</span>
+                      <span className="tabular text-[12px] text-muted">at {formatDuration(item.start)}</span>
+                    </button>
+                  </li>
+                ))}
+            </ul>
             <ul className="space-y-1.5 md:hidden" data-testid="timeline-list">
               {primary.items.map((item, i) => (
                 <li key={item.id}>
@@ -1117,9 +1213,17 @@ export function EditorView() {
             </Card>
             <MixPanel timeline={timeline} apply={apply} />
             <LocalizationPanel timeline={timeline} apply={apply} />
+            <TranscriptPanel timeline={timeline} apply={apply} />
           </div>
         </div>
       )}
+      <OverlayPicker
+        open={overlayOpen}
+        onClose={() => setOverlayOpen(false)}
+        timeline={timeline}
+        time={time}
+        apply={apply}
+      />
       <ExportDialog
         open={exportOpen}
         onClose={() => setExportOpen(false)}

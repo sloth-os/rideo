@@ -46,7 +46,9 @@ export type MediaKind =
   | 'dialogue'
   | 'sfx'
   | 'stems'
-  | 'subtitles';
+  | 'subtitles'
+  | 'luts'
+  | 'masks';
 
 export interface PutOptions {
   kind: MediaKind;
@@ -66,6 +68,8 @@ const EXT_OVERRIDES: Record<string, string> = {
   'video/quicktime': 'mov',
   'audio/wav': 'wav',
   'audio/x-wav': 'wav',
+  // 3D LUTs: ffmpeg's lut3d reads the format from the extension (docs/design/editor.md#luts)
+  'application/x-cube': 'cube',
 };
 
 export function extFor(mimeType: string, fallbackPath?: string): string {
@@ -79,6 +83,7 @@ export function mimeFor(pathOrExt: string): string {
   const t = mime.lookup(pathOrExt);
   if (t) return t;
   if (pathOrExt.endsWith('.webm')) return 'video/webm';
+  if (pathOrExt.toLowerCase().endsWith('.cube')) return 'application/x-cube';
   return 'application/octet-stream';
 }
 

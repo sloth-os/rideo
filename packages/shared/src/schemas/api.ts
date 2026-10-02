@@ -46,6 +46,8 @@ export const ProjectSettingsPatchSchema = z
         lipSync: z.string().min(1),
         edit: z.string().min(1),
         enhance: z.string().min(1),
+        /** Remove the background (docs/design/editor.md#segmentation-masks-remove-the-background). */
+        segment: z.string().min(1),
       })
       .partial(),
     consistency: z
@@ -259,6 +261,12 @@ export const TimelineExtendInputSchema = z.object({
   edge: z.enum(['start', 'end']),
   seconds: z.number().min(1).max(5),
   prompt: z.string().max(1000).optional(),
+});
+
+/** Remove the background of a video item (docs/design/editor.md#segmentation-masks-remove-the-background). */
+export const MaskInputSchema = z.object({
+  subject: z.string().trim().min(1).max(200).optional(),
+  invert: z.boolean().optional(),
 });
 
 /** N takes of one shot with offset seeds, to compare (docs/design/directing.md#variations-and-comparison). */

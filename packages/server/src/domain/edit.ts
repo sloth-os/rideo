@@ -42,12 +42,33 @@ import {
 } from '@rideo/shared';
 import { AppError, invalid, notFound } from '../errors';
 import { Service } from './base';
+import type { Deps } from './deps';
 import { cutVariant } from './variants';
 
 function opSummary(ops: TimelineOp[]): string {
   const counts = new Map<string, number>();
   for (const o of ops) counts.set(o.op, (counts.get(o.op) ?? 0) + 1);
   return [...counts].map(([k, n]) => (n > 1 ? `${k}×${n}` : k)).join(', ');
+}
+
+/** The longest source range a matte is asked for (it travels to the gateway as one video). */
+export const MASK_MAX_SEC = 120;
+
+/** The gateway model that returns mattes (`supports_segmentation`), or `segmentation_unavailable`. */
+export async function segmentationModel(deps: Pick<Deps, 'gateway'>, wanted: string): Promise<string> {
+  if (wanted === 'off')
+    throw new AppError('segmentation_unavailable', 'Remove the background is off for this project');
+  const entries = await deps.gateway.modelLimits('video').catch(() => []);
+  const able = entries.filter((e) => e.limits?.supports_segmentation === true);
+  const chosen = wanted === 'auto' ? able[0] : able.find((e) => e.id === wanted);
+  if (!chosen)
+    throw new AppError(
+      'segmentation_unavailable',
+      wanted === 'auto'
+        ? 'No segmentation model on the gateway (models with supports_segmentation)'
+        : `${wanted} does not return mattes (supports_segmentation)`,
+    );
+  return chosen.id;
 }
 
 export class EditService extends Service {
@@ -294,6 +315,40 @@ export class EditService extends Service {
       actor,
       branch: await this.branchOf(projectId),
       dedupeKey: `extend:${itemId}:${input.edge}`,
+      priority: 10,
+    });
+  }
+
+  /**
+   * Remove the background (docs/design/editor.md#segmentation-masks-remove-the-background): a segmentation model's
+   * matte of the subject becomes the item's mask.
+   */
+  async removeBackground(
+    actor: Actor,
+    projectId: string,
+    itemId: string,
+    input: { subject?: string; invert?: boolean } = {},
+  ): Promise<Job> {
+    const docs = await this.deps.projects.docs(projectId);
+    const item = docs.timeline?.tracks
+      .filter((t) => t.kind === 'video')
+      .flatMap((t) => t.items)
+      .find((i) => i.id === itemId);
+    if (item?.kind !== 'video') throw notFound(`video item ${itemId}`);
+    if (isStillMedia(item.source.media))
+      throw invalid('stills have no motion to segment; use an image editor');
+    if (item.out - item.in > MASK_MAX_SEC)
+      throw invalid(
+        `Remove the background works on up to ${MASK_MAX_SEC / 60} minutes of source; split the item`,
+      );
+    const model = await segmentationModel(this.deps, docs.project.settings.models.segment);
+    return this.deps.jobs.enqueue({
+      projectId,
+      kind: 'mask.generate',
+      params: { itemId, subject: input.subject?.trim() || 'the person', invert: !!input.invert, model },
+      actor,
+      branch: await this.branchOf(projectId),
+      dedupeKey: `mask:${itemId}`,
       priority: 10,
     });
   }

@@ -28,6 +28,8 @@ const env = (p: string, dir: string) => ({
   // Dialogue voices and sound effects through the mock's ElevenLabs endpoints (docs/design/dialogue.md).
   RIDEO_TTS_PROVIDER: 'elevenlabs',
   RIDEO_SFX_PROVIDER: 'elevenlabs',
+  // Speech-to-text through the mock's proxy: transcripts with word timings (docs/design/editor.md#transcript-editing)
+  RIDEO_STT_PROXY_DOMAIN: 'openai',
   RIDEO_WEBDAV_SYNC_INTERVAL_SEC: '0',
   RIDEO_LOG_LEVEL: 'warn',
   NODE_ENV: 'production',

@@ -80,6 +80,7 @@ or keep going and `job_wait` until a tab picks the job up.
 | `take_edit` | `projectId`, `clipId`, `shotId`, `takeId`, `kind`, `instruction` → job ([take editing](take-editing.md)) |
 | `take_extend` | `projectId`, `clipId`, `shotId`, `takeId`, `seconds`, `prompt?` → job |
 | `timeline_extend` | `projectId`, `itemId`, `edge` (`start`, `end`), `seconds`, `prompt?` → job |
+| `timeline_remove_background` | `projectId`, `itemId`, `subject?` (default "the person"), `invert?` → job (`mask.generate`; [editor](editor.md#segmentation-masks-remove-the-background)) |
 | `shot_variations` | `projectId`, `clipId`, `shotId`, `count` (2–4) → jobs ([directing](directing.md)) |
 | `camera_moves` | – → the move library, lens and aperture presets |
 | `animatic_build` | `projectId`, `musicResourceId?`, `captions?` → `{frames, durationSec}` |
@@ -124,7 +125,7 @@ or keep going and `job_wait` until a tab picks the job up.
 | Tool | Arguments |
 |---|---|
 | `timeline_get` | `projectId` |
-| `timeline_apply` | `projectId`, `ops[]` (the [timeline op](editor.md#operations) union) |
+| `timeline_apply` | `projectId`, `ops[]` (the [timeline op](editor.md#operations) union: overlay tracks with `add_track` `kind: "video"`, `set_transform`, `set_ramp`, `set_lut`, `set_mask`, `remove_ranges` for transcript cuts) |
 | `timeline_assemble` | `projectId`, `captions?`, `musicResourceId?` |
 | `localize` | `projectId`, `language` (BCP 47), `dub?`, `lipSync?` → job ([localization](localization.md)) |
 | `localization_get` | `projectId` → every language with its lines, dubs and progress for the cut |

@@ -1,4 +1,4 @@
-import type { MediaRef } from '@rideo/shared';
+import { type CubeLut, type MediaRef, parseCube } from '@rideo/shared';
 import {
   ALL_FORMATS,
   AudioBufferSink,
@@ -38,6 +38,7 @@ async function decodable([video, audio]: [InputVideoTrack | null, InputAudioTrac
 export class MediaPool {
   private readonly entries = new Map<string, Promise<PoolEntry>>();
   private readonly stills = new Map<string, Promise<ImageBitmap>>();
+  private readonly luts = new Map<string, Promise<CubeLut>>();
 
   constructor(
     private readonly projectId: string,
@@ -96,6 +97,22 @@ export class MediaPool {
         .then((blob) => createImageBitmap(blob));
       this.stills.set(media.hash, p);
       p.catch(() => this.stills.delete(media.hash));
+    }
+    return p;
+  }
+
+  /** A `.cube` LUT, parsed once (docs/design/editor.md#luts). */
+  lut(media: MediaRef): Promise<CubeLut> {
+    let p = this.luts.get(media.hash);
+    if (!p) {
+      p = fetch(mediaUrl(this.projectId, media.path))
+        .then((res) => {
+          if (!res.ok) throw new Error(`could not load ${media.path}: ${res.status}`);
+          return res.text();
+        })
+        .then(parseCube);
+      this.luts.set(media.hash, p);
+      p.catch(() => this.luts.delete(media.hash));
     }
     return p;
   }

@@ -87,7 +87,7 @@ says **why** (evidence from other products), **how** it fits Rideo's architectur
 | Storyboard / animatic | Keyframes exist per shot, no storyboard stage | LTX, Higgsfield, previs tools with FDX/Fountain |
 | Directing controls | Framing + movement enums; first frame from continuity | First/last frame, 16 keyframes, lens presets, motion/pose transfer |
 | Editing generated takes | Regenerate only | Aleph 2.0, Ray3 Modify, extend, object insert/remove |
-| Editor | Single video track + audio/text tracks, transitions, speed, fades, color, titles; browser engine (ffmpeg.wasm + WebCodecs) | Multitrack, transcript editing, generative extend, auto mix, animated subtitles |
+| Editor | **Overlay tracks with keyframed transform and opacity, speed ramps, .cube LUTs, segmentation masks, transcript editing with filler removal, waveforms and filmstrips**; transitions, speed, fades, color, titles; browser engine (ffmpeg.wasm + WebCodecs) | Multitrack, transcript editing, generative extend, auto mix, animated subtitles |
 | Footage → edit | Analysis signals + AI suggestions + auto edit | Descript Underlord, Resolve IntelliScript |
 | Assets and versioning | **WebDAV + git-like history, branches, tags** | Project libraries, versions per asset |
 | Agents | **MCP with 58+ tools and live UI control** | Flow Agent, Runway Agent/MCP, Descript MCP |
@@ -205,7 +205,7 @@ permissions, audit log, scoped agent tokens. Lifts the single-studio non-goal.
 **14. NLE interchange** (S–M) — *done:* [design/interchange.md](design/interchange.md) — export OTIO, FCPXML, Premiere XML and EDL that relink to the originals on WebDAV;
 import OTIO. *Why:* Descript, Eddie AI, Runway NLE plugins.
 
-**15. Editor depth** (L) — multitrack video (B-roll, picture-in-picture, overlays), keyframed transform and
+**15. Editor depth** (L) — *done:* [design/editor.md](design/editor.md#multitrack-transforms-and-keyframes) — multitrack video (B-roll, picture-in-picture, overlays), keyframed transform and
 opacity, speed ramps, LUTs, segmentation masks ("remove the background"), transcript-based editing for footage
 projects with filler-word removal, waveforms and filmstrips. Requires relaxing the one-video-track rule in both
 engines. *Why:* Descript, Firefly video editor, Resolve IntelliScript, Runway SAM3 segmentation.

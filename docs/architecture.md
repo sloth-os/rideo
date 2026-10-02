@@ -156,7 +156,5 @@ uploads the outputs and completes it. See [editor](design/editor.md#editor-jobs)
 - Multi-tenant hosting. Rideo serves one studio; inside it, people sign in with the studio's identity provider and
   work on projects by role ([accounts](design/accounts.md)).
 - Branch merge. Branches can be created, switched and cherry-picked per document with restore-from-commit.
-- Multi-track video compositing (picture-in-picture). The timeline has one primary video track, plus text
-  and audio tracks, so the WebCodecs compositor and the ffmpeg filtergraph stay WYSIWYG-identical.
 - Headless media editing on the server. Editor jobs need an open studio tab; agents can drive one with
   the `ui_*` tools.

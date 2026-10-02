@@ -14,6 +14,7 @@ import {
   type VideoItem,
 } from '../schemas/timeline';
 import { deepClone } from '../util/canonical-json';
+import { sourceAtLocal, timeMapOf } from './ramp';
 
 const EPS = 1e-6;
 
@@ -78,8 +79,20 @@ export function primaryTrack(t: Timeline): Track {
 
 export function itemDuration(item: Item): number {
   if (item.kind === 'text') return item.duration;
+  if (item.kind === 'video' && item.ramp) return timeMapOf(item).duration;
   const speed = item.kind === 'video' ? item.speed : 1;
   return (item.out - item.in) / speed;
+}
+
+/** Source seconds shown `local` seconds into a video or audio item (through its speed or ramp). */
+export function sourceAtItemTime(item: VideoItem | AudioItem, local: number): number {
+  if (item.kind === 'video' && item.ramp) return sourceAtLocal(timeMapOf(item), local);
+  return item.in + local * (item.kind === 'video' ? item.speed : 1);
+}
+
+/** Whether a track is an overlay video track (a video track after the primary one). */
+export function isOverlayTrack(t: Timeline, track: Pick<Track, 'id' | 'kind'>): boolean {
+  return track.kind === 'video' && primaryTrack(t).id !== track.id;
 }
 
 export function itemEnd(item: Item): number {
@@ -208,6 +221,8 @@ function applyOne(t: Timeline, op: TimelineOp, i: number, gen: (k: 'item' | 'tra
       }
       const item = parseItem(base, i);
       if (item.kind !== 'text') checkRange(item, i);
+      if (item.kind === 'video' && item.transitionIn && !isPrimary(t, track))
+        throw new TimelineOpError('overlay items have no transitions; fade their opacity', i);
       if (isPrimary(t, track)) {
         const index = Math.min(op.index ?? track.items.length, track.items.length);
         track.items.splice(index, 0, item);
@@ -274,8 +289,8 @@ function applyOne(t: Timeline, op: TimelineOp, i: number, gen: (k: 'item' | 'tra
         second = { ...item, id: gen('item'), start: op.at, duration: item.duration - firstDur };
         item.duration = firstDur;
       } else {
-        const speed = item.kind === 'video' ? item.speed : 1;
-        const cut = item.in + (op.at - start) * speed;
+        // A ramp is in source time, so both halves keep it (docs/design/editor.md#speed-ramps).
+        const cut = sourceAtItemTime(item, op.at - start);
         second = { ...deepClone(item), id: gen('item'), in: cut } as Item;
         item.out = cut;
         if (item.kind === 'video') {
@@ -308,6 +323,8 @@ function applyOne(t: Timeline, op: TimelineOp, i: number, gen: (k: 'item' | 'tra
       const found = findItem(t, op.itemId, i);
       if (found.item.kind !== 'video') throw new TimelineOpError('speed applies to video items', i);
       found.item.speed = op.speed;
+      // A constant speed replaces a ramp.
+      delete found.item.ramp;
       layoutPrimary(found.track);
       checkTransition(found.track, found.index, i);
       return;
@@ -365,13 +382,18 @@ function applyOne(t: Timeline, op: TimelineOp, i: number, gen: (k: 'item' | 'tra
     case 'add_track': {
       const id = op.track.id ?? gen('track');
       if (t.tracks.some((tr) => tr.id === id)) throw new TimelineOpError(`duplicate track id ${id}`, i);
-      t.tracks.push({
+      const track: Track = {
         id,
         kind: op.track.kind,
         name: op.track.name,
-        ...(op.track.role && op.track.kind === 'audio' ? { role: op.track.role } : {}),
+        ...(op.track.role && op.track.kind !== 'text' ? { role: op.track.role } : {}),
         items: [],
-      });
+      };
+      // Overlay tracks go above the other video tracks: composited in track order (docs/design/editor.md).
+      if (track.kind === 'video') {
+        const last = t.tracks.reduce((k, tr, idx) => (tr.kind === 'video' ? idx : k), -1);
+        t.tracks.splice(last + 1, 0, track);
+      } else t.tracks.push(track);
       return;
     }
     case 'remove_track': {
@@ -420,6 +442,93 @@ function applyOne(t: Timeline, op: TimelineOp, i: number, gen: (k: 'item' | 'tra
       }
       checkRange(item, i);
       if (isPrimary(t, found.track)) layoutPrimary(found.track);
+      return;
+    }
+    case 'set_transform': {
+      const found = findItem(t, op.itemId, i);
+      if (found.item.kind !== 'video') throw new TimelineOpError('transforms apply to video items', i);
+      if (op.transform)
+        found.item.transform = { keyframes: [...op.transform.keyframes].sort((a, b) => a.t - b.t) };
+      else delete found.item.transform;
+      return;
+    }
+    case 'set_ramp': {
+      const found = findItem(t, op.itemId, i);
+      if (found.item.kind !== 'video') throw new TimelineOpError('speed ramps apply to video items', i);
+      if (op.ramp) {
+        const pts = [...op.ramp.points].sort((a, b) => a.at - b.at);
+        const v = found.item;
+        if (pts.some((p) => p.at < v.in - EPS || p.at > v.out + EPS))
+          throw new TimelineOpError('ramp points must lie inside the item’s source range', i);
+        found.item.ramp = { points: pts };
+      } else delete found.item.ramp;
+      if (isPrimary(t, found.track)) {
+        layoutPrimary(found.track);
+        checkTransition(found.track, found.index, i);
+        if (found.index + 1 < found.track.items.length) checkTransition(found.track, found.index + 1, i);
+      }
+      return;
+    }
+    case 'set_lut': {
+      const found = findItem(t, op.itemId, i);
+      if (found.item.kind !== 'video') throw new TimelineOpError('LUTs apply to video items', i);
+      if (op.lut) found.item.lut = op.lut;
+      else delete found.item.lut;
+      return;
+    }
+    case 'set_mask': {
+      const found = findItem(t, op.itemId, i);
+      if (found.item.kind !== 'video') throw new TimelineOpError('masks apply to video items', i);
+      if (op.mask) found.item.mask = op.mask;
+      else delete found.item.mask;
+      return;
+    }
+    case 'remove_ranges': {
+      const track = primaryTrack(t);
+      const cuts = [...op.ranges].filter(([a, b]) => b > a + EPS).sort((x, y) => x[0] - y[0]);
+      const next: Item[] = [];
+      for (const raw of track.items) {
+        const item = raw as VideoItem;
+        if (item.source.media.path !== op.media) {
+          next.push(item);
+          continue;
+        }
+        // The parts of [in, out] that stay; the first keeps the item's id, transition and fade-in.
+        let parts: [number, number][] = [[item.in, item.out]];
+        for (const [a, b] of cuts)
+          parts = parts.flatMap(([x, y]) =>
+            b <= x || a >= y
+              ? [[x, y] as [number, number]]
+              : (
+                  [
+                    [x, a],
+                    [b, y],
+                  ] as [number, number][]
+                ).filter(([p, q]) => q - p > 0.04),
+          );
+        parts.forEach(([x, y], k) => {
+          const piece: VideoItem = { ...deepClone(item), id: k === 0 ? item.id : gen('item'), in: x, out: y };
+          if (k > 0) {
+            piece.transitionIn = null;
+            delete piece.fadeIn;
+          }
+          if (k < parts.length - 1) delete piece.fadeOut;
+          if (k === 0 && x > item.in + EPS) piece.transitionIn = null;
+          next.push(piece);
+        });
+      }
+      track.items = next;
+      layoutPrimary(track);
+      // Shorter neighbours: transitions shrink to half the shorter one (or go).
+      track.items.forEach((raw, k) => {
+        const item = raw as VideoItem;
+        if (!item.transitionIn || k === 0) return;
+        const max = Math.min(itemDuration(track.items[k - 1]!), itemDuration(item)) / 2;
+        if (item.transitionIn.duration > max)
+          item.transitionIn =
+            max >= 0.04 ? { ...item.transitionIn, duration: Math.floor(max * 1000) / 1000 } : null;
+      });
+      layoutPrimary(track);
       return;
     }
     case 'set_output': {

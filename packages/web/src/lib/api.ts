@@ -529,6 +529,9 @@ export const api = {
     form.set('file', file, file.name);
     return request<WatermarkDetection>('POST', '/watermark/detect', form);
   },
+  /** Remove the background of a video item: a matte job (docs/design/editor.md#segmentation-masks-remove-the-background). */
+  removeBackground: (id: string, itemId: string, body: { subject?: string; invert?: boolean } = {}) =>
+    request<Job>('POST', `${p(id)}/timeline/items/${itemId}/mask`, body),
   /** Replaces the cut with an OpenTimelineIO file (docs/design/interchange.md#import-opentimelineio). */
   importOtio: (id: string, file: File) => {
     const form = new FormData();

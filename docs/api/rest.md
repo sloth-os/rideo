@@ -34,6 +34,7 @@ Errors are RFC 9457 problem details (`application/problem+json`) with a stable `
 | `tts_unavailable` | 422 | voices or TTS dialogue without a TTS provider on the server (or cloning with one that cannot clone) |
 | `localization_incomplete` | 409 | a language variant or translated subtitles while a line of the cut has no current translation, or (dubbed) a speaking take has no current dub |
 | `sfx_unavailable` | 422 | sound effects without a sound-effects provider on the server (`RIDEO_SFX_PROVIDER`) |
+| `segmentation_unavailable` | 422 | Remove the background without a segmentation model on the gateway (`supports_segmentation`), or with `settings.models.segment: "off"` ([editor](../design/editor.md#segmentation-masks-remove-the-background)) |
 | `consistency_gate` | 409 | R7: approval or export blocked by unverified, failed or stale takes |
 | `gate_unmet` | 409 | workflow gate requirements not satisfied (`errors[]` lists them) |
 | `timeline_op_invalid` | 422 | a timeline op failed (`errors[0].opIndex`) |
@@ -128,7 +129,7 @@ review does not show is `403 forbidden`.
 | POST | `/api/projects/:id/gc` | – | GC report |
 | GET | `/api/projects/:id/docs/*path` | `?at=<commit>` | document |
 | GET | `/api/projects/:id/media/*path` | `Range` supported | bytes |
-| POST | `/api/projects/:id/uploads` | multipart `file`, optional `poster` (JPEG) and `meta` JSON `{probe, kind?, role?, name?}` (`probe`: `ProbeSchema`, made by the browser) | `Resource`: `ready` with a probe; otherwise `processing` + a `media.process` editor job |
+| POST | `/api/projects/:id/uploads` | multipart `file`, optional `poster` (JPEG) and `meta` JSON `{probe, kind?, role?, name?}` (`probe`: `ProbeSchema`, made by the browser) | `Resource`: `ready` with a probe; otherwise `processing` + a `media.process` editor job; a `.cube` file is a `lut` resource (`application/x-cube`, validated: `422` when it is not a 3D LUT) |
 | POST | `/api/projects/:id/resources` | `{uri, kind?, role?, name?}` | `Resource` (`processing` + `media.process` editor job for audio/video) |
 
 ## Workflow
@@ -194,6 +195,7 @@ review does not show is `403 forbidden`.
 | POST | `/api/projects/:id/clips/:clipId/shots/:shotId/takes/:takeId/edit` | `{kind: "restyle" \| "relight" \| "replace" \| "angle" \| "remove", instruction}` | `Job` (`take.edit`, [take editing](../design/take-editing.md)) |
 | POST | `/api/projects/:id/clips/:clipId/shots/:shotId/takes/:takeId/extend` | `{seconds: 1–10, prompt?}` | `Job` (`take.extend`) |
 | POST | `/api/projects/:id/timeline/items/:itemId/extend` | `{edge: "start" \| "end", seconds: 1–5, prompt?}` | `Job` (`timeline.extend`) |
+| POST | `/api/projects/:id/timeline/items/:itemId/mask` | `{subject?: "the person", invert?}` | `202 Job` (`mask.generate`): a matte of the subject becomes the video item's `mask` (`segmentation_unavailable`; items up to 2 minutes of source) |
 | POST | `/api/projects/:id/clips/:clipId/shots/:shotId/regenerate` | – | `Job` |
 | POST | `/api/projects/:id/clips/:clipId/shots/reorder` | `{shotIds}` (every shot once) | `Clip` |
 | POST | `/api/projects/:id/clips/:clipId/shots/:shotId/board/generate` | – | `Job` (`shot.board`) |
