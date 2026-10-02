@@ -39,6 +39,7 @@ export class MediaPool {
   private readonly entries = new Map<string, Promise<PoolEntry>>();
   private readonly stills = new Map<string, Promise<ImageBitmap>>();
   private readonly luts = new Map<string, Promise<CubeLut>>();
+  private readonly fonts = new Map<string, Promise<void>>();
 
   constructor(
     private readonly projectId: string,
@@ -97,6 +98,21 @@ export class MediaPool {
         .then((blob) => createImageBitmap(blob));
       this.stills.set(media.hash, p);
       p.catch(() => this.stills.delete(media.hash));
+    }
+    return p;
+  }
+
+  /** A brand font as a FontFace named `family` (docs/design/brand-kits.md); failures fall back to the video font. */
+  font(media: MediaRef, family: string): Promise<void> {
+    let p = this.fonts.get(media.hash);
+    if (!p) {
+      p = new FontFace(family, `url(${mediaUrl(this.projectId, media.path)})`)
+        .load()
+        .then((face) => {
+          (globalThis.document?.fonts ?? (globalThis as unknown as { fonts?: FontFaceSet }).fonts)?.add(face);
+        })
+        .catch(() => undefined);
+      this.fonts.set(media.hash, p);
     }
     return p;
   }

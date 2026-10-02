@@ -75,6 +75,7 @@ test('idea → screenplay → locked cast → pilot → production → edit → 
   await page.getByTestId('go-elements').first().click();
   await expect(page).toHaveURL(/\/elements$/);
   const generateEls = page.getByTestId('generate-element-refs');
+  await expect(generateEls.first()).toBeVisible();
   const elementCount = await generateEls.count();
   expect(elementCount).toBeGreaterThan(1);
   for (let i = 0; i < elementCount; i++) await generateEls.nth(i).click();

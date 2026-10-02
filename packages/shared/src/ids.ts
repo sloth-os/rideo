@@ -32,6 +32,7 @@ export const ID_PREFIXES = {
   review: 'rev',
   notification: 'ntf',
   recipe: 'rcp',
+  brandKit: 'bkt',
 } as const;
 
 export type IdKind = keyof typeof ID_PREFIXES;

@@ -58,6 +58,8 @@ export interface RoutePermission {
 }
 
 export const ROUTE_PERMISSIONS: RoutePermission[] = [
+  // The brand kit of the project (docs/design/brand-kits.md)
+  { method: 'PUT', path: /^\/brand$/, permission: 'project.manage' },
   // Approvals (gates, clips, takes, boards)
   { method: 'POST', path: /^\/workflow\/approve$/, permission: 'project.approve' },
   { method: 'POST', path: /^\/workflow\/reopen$/, permission: 'project.approve' },

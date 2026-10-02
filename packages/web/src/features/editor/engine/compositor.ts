@@ -78,37 +78,52 @@ function drawContain(
   ctx.drawImage(img, (w - dw) / 2, (h - dh) / 2, dw, dh);
 }
 
+/** Line height of multi-line text, as drawtext stacks lines (DejaVu Sans: ascent + descent ≈ 1.17 em). */
+const LINE_HEIGHT = 1.17;
+
 export function drawText(ctx: Ctx2D, item: TextItem, w: number, h: number): void {
-  // Same size, padding and placement as the ffmpeg engine's drawtext (shared render plan).
+  // Same size, padding, box and placement as the ffmpeg engine's drawtext (shared render plan).
   const size = textSize(item, h);
   const pad = textPad(item, h);
   ctx.save();
-  // The bundled DejaVu Sans, the font the ffmpeg engine's drawtext uses (engine/fonts.ts)
-  ctx.font = `${size}px "${VIDEO_FONT}", sans-serif`;
+  // A brand font (docs/design/brand-kits.md), else the bundled DejaVu Sans that drawtext uses (engine/fonts.ts)
+  const family = item.style.font ? `"${item.style.font.family}", "${VIDEO_FONT}"` : `"${VIDEO_FONT}"`;
+  ctx.font = `${size}px ${family}, sans-serif`;
   ctx.textBaseline = 'middle';
-  const metrics = ctx.measureText(item.text);
+  const lines = item.text.split('\n');
+  const widths = lines.map((l) => ctx.measureText(l).width);
+  const blockW = Math.max(...widths);
+  const lineH = size * LINE_HEIGHT;
+  const blockH = size + (lines.length - 1) * lineH;
   const label = item.style.preset === 'label';
   const pos = item.style.position ?? (item.style.preset === 'title' ? 'center' : 'bottom');
-  const y = label
+  const top = label
     ? pos === 'top'
-      ? h * 0.04 + size / 2
-      : h - h * 0.04 - size / 2
+      ? h * 0.04
+      : h - h * 0.04 - blockH
     : item.style.preset === 'lower_third'
-      ? h * 0.72 + size / 2
+      ? h * 0.72
       : pos === 'top'
-        ? h * 0.08 + size / 2
+        ? h * 0.08
         : pos === 'center'
-          ? h / 2
-          : h - h * 0.08 - size / 2;
+          ? (h - blockH) / 2
+          : h - blockH - h * 0.08;
   const align = item.style.align ?? (label ? 'right' : 'center');
-  const x =
-    align === 'left' ? w * 0.03 : align === 'right' ? w - w * 0.03 - metrics.width : (w - metrics.width) / 2;
-  ctx.fillStyle = 'rgba(0,0,0,0.45)';
-  ctx.fillRect(x - pad, y - size / 2 - pad, metrics.width + pad * 2, size + pad * 2);
+  const x = align === 'left' ? w * 0.03 : align === 'right' ? w - w * 0.03 - blockW : (w - blockW) / 2;
+  if (item.style.box !== null) {
+    const [r, g, b] = hexRgb(item.style.box ?? '#000000');
+    ctx.fillStyle = `rgba(${r},${g},${b},${item.style.boxOpacity ?? 0.45})`;
+    ctx.fillRect(x - pad, top - pad, blockW + pad * 2, blockH + pad * 2);
+  }
   ctx.fillStyle = item.style.color ?? '#ffffff';
   ctx.textAlign = 'left';
-  ctx.fillText(item.text, x, y);
+  for (const [i, l] of lines.entries()) ctx.fillText(l, x, top + size / 2 + i * lineH);
   ctx.restore();
+}
+
+function hexRgb(hex: string): [number, number, number] {
+  const n = Number.parseInt(hex.slice(1), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
 }
 
 type Frame = CanvasImageSource & { width: number; height: number };
@@ -302,6 +317,12 @@ export class Compositor {
       }
       ctx.restore();
     }
+    // Brand fonts load once per file before their first frame (docs/design/brand-kits.md)
+    await Promise.all(
+      state.text.flatMap((t) =>
+        t.style.font ? [this.pool.font(t.style.font.media, t.style.font.family)] : [],
+      ),
+    );
     for (const t of state.text) drawText(ctx, t, w, h);
     ctx.restore();
   }

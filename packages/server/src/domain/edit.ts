@@ -407,6 +407,7 @@ export class EditService extends Service {
       language?: string;
       dubbed?: boolean;
       captions?: 'burn' | 'sidecar';
+      bug?: boolean;
     } & Omit<DeliveryInput, 'loudness' | 'captions' | 'stems'> = {},
   ): Promise<{ export: Export; job: Job }> {
     const source = opts.source ?? 'timeline';
@@ -434,6 +435,7 @@ export class EditService extends Service {
       throw invalid('language variants, sidecar captions, reframes and cut-downs are made from the cut');
     // The visible disclosure label (docs/design/provenance.md#disclosure-label): resolved here, drawn by the tab.
     const disclosure = disclosureFor(docs);
+    const brand = docs.project.settings.brand;
     // A language variant (docs/design/localization.md), then the delivered length.
     let shown = source === 'animatic' ? base : cutVariant(docs, { language, dubbed });
     if (delivery.maxDurationSec) shown = cutDown(shown, delivery.maxDurationSec);
@@ -507,6 +509,8 @@ export class EditService extends Service {
           : 'timeline.json',
       disclosure: disclosure.label ? { text: disclosure.text, position: disclosure.position } : null,
       stems,
+      // The brand bug (docs/design/brand-kits.md#a-projects-brand): what the brand says unless the export does
+      bug: brand?.logo && (opts.bug ?? brand.bug.enabled) ? { logo: brand.logo, bug: brand.bug } : null,
     };
     const branch = await this.branchOf(projectId);
     const job = missingFocus.length

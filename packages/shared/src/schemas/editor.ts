@@ -1,5 +1,6 @@
 import { z } from 'zod';
-import { IdSchema, ProbeSchema, TimeRangeSchema } from './common';
+import { BrandBugSchema } from '../brand/schema';
+import { IdSchema, MediaRefSchema, ProbeSchema, TimeRangeSchema } from './common';
 import {
   type EditorJobKind,
   EditorJobKindSchema,
@@ -42,6 +43,8 @@ export const ExportRenderParamsSchema = z.object({
     .default(null),
   /** Also render the dialogue, music and effects stems (docs/design/post-audio.md#stems). */
   stems: z.boolean().default(false),
+  /** The brand bug to draw (docs/design/brand-kits.md#a-projects-brand); null = none. */
+  bug: z.object({ logo: MediaRefSchema, bug: BrandBugSchema }).nullable().default(null),
 });
 
 export const EditorParamsSchemas = {

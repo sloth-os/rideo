@@ -320,6 +320,8 @@ export const ExportInputSchema = z.object({
   aspect: DeliveryAspectSchema.optional(),
   maxDurationSec: z.number().min(5).max(3600).optional(),
   thumbnails: z.boolean().optional(),
+  /** The brand bug (docs/design/brand-kits.md#a-projects-brand); default: the project's brand says. */
+  bug: z.boolean().optional(),
 });
 
 /** Localization (docs/design/localization.md#surfaces). */

@@ -30,6 +30,7 @@ import {
   thumbnailCommand,
   thumbnailPicks,
   totalFrames,
+  withBrand,
   withDisclosure,
 } from '@rideo/shared';
 import type { Stack } from './stack';
@@ -184,14 +185,19 @@ export async function startEditorWorker(
       // The disclosure label is part of the render, like in the browser (docs/design/provenance.md).
       // The cut or the animatic (docs/design/storyboard.md#animatic), at the requested commit.
       // A language variant renders its derived timeline (docs/design/localization.md#language-variants).
-      const t = withDisclosure(
-        params.timelineCommit || params.timelinePath !== 'timeline.json'
-          ? await json<Timeline>(
-              'GET',
-              `/projects/${projectId}/docs/${params.timelinePath}${params.timelineCommit ? `?at=${params.timelineCommit}` : ''}`,
-            )
-          : await json<Timeline>('GET', `/projects/${projectId}/timeline`),
-        params.disclosure,
+      // ...and the brand bug (docs/design/brand-kits.md#a-projects-brand).
+      const t = withBrand(
+        withDisclosure(
+          params.timelineCommit || params.timelinePath !== 'timeline.json'
+            ? await json<Timeline>(
+                'GET',
+                `/projects/${projectId}/docs/${params.timelinePath}${params.timelineCommit ? `?at=${params.timelineCommit}` : ''}`,
+              )
+            : await json<Timeline>('GET', `/projects/${projectId}/timeline`),
+          params.disclosure,
+        ),
+        params.bug,
+        !!params.bug,
       );
       const paths = new Map<string, string>();
       for (const m of renderInputs(t)) paths.set(m.hash, await download(m));

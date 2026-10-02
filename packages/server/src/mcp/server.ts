@@ -7,6 +7,7 @@ import {
   type Actor,
   AnnotationSchema,
   APERTURE_PRESETS,
+  BrandKitInputSchema,
   boardState,
   CAMERA_MOVES,
   CameraSchema,
@@ -1056,6 +1057,8 @@ function buildServer(studio: Studio): McpServer {
       ),
       maxDurationSec: z.number().min(5).max(3600).optional().describe('a cut-down to this length'),
       thumbnails: z.boolean().optional(),
+      /** The brand bug (docs/design/brand-kits.md); default: the project's brand says. */
+      bug: z.boolean().optional(),
     },
     async (a, actor) => ({
       ...(await studio.edit.createExport(actor, a.projectId, a)),
@@ -1224,6 +1227,36 @@ function buildServer(studio: Studio): McpServer {
   );
 
   // Resources
+  // Brand kits (docs/design/brand-kits.md)
+  tool(
+    'brand_kits_list',
+    "The studio's brand kits: colors, fonts, logo, bumpers, the brand bug and lower-third templates (files are added in the studio).",
+    {},
+    async () => studio.brand.list(),
+    ro,
+  );
+  tool(
+    'brand_kit_create',
+    'Create a brand kit: a name, colors ({text, accent, box, boxOpacity}), the bug ({enabled, corner, size, opacity, margin}) and lower-third templates.',
+    BrandKitInputSchema.shape,
+    (a, actor) => studio.brand.create(actor, BrandKitInputSchema.parse(a)),
+  );
+  tool(
+    'brand_kit_update',
+    'Change a brand kit (its author or an admin): name, colors, bug, lower-third templates.',
+    { kitId: z.string(), ...BrandKitInputSchema.partial().shape },
+    (a, actor) => {
+      const { kitId, ...rest } = a;
+      return studio.brand.update(actor, kitId, BrandKitInputSchema.partial().parse(rest));
+    },
+  );
+  tool(
+    'project_brand',
+    "Apply a brand kit to a project (its files are copied into the project's media; null removes the brand); returns the project's brand.",
+    { projectId: PROJECT, kitId: z.string().nullable() },
+    (a, actor) => studio.brand.apply(actor, a.projectId, a.kitId),
+  );
+
   // Agents: recipes and many things at once (docs/design/agents.md)
   tool(
     'batch_variations',
@@ -1604,6 +1637,7 @@ const TOOL_PERMISSIONS: Record<string, Permission> = {
   branch_create: 'project.manage',
   branch_switch: 'project.manage',
   project_access: 'project.manage',
+  project_brand: 'project.manage',
   comment_create: 'project.comment',
   comment_reply: 'project.comment',
   comment_resolve: 'project.comment',

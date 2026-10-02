@@ -11,7 +11,12 @@ export class Api {
   constructor(private readonly request: APIRequestContext) {}
 
   async call<T = any>(method: string, path: string, data?: unknown): Promise<T> {
-    const res = await this.request.fetch(`/api${path}`, { method, ...(data === undefined ? {} : { data }) });
+    const send = () => this.request.fetch(`/api${path}`, { method, ...(data === undefined ? {} : { data }) });
+    // A read that meets a reused connection the server has just closed is sent again
+    const res = await send().catch((err: Error) => {
+      if (method !== 'GET' || !/ECONNRESET|socket hang up/.test(err.message)) throw err;
+      return send();
+    });
     const text = await res.text();
     const body = text ? JSON.parse(text) : null;
     if (!res.ok()) throw new Error(`${method} ${path} → ${res.status()} ${text}`);

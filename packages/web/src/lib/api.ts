@@ -4,6 +4,8 @@ import type {
   AuditEvent,
   AuthMe,
   BranchInfo,
+  BrandKit,
+  BrandSlot,
   Character,
   Clip,
   CommentTarget,
@@ -24,6 +26,7 @@ import type {
   Notification,
   Probe,
   Project,
+  ProjectBrand,
   ProjectDocs,
   ProjectRole,
   ProjectSummary,
@@ -185,6 +188,12 @@ export function shotListUrl(projectId: string, format: 'csv' | 'pdf'): string {
 export function mediaUrl(projectId: string, path: string): string {
   const token = getToken();
   return `/api/projects/${projectId}/media/${path}${token ? `?token=${encodeURIComponent(token)}` : ''}`;
+}
+
+/** A brand kit's file (the Brand kits page); the token rides in the query like media URLs. */
+export function brandFileUrl(kitId: string, file: string): string {
+  const token = getToken();
+  return `/api/brand-kits/${kitId}/files/${file}${token ? `?token=${encodeURIComponent(token)}` : ''}`;
 }
 
 /** The cut as an NLE file (docs/design/interchange.md#surfaces); the token rides in the query like media URLs. */
@@ -448,6 +457,8 @@ export const api = {
       language?: string;
       dubbed?: boolean;
       captions?: 'burn' | 'sidecar';
+      /** The brand bug (docs/design/brand-kits.md#a-projects-brand). */
+      bug?: boolean;
     } & Omit<DeliveryInput, 'loudness' | 'captions' | 'stems'>,
   ) => request<{ export: Export; job: Job }>('POST', `${p(id)}/exports`, body),
   // Storyboard and animatic (docs/design/storyboard.md#surfaces)
@@ -550,6 +561,26 @@ export const api = {
   /** Voices for every speaking character without one: a `voices.cast` job. */
   castVoices: (id: string, body: { characterIds?: string[]; pick?: boolean; lock?: boolean } = {}) =>
     request<Job>('POST', `${p(id)}/voices/cast`, body),
+  // Brand kits (docs/design/brand-kits.md#surfaces)
+  brandKits: () => request<BrandKit[]>('GET', '/brand-kits'),
+  createBrandKit: (body: { name: string }) => request<BrandKit>('POST', '/brand-kits', body),
+  updateBrandKit: (
+    kitId: string,
+    body: {
+      name?: string;
+      colors?: Partial<BrandKit['colors']>;
+      bug?: Partial<BrandKit['bug']>;
+      lowerThirds?: BrandKit['lowerThirds'];
+    },
+  ) => request<BrandKit>('PATCH', `/brand-kits/${kitId}`, body),
+  deleteBrandKit: (kitId: string) => request<void>('DELETE', `/brand-kits/${kitId}`),
+  uploadBrandFile: (kitId: string, slot: BrandSlot, file: File) => {
+    const form = new FormData();
+    form.set('file', file, file.name);
+    return request<BrandKit>('PUT', `/brand-kits/${kitId}/files/${slot}`, form);
+  },
+  applyBrand: (id: string, kitId: string | null) =>
+    request<{ brand: ProjectBrand | null }>('PUT', `${p(id)}/brand`, { kitId }),
   // Recipes (docs/design/agents.md#recipes)
   recipes: () => request<Recipe[]>('GET', '/recipes'),
   deleteRecipe: (recipeId: string) => request<void>('DELETE', `/recipes/${encodeURIComponent(recipeId)}`),

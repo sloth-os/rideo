@@ -480,11 +480,17 @@ export function chunkGraph(t: Timeline, chunk: RenderChunk, opts: ChunkGraphOpti
       const k = drawn++;
       const path = opts.textPath(k);
       textFiles.push({ path, content: frame.text });
-      const font = opts.fontFile ? `fontfile='${escapeFilterValue(opts.fontFile)}':` : '';
+      // A brand font is a render input (docs/design/brand-kits.md); else the bundled DejaVu Sans
+      const fontPath = item.style.font ? opts.inputPath(item.style.font.media) : opts.fontFile;
+      const font = fontPath ? `fontfile='${escapeFilterValue(fontPath)}':` : '';
       const color = item.style.color ?? '#ffffff';
+      const box =
+        item.style.box === null
+          ? 'box=0'
+          : `box=1:boxcolor=${item.style.box ?? 'black'}@${n(item.style.boxOpacity ?? 0.45)}:boxborderw=${textPad(item, height)}`;
       filters.push(
         `[${acc}]drawtext=${font}textfile='${escapeFilterValue(path)}':fontsize=${textSize(item, height)}:fontcolor=${color}:` +
-          `x=${textX(item)}:y=${textY(item)}:box=1:boxcolor=black@0.45:boxborderw=${textPad(item, height)}:` +
+          `x=${textX(item)}:y=${textY(item)}:${box}:` +
           `enable='between(t\\,${n(a)}\\,${n(b)})'[t${k}]`,
       );
       acc = `t${k}`;
@@ -631,6 +637,8 @@ export function renderInputs(t: Timeline): MediaRef[] {
     if (s.item.lut) seen.set(s.item.lut.media.hash, s.item.lut.media);
     if (s.item.mask) seen.set(s.item.mask.media.hash, s.item.mask.media);
   }
+  for (const item of textItems(t))
+    if (item.style.font) seen.set(item.style.font.media.hash, item.style.font.media);
   for (const a of audioSegments(t)) if (a.media.hasAudio !== false) seen.set(a.media.hash, a.media);
   return [...seen.values()];
 }

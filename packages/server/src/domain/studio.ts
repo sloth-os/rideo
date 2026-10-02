@@ -55,6 +55,7 @@ import type { StorageBackend } from '../storage/backend';
 import { Layout } from '../storage/layout';
 import { VERSION } from '../version';
 import { WatermarkService } from '../watermark/service';
+import { BrandService } from './brand';
 import { ClipService } from './clips';
 import type { Deps, Logger } from './deps';
 import { EditService } from './edit';
@@ -88,6 +89,7 @@ export interface Studio {
   review: ReviewService;
   interchange: InterchangeService;
   recipes: RecipeService;
+  brand: BrandService;
   editor: EditorService;
   history: HistoryService;
   ui: UiService;
@@ -222,6 +224,7 @@ export function createStudio(
     review: new ReviewService(deps, workflow),
     interchange: new InterchangeService(deps),
     recipes: new RecipeService(deps),
+    brand: new BrandService(deps),
     editor: new EditorService(deps),
   } satisfies Record<string, unknown>;
   // Editor jobs: failures and cancellations are recorded on their documents; a closed tab releases its jobs.

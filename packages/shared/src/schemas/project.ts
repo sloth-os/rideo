@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { ProjectBrandSchema } from '../brand/schema';
 import { ProjectAccessSchema } from './accounts';
 import { ActorSchema, AspectRatioSchema, IdSchema, IsoDateSchema } from './common';
 
@@ -106,6 +107,8 @@ export const ProjectSettingsSchema = z.object({
   approvals: z
     .object({ allowAgents: z.boolean().default(true), allowAgentOverrides: z.boolean().default(false) })
     .default({ allowAgents: true, allowAgentOverrides: false }),
+  /** The brand kit applied to the project, resolved onto its media (docs/design/brand-kits.md). */
+  brand: ProjectBrandSchema.nullable().default(null),
 });
 export type ProjectSettings = z.infer<typeof ProjectSettingsSchema>;
 

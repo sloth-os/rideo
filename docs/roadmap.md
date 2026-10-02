@@ -214,7 +214,7 @@ engines. *Why:* Descript, Firefly video editor, Resolve IntelliScript, Runway SA
 notes"), reusable recipes (cf. Runway Skills, Flow Tools), batch variations, tools for storyboard, voice casting
 and dubbing. *Why:* Flow Agent, Runway Agent, Descript Underlord.
 
-**17. Brand kits and templates** (S) — fonts, logos, colors for titles; intro/outro bumpers; lower-third templates;
+**17. Brand kits and templates** (S) — *done:* [design/brand-kits.md](design/brand-kits.md) — fonts, logos, colors for titles; intro/outro bumpers; lower-third templates;
 optional visible brand bug. *Why:* Runway Brand Kits, Firefly title templates.
 
 **18. Semantic media search** (M) — natural-language search over takes, footage and resources ("close-ups of Mira at

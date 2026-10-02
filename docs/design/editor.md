@@ -43,7 +43,9 @@ type AudioItem = { id: string; kind: 'audio'; source: Source; start: number; in:
 type TextItem  = { id: string; kind: 'text'; start: number; duration: number; text: string;
                    style: { preset: 'title' | 'lower_third' | 'caption' | 'label';
                             position?: 'top' | 'center' | 'bottom'; align?: 'left' | 'center' | 'right';
-                            color?: string; size?: number; animate?: 'none' | 'build' | 'pop' };
+                            color?: string; size?: number; animate?: 'none' | 'build' | 'pop';
+                            font?: { media: MediaRef; family: string };   // a brand font (docs/design/brand-kits.md)
+                            box?: string | null; boxOpacity?: number };    // the box behind: a color, or none
                    words?: { from: number; to: number; start: number; end: number }[] };  // timed caption words
 ```
 
@@ -90,6 +92,7 @@ committed.
 | `set_lut` | `itemId`, `lut \| null` | a LUT resource ([color](#luts)) |
 | `set_mask` | `itemId`, `mask \| null` | the matte of [Remove the background](#segmentation-masks-remove-the-background) |
 | `remove_ranges` | `media` (a media path), `ranges[[a, b]]` (source seconds) | cuts those parts out of every primary item playing that media and ripples ([transcript editing](#transcript-editing)) |
+| `add_bumper` | `position` (`intro`, `outro`), `source`, `durationSec` | a bumper at the start or end of the picture track; an intro moves every item of the other tracks later by its length ([brand kits](brand-kits.md)) |
 
 A committed `timeline.json` change carries `meta.ops` (the op list), so history shows what was done. The
 editor's undo restores `timeline.json` from the previous timeline commit

@@ -18,6 +18,7 @@ import {
   LOUDNESS_TARGETS,
   type LoudnessTarget,
   newId,
+  type ProjectBrand,
   primaryTrack,
   type RenderEngineChoice,
   type TextItem,
@@ -27,6 +28,7 @@ import {
   timelineDuration,
   trackRole,
   type VideoItem,
+  withBrand,
   withDisclosure,
 } from '@rideo/shared';
 import {
@@ -66,6 +68,7 @@ import { api } from '../../lib/api';
 import { useProjectRole } from '../../lib/auth';
 import { useProject } from '../../store/project';
 import { reportError, useUi } from '../../store/ui';
+import { BrandTools } from './BrandTools';
 import { detectCaps, type EngineCaps } from './engine/capabilities';
 import { MediaPool } from './engine/media-pool';
 import { Player } from './engine/player';
@@ -415,13 +418,16 @@ function ExportDialog({
   onClose,
   timeline,
   projectId,
+  brand,
 }: {
   open: boolean;
   onClose: () => void;
   timeline: Timeline;
   projectId: string;
+  brand: ProjectBrand | null;
 }) {
   const [quality, setQuality] = useState<ExportQuality>('standard');
+  const [bug, setBug] = useState(!!brand?.logo && brand.bug.enabled);
   const [engine, setEngine] = useState<RenderEngineChoice>('auto');
   const [loudness, setLoudness] = useState<LoudnessTarget>('streaming');
   const [stems, setStems] = useState(false);
@@ -492,6 +498,7 @@ function ExportDialog({
         aspect,
         ...(maxDuration ? { maxDurationSec: maxDuration } : {}),
         thumbnails,
+        ...(brand?.logo ? { bug } : {}),
       });
       setQueued({ exportId: r.export.id, jobId: r.job.id });
     } catch (err) {
@@ -698,6 +705,18 @@ function ExportDialog({
               <option value="sidecar">SRT/VTT files only</option>
             </Select>
           </Field>
+          {brand?.logo ? (
+            <label className="flex h-9 items-center justify-between gap-2 rounded-[var(--radius-control)] border border-border bg-surface-2 px-2.5 text-[13px]">
+              Brand bug ({brand.name})
+              <input
+                type="checkbox"
+                checked={bug}
+                onChange={(e) => setBug(e.target.checked)}
+                className="size-4 accent-[var(--color-accent)]"
+                data-testid="export-bug"
+              />
+            </label>
+          ) : null}
         </div>
         <div className="flex flex-wrap gap-1.5 text-[12px]" data-testid="webcodecs-caps">
           <Badge tone="success">
@@ -755,7 +774,13 @@ export function EditorView() {
   const preview = useMemo(() => {
     if (!timeline || !docs) return timeline;
     const d = disclosureFor(docs, timeline);
-    return withDisclosure(timeline, d.label ? { text: d.text, position: d.position } : null);
+    // The brand bug as the export draws it by default (docs/design/brand-kits.md#a-projects-brand)
+    const brand = docs.project.settings.brand;
+    return withBrand(
+      withDisclosure(timeline, d.label ? { text: d.text, position: d.position } : null),
+      brand,
+      !!brand?.bug.enabled,
+    );
   }, [timeline, docs]);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const playerRef = useRef<Player | null>(null);
@@ -932,6 +957,7 @@ export function EditorView() {
             >
               Overlay
             </Button>
+            <BrandTools brand={docs.project.settings.brand} time={time} apply={apply} />
             <Button
               icon={<Undo2 className="size-4" />}
               disabled={lastTimelineCommits.length === 0}
@@ -1229,6 +1255,7 @@ export function EditorView() {
         onClose={() => setExportOpen(false)}
         timeline={timeline}
         projectId={projectId}
+        brand={docs.project.settings.brand}
       />
     </div>
   );

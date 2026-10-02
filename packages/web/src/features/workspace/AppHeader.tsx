@@ -1,4 +1,4 @@
-import { Cpu, KeyRound, Loader2, LogOut, Moon, ShieldCheck, Sun, Users } from 'lucide-react';
+import { Cpu, KeyRound, Loader2, LogOut, Moon, Palette, ShieldCheck, Sun, Users } from 'lucide-react';
 import { type ReactNode, useState } from 'react';
 import { Link } from 'react-router';
 import { cx } from '../../components/ui';
@@ -148,6 +148,15 @@ export function AppHeader({ children }: { children?: ReactNode }) {
       <div className="min-w-0 flex-1">{children}</div>
       <EngineStatus />
       <LiveDot />
+      <Link
+        to="/brand"
+        className="rounded p-1.5 text-muted hover:text-text"
+        aria-label="Brand kits"
+        title="Brand kits"
+        data-testid="brand-kits-link"
+      >
+        <Palette className="size-4" />
+      </Link>
       <Link
         to="/verify"
         className="rounded p-1.5 text-muted hover:text-text"

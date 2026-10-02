@@ -3,6 +3,7 @@ import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-route
 import { Toaster } from './components/Toaster';
 import { Spinner } from './components/ui';
 import { AdminPage } from './features/account/AdminPage';
+import { BrandKitsPage } from './features/account/BrandKitsPage';
 import { LoginPage } from './features/account/LoginPage';
 import { TokensPage } from './features/account/TokensPage';
 import { Dashboard } from './features/dashboard/Dashboard';
@@ -71,6 +72,14 @@ export function App() {
           element={
             <Signed>
               <AdminPage />
+            </Signed>
+          }
+        />
+        <Route
+          path="/brand"
+          element={
+            <Signed>
+              <BrandKitsPage />
             </Signed>
           }
         />

@@ -99,6 +99,21 @@ export class Layout {
     return joinPath(this.tokensDir(), `${assertId(id, 'token')}.json`);
   }
 
+  /** The studio's brand kits and their files (docs/design/brand-kits.md). */
+  brandKitsDir(): string {
+    return joinPath(this.root, 'brand-kits');
+  }
+
+  brandKit(id: string): string {
+    return joinPath(this.brandKitsDir(), `${assertId(id, 'brandKit')}.json`);
+  }
+
+  brandKitFile(id: string, file: string): string {
+    if (!/^[a-z0-9][a-z0-9._-]{0,199}$/.test(file) || file.includes('..'))
+      throw new Error(`invalid brand file: ${file}`);
+    return joinPath(this.brandKitsDir(), assertId(id, 'brandKit'), file);
+  }
+
   /** The studio's recipes (docs/design/agents.md#recipes). */
   recipesDir(): string {
     return joinPath(this.root, 'recipes');

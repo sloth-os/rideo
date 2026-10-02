@@ -72,6 +72,22 @@ Errors are RFC 9457 problem details (`application/problem+json`) with a stable `
 | DELETE | `/api/tokens/:id` | – | the token, revoked |
 | GET | `/api/audit` | `?since&until&projectId&actor&type&limit` | audit events, newest first (admins; directors with their `projectId`) |
 
+## Brand kits
+
+[Brand kits](../design/brand-kits.md): the studio's kits, their files, and a project's brand.
+
+| Method | Path | Body / query | Result |
+|---|---|---|---|
+| GET | `/api/brand-kits` | – | the kits |
+| POST | `/api/brand-kits` | `{name, colors?, bug?, lowerThirds?}` | `201` the kit |
+| PATCH | `/api/brand-kits/:id` | the same, partial | the kit (its author or an admin) |
+| DELETE | `/api/brand-kits/:id` | – | `204`, with its files |
+| PUT | `/api/brand-kits/:id/files/:slot` | multipart `file`; `slot`: `title_font`, `body_font`, `logo`, `intro`, `outro` | the kit; `422` for a file that is not a font (signature), an image or a video (probe), or a bumper over 30 s |
+| GET | `/api/brand-kits/:id/files/:file` | – | the file |
+| PUT | `/api/projects/:id/brand` | `{kitId \| null}` | `{brand}`: the kit applied (its files copied into the project's media), or removed (`project.manage`) |
+
+Exports take `bug` (`POST /exports`, default: the brand's `bug.enabled`) to draw the brand bug.
+
 ## Agents
 
 [Agents](../design/agents.md): recipes, variations of many shots, casting every voice.

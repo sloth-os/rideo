@@ -9,6 +9,7 @@ import {
   stemFile,
   type Timeline,
   totalFrames,
+  withBrand,
   withDisclosure,
 } from '@rideo/shared';
 import { detectCaps } from '../../features/editor/engine/capabilities';
@@ -30,11 +31,16 @@ export async function exportRenderJob(ctx: EditorJobContext): Promise<ExportRend
   const params = ExportRenderParamsSchema.parse(ctx.job.params);
   // The disclosure label is drawn into the picture (docs/design/provenance.md#disclosure-label).
   // The cut or the storyboard's animatic (docs/design/storyboard.md#animatic), at the requested commit.
-  const timeline = withDisclosure(
-    params.timelineCommit || params.timelinePath !== 'timeline.json'
-      ? await api.doc<Timeline>(ctx.projectId, params.timelinePath, params.timelineCommit ?? undefined)
-      : await api.timeline(ctx.projectId),
-    params.disclosure,
+  // ...and the brand bug (docs/design/brand-kits.md#a-projects-brand).
+  const timeline = withBrand(
+    withDisclosure(
+      params.timelineCommit || params.timelinePath !== 'timeline.json'
+        ? await api.doc<Timeline>(ctx.projectId, params.timelinePath, params.timelineCommit ?? undefined)
+        : await api.timeline(ctx.projectId),
+      params.disclosure,
+    ),
+    params.bug,
+    !!params.bug,
   );
   const size = renderSize(timeline, params.quality);
   const sources = renderInputs(timeline);

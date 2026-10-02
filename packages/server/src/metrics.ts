@@ -110,6 +110,10 @@ export class Metrics {
   readonly auth = this.add(
     new Counter('rideo_auth_total', 'Sign-ins, token use and denials by event and outcome'),
   );
+  /** Brand kits created, applied and files added (docs/design/brand-kits.md). */
+  readonly brand = this.add(
+    new Counter('rideo_brand_total', 'Brand kits created, applied, removed and files added'),
+  );
   /** Recipe steps run (docs/design/agents.md#recipes). */
   readonly recipeSteps = this.add(
     new Counter('rideo_recipe_steps_total', 'Recipe steps run by tool and outcome'),

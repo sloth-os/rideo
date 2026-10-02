@@ -141,6 +141,18 @@ or keep going and `job_wait` until a tab picks the job up.
 | `export_list` | `projectId` |
 | `watermark_detect` | `uri` or `projectId` + `mediaPath` → watermark, registry record and `contentCredentials` (C2PA) |
 
+### Brand kits
+
+| Tool | Arguments |
+|---|---|
+| `brand_kits_list` | – → the kits ([brand kits](brand-kits.md)) |
+| `brand_kit_create` | `name`, `colors?`, `bug?`, `lowerThirds?` |
+| `brand_kit_update` | `kitId`, and the same fields |
+| `project_brand` | `projectId`, `kitId` (null removes the brand) → the project's brand (`project.manage`) |
+
+`export_render` takes `bug?` (the brand bug); lower thirds and bumpers are timeline ops (`add_text` with a template's
+style, `add_bumper`).
+
 ### Agents: recipes and many things at once
 
 [Agents](agents.md#recipes): recipes are sequences of these tools with parameters, run on the server.

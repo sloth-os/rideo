@@ -91,8 +91,11 @@ RIDEO_TEST_WEBDAV_URL=http://rideo:rideo@localhost:8080/ npx vitest run --projec
   takes as markers); the web's sign-in page; FCPXML and XML parsed as XML with awkward titles and labels; the
   inspector's transform keyframes and ramp presets, the transcript panel's filler and selection cuts, waveform
   drawing, and the compositor's overlay placement, opacity, matte alpha and LUT (a recording canvas); the
-  Recipes card (built-in and studio recipes, the run dialog's parameters typed); recipes (parameters, placeholders,
-  the built-ins).
+  Recipes card (built-in and studio recipes, the run dialog's parameters typed); brand text in the compositor
+  (two lines, the brand font and box, no box) and the editor's lower third and intro; recipes (parameters, placeholders,
+  the built-ins); brand kits (font signatures, the bug's corner and size, `withBrand` over the other tracks for the
+  whole film, titles and lower thirds in the brand's fonts, colors and box, intros that move the other tracks,
+  `drawtext` with the brand font and box).
 - **web**: live-event store reducer and optimistic timeline edits (apply, confirm, roll back), live client
   (sequence dedupe, UI-command acks, restart resync), UI command dispatch, WebCodecs codec/container
   selection, render engine choice, the editor-job worker against a fake API (claims only with a project and a
@@ -174,6 +177,10 @@ RIDEO_TEST_WEBDAV_URL=http://rideo:rideo@localhost:8080/ npx vitest run --projec
   admins and the studio token; agent tokens capped by role and projects over REST and MCP (commits by the agent on
   behalf of its owner, MCP sessions bound to their caller, revocation); people disabled by an admin; the audit log
   for admins and directors; live subscriptions refused to people without access.
+- **Brand kits** (`brand.test.ts`): a kit with fonts (a broken one refused), a logo, a video intro and an outro still,
+  served back; the bug set; the kit applied to a project (files copied into its media); a lower third and an intro
+  that moves it; an export with the bug checked pixel by pixel (the logo in its corner over the intro), its length;
+  the brand removed and the kit deleted; MCP `brand_kits_list`, `brand_kit_update`, `project_brand`.
 - **Agents** (`agents.test.ts`): studio recipes validated (unknown tools, arguments, placeholders) and run with
   `forEach` over a list parameter, a failing step stopping the recipe with its error, built-ins that cannot be
   deleted, metrics; the built-in *Cast every voice* designing, choosing and locking the voices; MCP prompts filled
@@ -226,8 +233,8 @@ RIDEO_TEST_WEBDAV_URL=http://rideo:rideo@localhost:8080/ npx vitest run --projec
 
 Projects: `desktop` (1440×900) runs every spec except `responsive`; `mobile` (412×915, touch) runs
 `responsive`, `mcp-sync`, `provenance`, `elements`, `dialogue`, `storyboard`, `directing`, `take-editing`,
-`multi-shot`, `post-audio`, `localization`, `finishing`, `accounts`, `review`, `interchange`, `editor-depth` and
-`recipes`. The
+`multi-shot`, `post-audio`, `localization`, `finishing`, `accounts`, `review`, `interchange`, `editor-depth`,
+`recipes` and `brand`. The
 web server stops with SIGTERM so the stack removes its data; stale stack directories older than an hour are removed
 when a new stack starts. Specs:
 
@@ -239,6 +246,7 @@ when a new stack starts. Specs:
 | `history.spec.ts` | edit → history → diff → restore → UI updates |
 | `take-editing.spec.ts` | (desktop and mobile) relight a take and extend another by 2 s from the take tiles (lineage badges); generative extend of the first item in the editor (the lanes on desktop, the item list on phones) |
 | `accounts.spec.ts` | (desktop and mobile, on the stack's second server with accounts and a mock identity provider) sign-in; a director adds a reviewer by email in the Members card; an agent token created, used and revoked; people and the audit log; the reviewer's view (banner, no settings); sign-out |
+| `brand.spec.ts` | (desktop and mobile) a brand kit made on the Brand kits page with a logo and the bug on; applied to a project from its overview; a lower third from the kit's template in the editor; the export with the bug (on by default) rendered in the tab |
 | `recipes.spec.ts` | (desktop and mobile) a studio recipe (a title per text) run from the overview's Recipes card with its parameter; the titles in the cut; the recipe deleted |
 | `editor-depth.spec.ts` | (desktop and mobile) footage added as an overlay at the playhead, the picture-in-picture preset, *Remove the background* (the mock's segmentation model); an ease-in ramp and a `.cube` LUT uploaded from the inspector on the primary item; filmstrips and waveforms in the lanes (desktop); the layered cut exported with ffmpeg.wasm; the analysis's transcript and *Remove filler words* splitting the picture track |
 | `interchange.spec.ts` | (desktop and mobile) the Exports view's hand-off card with a mounted media location: the OTIO download points into it (remembered after a reload), FCPXML, XML and EDL download; a re-edited OTIO (trimmed, plus a clip from elsewhere) imported: one clip placed, the stranger listed |

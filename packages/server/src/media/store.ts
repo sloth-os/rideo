@@ -48,7 +48,8 @@ export type MediaKind =
   | 'stems'
   | 'subtitles'
   | 'luts'
-  | 'masks';
+  | 'masks'
+  | 'brand';
 
 export interface PutOptions {
   kind: MediaKind;
@@ -70,6 +71,9 @@ const EXT_OVERRIDES: Record<string, string> = {
   'audio/x-wav': 'wav',
   // 3D LUTs: ffmpeg's lut3d reads the format from the extension (docs/design/editor.md#luts)
   'application/x-cube': 'cube',
+  // Brand fonts (docs/design/brand-kits.md)
+  'font/ttf': 'ttf',
+  'font/otf': 'otf',
 };
 
 export function extFor(mimeType: string, fallbackPath?: string): string {

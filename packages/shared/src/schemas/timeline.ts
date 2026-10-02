@@ -134,6 +134,15 @@ export const TextStyleSchema = z.object({
   size: z.number().int().min(8).max(200).optional(),
   /** Captions revealed word by word or one word at a time (docs/design/localization.md#captions-and-word-timing). */
   animate: z.enum(['none', 'build', 'pop']).optional(),
+  /** A brand font (docs/design/brand-kits.md): its file, and the family the compositor gives it. */
+  font: z.object({ media: MediaRefSchema, family: z.string().min(1).max(100) }).optional(),
+  /** The box behind the text: a color (black by default), or null for none. */
+  box: z
+    .string()
+    .regex(/^#[0-9a-fA-F]{6}$/)
+    .nullable()
+    .optional(),
+  boxOpacity: z.number().min(0).max(1).optional(),
 });
 export type TextStyle = z.infer<typeof TextStyleSchema>;
 
@@ -258,6 +267,13 @@ export const TimelineOpSchema = z.discriminatedUnion('op', [
   }),
   z.object({ op: z.literal('replace_source'), itemId: IdSchema, source: SourceSchema }),
   z.object({ op: z.literal('set_transform'), itemId: IdSchema, transform: TransformSchema.nullable() }),
+  /** An intro or outro (docs/design/brand-kits.md#a-projects-brand): an intro moves the other tracks later. */
+  z.object({
+    op: z.literal('add_bumper'),
+    position: z.enum(['intro', 'outro']),
+    source: SourceSchema,
+    durationSec: z.number().min(0.5).max(30),
+  }),
   z.object({ op: z.literal('set_ramp'), itemId: IdSchema, ramp: RampSchema.nullable() }),
   z.object({ op: z.literal('set_lut'), itemId: IdSchema, lut: ItemLutSchema.nullable() }),
   z.object({ op: z.literal('set_mask'), itemId: IdSchema, mask: ItemMaskSchema.nullable() }),

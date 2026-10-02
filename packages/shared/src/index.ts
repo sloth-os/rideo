@@ -1,6 +1,7 @@
 export * from './accounts';
 export * from './agents/recipes';
 export * from './audio';
+export * from './brand';
 export * from './captions';
 export * from './consistency';
 export * from './dialogue';

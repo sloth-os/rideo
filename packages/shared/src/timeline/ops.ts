@@ -444,6 +444,37 @@ function applyOne(t: Timeline, op: TimelineOp, i: number, gen: (k: 'item' | 'tra
       if (isPrimary(t, found.track)) layoutPrimary(found.track);
       return;
     }
+    case 'add_bumper': {
+      // An intro or outro on the picture track; an intro moves every other track later (docs/design/brand-kits.md)
+      const track = primaryTrack(t);
+      const still = op.source.media.mime.startsWith('image/');
+      const dur = op.source.media.durationSec;
+      const len = !still && dur !== undefined ? Math.min(op.durationSec, dur) : op.durationSec;
+      const item = parseItem(
+        {
+          id: gen('item'),
+          kind: 'video',
+          source: op.source,
+          start: 0,
+          in: 0,
+          out: len,
+          speed: 1,
+          volume: 1,
+          label: op.position === 'intro' ? 'Intro' : 'Outro',
+        },
+        i,
+      );
+      if (op.position === 'intro') {
+        track.items.unshift(item);
+        const first = track.items[1] as VideoItem | undefined;
+        if (first?.transitionIn) first.transitionIn = null;
+        for (const other of t.tracks)
+          if (other.id !== track.id)
+            for (const x of other.items) x.start = Math.round((x.start + len) * 1e6) / 1e6;
+      } else track.items.push(item);
+      layoutPrimary(track);
+      return;
+    }
     case 'set_transform': {
       const found = findItem(t, op.itemId, i);
       if (found.item.kind !== 'video') throw new TimelineOpError('transforms apply to video items', i);
