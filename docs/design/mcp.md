@@ -141,6 +141,19 @@ or keep going and `job_wait` until a tab picks the job up.
 | `export_list` | `projectId` |
 | `watermark_detect` | `uri` or `projectId` + `mediaPath` → watermark, registry record and `contentCredentials` (C2PA) |
 
+### Agents: recipes and many things at once
+
+[Agents](agents.md#recipes): recipes are sequences of these tools with parameters, run on the server.
+
+| Tool | Arguments |
+|---|---|
+| `batch_variations` | `projectId`, `clipId`, `shotIds?`, `count` (2–4) → one job per new take |
+| `voices_cast` | `projectId`, `characterIds?`, `pick?`, `lock?` → job (`voices.cast`) |
+| `recipes_list` | – → built-in and studio recipes |
+| `recipe_create` | `name`, `description?`, `params?[{name, type, required?, default?}]`, `steps[{tool, args, forEach?, wait?, label?}]` |
+| `recipe_delete` | `recipeId` (its author or an admin) |
+| `recipe_run` | `projectId`, `recipeId`, `params?` → job (`recipe.run`) |
+
 ### NLE interchange
 
 | Tool | Arguments |
@@ -196,6 +209,18 @@ project. The result lists which sessions acknowledged it within 3 s.
 | `rideo://projects` | project list (JSON) |
 | `rideo://projects/{projectId}/state` | project snapshot (JSON) |
 | `rideo://projects/{projectId}/screenplay.md` | screenplay rendered as Markdown |
+| `rideo://recipes` | the studio's recipes, built-in ones first ([agents](agents.md#resources)) |
+| `rideo://projects/{projectId}/review-notes` | open review threads, by take and export |
+| `rideo://projects/{projectId}/scenes/{sceneId}` | a scene with its clips, shots, selected takes and their consistency |
+| `rideo://projects/{projectId}/timeline` | the cut |
+
+Project resources need the project's read permission, like the read tools.
+
+## Prompts
+
+`direct_scene` (`projectId`, `sceneId`), `address_review_notes` (`projectId`, `reviewId?`), `cast_voices`
+(`projectId`), `dub_film` (`projectId`, `language`) and `make_variations` (`projectId`, `clipId`): templates filled with
+the project's material and the steps, naming the tools ([agents](agents.md#prompts)).
 
 ## Example
 

@@ -12,7 +12,7 @@ import type { Config } from '../config';
 import type { Logger } from '../domain/deps';
 import { createStudio, type Studio } from '../domain/studio';
 import { AppError, problemDetails, toAppError } from '../errors';
-import { registerMcp } from '../mcp/server';
+import { registerMcp, toolRegistry } from '../mcp/server';
 import { Metrics } from '../metrics';
 import type { StorageBackend } from '../storage/backend';
 import { createEmbeddedDav, DAV_PREFIX } from '../storage/embedded-dav';
@@ -269,6 +269,8 @@ export async function buildServer(
   registerRoutes(app, studio);
   registerReviewRoutes(app, studio);
   registerMcp(app, studio);
+  // Recipes run their steps through the MCP tools (docs/design/agents.md#recipes)
+  studio.recipes.setTools(() => toolRegistry(studio));
 
   // Default: packages/web/dist, found from the source tree (src/http) or the bundle (dist/main.js).
   const webDist = config.webDist

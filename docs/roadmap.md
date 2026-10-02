@@ -210,7 +210,7 @@ opacity, speed ramps, LUTs, segmentation masks ("remove the background"), transc
 projects with filler-word removal, waveforms and filmstrips. Requires relaxing the one-video-track rule in both
 engines. *Why:* Descript, Firefly video editor, Resolve IntelliScript, Runway SAM3 segmentation.
 
-**16. Agent upgrades** (S–M) — MCP prompts and resources for common jobs ("direct this scene", "address the review
+**16. Agent upgrades** (S–M) — *done:* [design/agents.md](design/agents.md) — MCP prompts and resources for common jobs ("direct this scene", "address the review
 notes"), reusable recipes (cf. Runway Skills, Flow Tools), batch variations, tools for storyboard, voice casting
 and dubbing. *Why:* Flow Agent, Runway Agent, Descript Underlord.
 

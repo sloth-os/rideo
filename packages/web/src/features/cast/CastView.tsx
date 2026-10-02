@@ -6,7 +6,18 @@ import {
   isTerminalJob,
   type ReferenceView,
 } from '@rideo/shared';
-import { Check, ImagePlus, Lock, Sparkles, Trash2, Unlock, UserCheck, UserPlus, X } from 'lucide-react';
+import {
+  AudioLines,
+  Check,
+  ImagePlus,
+  Lock,
+  Sparkles,
+  Trash2,
+  Unlock,
+  UserCheck,
+  UserPlus,
+  X,
+} from 'lucide-react';
 import { useRef, useState } from 'react';
 import { Link } from 'react-router';
 import { ConsentDialog } from '../../components/ConsentDialog';
@@ -26,6 +37,7 @@ import {
   Select,
 } from '../../components/ui';
 import { api } from '../../lib/api';
+import { useConfig } from '../../lib/config';
 import { useProject } from '../../store/project';
 import { reportError, useUi } from '../../store/ui';
 import { VoicePanel } from './VoicePanel';
@@ -321,6 +333,7 @@ function CharacterCard({ c }: { c: Character }) {
 
 export function CastView() {
   const { docs, projectId, workflow } = useProject();
+  const cfg = useConfig();
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState('');
   if (!docs || !projectId) return null;
@@ -344,6 +357,20 @@ export function CastView() {
             >
               Add character
             </Button>
+            {cfg?.features.tts ? (
+              <Button
+                icon={<AudioLines className="size-4" />}
+                onClick={() =>
+                  api
+                    .castVoices(projectId, {})
+                    .then(() => useUi.getState().toast('Designing a voice for everyone who speaks', 'info'))
+                    .catch(reportError)
+                }
+                data-testid="cast-voices"
+              >
+                Design every voice
+              </Button>
+            ) : null}
             {workflow?.stage === 'cast' && gate ? (
               <Button
                 variant="primary"

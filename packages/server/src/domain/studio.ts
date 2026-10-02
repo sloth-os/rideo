@@ -29,6 +29,7 @@ import { localizeGenerate } from '../jobs/handlers/localize';
 import { maskGenerate } from '../jobs/handlers/mask';
 import { analysisSuggest, editAuto, exportFinish, timelineAssemble } from '../jobs/handlers/media';
 import { scoreGenerate, sfxGenerate } from '../jobs/handlers/post-audio';
+import { recipeRun } from '../jobs/handlers/recipe';
 import { shotGenerate } from '../jobs/handlers/shot';
 import { shotGroup } from '../jobs/handlers/shot-group';
 import {
@@ -42,6 +43,7 @@ import {
 import { shotBoard, storyboardGenerate } from '../jobs/handlers/storyboard';
 import { takeEdit, takeExtend, timelineExtend } from '../jobs/handlers/take-edit';
 import { voiceDesign } from '../jobs/handlers/voice';
+import { voicesCast } from '../jobs/handlers/voices-cast';
 import { JobQueue } from '../jobs/queue';
 import { LiveHub } from '../live/hub';
 import { Ffmpeg } from '../media/ffmpeg';
@@ -62,6 +64,7 @@ import { HistoryService } from './history';
 import { InterchangeService } from './interchange';
 import { LocalizationService } from './localization';
 import { ProjectService } from './projects';
+import { RecipeService } from './recipes';
 import { ProjectRegistry } from './registry';
 import { ReviewService } from './review';
 import { StoryService } from './story';
@@ -84,6 +87,7 @@ export interface Studio {
   localization: LocalizationService;
   review: ReviewService;
   interchange: InterchangeService;
+  recipes: RecipeService;
   editor: EditorService;
   history: HistoryService;
   ui: UiService;
@@ -217,6 +221,7 @@ export function createStudio(
     localization: new LocalizationService(deps),
     review: new ReviewService(deps, workflow),
     interchange: new InterchangeService(deps),
+    recipes: new RecipeService(deps),
     editor: new EditorService(deps),
   } satisfies Record<string, unknown>;
   // Editor jobs: failures and cancellations are recorded on their documents; a closed tab releases its jobs.
@@ -239,6 +244,8 @@ export function createStudio(
   reg('take.extend', takeExtend);
   reg('timeline.extend', timelineExtend);
   reg('mask.generate', maskGenerate);
+  reg('recipe.run', recipeRun);
+  reg('voices.cast', voicesCast);
   reg('music.generate', musicGenerate);
   reg('score.generate', scoreGenerate);
   reg('sfx.generate', sfxGenerate);

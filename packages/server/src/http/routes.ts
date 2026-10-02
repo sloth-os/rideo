@@ -8,6 +8,7 @@ import {
   AnimaticInputSchema,
   ApproveInputSchema,
   AssembleInputSchema,
+  BatchVariationsInputSchema,
   BoardApproveInputSchema,
   CharacterInputSchema,
   CharacterUpdateInputSchema,
@@ -29,6 +30,8 @@ import {
   MaskInputSchema,
   MusicInputSchema,
   OverrideInputSchema,
+  RecipeInputSchema,
+  RecipeRunInputSchema,
   ReferenceViewSchema,
   ReopenInputSchema,
   ReorderShotsInputSchema,
@@ -48,6 +51,7 @@ import {
   UpdateProjectInputSchema,
   UploadMetaSchema,
   VariationsInputSchema,
+  VoicesCastInputSchema,
 } from '@rideo/shared';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
@@ -430,6 +434,30 @@ export function registerRoutes(app: FastifyInstance, studio: Studio): void {
     studio.story.unlockCharacter(actor(), pid(req), p(req, 'cid')),
   );
   // Voices (docs/design/dialogue.md#surfaces)
+  app.post('/api/projects/:id/voices/cast', async (req, reply) =>
+    reply.code(202).send(await studio.voices.cast(actor(), pid(req), parse(VoicesCastInputSchema, req.body))),
+  );
+  // Recipes (docs/design/agents.md#recipes)
+  app.get('/api/recipes', async () => studio.recipes.list());
+  app.post('/api/recipes', async (req, reply) =>
+    reply.code(201).send(await studio.recipes.create(actor(), parse(RecipeInputSchema, req.body))),
+  );
+  app.delete('/api/recipes/:recipeId', async (req, reply) => {
+    await studio.recipes.remove(actor(), p<string>(req, 'recipeId'));
+    return reply.code(204).send();
+  });
+  app.post('/api/projects/:id/recipes/:recipeId/run', async (req, reply) =>
+    reply
+      .code(202)
+      .send(
+        await studio.recipes.run(
+          actor(),
+          pid(req),
+          p<string>(req, 'recipeId'),
+          parse(RecipeRunInputSchema, req.body).params,
+        ),
+      ),
+  );
   app.post('/api/projects/:id/characters/:cid/voice/design', async (req, reply) =>
     reply.code(202).send(await studio.voices.design(actor(), pid(req), p(req, 'cid'))),
   );
@@ -630,6 +658,18 @@ export function registerRoutes(app: FastifyInstance, studio: Studio): void {
           pid(req),
           p(req, 'itemId'),
           parse(TimelineExtendInputSchema, req.body),
+        ),
+      ),
+  );
+  app.post('/api/projects/:id/clips/:clipId/variations', async (req, reply) =>
+    reply
+      .code(202)
+      .send(
+        await studio.clips.batchVariations(
+          actor(),
+          pid(req),
+          p(req, 'clipId'),
+          parse(BatchVariationsInputSchema, req.body),
         ),
       ),
   );

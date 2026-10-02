@@ -72,6 +72,19 @@ Errors are RFC 9457 problem details (`application/problem+json`) with a stable `
 | DELETE | `/api/tokens/:id` | – | the token, revoked |
 | GET | `/api/audit` | `?since&until&projectId&actor&type&limit` | audit events, newest first (admins; directors with their `projectId`) |
 
+## Agents
+
+[Agents](../design/agents.md): recipes, variations of many shots, casting every voice.
+
+| Method | Path | Body / query | Result |
+|---|---|---|---|
+| GET | `/api/recipes` | – | built-in and studio recipes |
+| POST | `/api/recipes` | `{name, description?, params?, steps}` | `201` the recipe (validated against the MCP tools) |
+| DELETE | `/api/recipes/:id` | – | `204`; built-ins `403`, others' recipes `403` unless admin |
+| POST | `/api/projects/:id/recipes/:recipeId/run` | `{params}` | `202 Job` (`recipe.run`); the caller needs the strongest permission of its steps |
+| POST | `/api/projects/:id/clips/:clipId/variations` | `{shotIds?, count: 2–4}` | `202 Job[]` (`shot.generate`, one per new take) |
+| POST | `/api/projects/:id/voices/cast` | `{characterIds?, pick?, lock?}` | `202 Job` (`voices.cast`; `tts_unavailable` without TTS) |
+
 ## Interchange
 
 [NLE interchange](../design/interchange.md): the cut (or the animatic) as a file for Premiere, Resolve, Final Cut Pro

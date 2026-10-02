@@ -263,6 +263,22 @@ export const TimelineExtendInputSchema = z.object({
   prompt: z.string().max(1000).optional(),
 });
 
+/** Runs a recipe on a project (docs/design/agents.md#recipes). */
+export const RecipeRunInputSchema = z.object({ params: z.record(z.string(), z.unknown()).default({}) });
+
+/** Variations of every shot of a clip, or of the listed ones (docs/design/agents.md#many-things-at-once). */
+export const BatchVariationsInputSchema = z.object({
+  shotIds: z.array(IdSchema).min(1).max(100).optional(),
+  count: z.number().int().min(2).max(4).default(2),
+});
+
+/** Voices for every speaking character without one (docs/design/agents.md#many-things-at-once). */
+export const VoicesCastInputSchema = z.object({
+  characterIds: z.array(IdSchema).min(1).max(100).optional(),
+  pick: z.boolean().default(false),
+  lock: z.boolean().default(false),
+});
+
 /** Remove the background of a video item (docs/design/editor.md#segmentation-masks-remove-the-background). */
 export const MaskInputSchema = z.object({
   subject: z.string().trim().min(1).max(200).optional(),

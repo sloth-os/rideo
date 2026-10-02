@@ -34,6 +34,7 @@ import {
   MotionReferenceSchema,
   type Permission,
   ProjectSettingsPatchSchema,
+  RecipeInputSchema,
   ReferenceViewSchema,
   RenderEngineChoiceSchema,
   ResourceKindSchema,
@@ -61,6 +62,14 @@ import type { Studio } from '../domain/studio';
 import { invalid, toAppError } from '../errors';
 import { VERSION } from '../http/app';
 import type { AuthedRequest } from '../http/auth-routes';
+import {
+  castVoicesPrompt,
+  directScenePrompt,
+  dubPrompt,
+  reviewNotesPrompt,
+  variationsPrompt,
+} from './prompts';
+import type { ToolDef, ToolRegistry } from './registry';
 
 const PROJECT = z.string().describe('Project id (prj_…)');
 
@@ -233,6 +242,8 @@ function buildServer(studio: Studio): McpServer {
       ? { ...agent, onBehalfOf: { kind: 'user', id: p.user.id, name: p.user.name } }
       : agent;
   };
+  // One registry for MCP clients and recipes (docs/design/agents.md#recipes)
+  const registry = new Map<string, ToolDef>();
   const tool = <S extends z.ZodRawShape>(
     name: string,
     description: string,
@@ -240,6 +251,28 @@ function buildServer(studio: Studio): McpServer {
     run: (args: ToolArgs<S>, actor: Actor) => Promise<unknown>,
     annotations: { readOnlyHint?: boolean; destructiveHint?: boolean } = {},
   ) => {
+    const readOnly = !!annotations.readOnlyHint;
+    const permission = TOOL_PERMISSIONS[name] ?? (readOnly ? 'project.read' : 'project.edit');
+    registry.set(name, {
+      name,
+      description,
+      shape,
+      readOnly,
+      permission,
+      // A recipe's step: the same activity and approval audit as a call from a client
+      run: (async (args: ToolArgs<S>, actor: Actor) => {
+        const projectId = (args as { projectId?: string }).projectId;
+        if (projectId && !readOnly && /^prj_/.test(projectId))
+          studio.deps.hub.activity(projectId, actor, `tool:${name}`, `${actor.name} → ${name}`);
+        const result = await run(args, actor);
+        if (projectId && permission === 'project.approve')
+          await studio.deps.accounts.record(currentPrincipal(), 'project.approval', {
+            projectId,
+            detail: { tool: name, via: 'recipe' },
+          });
+        return result;
+      }) as ToolDef['run'],
+    });
     server.registerTool(name, { description, inputSchema: shape, annotations }, (async (
       args: ToolArgs<S>,
     ) => {
@@ -1191,6 +1224,61 @@ function buildServer(studio: Studio): McpServer {
   );
 
   // Resources
+  // Agents: recipes and many things at once (docs/design/agents.md)
+  tool(
+    'batch_variations',
+    'Variations of every shot of a clip (or of the listed shots): 2–4 new takes per shot to compare and pick from (jobs).',
+    {
+      projectId: PROJECT,
+      clipId: z.string(),
+      shotIds: z.array(z.string()).max(100).optional(),
+      count: z.number().int().min(2).max(4).default(2),
+    },
+    (a, actor) =>
+      studio.clips.batchVariations(actor, a.projectId, a.clipId, { shotIds: a.shotIds, count: a.count }),
+  );
+  tool(
+    'voices_cast',
+    'Cast every speaking character without a voice: voice candidates are designed; with pick the first is chosen, with lock the voice is locked (job; tts_unavailable without a TTS provider).',
+    {
+      projectId: PROJECT,
+      characterIds: z.array(z.string()).max(100).optional(),
+      pick: z.boolean().optional(),
+      lock: z.boolean().optional(),
+    },
+    (a, actor) =>
+      studio.voices.cast(actor, a.projectId, { characterIds: a.characterIds, pick: a.pick, lock: a.lock }),
+  );
+  tool(
+    'recipes_list',
+    "The studio's recipes, built-in ones first: named sequences of tool calls with parameters (docs/design/agents.md#recipes).",
+    {},
+    async () => studio.recipes.list(),
+    ro,
+  );
+  tool(
+    'recipe_create',
+    'Save a recipe for the studio: a name, parameters ({name, type: string|number|boolean|id|ids, required?, default?}) and steps ({tool, args with {{param}}, {{item}} or {{steps.N.path}} placeholders, forEach?: "{{listParam}}", wait?: true to wait for the jobs a step starts}).',
+    RecipeInputSchema.shape,
+    (a, actor) => studio.recipes.create(actor, RecipeInputSchema.parse(a)),
+  );
+  tool(
+    'recipe_delete',
+    'Delete a recipe of the studio (its author or an admin).',
+    { recipeId: z.string() },
+    async (a, actor) => {
+      await studio.recipes.remove(actor, a.recipeId);
+      return { ok: true };
+    },
+    { destructiveHint: true },
+  );
+  tool(
+    'recipe_run',
+    'Run a recipe on a project with its parameters: a recipe.run job that runs the steps in order (job_wait for the outcome of every step).',
+    { projectId: PROJECT, recipeId: z.string(), params: z.record(z.string(), z.unknown()).optional() },
+    (a, actor) => studio.recipes.run(actor, a.projectId, a.recipeId, a.params ?? {}),
+  );
+
   // NLE interchange (docs/design/interchange.md)
   tool(
     'interchange_export',
@@ -1312,6 +1400,133 @@ function buildServer(studio: Studio): McpServer {
     ro,
   );
 
+  // Prompts for common jobs, filled with the project's material (docs/design/agents.md#prompts)
+  const readable = async (projectId: string) => {
+    await studio.deps.accounts.authorize(
+      currentPrincipal() ?? studio.deps.accounts.studioPrincipal(),
+      projectId,
+      'project.read',
+    );
+    return (await studio.projects.state(projectId)).docs;
+  };
+  const prompt = <A extends Record<string, z.ZodString>>(
+    name: string,
+    title: string,
+    description: string,
+    argsSchema: A,
+    text: (docs: Awaited<ReturnType<typeof readable>>, args: { [K in keyof A]: string }) => string,
+  ) =>
+    server.registerPrompt(name, { title, description, argsSchema }, (async (
+      args: { [K in keyof A]: string },
+    ) => {
+      const docs = await readable((args as unknown as { projectId: string }).projectId);
+      return {
+        messages: [{ role: 'user' as const, content: { type: 'text' as const, text: text(docs, args) } }],
+      };
+    }) as never);
+  const P = { projectId: z.string().describe('The project, prj_…') };
+  prompt(
+    'direct_scene',
+    'Direct this scene',
+    'Plan, generate and refine the shots of a scene with the directing controls.',
+    { ...P, sceneId: z.string().describe('The scene, sc_… (screenplay)') },
+    (docs, a) => directScenePrompt(docs, a.sceneId),
+  );
+  prompt(
+    'address_review_notes',
+    'Address the review notes',
+    'Answer every open review note: change what it asks for, reply and resolve.',
+    { ...P, reviewId: z.string().optional().describe('Only the notes of one review') } as never,
+    (docs, a) => reviewNotesPrompt(docs, (a as { reviewId?: string }).reviewId || undefined),
+  );
+  prompt('cast_voices', 'Cast the voices', 'Give every speaking character a locked voice.', P, (docs) =>
+    castVoicesPrompt(docs),
+  );
+  prompt(
+    'dub_film',
+    'Dub the film',
+    'Translate, dub and export a language variant of the cut.',
+    { ...P, language: z.string().describe('BCP 47, e.g. es or pt-BR') },
+    (docs, a) => dubPrompt(docs, a.language),
+  );
+  prompt(
+    'make_variations',
+    'Make variations',
+    'Generate variations of the shots of a clip, compare them and pick.',
+    { ...P, clipId: z.string().describe('The clip, clp_…') },
+    (docs, a) => variationsPrompt(docs, a.clipId),
+  );
+
+  const json = (uri: URL, value: unknown) => ({
+    contents: [{ uri: uri.href, mimeType: 'application/json', text: JSON.stringify(value, null, 2) }],
+  });
+  server.registerResource(
+    'recipes',
+    'rideo://recipes',
+    { mimeType: 'application/json', description: "The studio's recipes, built-in ones first" },
+    async (uri) => json(uri, await studio.recipes.list()),
+  );
+  server.registerResource(
+    'review-notes',
+    new ResourceTemplate('rideo://projects/{projectId}/review-notes', { list: undefined }),
+    { mimeType: 'application/json', description: 'Open review threads, by take and export' },
+    async (uri, vars) => {
+      const docs = await readable(String(vars.projectId));
+      const open = Object.values(docs.comments).filter((c) => c.status === 'open');
+      const groups = new Map<string, unknown[]>();
+      for (const c of open.sort((a, b) => (a.at ?? -1) - (b.at ?? -1))) {
+        const key = c.target.kind === 'export' ? `export:${c.target.exportId}` : `take:${c.target.takeId}`;
+        groups.set(key, [...(groups.get(key) ?? []), c]);
+      }
+      return json(
+        uri,
+        [...groups.entries()].map(([target, threads]) => ({ target, threads })),
+      );
+    },
+  );
+  server.registerResource(
+    'scene',
+    new ResourceTemplate('rideo://projects/{projectId}/scenes/{sceneId}', { list: undefined }),
+    {
+      mimeType: 'application/json',
+      description: 'A scene with its clips, shots, selected takes and their consistency',
+    },
+    async (uri, vars) => {
+      const docs = await readable(String(vars.projectId));
+      const scene = docs.screenplay?.scenes.find((s) => s.id === String(vars.sceneId));
+      if (!scene) throw new Error(`scene ${String(vars.sceneId)} not found`);
+      const clips = sortedClips(docs)
+        .filter((c) => c.sceneId === scene.id)
+        .map((c) => ({
+          id: c.id,
+          index: c.index,
+          status: c.status,
+          shots: [...c.shots]
+            .sort((a, b) => a.index - b.index)
+            .map((s) => {
+              const take = s.takes.find((t) => t.id === s.selectedTakeId);
+              return {
+                id: s.id,
+                index: s.index,
+                description: s.description,
+                camera: s.camera,
+                durationSec: s.durationSec,
+                takes: s.takes.length,
+                selected: take
+                  ? { id: take.id, consistency: take.consistency.status, video: take.video?.path }
+                  : null,
+              };
+            }),
+        }));
+      return json(uri, { scene, clips });
+    },
+  );
+  server.registerResource(
+    'timeline',
+    new ResourceTemplate('rideo://projects/{projectId}/timeline', { list: undefined }),
+    { mimeType: 'application/json', description: 'The cut: tracks and their items' },
+    async (uri, vars) => json(uri, (await readable(String(vars.projectId))).timeline),
+  );
   server.registerResource(
     'projects',
     'rideo://projects',
@@ -1330,22 +1545,17 @@ function buildServer(studio: Studio): McpServer {
     'project-state',
     new ResourceTemplate('rideo://projects/{projectId}/state', { list: undefined }),
     { mimeType: 'application/json', description: 'Project snapshot' },
-    async (uri, vars) => ({
-      contents: [
-        {
-          uri: uri.href,
-          mimeType: 'application/json',
-          text: JSON.stringify(summarizeState(await studio.projects.state(String(vars.projectId))), null, 2),
-        },
-      ],
-    }),
+    async (uri, vars) => {
+      await readable(String(vars.projectId));
+      return json(uri, summarizeState(await studio.projects.state(String(vars.projectId))));
+    },
   );
   server.registerResource(
     'screenplay',
     new ResourceTemplate('rideo://projects/{projectId}/screenplay.md', { list: undefined }),
     { mimeType: 'text/markdown', description: 'Screenplay as Markdown' },
     async (uri, vars) => {
-      const docs = (await studio.projects.state(String(vars.projectId))).docs;
+      const docs = await readable(String(vars.projectId));
       return {
         contents: [
           {
@@ -1359,7 +1569,16 @@ function buildServer(studio: Studio): McpServer {
       };
     },
   );
+  if (!registries.has(studio)) registries.set(studio, registry);
   return server;
+}
+
+const registries = new WeakMap<Studio, Map<string, ToolDef>>();
+
+/** The MCP tools of a studio, for recipes (docs/design/agents.md#recipes). */
+export function toolRegistry(studio: Studio): ToolRegistry {
+  if (!registries.has(studio)) buildServer(studio);
+  return registries.get(studio)!;
 }
 
 interface Session {

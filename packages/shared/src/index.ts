@@ -1,4 +1,5 @@
 export * from './accounts';
+export * from './agents/recipes';
 export * from './audio';
 export * from './captions';
 export * from './consistency';

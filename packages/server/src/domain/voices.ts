@@ -70,6 +70,28 @@ export class VoiceService extends Service {
   }
 
   /** Starts `voice.design`: three previews from the description, speaking the character's own lines. */
+  /**
+   * Casting (docs/design/agents.md#many-things-at-once): voices for every speaking character without one, then the
+   * first candidate picked and the voice locked when asked (a `voices.cast` job).
+   */
+  async cast(
+    actor: Actor,
+    projectId: string,
+    input: { characterIds?: string[]; pick?: boolean; lock?: boolean } = {},
+  ): Promise<Job> {
+    this.tts();
+    const docs = await this.deps.projects.docs(projectId);
+    for (const id of input.characterIds ?? []) if (!docs.characters[id]) throw notFound(`character ${id}`);
+    return this.deps.jobs.enqueue({
+      projectId,
+      kind: 'voices.cast',
+      params: { characterIds: input.characterIds ?? null, pick: !!input.pick, lock: !!input.lock },
+      actor,
+      branch: await this.branchOf(projectId),
+      dedupeKey: 'voices:cast',
+    });
+  }
+
   async design(actor: Actor, projectId: string, id: string): Promise<Job> {
     const c = await this.character(projectId, id);
     if (voiceOf(c).lock.locked) throw voiceLocked(c);

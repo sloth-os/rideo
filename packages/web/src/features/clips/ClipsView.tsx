@@ -613,6 +613,24 @@ function ClipCard({
             Generate
           </Button>
         ) : null}
+        {clip.status !== 'approved' && clip.shots.some((s) => s.takes.length > 0) ? (
+          <Button
+            size="sm"
+            variant="ghost"
+            icon={<Columns2 className="size-3.5" />}
+            disabled={!access.can('project.edit')}
+            title="Two new takes of every shot, to compare and pick"
+            onClick={() =>
+              api
+                .batchVariations(projectId, clip.id, { count: 2 })
+                .then((jobs) => useUi.getState().toast(`${jobs.length} variations started`, 'success'))
+                .catch(reportError)
+            }
+            data-testid="clip-variations"
+          >
+            Variations
+          </Button>
+        ) : null}
         {clip.status === 'approved' ? (
           <Button
             size="sm"

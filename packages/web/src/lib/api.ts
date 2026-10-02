@@ -28,6 +28,7 @@ import type {
   ProjectRole,
   ProjectSummary,
   PublicUser,
+  Recipe,
   RenderEngineChoice,
   Resource,
   ResourceRole,
@@ -543,6 +544,17 @@ export const api = {
       commit: CommitSummary | null;
     }>('POST', `${p(id)}/interchange/import`, form);
   },
+  /** Variations of every shot of a clip (docs/design/agents.md#many-things-at-once). */
+  batchVariations: (id: string, clipId: string, body: { shotIds?: string[]; count?: number } = {}) =>
+    request<Job[]>('POST', `${p(id)}/clips/${clipId}/variations`, body),
+  /** Voices for every speaking character without one: a `voices.cast` job. */
+  castVoices: (id: string, body: { characterIds?: string[]; pick?: boolean; lock?: boolean } = {}) =>
+    request<Job>('POST', `${p(id)}/voices/cast`, body),
+  // Recipes (docs/design/agents.md#recipes)
+  recipes: () => request<Recipe[]>('GET', '/recipes'),
+  deleteRecipe: (recipeId: string) => request<void>('DELETE', `/recipes/${encodeURIComponent(recipeId)}`),
+  runRecipe: (id: string, recipeId: string, params: Record<string, unknown>) =>
+    request<Job>('POST', `${p(id)}/recipes/${encodeURIComponent(recipeId)}/run`, { params }),
   // Review and approvals (docs/design/review.md#surfaces)
   createComment: (id: string, body: CommentInput) =>
     request<CommentThread>('POST', `${p(id)}/comments`, body),

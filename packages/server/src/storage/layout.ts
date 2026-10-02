@@ -99,6 +99,15 @@ export class Layout {
     return joinPath(this.tokensDir(), `${assertId(id, 'token')}.json`);
   }
 
+  /** The studio's recipes (docs/design/agents.md#recipes). */
+  recipesDir(): string {
+    return joinPath(this.root, 'recipes');
+  }
+
+  recipe(id: string): string {
+    return joinPath(this.recipesDir(), `${assertId(id, 'recipe')}.json`);
+  }
+
   watermarksDir(): string {
     return joinPath(this.root, 'watermarks');
   }

@@ -299,6 +299,26 @@ export class ClipService extends Service {
     return jobs;
   }
 
+  /** Variations of every shot of a clip, or of the listed ones (docs/design/agents.md#many-things-at-once). */
+  async batchVariations(
+    actor: Actor,
+    projectId: string,
+    clipId: string,
+    input: { shotIds?: string[]; count: number },
+  ): Promise<Job[]> {
+    const docs = await this.docs(projectId);
+    const clip = docs.clips[clipId];
+    if (!clip) throw notFound(`clip ${clipId}`);
+    const shots = input.shotIds?.length
+      ? input.shotIds.map((id) => this.requireShot(clip, id))
+      : [...clip.shots].sort((a, b) => a.index - b.index);
+    if (!shots.length) throw invalid('the clip has no shots');
+    const jobs: Job[] = [];
+    for (const shot of shots)
+      jobs.push(...(await this.variations(actor, projectId, clipId, shot.id, input.count)));
+    return jobs;
+  }
+
   async regenerateShot(actor: Actor, projectId: string, clipId: string, shotId: string): Promise<Job> {
     const docs = await this.docs(projectId);
     const clip = docs.clips[clipId];
