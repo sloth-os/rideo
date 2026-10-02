@@ -58,6 +58,7 @@ import { EditService } from './edit';
 import { EditorService } from './editor';
 import { ElementService } from './elements';
 import { HistoryService } from './history';
+import { InterchangeService } from './interchange';
 import { LocalizationService } from './localization';
 import { ProjectService } from './projects';
 import { ProjectRegistry } from './registry';
@@ -81,6 +82,7 @@ export interface Studio {
   edit: EditService;
   localization: LocalizationService;
   review: ReviewService;
+  interchange: InterchangeService;
   editor: EditorService;
   history: HistoryService;
   ui: UiService;
@@ -213,6 +215,7 @@ export function createStudio(
     edit: new EditService(deps),
     localization: new LocalizationService(deps),
     review: new ReviewService(deps, workflow),
+    interchange: new InterchangeService(deps),
     editor: new EditorService(deps),
   } satisfies Record<string, unknown>;
   // Editor jobs: failures and cancellations are recorded on their documents; a closed tab releases its jobs.

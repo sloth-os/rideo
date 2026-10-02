@@ -99,6 +99,8 @@ export interface PublicConfig {
     voiceJudge: boolean;
     /** Generated sound effects (docs/design/post-audio.md). */
     sfx?: { provider: string } | null;
+    /** NLE hand-off: the WebDAV root as clients reach it (docs/design/interchange.md). */
+    interchange?: { mediaBase: string };
   };
   llm: { provider: string; model: string; vision: string };
   models: Record<'image' | 'video' | 'music', { id: string; limits?: Record<string, unknown> | null }[]>;
@@ -182,6 +184,21 @@ export function shotListUrl(projectId: string, format: 'csv' | 'pdf'): string {
 export function mediaUrl(projectId: string, path: string): string {
   const token = getToken();
   return `/api/projects/${projectId}/media/${path}${token ? `?token=${encodeURIComponent(token)}` : ''}`;
+}
+
+/** The cut as an NLE file (docs/design/interchange.md#surfaces); the token rides in the query like media URLs. */
+export function interchangeUrl(
+  projectId: string,
+  format: 'otio' | 'fcpxml' | 'xml' | 'edl',
+  opts: { mediaBase?: string; source?: 'timeline' | 'animatic' } = {},
+): string {
+  const q = new URLSearchParams();
+  if (opts.mediaBase?.trim()) q.set('mediaBase', opts.mediaBase.trim());
+  if (opts.source && opts.source !== 'timeline') q.set('source', opts.source);
+  const token = getToken();
+  if (token) q.set('token', token);
+  const qs = q.toString();
+  return `/api/projects/${projectId}/interchange.${format}${qs ? `?${qs}` : ''}`;
 }
 
 /** The cut's subtitles, in a language when given (docs/design/localization.md#subtitle-files). */
@@ -511,6 +528,17 @@ export const api = {
     const form = new FormData();
     form.set('file', file, file.name);
     return request<WatermarkDetection>('POST', '/watermark/detect', form);
+  },
+  /** Replaces the cut with an OpenTimelineIO file (docs/design/interchange.md#import-opentimelineio). */
+  importOtio: (id: string, file: File) => {
+    const form = new FormData();
+    form.set('file', file, file.name);
+    return request<{
+      clips: number;
+      unresolved: { name: string; url: string | null }[];
+      skipped: string[];
+      commit: CommitSummary | null;
+    }>('POST', `${p(id)}/interchange/import`, form);
   },
   // Review and approvals (docs/design/review.md#surfaces)
   createComment: (id: string, body: CommentInput) =>

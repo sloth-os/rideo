@@ -22,6 +22,7 @@ import {
   GenerateElementRefsInputSchema,
   GenerateRefsInputSchema,
   ImportScreenplayInputSchema,
+  INTERCHANGE_FORMAT_IDS,
   JobStatusSchema,
   LanguageCodeSchema,
   LocalizeInputSchema,
@@ -109,6 +110,14 @@ function publicDetection(d: Detection) {
       ? { brand: provenance.brand, asset: { kind: provenance.asset.kind }, createdAt: provenance.createdAt }
       : null,
   };
+}
+
+function parseJson(text: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw invalid('the file is not JSON (OpenTimelineIO files are)');
+  }
 }
 
 function coalesceHeader(req: FastifyRequest): string | undefined {
@@ -299,6 +308,31 @@ export function registerRoutes(app: FastifyInstance, studio: Studio): void {
       parse(AnimaticInputSchema, req.body ?? {}),
     ),
   }));
+  // NLE interchange (docs/design/interchange.md#surfaces)
+  for (const format of INTERCHANGE_FORMAT_IDS)
+    app.get(`/api/projects/:id/interchange.${format}`, async (req, reply) => {
+      const q = parse(
+        z.object({
+          mediaBase: z.string().max(1000).optional(),
+          source: z.enum(['timeline', 'animatic']).optional(),
+        }),
+        req.query,
+      );
+      const file = await studio.interchange.export(pid(req), format, q);
+      return reply
+        .type(`${file.mime}; charset=utf-8`)
+        .header('content-disposition', `attachment; filename="${file.filename}"`)
+        .send(file.content);
+    });
+  app.post('/api/projects/:id/interchange/import', async (req) => {
+    if (req.isMultipart()) {
+      const part = await req.file();
+      if (!part) throw invalid('send an .otio file');
+      const text = (await part.toBuffer()).toString('utf8');
+      return studio.interchange.import(actor(), pid(req), parseJson(text));
+    }
+    return studio.interchange.import(actor(), pid(req), req.body);
+  });
   app.get('/api/projects/:id/shotlist.csv', async (req, reply) =>
     reply
       .type('text/csv; charset=utf-8')

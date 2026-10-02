@@ -93,7 +93,7 @@ says **why** (evidence from other products), **how** it fits Rideo's architectur
 | Agents | **MCP with 58+ tools and live UI control** | Flow Agent, Runway Agent/MCP, Descript MCP |
 | Provenance | **Invisible keyed watermark + registry + detector**, container metadata | C2PA + SynthID |
 | Review and teams | **OIDC accounts, roles, agent tokens, audit log; share links, timecoded comments and drawings, reviews that approve gates, notifications** | Share links, timecoded comments, approvals, SSO |
-| Interchange | MP4 exports | FCPXML / XML / OTIO / EDL, NLE plugins |
+| Interchange | **MP4 exports; OTIO, FCPXML, FCP7 XML and EDL relinking to the originals on WebDAV; OTIO import** | FCPXML / XML / OTIO / EDL, NLE plugins |
 | Model routing and cost | Per-project model settings, `maxGenerations` budget | Router, fallbacks, cost per task, credit analytics |
 
 Rideo's differentiators are the verified consistency gate, the long-form stage machine, versioned open storage,
@@ -202,7 +202,7 @@ are versioned documents; MCP tools let agents read and resolve notes. *Why:* Fra
 **13. Accounts, roles and teams** (M) — *done:* [design/accounts.md](design/accounts.md) — OIDC/SSO login, roles (director, editor, reviewer, agent), per-project
 permissions, audit log, scoped agent tokens. Lifts the single-studio non-goal.
 
-**14. NLE interchange** (S–M) — export OTIO, FCPXML, Premiere XML and EDL that relink to the originals on WebDAV;
+**14. NLE interchange** (S–M) — *done:* [design/interchange.md](design/interchange.md) — export OTIO, FCPXML, Premiere XML and EDL that relink to the originals on WebDAV;
 import OTIO. *Why:* Descript, Eddie AI, Runway NLE plugins.
 
 **15. Editor depth** (L) — multitrack video (B-roll, picture-in-picture, overlays), keyframed transform and

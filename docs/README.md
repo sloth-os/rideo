@@ -9,6 +9,7 @@
 | [design/elements.md](design/elements.md) | Locations, props and styles as locked references, with the same lock and verification rules as characters |
 | [design/take-editing.md](design/take-editing.md) | Derived takes: video-to-video edits (restyle, relight, replace, angle, remove), extensions, generative extend in the cut |
 | [design/accounts.md](design/accounts.md) | Accounts: OIDC sign-in, project members and roles, permissions on every surface, scoped agent tokens, the audit log |
+| [design/interchange.md](design/interchange.md) | NLE interchange: the cut as OpenTimelineIO, FCPXML, Final Cut Pro 7 XML and CMX 3600 EDL with its clips on WebDAV, and a re-edited cut back from OTIO |
 | [design/review.md](design/review.md) | Review and approvals: timecoded comments and drawings on takes and exports, share links for outside reviewers, reviews that approve gates, mentions and notifications |
 | [design/finishing.md](design/finishing.md) | Deliveries: presets, 4K upscale and frame interpolation through gateway models, ProRes and image-sequence masters, auto-reframed 9:16 and 1:1 cut-downs, thumbnails |
 | [design/localization.md](design/localization.md) | Subtitles (SRT, WebVTT), word-level animated captions, translation, dubbing with the characters' voices, lip-synced close-ups, language-variant exports |

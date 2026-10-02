@@ -140,6 +140,13 @@ or keep going and `job_wait` until a tab picks the job up.
 | `export_list` | `projectId` |
 | `watermark_detect` | `uri` or `projectId` + `mediaPath` → watermark, registry record and `contentCredentials` (C2PA) |
 
+### NLE interchange
+
+| Tool | Arguments |
+|---|---|
+| `interchange_export` | `projectId`, `format` (`otio`, `fcpxml`, `xml`, `edl`), `mediaBase?`, `source?` (`timeline`, `animatic`) → `{filename, mime, content}` ([interchange](interchange.md)) |
+| `interchange_import` | `projectId`, `otio` (the OTIO JSON or its text) → `{clips, unresolved, skipped, commit}`; replaces the cut |
+
 ### Review and approvals
 
 [Review](review.md): agents read the notes people left, answer and resolve them, and see the decisions.

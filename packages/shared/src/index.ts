@@ -7,6 +7,7 @@ export * from './diff/json-diff';
 export * from './directing';
 export * from './finishing';
 export * from './ids';
+export * from './interchange';
 export * from './localization';
 export * from './media';
 export * from './prompt';

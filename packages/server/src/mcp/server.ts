@@ -58,7 +58,7 @@ import { z } from 'zod';
 import { currentPrincipal, type Principal } from '../auth/context';
 import type { ProjectState } from '../domain/projects';
 import type { Studio } from '../domain/studio';
-import { toAppError } from '../errors';
+import { invalid, toAppError } from '../errors';
 import { VERSION } from '../http/app';
 import type { AuthedRequest } from '../http/auth-routes';
 
@@ -1179,6 +1179,36 @@ function buildServer(studio: Studio): McpServer {
   );
 
   // Resources
+  // NLE interchange (docs/design/interchange.md)
+  tool(
+    'interchange_export',
+    'The cut (or the animatic) as an NLE file whose clips point at the originals on WebDAV: otio (OpenTimelineIO), fcpxml (Final Cut Pro), xml (Final Cut Pro 7 XML for Premiere and Resolve) or edl (CMX 3600). mediaBase is where the WebDAV root is on the editing machine (e.g. file:///Volumes/dav/rideo); the default is its URL.',
+    {
+      projectId: PROJECT,
+      format: z.enum(['otio', 'fcpxml', 'xml', 'edl']),
+      mediaBase: z.string().max(1000).optional(),
+      source: z.enum(['timeline', 'animatic']).optional(),
+    },
+    (a) => studio.interchange.export(a.projectId, a.format, { mediaBase: a.mediaBase, source: a.source }),
+    ro,
+  );
+  tool(
+    'interchange_import',
+    'Replace the cut with an OpenTimelineIO timeline (the JSON object or its text), e.g. one re-edited in an NLE: clips find their media by Rideo metadata, URL or file name; returns what could not be placed.',
+    { projectId: PROJECT, otio: z.union([z.string().max(50_000_000), z.record(z.string(), z.unknown())]) },
+    (a, actor) => {
+      let doc: unknown = a.otio;
+      if (typeof doc === 'string') {
+        try {
+          doc = JSON.parse(doc);
+        } catch {
+          throw invalid('otio is not JSON');
+        }
+      }
+      return studio.interchange.import(actor, a.projectId, doc);
+    },
+  );
+
   // Review and approvals (docs/design/review.md)
   tool(
     'comments_list',

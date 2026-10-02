@@ -10,6 +10,7 @@ import { api, mediaUrl, type WatermarkDetection } from '../../lib/api';
 import { useProject } from '../../store/project';
 import { reportError } from '../../store/ui';
 import { openThreads, useReviewDialog } from '../review/ReviewHost';
+import { InterchangeCard } from './InterchangeCard';
 
 function ExportCard({ e, projectId }: { e: Export; projectId: string }) {
   const review = useReviewDialog();
@@ -243,6 +244,7 @@ export function ExportsView() {
       {running.map((j) => (
         <JobRow key={j.id} job={j} projectId={projectId} />
       ))}
+      <InterchangeCard />
       {exports.length === 0 ? (
         <EmptyState icon={<Download className="size-8" />} title="No exports yet">
           Render from the editor.

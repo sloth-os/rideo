@@ -71,6 +71,24 @@ Errors are RFC 9457 problem details (`application/problem+json`) with a stable `
 | DELETE | `/api/tokens/:id` | – | the token, revoked |
 | GET | `/api/audit` | `?since&until&projectId&actor&type&limit` | audit events, newest first (admins; directors with their `projectId`) |
 
+## Interchange
+
+[NLE interchange](../design/interchange.md): the cut (or the animatic) as a file for Premiere, Resolve, Final Cut Pro
+or Avid, its clips pointing at the originals on WebDAV.
+
+| Method | Path | Body / query | Result |
+|---|---|---|---|
+| GET | `/api/projects/:id/interchange.otio` | `?mediaBase&source=timeline\|animatic` | OpenTimelineIO (`Timeline.1` JSON), as a download |
+| GET | `/api/projects/:id/interchange.fcpxml` | the same | FCPXML 1.10 |
+| GET | `/api/projects/:id/interchange.xml` | the same | Final Cut Pro 7 XML (`xmeml` 5) for Premiere Pro and Resolve |
+| GET | `/api/projects/:id/interchange.edl` | the same | CMX 3600 EDL of the picture |
+| POST | `/api/projects/:id/interchange/import` | an `.otio` file (multipart `file`) or the OTIO JSON | `{clips, unresolved[{name, url}], skipped[], commit}`; the cut is replaced in one commit (`project.edit`) |
+
+`mediaBase` is the WebDAV root as the editing machine sees it (a URL, or a mounted path such as
+`/Volumes/dav/rideo`, which becomes a `file://` URL); the default is `features.interchange.mediaBase` of
+`GET /api/config`. An empty cut is `409 conflict`; a file that is not an OTIO timeline, or whose clips are none of the
+project's media, is `422 validation_error`.
+
 ## Review
 
 [Review and approvals](../design/review.md): comments are `comments/<id>.json` and reviews `reviews/<id>.json`

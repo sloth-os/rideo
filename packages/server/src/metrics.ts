@@ -110,6 +110,10 @@ export class Metrics {
   readonly auth = this.add(
     new Counter('rideo_auth_total', 'Sign-ins, token use and denials by event and outcome'),
   );
+  /** NLE interchange (docs/design/interchange.md): cuts handed off and taken back. */
+  readonly interchange = this.add(
+    new Counter('rideo_interchange_total', 'Interchange files exported and imported by format and direction'),
+  );
   /** Review (docs/design/review.md): comments, replies, decisions and share-link opens. */
   readonly review = this.add(
     new Counter('rideo_review_total', 'Review comments, decisions and link opens by event'),

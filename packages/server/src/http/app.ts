@@ -231,6 +231,8 @@ export async function buildServer(
         voiceJudge: !!config.voiceJudge,
         /** Generated sound effects (docs/design/post-audio.md#effects-from-action-lines). */
         sfx: config.sfx ? { provider: config.sfx.provider } : null,
+        /** NLE hand-off (docs/design/interchange.md#where-the-media-is): the WebDAV root clients reach. */
+        interchange: { mediaBase: studio.interchange.defaultMediaBase() },
       },
       llm: { provider: config.llm.provider, model: config.llm.model, vision: config.vision.model },
       defaults: studio.projects.defaultSettings(),
