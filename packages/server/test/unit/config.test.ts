@@ -17,6 +17,7 @@ describe('config', () => {
       lipSync: 'auto',
       edit: 'auto',
       enhance: 'auto',
+      performance: 'auto',
     });
     // Dialogue (docs/design/dialogue.md): no TTS until a provider is chosen; the speaker check follows vision.
     expect(c.tts).toBeUndefined();

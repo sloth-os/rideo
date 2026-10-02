@@ -27,6 +27,7 @@ const STATUS: Record<ErrorCode, number> = {
   tts_unavailable: 422,
   sfx_unavailable: 422,
   segmentation_unavailable: 422,
+  performance_unavailable: 422,
   localization_incomplete: 409,
   board_unapprovable: 409,
   internal_error: 500,

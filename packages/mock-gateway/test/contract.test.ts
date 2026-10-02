@@ -93,6 +93,7 @@ describe('public contract', () => {
       'mock-multishot-v1',
       'mock-enhance-v1',
       'mock-segment-v1',
+      'mock-performance-v1',
       'mock-lipsync-v1',
     ]);
     const limits = (await (await fetch(`${gw.url}/v1/models/limits`, { headers: auth })).json()) as any;
@@ -100,6 +101,12 @@ describe('public contract', () => {
     expect(limits.data.find((m: any) => m.id === 'mock-video-v1').limits.max_duration_seconds).toBe(10);
     // a segmentation model (docs/design/editor.md#segmentation-masks-remove-the-background)
     expect(limits.data.find((m: any) => m.id === 'mock-segment-v1').limits.supports_segmentation).toBe(true);
+    // a performance model (docs/design/performance.md#mock-gateway)
+    expect(limits.data.find((m: any) => m.id === 'mock-performance-v1').limits).toMatchObject({
+      supports_performance: true,
+      supports_first_frame: true,
+      supports_reference_video: true,
+    });
   });
 
   it('runs an image task with Location, ETag and 304 revalidation', async () => {
@@ -508,5 +515,75 @@ describe('semantic search (docs/design/search.md#mock-gateway)', () => {
     expect(dot(q, red)).toBeGreaterThan(0.6);
     expect(dot(q, yellow)).toBeLessThan(0.2);
     expect((await post('/proxy/api.openai.com/v1/embeddings', { input: [] })).res.status).toBe(400);
+  });
+});
+
+describe('performance (docs/design/performance.md#mock-gateway)', () => {
+  it("acts a performance from the first frame, for the performance's length when shorter", async () => {
+    const { execFileSync } = await import('node:child_process');
+    const { mkdtempSync, writeFileSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const dir = mkdtempSync(join(tmpdir(), 'mock-performance-'));
+    const performance = join(dir, 'performance.mp4');
+    execFileSync('ffmpeg', [
+      '-y',
+      '-v',
+      'error',
+      '-f',
+      'lavfi',
+      '-i',
+      'testsrc2=size=160x96:rate=24:duration=2',
+      '-c:v',
+      'libx264',
+      '-pix_fmt',
+      'yuv420p',
+      performance,
+    ]);
+    const data = Buffer.alloc(160 * 96 * 4);
+    for (let i = 0; i < 160 * 96; i++) data.set([220, 20, 20, 255], i * 4);
+    const first = encodePng({ width: 160, height: 96, data });
+    const { json } = await post('/v1/videos', {
+      model: 'mock-performance-v1',
+      input: [
+        { type: 'text', text: 'Animate the characters of the first frame with the performance.' },
+        { type: 'image', uri: `data:image/png;base64,${first.toString('base64')}`, role: 'first_frame' },
+        {
+          type: 'video',
+          uri: `data:video/mp4;base64,${readFileSync(performance).toString('base64')}`,
+          role: 'reference_video',
+        },
+      ],
+      parameters: { duration_seconds: 5, dimensions: { width: 320, height: 192 } },
+    });
+    const done = await waitTask(`/v1/videos/${json.id}`);
+    expect(done.status).toBe('succeeded');
+    const out = join(dir, 'acted.mp4');
+    writeFileSync(out, Buffer.from(await (await fetch(done.outputs[0].uri)).arrayBuffer()));
+    const probe = JSON.parse(
+      execFileSync('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'json', out], {
+        encoding: 'utf8',
+      }),
+    );
+    expect(Number(probe.format.duration)).toBeCloseTo(2, 0);
+    // the first frame stays where the performance does not play
+    const pixel = execFileSync('ffmpeg', [
+      '-v',
+      'error',
+      '-ss',
+      '1',
+      '-i',
+      out,
+      '-frames:v',
+      '1',
+      '-vf',
+      'crop=8:8:8:8,scale=1:1:flags=area',
+      '-f',
+      'rawvideo',
+      '-pix_fmt',
+      'rgb24',
+      '-',
+    ]);
+    expect(pixel[0]).toBeGreaterThan(180);
+    expect(pixel[1]).toBeLessThan(70);
   });
 });

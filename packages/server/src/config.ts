@@ -91,6 +91,8 @@ export const EnvSchema = z.object({
   RIDEO_SFX_MODEL: str('eleven_text_to_sound_v2'),
   RIDEO_LIPSYNC_MODEL: str('auto'),
   RIDEO_EDIT_MODEL: str('auto'),
+  /** Performance takes (docs/design/performance.md): `auto`, a model id or `off`. */
+  RIDEO_PERFORMANCE_MODEL: str('auto'),
   RIDEO_ENHANCE_MODEL: str('auto'),
   RIDEO_VOICE_JUDGE_PROVIDER: z.enum(['openai', 'gemini', 'off']).optional(),
   RIDEO_VOICE_JUDGE_PROXY_DOMAIN: str(),
@@ -184,7 +186,15 @@ export interface Config {
     url: string;
     apiKey?: string;
     routingProfile?: string;
-    models: { image: string; video: string; music: string; lipSync: string; edit: string; enhance: string };
+    models: {
+      image: string;
+      video: string;
+      music: string;
+      lipSync: string;
+      edit: string;
+      enhance: string;
+      performance: string;
+    };
     pollMs: number;
     timeoutsSec: { image: number; video: number; music: number };
   };
@@ -294,6 +304,7 @@ export function loadConfig(
         lipSync: e.RIDEO_LIPSYNC_MODEL!,
         edit: e.RIDEO_EDIT_MODEL!,
         enhance: e.RIDEO_ENHANCE_MODEL!,
+        performance: e.RIDEO_PERFORMANCE_MODEL!,
       },
       pollMs: e.RIDEO_GATEWAY_POLL_MS,
       timeoutsSec: {

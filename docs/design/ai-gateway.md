@@ -75,6 +75,13 @@ SDK to a model whose limits say `supports_segmentation` (`settings.models.segmen
 item's source range as a `reference_video` and a prompt naming the subject; the model returns a matte of the same
 frames. Without such a model the request fails with `segmentation_unavailable`.
 
+## Performance
+
+Performance takes ([performance](performance.md)) are video requests through the SDK to a model whose limits say
+`supports_performance` (`settings.models.performance`, `auto` picks the first): the shot's first frame as
+`first_frame`, the performance (normalized to H.264 and AAC, trimmed to the shot) as `reference_video`, and the shot's
+prompt with the performance phrase. Without such a model they fail with `performance_unavailable`.
+
 ## Sound effects
 
 Sound effects ([post audio](post-audio.md#effects-from-action-lines)) are not a gateway media modality, so they go

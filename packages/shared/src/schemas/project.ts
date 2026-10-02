@@ -71,6 +71,8 @@ export const ProjectSettingsSchema = z.object({
       enhance: z.string().min(1).default('auto'),
       /** The segmentation model of Remove the background (docs/design/editor.md); `off` disables it. */
       segment: z.string().min(1).default('auto'),
+      /** The model of performance takes (docs/design/performance.md); `off` disables them. */
+      performance: z.string().min(1).default('auto'),
     })
     .default({
       image: 'auto',
@@ -80,6 +82,7 @@ export const ProjectSettingsSchema = z.object({
       edit: 'auto',
       enhance: 'auto',
       segment: 'auto',
+      performance: 'auto',
     }),
   consistency: ConsistencySettingsSchema.default({
     threshold: 0.75,

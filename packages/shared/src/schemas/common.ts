@@ -112,6 +112,7 @@ export const ERROR_CODES = [
   'tts_unavailable',
   'sfx_unavailable',
   'segmentation_unavailable',
+  'performance_unavailable',
   'localization_incomplete',
   'board_unapprovable',
   'internal_error',

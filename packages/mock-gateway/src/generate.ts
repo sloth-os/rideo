@@ -372,6 +372,8 @@ export async function runVideo(body: Record<string, any>, ctx: GenerateContext):
   if (body.model === 'mock-enhance-v1') return enhance(parts, params, ctx, name);
   // Segmentation (docs/design/editor.md#segmentation-masks-remove-the-background): a matte of the reference video.
   if (body.model === 'mock-segment-v1') return segment(parts, ctx, name);
+  // Performance (docs/design/performance.md#mock-gateway): the first frame acting the reference video.
+  if (body.model === 'mock-performance-v1') return perform(parts, params, ctx, name, width, height);
   // Audio-driven lip sync: a reference video and audio without a first frame (a motion reference has a prompt
   // and a first frame).
   if (isLipSyncRequest(parts)) return lipSync(parts, ctx, name);
@@ -495,6 +497,55 @@ async function segment(parts: Part[], ctx: GenerateContext, name: string): Promi
   return {
     outputs: [{ uri: ctx.fileUrl(`${name}.mp4`), mime_type: 'video/mp4' }],
     usage: { output_count: 1, duration_seconds: await videoDuration(join(ctx.dir, `${name}.mp4`)) },
+  };
+}
+
+/**
+ * The mock performance model: the first frame as it is (the characters' colours stay, so the judge passes), with the
+ * performance playing in the bottom-right corner, for the requested length or the performance's when shorter.
+ */
+async function perform(
+  parts: Part[],
+  params: Record<string, unknown>,
+  ctx: GenerateContext,
+  name: string,
+  width: number,
+  height: number,
+): Promise<RunResult> {
+  const ref = parts.find((p) => p.type === 'video' && p.role === 'reference_video');
+  const first = parts.find((p) => p.type === 'image' && p.role === 'first_frame');
+  if (!ref?.uri || !first?.uri) throw new Error('a performance needs a first_frame and a reference_video');
+  const src = join(ctx.dir, `${name}-performance.mp4`);
+  const still = join(ctx.dir, `${name}-first.png`);
+  await writeFile(src, await loadUri(ref.uri));
+  await writeFile(still, await loadUri(first.uri));
+  const length = Math.min(10, Number(params.duration_seconds ?? 10), await videoDuration(src));
+  const out = join(ctx.dir, `${name}.mp4`);
+  await runFfmpeg([
+    '-loop',
+    '1',
+    '-i',
+    still,
+    '-i',
+    src,
+    '-filter_complex',
+    `[0:v]scale=${width}:${height},setsar=1[bg];[1:v]scale=${Math.round(width / 4 / 2) * 2}:-2[pip];[bg][pip]overlay=W-w-8:H-h-8,format=yuv420p[v]`,
+    '-map',
+    '[v]',
+    '-t',
+    String(Math.max(1, length)),
+    '-r',
+    '24',
+    '-an',
+    '-c:v',
+    'libx264',
+    '-preset',
+    'ultrafast',
+    out,
+  ]);
+  return {
+    outputs: [{ uri: ctx.fileUrl(`${name}.mp4`), mime_type: 'video/mp4' }],
+    usage: { output_count: 1, duration_seconds: await videoDuration(out) },
   };
 }
 

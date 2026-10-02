@@ -99,10 +99,13 @@ export const EndFrameSchema = z.object({
 });
 export type EndFrame = z.infer<typeof EndFrameSchema>;
 
-/** A video resource whose motion, poses or camera movement the shot follows (`reference_video`). */
+/**
+ * A video resource whose motion, poses or camera movement the shot follows (`reference_video`), or a performance the
+ * characters act on a performance model (docs/design/performance.md).
+ */
 export const MotionReferenceSchema = z.object({
   resourceId: IdSchema,
-  mode: z.enum(['motion', 'pose', 'camera']).default('motion'),
+  mode: z.enum(['motion', 'pose', 'camera', 'performance']).default('motion'),
 });
 export type MotionReference = z.infer<typeof MotionReferenceSchema>;
 

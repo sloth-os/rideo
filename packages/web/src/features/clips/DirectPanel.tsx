@@ -7,24 +7,33 @@ import {
   type Shot,
   type Take,
 } from '@rideo/shared';
-import { Copy, Pause, Play } from 'lucide-react';
-import { useRef, useState } from 'react';
+import { Copy, Pause, Play, Video } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
 import { Editable } from '../../components/Editable';
 import { Badge, Button, Dialog, Field, Input, Select } from '../../components/ui';
 import { api, mediaUrl } from '../../lib/api';
 import { useProject } from '../../store/project';
 import { reportError } from '../../store/ui';
+import { PerformanceRecorder } from './PerformanceRecorder';
 
 const NO_RESOURCES: Record<string, Resource> = Object.freeze({}) as Record<string, Resource>;
 
 /**
  * Directing controls of a shot (docs/design/directing.md): the camera move, lens and aperture, the start and end
- * frames, a motion reference, a fixed seed, and variations to compare.
+ * frames, a motion reference or a recorded performance (docs/design/performance.md), a fixed seed, and variations
+ * to compare.
  */
 export function DirectPanel({ clip, shot }: { clip: Clip; shot: Shot }) {
   const projectId = useProject((s) => s.projectId);
   const resources = useProject((s) => s.docs?.resources ?? NO_RESOURCES);
   const [count, setCount] = useState(3);
+  const [recording, setRecording] = useState(false);
+  const [performer, setPerformer] = useState<{ model: string | null; available: boolean } | null>(null);
+  const performance = shot.motionReference?.mode === 'performance';
+  useEffect(() => {
+    if (projectId && performance && !performer)
+      api.performanceModel(projectId).then(setPerformer, reportError);
+  }, [projectId, performance, performer]);
   if (!projectId) return null;
   const ready = Object.values(resources).filter((r) => r.status === 'ready');
   const images = ready.filter((r) => r.kind === 'image');
@@ -142,24 +151,33 @@ export function DirectPanel({ clip, shot }: { clip: Clip; shot: Shot }) {
         </Select>
       </Field>
       <Field label="Motion reference">
-        <Select
-          value={shot.motionReference?.resourceId ?? ''}
-          onChange={(e) =>
-            update({
-              motionReference: e.target.value
-                ? { resourceId: e.target.value, mode: shot.motionReference?.mode ?? 'motion' }
-                : null,
-            })
-          }
-          data-testid="motion-ref-resource"
-        >
-          <option value="">None</option>
-          {videos.map((r) => (
-            <option key={r.id} value={r.id}>
-              Video: {r.name}
-            </option>
-          ))}
-        </Select>
+        <div className="flex gap-1.5">
+          <Select
+            value={shot.motionReference?.resourceId ?? ''}
+            onChange={(e) =>
+              update({
+                motionReference: e.target.value
+                  ? { resourceId: e.target.value, mode: shot.motionReference?.mode ?? 'motion' }
+                  : null,
+              })
+            }
+            data-testid="motion-ref-resource"
+          >
+            <option value="">None</option>
+            {videos.map((r) => (
+              <option key={r.id} value={r.id}>
+                Video: {r.name}
+              </option>
+            ))}
+          </Select>
+          <Button
+            icon={<Video className="size-4" />}
+            onClick={() => setRecording(true)}
+            aria-label="Record a performance"
+            title="Record a performance"
+            data-testid="performance-open"
+          />
+        </div>
       </Field>
       <Field label="Follow">
         <Select
@@ -174,8 +192,17 @@ export function DirectPanel({ clip, shot }: { clip: Clip; shot: Shot }) {
           <option value="motion">its motion</option>
           <option value="pose">its poses</option>
           <option value="camera">its camera move</option>
+          <option value="performance">its performance</option>
         </Select>
       </Field>
+      {performance && performer ? (
+        <p className="text-[12px] text-muted sm:col-span-2 lg:col-span-4" data-testid="performance-model">
+          {performer.available
+            ? `The characters act the performance (${performer.model}); its sound becomes the take's.`
+            : 'No performance model on the gateway: takes of this shot cannot be generated until one is set up.'}
+        </p>
+      ) : null}
+      <PerformanceRecorder open={recording} onClose={() => setRecording(false)} clip={clip} shot={shot} />
       {shot.endFrame.mode === 'generate' ? (
         <Field label="The last frame shows" className="sm:col-span-2 lg:col-span-4">
           <Editable

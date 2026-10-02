@@ -1229,6 +1229,15 @@ function buildServer(studio: Studio): McpServer {
   );
 
   // Resources
+  // Performance-driven animation (docs/design/performance.md)
+  tool(
+    'performance_model',
+    "The model performance takes use, if the gateway has one: a shot whose motionReference has mode 'performance' (a video of a person acting, set with shot_update) is acted by the characters on it.",
+    { projectId: PROJECT },
+    (a) => studio.performance.model(a.projectId),
+    ro,
+  );
+
   // Semantic media search (docs/design/search.md)
   tool(
     'media_search',

@@ -103,6 +103,22 @@ export const MOCK_MODELS: MockModel[] = [
     },
   },
   {
+    id: 'mock-performance-v1',
+    modality: 'video',
+    limits: {
+      modality: 'video',
+      input_modalities: ['text', 'image', 'video'],
+      supports_first_frame: true,
+      supports_reference_video: true,
+      supports_performance: true,
+      max_output_count: 1,
+      min_duration_seconds: 1,
+      max_duration_seconds: 10,
+      notes:
+        'Rideo mock performance model: the first frame with the performance in a corner, for its length.',
+    },
+  },
+  {
     id: 'mock-lipsync-v1',
     modality: 'video',
     limits: {

@@ -129,6 +129,10 @@ export class Metrics {
   readonly recipeSteps = this.add(
     new Counter('rideo_recipe_steps_total', 'Recipe steps run by tool and outcome'),
   );
+  /** Performance takes by outcome (docs/design/performance.md). */
+  readonly performanceTakes = this.add(
+    new Counter('rideo_performance_takes_total', 'Performance takes by outcome (passed, failed, error)'),
+  );
   /** Mattes of Remove the background (docs/design/editor.md#segmentation-masks-remove-the-background). */
   readonly masks = this.add(new Counter('rideo_masks_total', 'Segmentation mattes by outcome'));
   /** NLE interchange (docs/design/interchange.md): cuts handed off and taken back. */

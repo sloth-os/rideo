@@ -137,6 +137,8 @@ export const ModelLimitsSchema = z.looseObject({
   supports_frame_interpolation: z.boolean().optional(),
   /** Segmentation models return a matte of the subject (docs/design/editor.md#segmentation-masks-remove-the-background). */
   supports_segmentation: z.boolean().optional(),
+  /** Animates the first frame's characters with a driving performance video (docs/design/performance.md). */
+  supports_performance: z.boolean().optional(),
   notes: z.string().optional(),
 });
 export type ModelLimits = z.infer<typeof ModelLimitsSchema>;

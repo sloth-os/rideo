@@ -66,6 +66,7 @@ import { ElementService } from './elements';
 import { HistoryService } from './history';
 import { InterchangeService } from './interchange';
 import { LocalizationService } from './localization';
+import { PerformanceService } from './performance';
 import { ProjectService } from './projects';
 import { RecipeService } from './recipes';
 import { ProjectRegistry } from './registry';
@@ -94,6 +95,7 @@ export interface Studio {
   recipes: RecipeService;
   brand: BrandService;
   search: SearchService;
+  performance: PerformanceService;
   editor: EditorService;
   history: HistoryService;
   ui: UiService;
@@ -232,6 +234,7 @@ export function createStudio(
     interchange: new InterchangeService(deps),
     recipes: new RecipeService(deps),
     search: new SearchService(deps),
+    performance: new PerformanceService(deps),
     brand: new BrandService(deps),
     editor: new EditorService(deps),
   } satisfies Record<string, unknown>;

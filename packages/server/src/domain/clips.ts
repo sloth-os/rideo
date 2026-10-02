@@ -25,6 +25,7 @@ import { AppError, invalid, notFound } from '../errors';
 import type { Tx } from '../vcs/repo';
 import { Service } from './base';
 import type { Deps } from './deps';
+import { performanceModel } from './performance';
 
 /**
  * R1 and E1 preconditions: every character, location and prop in the shots is locked with an approved
@@ -279,6 +280,8 @@ export class ClipService extends Service {
     assertCastReady([shot], docs.characters, docs.elements);
     assertVoicesReady(this.deps, [shot], docs.characters, docs.project.settings);
     assertDirectingResources(shot, (id) => (id ? (docs.resources[id] ?? null) : null));
+    if (shot.motionReference?.mode === 'performance')
+      await performanceModel(this.deps, docs.project.settings.models.performance);
     const from = Math.max(0, ...shot.takes.map((t) => t.variation)) + 1;
     const branch = await this.branchOf(projectId);
     const jobs: Job[] = [];
@@ -326,6 +329,9 @@ export class ClipService extends Service {
     const shot = this.requireShot(clip, shotId);
     assertCastReady([shot], docs.characters, docs.elements);
     assertVoicesReady(this.deps, [shot], docs.characters, docs.project.settings);
+    // A performance needs a performance model (docs/design/performance.md): say so now, not in the job
+    if (shot.motionReference?.mode === 'performance')
+      await performanceModel(this.deps, docs.project.settings.models.performance);
     return this.deps.jobs.enqueue({
       projectId,
       kind: 'shot.generate',

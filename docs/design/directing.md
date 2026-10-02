@@ -17,7 +17,7 @@ shot.camera = {
 };
 shot.startFrame = { mode: 'auto' | 'resource', resourceId: string | null };
 shot.endFrame = { mode: 'none' | 'generate' | 'resource', description: string, resourceId: string | null };
-shot.motionReference = { resourceId: string, mode: 'motion' | 'pose' | 'camera' } | null;
+shot.motionReference = { resourceId: string, mode: 'motion' | 'pose' | 'camera' | 'performance' } | null;
 shot.seed = number | null;              // fixed seed for the keyframes and the video (null: derived, R3)
 ```
 
@@ -29,6 +29,7 @@ shot.seed = number | null;              // fixed seed for the keyframes and the 
 | end frame `generate` | the end frame is a second keyframe compiled from `description` with the shot's references | `last_frame` |
 | end frame `resource` | – | the image resource is the `last_frame` |
 | motion reference | `Reproduce the motion of the reference video.` / `Match the body poses and blocking of the reference video.` / `Reproduce the camera movement of the reference video.` | the video resource as `reference_video` |
+| performance | the characters act the reference video ([performance](performance.md)) | on the performance model: the first frame and the performance, normalized and trimmed, as `reference_video`; the take has the performer's sound |
 | seed | – | `seed` (attempts and variations still offset it) |
 
 Inputs a model does not accept (`supports_last_frame: false`, `supports_reference_video: false`) are not sent, and

@@ -584,6 +584,9 @@ export const api = {
   },
   applyBrand: (id: string, kitId: string | null) =>
     request<{ brand: ProjectBrand | null }>('PUT', `${p(id)}/brand`, { kitId }),
+  // Performance-driven animation (docs/design/performance.md#surfaces)
+  performanceModel: (id: string) =>
+    request<{ model: string | null; available: boolean }>('GET', `${p(id)}/performance`),
   // Semantic media search (docs/design/search.md#searching)
   search: (id: string, q: string, opts: { kinds?: SearchKind[]; limit?: number } = {}) => {
     const qs = new URLSearchParams({ q });

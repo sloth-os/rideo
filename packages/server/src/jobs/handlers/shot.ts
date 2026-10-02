@@ -25,6 +25,7 @@ import {
   assertVoicesReady,
   clipStatusOf,
 } from '../../domain/clips';
+import { performanceModel } from '../../domain/performance';
 import { notFound } from '../../errors';
 import { sampleFrames } from '../../media/frames';
 import { throwIfAborted } from '../../util/abort';
@@ -32,6 +33,7 @@ import type { JobContext } from '../queue';
 import { commitAs, docsFor, gatewayOptions, type HandlerDeps } from './common';
 import { lipSyncPass, prepareDialogue, takeAudio, takeAudioWav } from './dialogue';
 import { generateKeyframe, prepareShotReferences } from './keyframe';
+import { type PreparedPerformance, preparePerformance, withPerformanceSound } from './performance';
 import { commitTake, finishTake } from './take-finish';
 
 interface Candidate {
@@ -105,9 +107,14 @@ export async function shotGenerate(deps: HandlerDeps, ctx: JobContext) {
   try {
     return await deps.media.withTmpDir(async (dir) => {
       ctx.progress(0.02, 1, 'preparing references');
+      // A performance (docs/design/performance.md): the performance model acts it from the shot's first frame.
+      const performance = shot.motionReference?.mode === 'performance' ? shot.motionReference : null;
+      const videoModel = performance
+        ? await performanceModel(deps, settings.models.performance)
+        : settings.models.video;
       const [imageLimits, videoLimits] = await Promise.all([
         deps.gateway.limitsFor('image', settings.models.image),
-        deps.gateway.limitsFor('video', settings.models.video),
+        deps.gateway.limitsFor('video', videoModel),
       ]);
       const refs = await prepareShotReferences(deps, ctx, {
         shot,
@@ -283,19 +290,32 @@ export async function shotGenerate(deps: HandlerDeps, ctx: JobContext) {
         shot.motionReference && videoLimits.limits?.supports_reference_video !== false
           ? shot.motionReference
           : null;
-      const referenceVideoUri = motionReference
-        ? await resourceUri(motionReference.resourceId, false)
-        : undefined;
+      // A performance is normalized and trimmed to the shot; the performer speaks the lines (no dialogue voices).
+      const performed: PreparedPerformance | null = performance
+        ? await preparePerformance(deps, ctx, {
+            resource: docs.resources[performance.resourceId]!,
+            maxSec: shot.durationSec,
+            fps: settings.fps,
+            dir,
+          })
+        : null;
+      const referenceVideoUri = performed
+        ? performed.uri
+        : motionReference
+          ? await resourceUri(motionReference.resourceId, false)
+          : undefined;
 
       // Dialogue (docs/design/dialogue.md): TTS lines and their mix, or the speakers' samples for native audio.
-      const dialogue = await prepareDialogue(deps, ctx, {
-        shot,
-        characters: docs.characters,
-        settings,
-        videoLimits: videoLimits.limits,
-        dir,
-        name,
-      });
+      const dialogue = performed
+        ? null
+        : await prepareDialogue(deps, ctx, {
+            shot,
+            characters: docs.characters,
+            settings,
+            videoLimits: videoLimits.limits,
+            dir,
+            name,
+          });
       const videoOpts = (attempt: number) => ({
         firstFrameUri: firstFrame?.uri,
         lastFrameUri: endFrameInput?.uri,
@@ -303,7 +323,7 @@ export async function shotGenerate(deps: HandlerDeps, ctx: JobContext) {
         variation,
         referenceUris,
         attempt,
-        model: settings.models.video,
+        model: videoModel,
         limits: videoLimits.limits,
         ...(dialogue
           ? {
@@ -311,6 +331,13 @@ export async function shotGenerate(deps: HandlerDeps, ctx: JobContext) {
               // TTS takes are heard through the mix; the model renders sound only when the mix drives it.
               includeAudio: dialogue.mode === 'native' || dialogue.conditioned,
               durationSec: dialogue.durationSec,
+            }
+          : {}),
+        // The take lasts the performance when it is shorter than the shot; its sound is muxed on afterwards
+        ...(performed
+          ? {
+              includeAudio: false,
+              durationSec: Math.max(1, Math.min(shot.durationSec, performed.durationSec)),
             }
           : {}),
       });
@@ -439,6 +466,18 @@ export async function shotGenerate(deps: HandlerDeps, ctx: JobContext) {
         }
       }
 
+      if (performed) {
+        if (performed.hasAudio)
+          final = {
+            ...final,
+            local: await withPerformanceSound(deps, ctx, { video: final.local, performance: performed, dir }),
+          };
+        deps.metrics.performanceTakes.inc({
+          outcome: final.report.status === 'failed' ? 'failed' : 'passed',
+        });
+        ctx.log.info({ model: final.model, score: final.report.score }, 'performance take');
+      }
+
       // Watermark (single re-encode), poster, last frame, evidence frames, provenance.
       const done = await finishTake(deps, ctx, {
         local: final.local,
@@ -486,6 +525,8 @@ export async function shotGenerate(deps: HandlerDeps, ctx: JobContext) {
       return { takeId: take.id, status: final.report.status, score: final.report.score };
     });
   } catch (err) {
+    if (shot.motionReference?.mode === 'performance' && !ctx.signal.aborted)
+      deps.metrics.performanceTakes.inc({ outcome: 'error' });
     await commitAs(
       deps,
       ctx,

@@ -78,6 +78,7 @@ editor-job staging area and, without a configured certificate, the development C
 | `RIDEO_SFX_PROXY_DOMAIN` / `RIDEO_SFX_MODEL` | `api.elevenlabs.io` / `eleven_text_to_sound_v2` | sound-effects endpoint behind the gateway proxy |
 | `RIDEO_TTS_PROXY_DOMAIN` / `RIDEO_TTS_MODEL` | provider default (`api.elevenlabs.io` / `eleven_multilingual_v2`, `api.openai.com` / `gpt-4o-mini-tts`) | TTS endpoint behind the gateway proxy |
 | `RIDEO_EDIT_MODEL` | `auto` | video-to-video model of take edits ([take editing](design/take-editing.md)); projects can override `models.edit` |
+| `RIDEO_PERFORMANCE_MODEL` | `auto` | model of performance takes ([performance](design/performance.md)): `auto` picks the first gateway model with `supports_performance`, `off` disables them; projects can override `models.performance` |
 | `RIDEO_ENHANCE_MODEL` | `auto` | upscale and frame-interpolation model of exports ([finishing](design/finishing.md)): `auto` picks the first gateway model with the capabilities, `off` uses ffmpeg; projects can override `models.enhance` |
 | `RIDEO_LIPSYNC_MODEL` | `auto` | video model of the lip-sync pass (projects can override `models.lipSync`) |
 | `RIDEO_VOICE_JUDGE_PROVIDER` / `_PROXY_DOMAIN` / `_MODEL` | the vision provider (none for Anthropic) / provider domain / `gpt-4o-audio-preview` or `gemini-2.5-flash` | audio-capable model of the speaker check (rule V4); `off` disables it |

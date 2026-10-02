@@ -220,7 +220,7 @@ optional visible brand bug. *Why:* Runway Brand Kits, Firefly title templates.
 **18. Semantic media search** (M) — *done:* [design/search.md](design/search.md) — natural-language search over takes, footage and resources ("close-ups of Mira at
 night") from vision captions/embeddings through the proxy. *Why:* Premiere Media Intelligence, Frame.io search.
 
-**19. Performance-driven animation** (M) — drive a locked character from a webcam or phone performance, or a
+**19. Performance-driven animation** (M) — *done:* [design/performance.md](design/performance.md) — drive a locked character from a webcam or phone performance, or a
 motion/pose reference, when the gateway exposes such a model. *Why:* Runway Act-Two, Marey pose transfer.
 
 **20. Editor engine performance** (M) — multi-threaded ffmpeg.wasm (core-mt under cross-origin isolation where

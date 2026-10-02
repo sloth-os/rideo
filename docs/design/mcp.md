@@ -141,6 +141,12 @@ or keep going and `job_wait` until a tab picks the job up.
 | `export_list` | `projectId` |
 | `watermark_detect` | `uri` or `projectId` + `mediaPath` → watermark, registry record and `contentCredentials` (C2PA) |
 
+### Performance
+
+| Tool | Arguments |
+|---|---|
+| `performance_model` | `projectId` → `{model, available}`: the model that acts performances ([performance](performance.md)); a shot acts one when `shot_update` sets `motionReference: {resourceId, mode: 'performance'}` |
+
 ### Search
 
 | Tool | Arguments |

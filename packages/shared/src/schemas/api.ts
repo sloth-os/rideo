@@ -48,6 +48,8 @@ export const ProjectSettingsPatchSchema = z
         enhance: z.string().min(1),
         /** Remove the background (docs/design/editor.md#segmentation-masks-remove-the-background). */
         segment: z.string().min(1),
+        /** Performance takes (docs/design/performance.md). */
+        performance: z.string().min(1),
       })
       .partial(),
     consistency: z

@@ -94,6 +94,8 @@ export const MOTION_REFERENCE_PHRASES = {
   motion: 'Reproduce the motion of the reference video.',
   pose: 'Match the body poses and blocking of the reference video.',
   camera: 'Reproduce the camera movement of the reference video.',
+  performance:
+    'Animate the characters of the first frame with the performance of the reference video: its facial expressions, lip movements, head and body motion and timing.',
 } as const;
 
 /** Seeds of variation `k` are offset by a prime: variations differ and stay reproducible. */

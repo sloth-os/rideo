@@ -20,6 +20,7 @@ import { WebDavBackend } from '../storage/webdav';
 import { VERSION } from '../version';
 import { type AuthedRequest, registerAuthRoutes } from './auth-routes';
 import { registerBrandRoutes } from './brand-routes';
+import { registerPerformanceRoutes } from './performance-routes';
 import { registerReviewRoutes } from './review-routes';
 import { registerRoutes } from './routes';
 import { registerSearchRoutes } from './search-routes';
@@ -272,6 +273,7 @@ export async function buildServer(
   registerReviewRoutes(app, studio);
   registerBrandRoutes(app, studio);
   registerSearchRoutes(app, studio);
+  registerPerformanceRoutes(app, studio);
   registerMcp(app, studio);
   // Recipes run their steps through the MCP tools (docs/design/agents.md#recipes)
   studio.recipes.setTools(() => toolRegistry(studio));

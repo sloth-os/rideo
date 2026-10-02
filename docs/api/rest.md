@@ -229,7 +229,8 @@ review does not show is `403 forbidden`.
 |---|---|---|---|
 | POST | `/api/projects/:id/clips/plan` | `{sceneId}` | `Job` |
 | POST | `/api/projects/:id/clips/:clipId/generate` | – | `Job` (`clip.generate`: `shot.generate` per shot, or `shot.group` for consecutive shots of a multi-shot model unless `settings.generation.multiShot` is `off`, [multi-shot](../design/multi-shot.md)) |
-| PATCH | `/api/projects/:id/clips/:clipId/shots/:shotId` | shot fields, including `camera.{lensMm, aperture, move}`, `startFrame`, `endFrame`, `motionReference`, `seed` ([directing](../design/directing.md)) | `Clip` |
+| PATCH | `/api/projects/:id/clips/:clipId/shots/:shotId` | shot fields, including `camera.{lensMm, aperture, move}`, `startFrame`, `endFrame`, `motionReference` (`mode`: `motion`, `pose`, `camera` or `performance`), `seed` ([directing](../design/directing.md)) | `Clip` |
+| GET | `/api/projects/:id/performance` | – | `{model, available}`: the model performance takes use ([performance](../design/performance.md)); a regenerate or variations of a performance shot without one: `422 performance_unavailable` |
 | POST | `/api/projects/:id/clips/:clipId/shots/:shotId/variations` | `{count: 2–4}` | `Job[]` (`shot.generate` with `variation`) |
 | POST | `/api/projects/:id/clips/:clipId/shots/:shotId/takes/:takeId/edit` | `{kind: "restyle" \| "relight" \| "replace" \| "angle" \| "remove", instruction}` | `Job` (`take.edit`, [take editing](../design/take-editing.md)) |
 | POST | `/api/projects/:id/clips/:clipId/shots/:shotId/takes/:takeId/extend` | `{seconds: 1–10, prompt?}` | `Job` (`take.extend`) |

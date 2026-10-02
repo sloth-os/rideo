@@ -7,6 +7,7 @@ import {
   compileShotPrompt,
   compileVideoRequest,
   lensFragment,
+  needsOwnRequest,
   ProjectSettingsSchema,
   ShotSchema,
   shotContextOf,
@@ -50,6 +51,41 @@ describe('camera controls (docs/design/directing.md)', () => {
     expect(locked.parameters?.camera_motion).toBe('fixed');
     expect(CameraMoveIdSchema.safeParse('moonwalk').success).toBe(false);
     expect(new Set(CAMERA_MOVES.map((m) => m.id)).size).toBe(CAMERA_MOVES.length);
+  });
+
+  it('acts a performance: the first frame and the performance, for its length, on the performance model', () => {
+    // docs/design/performance.md#a-performance-on-a-shot
+    const shot = f.shot({
+      durationSec: 6,
+      motionReference: { resourceId: 'res_0000000000aaaaaa', mode: 'performance' },
+    });
+    const req = compileVideoRequest(ctx(shot), {
+      referenceUris: [],
+      attempt: 0,
+      model: 'act-model',
+      limits: {
+        modality: 'video',
+        supports_performance: true,
+        min_duration_seconds: 1,
+        max_duration_seconds: 10,
+      },
+      firstFrameUri: 'data:keyframe',
+      referenceVideoUri: 'data:performance',
+      includeAudio: false,
+      durationSec: 3.5,
+    });
+    expect(req.model).toBe('act-model');
+    expect(req.input.slice(1)).toEqual([
+      { type: 'image', uri: 'data:keyframe', role: 'first_frame' },
+      { type: 'video', uri: 'data:performance', role: 'reference_video' },
+    ]);
+    expect((req.input[0] as { text: string }).text).toContain(
+      'Animate the characters of the first frame with the performance of the reference video',
+    );
+    expect(req.parameters).toMatchObject({ duration_seconds: 3.5, include_audio: false });
+    // a performance renders alone, never in a multi-shot group
+    expect(needsOwnRequest(shot)).toBe(true);
+    expect(ShotSchema.parse({ ...shot }).motionReference?.mode).toBe('performance');
   });
 
   it('adds the last frame and the reference video only when the model takes them', () => {
