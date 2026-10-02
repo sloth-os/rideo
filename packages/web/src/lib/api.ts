@@ -518,6 +518,16 @@ export const api = {
       ...(kinds ? { kinds } : {}),
     }),
   editorJob: (jobId: string) => request<Job>('GET', `/editor/jobs/${jobId}`),
+  editorHeartbeatRequest: (jobId: string) => {
+    const token = getToken();
+    return {
+      url: `/api/editor/jobs/${jobId}/heartbeat`,
+      headers: {
+        'content-type': 'application/json',
+        ...(token ? { authorization: `Bearer ${token}` } : {}),
+      },
+    };
+  },
   editorHeartbeat: (jobId: string, sessionId: string, progress?: Job['progress']) =>
     request<{ cancelled: boolean; leaseExpiresAt: string | null }>(
       'POST',

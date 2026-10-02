@@ -52,8 +52,10 @@ canvas for the rest of the session.
 Browsers slow a hidden page down: timers fire at most once a second, and after five minutes once a minute; animation
 frames stop; some freeze hidden tabs. An editor job keeps going:
 
-- **Heartbeats from a worker.** The editor-job worker times its heartbeats with a dedicated worker (timers in workers
-  are not throttled like a hidden page's), so a hidden tab keeps its lease (60 s).
+- **Heartbeats from a worker.** A dedicated worker sends the job's heartbeats itself, on its own timer (timers in
+  workers are not throttled like a hidden page's) and with its own requests, so neither a hidden page nor a main
+  thread that is busy for a long while (a slow GPU readback, a long synchronous step) lets the lease (60 s) expire.
+  The page tells it the latest progress and hears the replies: a cancellation or a lost lease stops the job.
 - **A Web Lock** (`rideo-editor-job`) is held while a job runs: browsers do not freeze or discard tabs that hold one.
   On a phone, a screen wake lock keeps the device awake while the tab is visible and rendering.
 - **No timers in the render loop**: chunks render on WebCodecs and ffmpeg.wasm callbacks only.

@@ -103,7 +103,8 @@ RIDEO_TEST_WEBDAV_URL=http://rideo:rideo@localhost:8080/ npx vitest run --projec
   performance recorder (countdown, the stop at the shot's length, the recording's length on the upload, the shot's
   performance set, the camera released, a blocked camera); the engine (threads of ffmpeg.wasm commands, WebGPU
   geometry against the canvas transform, uniforms, half-float LUT texels, the compositor choice, proxy plans,
-  the worker ticker, the job lock and wake lock, heartbeats on the ticker).
+  the worker ticker, the job lock and wake lock, heartbeats on the ticker, heartbeats sent by a worker with the
+  latest progress and a lost lease stopping the job).
 - **web**: live-event store reducer and optimistic timeline edits (apply, confirm, roll back), live client
   (sequence dedupe, UI-command acks, restart resync), UI command dispatch, WebCodecs codec/container
   selection, render engine choice, the editor-job worker against a fake API (claims only with a project and a

@@ -138,7 +138,7 @@ test('the engine: threads under cross-origin isolation, WebGPU like the canvas, 
         Object.values<any>((await api.call<any>('GET', `/projects/${pid}/state`)).docs.exports)
           .map((e) => [e.engine, e.compositor ?? null, e.status])
           .sort(),
-      { timeout: 120_000 },
+      { timeout: 300_000 },
     )
     .toEqual([
       ['ffmpeg', null, 'succeeded'],

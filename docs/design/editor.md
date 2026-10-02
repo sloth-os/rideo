@@ -229,7 +229,7 @@ the `client` lane that an open studio tab of that project claims and runs. See [
 | `media-files.ts` | Blob access to project media: files this tab uploaded are reused from memory, others are downloaded once (LRU). |
 | `prepare.ts` | Probe (`ffmpeg -i` banner, parsed by `shared/media/probe.ts`) and poster for a file. |
 | `codecs.ts`, `local-proxy.ts`, `proxy-plan.ts` | Whether WebCodecs decodes a media file, and the local proxies (see below). |
-| `threads.ts`, `ticker.ts`, `keep-alive.ts` | Threads of the multi-threaded core's commands; heartbeats timed by a worker and a Web Lock while a job runs ([engine performance](engine-performance.md)). |
+| `threads.ts`, `heartbeat.ts`, `ticker.ts`, `keep-alive.ts` | Threads of the multi-threaded core's commands; heartbeats sent by a worker (a worker timer where they cannot be) and a Web Lock while a job runs ([engine performance](engine-performance.md)). |
 | `media-jobs.ts` | The `media.process` and `analysis.signals` editor jobs. |
 | `render/` | Chunked rendering: `engine-choice.ts`, `ffmpeg-engine.ts` (chunk graph and soundtrack), `webcodecs-engine.ts` (compositor chunk), `export-job.ts` (the `export.render` editor job). The plan itself is `shared/media/render-plan.ts`. |
 | `worker.ts`, `index.ts`, `state.ts` | The editor-job worker (claims, heartbeats, runs and completes the open project's editor jobs), its per-tab instance, and the engine state shown in the header and sent with presence. |
@@ -404,8 +404,8 @@ Protocol (REST, see [api/rest.md](../api/rest.md#editor-jobs)):
    idle, on every `job` event for a queued `client` job, and every 10 s. The server hands out the oldest
    queued editor job of that project, sets `status: running` and a lease (`sessionId`, `expiresAt`, 60 s).
 2. **Heartbeat.** Every 10 s the tab reports progress and extends the lease. The reply tells it when the
-   job was cancelled. A worker times the heartbeats and the job holds a Web Lock, so a hidden tab keeps its lease
-   ([engine performance](engine-performance.md#rendering-in-a-background-tab)).
+   job was cancelled. A dedicated worker sends the heartbeats and the job holds a Web Lock, so a hidden tab, or one
+   whose main thread is busy, keeps its lease ([engine performance](engine-performance.md#rendering-in-a-background-tab)).
 3. **Files.** Outputs are uploaded one by one (`PUT /api/editor/jobs/:jobId/files/:name`) into a staging
    folder on the server's disk (`RIDEO_DATA_DIR/staging/<jobId>/`). The job lists them in `staged`.
 4. **Complete / fail.** The tab posts the result (validated per kind); the server applies it and starts the

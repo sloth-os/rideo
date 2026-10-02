@@ -1,5 +1,6 @@
 import { type Job, newId, parseCube } from '@rideo/shared';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { startHeartbeat } from '../src/engine/heartbeat';
 import { keepAlive } from '../src/engine/keep-alive';
 import { HEAVY_PIXELS, proxyName, proxyPlan } from '../src/engine/proxy-plan';
 import { threadBudget, withThreads } from '../src/engine/threads';
@@ -303,6 +304,127 @@ describe('rendering in a background tab (docs/design/engine-performance.md#rende
     await new Promise((r) => setTimeout(r, 10));
     expect(api.editorComplete).toHaveBeenCalledWith(job.id, 's1', { parts: 1 });
     expect(kept).toEqual([`kept ${job.id}`, 'stopped']);
+    worker.setProject(null);
+  });
+
+  it('sends heartbeats from a worker with the latest progress, and stops a job whose lease is lost', async () => {
+    // the pump: a worker that posts the heartbeat itself
+    const posted: unknown[] = [];
+    let onmessage: ((e: { data: unknown }) => void) | null = null;
+    class FakeWorker {
+      set onmessage(fn: (e: { data: unknown }) => void) {
+        onmessage = fn;
+      }
+      postMessage(m: unknown) {
+        posted.push(m);
+      }
+      terminate() {
+        posted.push('terminated');
+      }
+    }
+    vi.stubGlobal('Worker', FakeWorker);
+    vi.stubGlobal(
+      'URL',
+      Object.assign(URL, { createObjectURL: () => 'blob:x', revokeObjectURL: () => undefined }),
+    );
+    const replies: unknown[] = [];
+    const pump = startHeartbeat(
+      {
+        url: '/api/editor/jobs/j1/heartbeat',
+        headers: { 'content-type': 'application/json' },
+        body: '{"a":1}',
+        ms: 10_000,
+      },
+      (r) => replies.push(r),
+    );
+    expect(pump.source).toBe('worker');
+    pump.update('{"a":2}');
+    (onmessage as unknown as (e: { data: unknown }) => void)({
+      data: { status: 200, json: { cancelled: false } },
+    });
+    pump.stop();
+    expect(posted).toEqual([
+      {
+        type: 'start',
+        url: new URL('/api/editor/jobs/j1/heartbeat', location.href).href,
+        headers: { 'content-type': 'application/json' },
+        body: '{"a":1}',
+        ms: 10_000,
+      },
+      { type: 'body', body: '{"a":2}' },
+      { type: 'stop' },
+      'terminated',
+    ]);
+    expect(replies).toEqual([{ status: 200, json: { cancelled: false } }]);
+
+    // the editor worker uses it when the API can hand the heartbeat over
+    const job = {
+      id: newId('job'),
+      projectId: 'prj_01m3s0000000000000',
+      kind: 'export.render',
+      lane: 'client',
+      status: 'running',
+      params: {},
+      progress: { done: 0, total: 1 },
+      attempts: 1,
+      maxAttempts: 5,
+      branch: 'main',
+      actor: { kind: 'user', id: 'local' },
+      priority: 0,
+      gatewayTasks: [],
+      lease: { sessionId: 's1', claimedAt: 'x', expiresAt: 'y' },
+      staged: [],
+      createdAt: '2026-10-02T00:00:00.000Z',
+    } as Job;
+    const queue = [job];
+    const api: EditorApi = {
+      editorClaim: vi.fn(async () => ({ job: queue.shift() ?? null })),
+      editorHeartbeat: vi.fn(async () => ({ cancelled: false, leaseExpiresAt: 'later' })),
+      editorUpload: vi.fn(async () => undefined),
+      editorComplete: vi.fn(async () => undefined),
+      editorFail: vi.fn(async () => undefined),
+      editorHeartbeatRequest: (jobId) => ({ url: `/api/editor/jobs/${jobId}/heartbeat`, headers: {} }),
+    };
+    let reply: ((r: { status: number; json: unknown }) => void) | null = null;
+    const bodies: string[] = [];
+    const worker = new EditorWorker({
+      api,
+      pollMs: 60_000,
+      progressMs: 60_000,
+      heartbeat: (req, onReply) => {
+        expect(req.url).toBe(`/api/editor/jobs/${job.id}/heartbeat`);
+        bodies.push(req.body);
+        reply = onReply;
+        return { source: 'worker', update: (b) => bodies.push(b), stop: () => bodies.push('stopped') };
+      },
+      keepAlive: (_id, run) => run(),
+      handlers: {
+        'export.render': (ctx) =>
+          new Promise((_, reject) => {
+            ctx.progress(1, 4, 'chunk 1/4');
+            ctx.signal.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')));
+          }),
+        'media.process': async () => ({}),
+        'analysis.signals': async () => ({}),
+      },
+    });
+    worker.setSession(() => 's1');
+    worker.setProject(job.projectId);
+    await new Promise((r) => setTimeout(r, 10));
+    expect(JSON.parse(bodies[0]!)).toEqual({ sessionId: 's1', progress: { done: 0, total: 1 } });
+    expect(JSON.parse(bodies[1]!)).toEqual({
+      sessionId: 's1',
+      progress: { done: 1, total: 4, message: 'chunk 1/4' },
+    });
+    // the lease is lost: the run stops, unreported
+    (reply as unknown as (r: { status: number; json: unknown }) => void)({
+      status: 409,
+      json: { code: 'lease_lost' },
+    });
+    await new Promise((r) => setTimeout(r, 10));
+    expect(bodies.at(-1)).toBe('stopped');
+    expect(api.editorComplete).not.toHaveBeenCalled();
+    expect(api.editorFail).not.toHaveBeenCalled();
     worker.setProject(null);
   });
 });
