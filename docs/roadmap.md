@@ -217,7 +217,7 @@ and dubbing. *Why:* Flow Agent, Runway Agent, Descript Underlord.
 **17. Brand kits and templates** (S) — *done:* [design/brand-kits.md](design/brand-kits.md) — fonts, logos, colors for titles; intro/outro bumpers; lower-third templates;
 optional visible brand bug. *Why:* Runway Brand Kits, Firefly title templates.
 
-**18. Semantic media search** (M) — natural-language search over takes, footage and resources ("close-ups of Mira at
+**18. Semantic media search** (M) — *done:* [design/search.md](design/search.md) — natural-language search over takes, footage and resources ("close-ups of Mira at
 night") from vision captions/embeddings through the proxy. *Why:* Premiere Media Intelligence, Frame.io search.
 
 **19. Performance-driven animation** (M) — drive a locked character from a webcam or phone performance, or a

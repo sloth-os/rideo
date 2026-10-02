@@ -16,6 +16,7 @@ export const VIEWS = [
   'analysis',
   'history',
   'exports',
+  'search',
 ] as const;
 export const ViewSchema = z.enum(VIEWS);
 export type View = z.infer<typeof ViewSchema>;

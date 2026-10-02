@@ -44,6 +44,8 @@ import {
   renderScreenplayMarkdown,
   SceneInputSchema,
   ScriptFormatSchema,
+  SearchKindSchema,
+  SearchQuerySchema,
   StartFrameSchema,
   slugify,
   sortedClips,
@@ -1227,6 +1229,37 @@ function buildServer(studio: Studio): McpServer {
   );
 
   // Resources
+  // Semantic media search (docs/design/search.md)
+  tool(
+    'media_search',
+    'Find takes, footage, stills and references by what they show ("close-ups of Mira at night"): the best frame of each file with its time, caption and source. Index the project first (search_index).',
+    {
+      projectId: PROJECT,
+      query: z.string().min(1).max(500),
+      kinds: z.array(SearchKindSchema).min(1).optional().describe('take, resource, reference; default all'),
+      limit: z.number().int().min(1).max(100).optional(),
+    },
+    (a) =>
+      studio.search.search(
+        a.projectId,
+        SearchQuerySchema.parse({ q: a.query, kinds: a.kinds, limit: a.limit }),
+      ),
+    ro,
+  );
+  tool(
+    'search_index',
+    "Index the project's new takes, footage, stills and references for search (frames described by the vision model); returns the job.",
+    { projectId: PROJECT },
+    (a, actor) => studio.search.index(actor, a.projectId),
+  );
+  tool(
+    'search_status',
+    'The search index: frames indexed and waiting, the mode (semantic or words) and the running index job.',
+    { projectId: PROJECT },
+    (a) => studio.search.status(a.projectId),
+    ro,
+  );
+
   // Brand kits (docs/design/brand-kits.md)
   tool(
     'brand_kits_list',

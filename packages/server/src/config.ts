@@ -80,6 +80,9 @@ export const EnvSchema = z.object({
   RIDEO_VISION_MODEL: str(),
   RIDEO_STT_PROXY_DOMAIN: str(),
   RIDEO_STT_MODEL: str('whisper-1'),
+  /** Semantic search by meaning (docs/design/search.md#the-index); words without it. */
+  RIDEO_EMBEDDINGS_PROXY_DOMAIN: str(),
+  RIDEO_EMBEDDINGS_MODEL: str('text-embedding-3-small'),
   RIDEO_TTS_PROVIDER: z.enum(['elevenlabs', 'openai', 'off']).optional().default('off'),
   RIDEO_TTS_PROXY_DOMAIN: str(),
   RIDEO_TTS_MODEL: str(),
@@ -188,6 +191,8 @@ export interface Config {
   llm: LlmEndpoint;
   vision: LlmEndpoint;
   stt?: { domain: string; model: string };
+  /** Caption embeddings for semantic search; unset: search ranks by words. */
+  embeddings?: { domain: string; model: string };
   /** Dialogue voices; unset when RIDEO_TTS_PROVIDER=off. */
   tts?: TtsEndpoint;
   /** Generated sound effects; unset when RIDEO_SFX_PROVIDER=off. */
@@ -311,6 +316,9 @@ export function loadConfig(
           : LLM_DEFAULT_DOMAINS[visionProvider]),
       model: e.RIDEO_VISION_MODEL ?? e.RIDEO_LLM_MODEL!,
     },
+    embeddings: e.RIDEO_EMBEDDINGS_PROXY_DOMAIN
+      ? { domain: e.RIDEO_EMBEDDINGS_PROXY_DOMAIN, model: e.RIDEO_EMBEDDINGS_MODEL! }
+      : undefined,
     stt: e.RIDEO_STT_PROXY_DOMAIN
       ? { domain: e.RIDEO_STT_PROXY_DOMAIN, model: e.RIDEO_STT_MODEL! }
       : undefined,

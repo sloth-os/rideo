@@ -57,7 +57,8 @@ test('upload → analysis in the browser → suggestions → auto edit → expor
   await expect(cards).toHaveCount(2);
   for (const engine of ['webcodecs', 'ffmpeg']) {
     const card = cards.filter({ hasText: engine });
-    await expect(card.getByTestId('download-export')).toBeVisible();
+    // both exports finish one after the other on the media lane
+    await expect(card.getByTestId('download-export')).toBeVisible({ timeout: 120_000 });
     await card.getByTestId('verify-export').click();
     await expect(card.getByTestId('verify-result')).toContainText('found');
   }

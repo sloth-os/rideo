@@ -38,7 +38,7 @@ const task = await client.generateMusic(req, { idempotencyKey, signal, onUpdate 
 - `metadata` carries `{rideo_project, rideo_job, rideo_step}` for cross-system tracing.
 - Outputs arrive as `https://…` or `data:` URIs. `MediaStore.importUri()` downloads, hashes and stores them.
 
-## Proxy usage (LLM, vision, STT)
+## Proxy usage (LLM, vision, STT, embeddings)
 
 ```ts
 const res = await proxy.fetch(domain, path, { method: 'POST', body, headers, signal });
@@ -57,6 +57,9 @@ Speech-to-text (optional, used by footage analysis): OpenAI-style
 `POST /proxy/{RIDEO_STT_PROXY_DOMAIN}/v1/audio/transcriptions` (multipart, `response_format=verbose_json`,
 `timestamp_granularities[]` `word` and `segment`: the words' timings drive transcript editing,
 [editor](editor.md#transcript-editing)). When unset, analysis runs without a transcript.
+
+Embeddings (optional, used by [media search](search.md)): OpenAI-style `POST /proxy/{RIDEO_EMBEDDINGS_PROXY_DOMAIN}/v1/embeddings`
+`{model, input: string[]}` in batches of 64, validated and put back in input order. When unset, search ranks by words.
 
 ## Enhancement
 
@@ -100,6 +103,7 @@ Every LLM use is a **task** with an id, a zod output schema, a system prompt and
 | `thumbnail.pick` | candidate frames of an export, the title, how many | `{picks[{index, reason}]}` best first |
 | `dialogue.translate` | the target language, the film (title, logline, tone), the cast names, the scene and its lines | `{lines[{key, text}]}` ([localization](localization.md#translation)) |
 | `sfx.plan` | the takes of the cut (length, description, action, location), `maxPerShot` | `{effects[{shot, description, at, durationSec, kind}]}` |
+| `frame.caption` | one frame (512 px wide), what it is from, who and what its source shows (with how they look), the cast | `{caption}` (≤ 300 characters, [search](search.md#the-index)) |
 
 `runTask()`:
 

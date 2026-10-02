@@ -9,20 +9,27 @@ import {
   type Timeline,
   type TimelineOp,
 } from '@rideo/shared';
-import { Film, ImageIcon } from 'lucide-react';
-import { Badge, Dialog } from '../../components/ui';
+import { Film, ImageIcon, Search } from 'lucide-react';
+import { type FormEvent, useState } from 'react';
+import { Badge, Button, Dialog, Input } from '../../components/ui';
+import { api } from '../../lib/api';
 import { useProject } from '../../store/project';
+import { reportError } from '../../store/ui';
 
 interface Option {
   key: string;
   label: string;
   source: Source;
   media: MediaRef;
+  /** A search match: the matched frame's time, and what it shows (docs/design/search.md#searching). */
+  at?: number;
+  caption?: string;
 }
 
 /**
  * B-roll, stills and takes onto an overlay track at the playhead (docs/design/editor.md#multitrack-transforms-and-keyframes):
- * up to 5 s of a video (3 s of a still), on the top overlay track (a new one when there is none).
+ * up to 5 s of a video (3 s of a still), on the top overlay track (a new one when there is none). A search finds them by
+ * what they show; a match starts a second before its frame.
  */
 export function OverlayPicker({
   open,
@@ -38,7 +45,45 @@ export function OverlayPicker({
   apply: (ops: TimelineOp[]) => void;
 }) {
   const docs = useProject((s) => s.docs);
+  const [q, setQ] = useState('');
+  const [found, setFound] = useState<Option[] | null>(null);
+  const [busy, setBusy] = useState(false);
   if (!docs) return null;
+  const search = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!q.trim()) return setFound(null);
+    setBusy(true);
+    try {
+      const res = await api.search(docs.project.id, q.trim(), { kinds: ['take', 'resource'], limit: 12 });
+      setFound(
+        res.results.map((r) => ({
+          key: `${r.media.hash}@${r.at}:${r.source.kind}`,
+          label: r.label,
+          caption: r.caption,
+          at: r.at,
+          media: r.media,
+          source:
+            r.source.kind === 'take'
+              ? {
+                  type: 'take' as const,
+                  clipId: r.source.clipId,
+                  shotId: r.source.shotId,
+                  takeId: r.source.takeId,
+                  media: r.media,
+                }
+              : {
+                  type: 'media' as const,
+                  media: r.media,
+                  ...(r.source.kind === 'resource' ? { resourceId: r.source.resourceId } : {}),
+                },
+        })),
+      );
+    } catch (err) {
+      reportError(err);
+    } finally {
+      setBusy(false);
+    }
+  };
   const options: Option[] = [
     ...Object.values(docs.resources)
       .filter((r) => (r.kind === 'video' || r.kind === 'image') && r.status === 'ready')
@@ -79,7 +124,9 @@ export function OverlayPicker({
       track = { id, kind: 'video', name: 'Overlay', items: [] };
     }
     const still = isStillMedia(o.media);
-    const len = still ? 3 : Math.min(5, o.media.durationSec ?? 5);
+    const dur = o.media.durationSec ?? 5;
+    const len = still ? 3 : Math.min(5, dur);
+    const from = still || o.at === undefined ? 0 : Math.max(0, Math.min(o.at - 1, dur - len));
     ops.push({
       op: 'insert',
       trackId: track.id,
@@ -87,23 +134,43 @@ export function OverlayPicker({
         kind: 'video',
         source: o.source,
         start: Math.max(0, time),
-        in: 0,
-        out: len,
+        in: from,
+        out: from + len,
         label: o.label.slice(0, 200),
       },
     });
     apply(ops);
     onClose();
   };
+  const shown = found ?? options;
   return (
     <Dialog open={open} onClose={onClose} title="Add an overlay at the playhead">
-      {options.length === 0 ? (
+      <form onSubmit={search} className="mb-3 flex gap-2" role="search">
+        <Input
+          value={q}
+          onChange={(e) => {
+            setQ(e.target.value);
+            if (!e.target.value.trim()) setFound(null);
+          }}
+          placeholder="Search by what it shows…"
+          aria-label="Search footage and takes"
+          maxLength={500}
+          className="flex-1"
+          data-testid="overlay-search"
+        />
+        <Button type="submit" icon={<Search className="size-4" />} loading={busy} aria-label="Search">
+          <span className="sr-only sm:not-sr-only">Search</span>
+        </Button>
+      </form>
+      {shown.length === 0 ? (
         <p className="text-[13px] text-muted">
-          Upload footage or stills in Resources, or generate takes first.
+          {found
+            ? 'Nothing matches: try other words, or index the project for search.'
+            : 'Upload footage or stills in Resources, or generate takes first.'}
         </p>
       ) : (
         <ul className="max-h-[60vh] space-y-1 overflow-y-auto" data-testid="overlay-options">
-          {options.map((o) => (
+          {shown.map((o) => (
             <li key={o.key}>
               <button
                 type="button"
@@ -116,8 +183,17 @@ export function OverlayPicker({
                 ) : (
                   <Film className="size-4 shrink-0 text-muted" />
                 )}
-                <span className="min-w-0 flex-1 truncate">{o.label}</span>
-                {o.media.durationSec ? <Badge>{formatDuration(o.media.durationSec)}</Badge> : null}
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate">{o.label}</span>
+                  {o.caption ? (
+                    <span className="block truncate text-[12px] text-muted">{o.caption}</span>
+                  ) : null}
+                </span>
+                {o.at !== undefined && !isStillMedia(o.media) ? (
+                  <Badge>at {formatDuration(o.at)}</Badge>
+                ) : o.media.durationSec ? (
+                  <Badge>{formatDuration(o.media.durationSec)}</Badge>
+                ) : null}
                 {o.source.type === 'take' ? <Badge tone="accent">take</Badge> : null}
               </button>
             </li>

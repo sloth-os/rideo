@@ -72,6 +72,16 @@ Errors are RFC 9457 problem details (`application/problem+json`) with a stable `
 | DELETE | `/api/tokens/:id` | – | the token, revoked |
 | GET | `/api/audit` | `?since&until&projectId&actor&type&limit` | audit events, newest first (admins; directors with their `projectId`) |
 
+## Search
+
+[Semantic media search](../design/search.md): takes, footage, stills and references by what they show.
+
+| Method | Path | Body / query | Result |
+|---|---|---|---|
+| GET | `/api/projects/:id/search` | `q` (1–500 characters), `kinds?` (`take,resource,reference`), `limit?` (1–100, default 24) | `{query, mode: semantic \| words, results[{source, media, at, caption, names, score, label}], indexed, pending}` |
+| GET | `/api/projects/:id/search/status` | – | `{mode, indexed, pending, failed, files, updatedAt, usedAt, job}` |
+| POST | `/api/projects/:id/search/index` | – | `202 {job}` (`search.index`; one per project at a time, `project.edit`) |
+
 ## Brand kits
 
 [Brand kits](../design/brand-kits.md): the studio's kits, their files, and a project's brand.

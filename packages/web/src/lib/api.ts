@@ -39,6 +39,9 @@ import type {
   ReviewItem,
   ReviewTarget,
   Screenplay,
+  SearchKind,
+  SearchResponse,
+  SearchStatus,
   TagInfo,
   Timeline,
   TimelineOp,
@@ -581,6 +584,15 @@ export const api = {
   },
   applyBrand: (id: string, kitId: string | null) =>
     request<{ brand: ProjectBrand | null }>('PUT', `${p(id)}/brand`, { kitId }),
+  // Semantic media search (docs/design/search.md#searching)
+  search: (id: string, q: string, opts: { kinds?: SearchKind[]; limit?: number } = {}) => {
+    const qs = new URLSearchParams({ q });
+    if (opts.kinds?.length) qs.set('kinds', opts.kinds.join(','));
+    if (opts.limit) qs.set('limit', String(opts.limit));
+    return request<SearchResponse>('GET', `${p(id)}/search?${qs}`);
+  },
+  searchStatus: (id: string) => request<SearchStatus>('GET', `${p(id)}/search/status`),
+  searchIndex: (id: string) => request<{ job: Job }>('POST', `${p(id)}/search/index`),
   // Recipes (docs/design/agents.md#recipes)
   recipes: () => request<Recipe[]>('GET', '/recipes'),
   deleteRecipe: (recipeId: string) => request<void>('DELETE', `/recipes/${encodeURIComponent(recipeId)}`),

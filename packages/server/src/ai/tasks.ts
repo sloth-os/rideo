@@ -12,6 +12,9 @@ import {
   type FootageAnalyzeInput,
   type FootageAnalyzeOutput,
   FootageAnalyzeOutputSchema,
+  type FrameCaptionInput,
+  type FrameCaptionOutput,
+  FrameCaptionOutputSchema,
   INPUT_PREFIX,
   JUDGE_ELEMENT_REFERENCE_LABEL,
   JUDGE_FRAME_LABEL,
@@ -160,6 +163,13 @@ You are a film translator writing dialogue for subtitles and dubbing. Translate 
 - Keep character names exactly as they are; do not translate or transliterate names.
 - Never add notes, quotes or speaker names to the text; one translation per line, same "key".
 Return only JSON: {"lines":[{"key":"...","text":"..."}]}`,
+
+  'frame.caption': `rideo-task: frame.caption
+You describe one frame of a film project so people can find it later by searching in words. Write one sentence of at most 300 characters: who is in it, where it is, what is happening, the shot size (extreme close-up, close-up, medium, wide or extreme wide) and the light (daylight, night, dusk, dawn, interior...), with notable colours and objects.
+- "known" lists who and what this frame's source shows, with how they look: use their names when you see them.
+- Name others from "cast" only when you are sure; never guess at what you cannot see.
+- "kind" says what the frame is from: a generated take, footage, a still, or a reference image of a character or element.
+Return only JSON: {"caption":"..."}`,
 };
 
 export interface LabelledImage {
@@ -418,6 +428,16 @@ export class LlmTasks {
     return this.run('thumbnail.pick', ThumbnailPickOutputSchema, input, {
       images: frames.map((data, i) => ({ label: `${FOCUS_FRAME_LABEL} ${i}:`, data, mime: 'image/png' })),
       temperature: 0,
+      signal,
+    });
+  }
+
+  /** One frame described for search (docs/design/search.md#captions). */
+  captionFrame(input: FrameCaptionInput, frame: Buffer, signal?: AbortSignal): Promise<FrameCaptionOutput> {
+    return this.run('frame.caption', FrameCaptionOutputSchema, input, {
+      images: [{ label: `${FOCUS_FRAME_LABEL} 0:`, data: frame, mime: 'image/png' }],
+      temperature: 0.2,
+      maxTokens: 300,
       signal,
     });
   }

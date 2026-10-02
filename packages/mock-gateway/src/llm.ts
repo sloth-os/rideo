@@ -24,6 +24,7 @@ import {
   translate,
 } from './fixtures';
 import { parseDataUri } from './png';
+import { frameCaption } from './search';
 import { voiceJudge } from './speech';
 
 type Part =
@@ -222,6 +223,9 @@ export function answer(req: ChatRequest): string {
       break;
     case 'thumbnail.pick':
       out = thumbnailPick(input, imagesOf(req.parts));
+      break;
+    case 'frame.caption':
+      out = frameCaption(input, imagesOf(req.parts));
       break;
     default:
       out = { ok: true, echo: text.slice(0, 200) };

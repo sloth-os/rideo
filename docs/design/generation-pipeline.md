@@ -46,6 +46,7 @@ type Job = {
 | `media.process` | client | probe + poster of an imported resource (runs in a studio tab) |
 | `analysis.signals` | client | footage analysis signals with ffmpeg.wasm (runs in a studio tab) |
 | `analysis.suggest` | llm | transcript, AI summary and suggestions + rule suggestions from the signals |
+| `search.index` | llm | caption new frames of takes, footage, stills and references for [search](search.md), embed the captions |
 | `edit.auto` | control | accepted suggestions → timeline |
 | `timeline.assemble` | control | approved clips → timeline |
 | `export.render` | client | chunked render + soundtrack in a studio tab ([editor](editor.md#rendering)) |

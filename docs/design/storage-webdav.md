@@ -128,6 +128,9 @@ The server's ffmpeg (generation and watermarking) needs local files. `MediaStore
 `${RIDEO_DATA_DIR}/cache/media/<hash>.<ext>`, verifies the hash, and serves it from there. The cache is an
 LRU bounded by `RIDEO_CACHE_MAX_BYTES` (default 5 GiB). It is only a cache: deleting it loses nothing.
 
+The [search](search.md) index of a project is derived data too: `${RIDEO_DATA_DIR}/search/<projectId>.json`, rebuilt
+by the next index run when lost (at the cost of captioning the frames again).
+
 Files uploaded by editor jobs (render parts, soundtrack, analysis thumbnails, speech audio) are staged in
 `${RIDEO_DATA_DIR}/staging/<jobId>/` until the job's follow-up has consumed them; only the published
 results (export, thumbnails) are written to WebDAV. Staging folders of finished jobs are removed after the

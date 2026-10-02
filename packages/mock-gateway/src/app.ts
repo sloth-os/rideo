@@ -16,6 +16,7 @@ import {
 } from './generate';
 import { handleChat, multipartFile } from './llm';
 import { MOCK_MODELS, type Modality } from './models';
+import { embeddings } from './search';
 import { handleSpeech } from './speech';
 import { publicTask, type RunResult, TaskStore } from './tasks';
 
@@ -277,6 +278,11 @@ export async function buildMockGateway(opts: MockGatewayOptions = {}): Promise<M
       } catch {
         return problem(req, reply, 400, 'bad_request', 'Mock proxy expects JSON.');
       }
+    }
+    // Caption embeddings for semantic search (docs/design/search.md)
+    if (/(^|\/)embeddings$/.test(path)) {
+      const res = embeddings(body);
+      return reply.code(res.status).send(res.body);
     }
     const res = handleChat(path, body);
     return reply.code(res.status).headers(res.headers).send(res.body);

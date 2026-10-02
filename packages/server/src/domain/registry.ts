@@ -16,6 +16,8 @@ export interface ProjectHandle {
 /** One Repository + Worktree per project, wired to live events and metrics. */
 export class ProjectRegistry {
   private readonly handles = new Map<string, ProjectHandle>();
+  /** Commits on a project's checked-out branch, with the documents they changed (the search index follows them). */
+  onCommit?: (projectId: string, docs: Record<string, unknown>) => void;
 
   constructor(
     private readonly deps: {
@@ -42,6 +44,7 @@ export class ProjectRegistry {
         ? { ...e.summary, meta: { ...e.summary.meta, replaces: e.replaces } }
         : e.summary;
       this.deps.hub.publish(projectId, { kind: 'commit', commit, docs: e.checkedOut ? e.docs : null });
+      if (e.checkedOut) this.onCommit?.(projectId, e.docs);
     };
     repo.onHead = (branch, commit) => this.deps.hub.publish(projectId, { kind: 'head', branch, commit });
     h = { id: projectId, repo, worktree };

@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import {
   ClipPlanOutputSchema,
   FocusOutputSchema,
+  FrameCaptionOutputSchema,
   INPUT_PREFIX,
   JUDGE_FRAME_LABEL,
   JUDGE_REFERENCE_LABEL,
@@ -465,5 +466,47 @@ describe('post audio (docs/design/post-audio.md#mock-gateway)', () => {
     expect((await res.arrayBuffer()).byteLength).toBeGreaterThan(1000);
     const bad = await post('/proxy/api.elevenlabs.io/v1/sound-generation', { duration_seconds: 1 });
     expect(bad.res.status).toBe(422);
+  });
+});
+
+describe('semantic search (docs/design/search.md#mock-gateway)', () => {
+  const solid = (rgb: [number, number, number]) => {
+    const data = Buffer.alloc(16 * 8 * 4);
+    for (let i = 0; i < 16 * 8; i++) data.set([...rgb, 255], i * 4);
+    return {
+      type: 'image_url',
+      image_url: {
+        url: `data:image/png;base64,${encodePng({ width: 16, height: 8, data }).toString('base64')}`,
+      },
+    };
+  };
+
+  it('captions a frame by its colour and light, naming who the input says it shows', async () => {
+    const night = FrameCaptionOutputSchema.parse(
+      await chat(
+        'frame.caption',
+        { kind: 'take', known: [{ name: 'Mira', description: '' }], cast: ['Mira'] },
+        [solid([0, 0, 96])],
+      ),
+    );
+    expect(night.caption).toBe('Mira in a blue scene at night, medium shot.');
+    const day = FrameCaptionOutputSchema.parse(
+      await chat('frame.caption', { kind: 'footage', known: [], cast: [] }, [solid([250, 240, 10])]),
+    );
+    expect(day.caption).toBe('A yellow scene in bright daylight, wide shot.');
+  });
+
+  it('embeds texts in order, synonyms close together', async () => {
+    const { res, json } = await post('/proxy/api.openai.com/v1/embeddings', {
+      model: 'text-embedding-3-small',
+      input: ['crimson at night', 'A red scene at night, still frame.', 'A yellow scene in bright daylight.'],
+    });
+    expect(res.status).toBe(200);
+    expect(json.data.map((d: { index: number }) => d.index)).toEqual([0, 1, 2]);
+    const [q, red, yellow] = json.data.map((d: { embedding: number[] }) => d.embedding);
+    const dot = (a: number[], b: number[]) => a.reduce((n, x, i) => n + x * b[i]!, 0);
+    expect(dot(q, red)).toBeGreaterThan(0.6);
+    expect(dot(q, yellow)).toBeLessThan(0.2);
+    expect((await post('/proxy/api.openai.com/v1/embeddings', { input: [] })).res.status).toBe(400);
   });
 });

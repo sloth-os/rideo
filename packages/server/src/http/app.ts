@@ -22,6 +22,7 @@ import { type AuthedRequest, registerAuthRoutes } from './auth-routes';
 import { registerBrandRoutes } from './brand-routes';
 import { registerReviewRoutes } from './review-routes';
 import { registerRoutes } from './routes';
+import { registerSearchRoutes } from './search-routes';
 
 export { VERSION };
 
@@ -270,6 +271,7 @@ export async function buildServer(
   registerRoutes(app, studio);
   registerReviewRoutes(app, studio);
   registerBrandRoutes(app, studio);
+  registerSearchRoutes(app, studio);
   registerMcp(app, studio);
   // Recipes run their steps through the MCP tools (docs/design/agents.md#recipes)
   studio.recipes.setTools(() => toolRegistry(studio));

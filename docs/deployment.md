@@ -72,6 +72,7 @@ editor-job staging area and, without a configured certificate, the development C
 | `RIDEO_LLM_MODEL` | `gpt-4.1-mini` | text model |
 | `RIDEO_VISION_PROVIDER` / `_PROXY_DOMAIN` / `_MODEL` | LLM values | vision model for the judge and descriptions |
 | `RIDEO_STT_PROXY_DOMAIN` / `RIDEO_STT_MODEL` | – / `whisper-1` | optional speech-to-text |
+| `RIDEO_EMBEDDINGS_PROXY_DOMAIN` / `RIDEO_EMBEDDINGS_MODEL` | – / `text-embedding-3-small` | optional caption embeddings: media search by meaning ([search](design/search.md)); without them it ranks by words |
 | `RIDEO_TTS_PROVIDER` | `off` | dialogue voices ([dialogue](design/dialogue.md)): `elevenlabs` (design, clone, speech with timings), `openai` (preset voices) or `off`; new projects speak their dialogue when set |
 | `RIDEO_SFX_PROVIDER` | `off` | generated sound effects ([post audio](design/post-audio.md)): `elevenlabs` (sound generation through the proxy) or `off` (`sfx_unavailable`) |
 | `RIDEO_SFX_PROXY_DOMAIN` / `RIDEO_SFX_MODEL` | `api.elevenlabs.io` / `eleven_text_to_sound_v2` | sound-effects endpoint behind the gateway proxy |

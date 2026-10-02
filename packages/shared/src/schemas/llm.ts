@@ -291,6 +291,7 @@ export const LLM_TASKS = [
   'dialogue.translate',
   'reframe.focus',
   'thumbnail.pick',
+  'frame.caption',
 ] as const;
 export type LlmTaskId = (typeof LLM_TASKS)[number];
 

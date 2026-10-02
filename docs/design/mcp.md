@@ -141,6 +141,14 @@ or keep going and `job_wait` until a tab picks the job up.
 | `export_list` | `projectId` |
 | `watermark_detect` | `uri` or `projectId` + `mediaPath` → watermark, registry record and `contentCredentials` (C2PA) |
 
+### Search
+
+| Tool | Arguments |
+|---|---|
+| `media_search` | `projectId`, `query`, `kinds?` (`take`, `resource`, `reference`), `limit?` → `{mode, results[{source, media, at, caption, names, score, label}], indexed, pending}` ([search](search.md)) |
+| `search_index` | `projectId` → job (`search.index`): captions the new frames |
+| `search_status` | `projectId` → frames indexed and waiting, the mode, the running job |
+
 ### Brand kits
 
 | Tool | Arguments |

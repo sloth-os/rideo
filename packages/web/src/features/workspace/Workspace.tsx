@@ -12,6 +12,7 @@ import {
   NotebookPen,
   ScanSearch,
   Scissors,
+  Search,
   Users,
 } from 'lucide-react';
 import { type ComponentType, lazy, Suspense, useEffect, useState } from 'react';
@@ -31,6 +32,7 @@ import { ExportsView } from '../exports/ExportsView';
 import { HistoryView } from '../history/HistoryView';
 import { ResourcesView } from '../resources/ResourcesView';
 import { ReviewHost } from '../review/ReviewHost';
+import { SearchView } from '../search/SearchView';
 import { StoryView } from '../story/StoryView';
 import { StoryboardView } from '../storyboard/StoryboardView';
 import { AppHeader } from './AppHeader';
@@ -51,6 +53,7 @@ const STORY_NAV: NavItem[] = [
   { view: 'storyboard', label: 'Storyboard', icon: LayoutGrid },
   { view: 'clips', label: 'Clips', icon: Clapperboard },
   { view: 'editor', label: 'Editor', icon: Scissors },
+  { view: 'search', label: 'Search', icon: Search },
   { view: 'history', label: 'History', icon: GitBranch },
   { view: 'exports', label: 'Exports', icon: Download },
 ];
@@ -60,6 +63,7 @@ const EDIT_NAV: NavItem[] = [
   { view: 'resources', label: 'Footage', icon: FolderOpen },
   { view: 'analysis', label: 'Analysis', icon: ScanSearch },
   { view: 'editor', label: 'Editor', icon: Scissors },
+  { view: 'search', label: 'Search', icon: Search },
   { view: 'history', label: 'History', icon: GitBranch },
   { view: 'exports', label: 'Exports', icon: Download },
 ];
@@ -79,6 +83,7 @@ const VIEWS: Record<View, ComponentType> = {
   analysis: AnalysisView,
   history: HistoryView,
   exports: ExportsView,
+  search: SearchView,
 };
 
 function ContextPanel({ projectId }: { projectId: string }) {

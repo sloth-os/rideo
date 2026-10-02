@@ -110,6 +110,17 @@ export class Metrics {
   readonly auth = this.add(
     new Counter('rideo_auth_total', 'Sign-ins, token use and denials by event and outcome'),
   );
+  /** Frames of the search index by outcome: captioned, copied from another source, failed (docs/design/search.md). */
+  readonly searchFrames = this.add(
+    new Counter(
+      'rideo_search_frames_total',
+      'Frames of the search index by outcome (captioned, copied, failed)',
+    ),
+  );
+  /** Searches by how they ranked (docs/design/search.md#searching). */
+  readonly searches = this.add(
+    new Counter('rideo_searches_total', 'Media searches by mode (semantic, words)'),
+  );
   /** Brand kits created, applied and files added (docs/design/brand-kits.md). */
   readonly brand = this.add(
     new Counter('rideo_brand_total', 'Brand kits created, applied, removed and files added'),

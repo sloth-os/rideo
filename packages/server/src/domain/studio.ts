@@ -9,6 +9,7 @@ import {
   speakingCharacters,
   voiceOf,
 } from '@rideo/shared';
+import { EmbeddingsClient } from '../ai/embeddings';
 import { createAdapter, SttClient } from '../ai/llm';
 import { SfxClient } from '../ai/sfx';
 import { LlmTasks } from '../ai/tasks';
@@ -30,6 +31,7 @@ import { maskGenerate } from '../jobs/handlers/mask';
 import { analysisSuggest, editAuto, exportFinish, timelineAssemble } from '../jobs/handlers/media';
 import { scoreGenerate, sfxGenerate } from '../jobs/handlers/post-audio';
 import { recipeRun } from '../jobs/handlers/recipe';
+import { searchIndex } from '../jobs/handlers/search-index';
 import { shotGenerate } from '../jobs/handlers/shot';
 import { shotGroup } from '../jobs/handlers/shot-group';
 import {
@@ -68,6 +70,7 @@ import { ProjectService } from './projects';
 import { RecipeService } from './recipes';
 import { ProjectRegistry } from './registry';
 import { ReviewService } from './review';
+import { SearchService } from './search';
 import { StoryService } from './story';
 import { StoryboardService } from './storyboard';
 import { UiService } from './ui';
@@ -90,6 +93,7 @@ export interface Studio {
   interchange: InterchangeService;
   recipes: RecipeService;
   brand: BrandService;
+  search: SearchService;
   editor: EditorService;
   history: HistoryService;
   ui: UiService;
@@ -206,6 +210,9 @@ export function createStudio(
     jobs,
     staging,
     ...(config.stt ? { stt: new SttClient(proxy, config.stt.domain, config.stt.model) } : {}),
+    ...(config.embeddings
+      ? { embeddings: new EmbeddingsClient(proxy, config.embeddings.domain, config.embeddings.model) }
+      : {}),
     ...(config.tts ? { tts: createTts(proxy, config.tts, metrics) } : {}),
     ...(config.sfx ? { sfx: new SfxClient(proxy, config.sfx, metrics) } : {}),
     voiceJudge: config.voiceJudge ? new LlmVoiceJudge(llm) : null,
@@ -224,11 +231,14 @@ export function createStudio(
     review: new ReviewService(deps, workflow),
     interchange: new InterchangeService(deps),
     recipes: new RecipeService(deps),
+    search: new SearchService(deps),
     brand: new BrandService(deps),
     editor: new EditorService(deps),
   } satisfies Record<string, unknown>;
   // Editor jobs: failures and cancellations are recorded on their documents; a closed tab releases its jobs.
   jobs.onEditorJobEnded = (job) => services.editor.ended(job);
+  // New takes, uploads and references reach the search index of projects that use it (docs/design/search.md).
+  projectsRegistry.onCommit = (projectId, docs) => services.search.committed(projectId, docs);
   hub.onSessionClosed((sessionId) => void jobs.releaseSession(sessionId));
   const handlerDeps: HandlerDeps = { ...deps, services };
   const reg = (
@@ -249,6 +259,7 @@ export function createStudio(
   reg('mask.generate', maskGenerate);
   reg('recipe.run', recipeRun);
   reg('voices.cast', voicesCast);
+  reg('search.index', searchIndex);
   reg('music.generate', musicGenerate);
   reg('score.generate', scoreGenerate);
   reg('sfx.generate', sfxGenerate);
@@ -418,6 +429,7 @@ export function createStudio(
     },
     async stop() {
       if (syncTimer) clearInterval(syncTimer);
+      services.search.close();
       if (sweepTimer) clearInterval(sweepTimer);
       await jobs.shutdown();
       hub.close();

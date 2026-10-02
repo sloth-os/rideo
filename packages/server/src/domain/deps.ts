@@ -1,3 +1,4 @@
+import type { EmbeddingsClient } from '../ai/embeddings';
 import type { SttClient } from '../ai/llm';
 import type { SfxClient } from '../ai/sfx';
 import type { LlmTasks } from '../ai/tasks';
@@ -50,6 +51,8 @@ export interface Deps {
   /** Editor-job uploads on the server's disk. */
   staging: Staging;
   stt?: SttClient;
+  /** Caption embeddings for semantic search (docs/design/search.md); absent: search ranks by words. */
+  embeddings?: EmbeddingsClient;
   /** Dialogue voices through the gateway proxy (docs/design/dialogue.md); absent when TTS is off. */
   tts?: TtsClient;
   /** Sound effects through the gateway proxy (docs/design/post-audio.md); absent when SFX is off. */

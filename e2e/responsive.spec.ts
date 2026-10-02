@@ -10,6 +10,7 @@ const VIEWS = [
   'storyboard',
   'clips',
   'editor',
+  'search',
   'history',
   'exports',
 ] as const;
