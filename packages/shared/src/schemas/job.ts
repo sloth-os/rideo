@@ -211,6 +211,8 @@ export const ExportSchema = z.object({
   /** `server` exports are from before rendering moved to the browser (kept readable). */
   method: z.enum(['server', 'browser']),
   engine: RenderEngineSchema.optional(),
+  /** What composited a WebCodecs render (docs/design/engine-performance.md#webgpu-compositing). */
+  compositor: z.enum(['webgpu', 'canvas']).optional(),
   status: z.enum(['queued', 'rendering', 'finishing', 'succeeded', 'failed']),
   quality: ExportQualitySchema.default('standard'),
   /** What was rendered: the cut, or the storyboard's animatic (docs/design/storyboard.md#animatic). */

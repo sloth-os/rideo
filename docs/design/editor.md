@@ -225,10 +225,11 @@ the `client` lane that an open studio tab of that project claims and runs. See [
 
 | Module | Role |
 |---|---|
-| `ffmpeg.ts` | One ffmpeg.wasm instance per tab (`@ffmpeg/ffmpeg` 0.12, single-threaded FFmpeg 5.1 core served from our origin, loaded lazily). Runs one command at a time (queue). Inputs are `Blob`s mounted read-only with `WORKERFS` (no copy into wasm memory); outputs are read back and deleted. Log lines are captured for the shared parsers. Cancelling terminates the worker and reloads the core (≈ 1 s). |
+| `ffmpeg.ts` | One ffmpeg.wasm instance per tab (`@ffmpeg/ffmpeg` 0.12, FFmpeg 5.1 core served from our origin, loaded lazily: the multi-threaded core in a cross-origin isolated tab, [engine performance](engine-performance.md)). Runs one command at a time (queue). Inputs are `Blob`s mounted read-only with `WORKERFS` (no copy into wasm memory); outputs are read back and deleted. Log lines are captured for the shared parsers. Cancelling terminates the worker and reloads the core (≈ 1 s). |
 | `media-files.ts` | Blob access to project media: files this tab uploaded are reused from memory, others are downloaded once (LRU). |
 | `prepare.ts` | Probe (`ffmpeg -i` banner, parsed by `shared/media/probe.ts`) and poster for a file. |
-| `codecs.ts`, `local-proxy.ts` | Whether WebCodecs decodes a media file, and the local proxy when it does not (see below). |
+| `codecs.ts`, `local-proxy.ts`, `proxy-plan.ts` | Whether WebCodecs decodes a media file, and the local proxies (see below). |
+| `threads.ts`, `ticker.ts`, `keep-alive.ts` | Threads of the multi-threaded core's commands; heartbeats timed by a worker and a Web Lock while a job runs ([engine performance](engine-performance.md)). |
 | `media-jobs.ts` | The `media.process` and `analysis.signals` editor jobs. |
 | `render/` | Chunked rendering: `engine-choice.ts`, `ffmpeg-engine.ts` (chunk graph and soundtrack), `webcodecs-engine.ts` (compositor chunk), `export-job.ts` (the `export.render` editor job). The plan itself is `shared/media/render-plan.ts`. |
 | `worker.ts`, `index.ts`, `state.ts` | The editor-job worker (claims, heartbeats, runs and completes the open project's editor jobs), its per-tab instance, and the engine state shown in the header and sent with presence. |
@@ -267,7 +268,11 @@ There are no server-side proxies. For each video the preview needs, the browser 
    use the original (HTTP Range reads through mediabunny);
 2. otherwise → a **local proxy**: `ffmpeg -i <original> -vf "scale=-2:'min(480,ih)'" -c:v libvpx
    -deadline realtime -cpu-used 8 -b:v 1M -g 12 -c:a libopus -b:a 64k proxy.webm`, stored in the Origin
-   Private File System under `proxies/<hash>-v1.webm` (LRU, 2 GB cap) and reused across sessions.
+   Private File System under `proxies/<hash>-<method>-<height>-v2.webm` (LRU, 2 GB cap) and reused across sessions.
+
+When WebCodecs decodes the original but `<video>` cannot play it, the proxy is made with WebCodecs instead, and a
+heavy original (above 2560 × 1440) previews from a 720-line editing proxy made with WebCodecs
+([engine performance](engine-performance.md#local-proxies-made-with-webcodecs)).
 
 Proxies share timestamps with the originals, so every edit applies unchanged to the originals when
 rendering. `<video>` previews in the clip and export lists play the original; when it fails to load they
@@ -359,7 +364,7 @@ duck automation (`automateDuck`).
 | Engine | Video path | Use |
 |---|---|---|
 | `ffmpeg` (ffmpeg.wasm) | the chunk graph above → libx264 (`ultrafast`; CRF 18 draft / 16 standard / 14 high) in MP4 | reference output; decodes any source codec in wasm; ≈ 20–40 fps |
-| `webcodecs` | the canvas compositor (`activeAt` → frames → alpha, wipe, fades, `ctx.filter` effects, text) → hardware `VideoEncoder` (H.264 in MP4, else VP9/AV1/VP8 in WebM) via mediabunny | fast (GPU); needs every source decodable by WebCodecs (originals or local proxies) |
+| `webcodecs` | the compositor (`activeAt` → frames → alpha, wipe, fades, effects, text; on WebGPU when the browser has it, else the 2D canvas, [engine performance](engine-performance.md#webgpu-compositing)) → hardware `VideoEncoder` (H.264 in MP4, else VP9/AV1/VP8 in WebM) via mediabunny | fast (GPU); needs every source decodable by WebCodecs (originals or local proxies) |
 | `auto` (default) | `webcodecs` when the browser can encode video and decode every source original with WebCodecs; otherwise `ffmpeg` | |
 
 Both engines produce video-only chunk files (`part-0001.mp4`, …) plus the soundtrack, uploaded as they
@@ -399,7 +404,8 @@ Protocol (REST, see [api/rest.md](../api/rest.md#editor-jobs)):
    idle, on every `job` event for a queued `client` job, and every 10 s. The server hands out the oldest
    queued editor job of that project, sets `status: running` and a lease (`sessionId`, `expiresAt`, 60 s).
 2. **Heartbeat.** Every 10 s the tab reports progress and extends the lease. The reply tells it when the
-   job was cancelled.
+   job was cancelled. A worker times the heartbeats and the job holds a Web Lock, so a hidden tab keeps its lease
+   ([engine performance](engine-performance.md#rendering-in-a-background-tab)).
 3. **Files.** Outputs are uploaded one by one (`PUT /api/editor/jobs/:jobId/files/:name`) into a staging
    folder on the server's disk (`RIDEO_DATA_DIR/staging/<jobId>/`). The job lists them in `staged`.
 4. **Complete / fail.** The tab posts the result (validated per kind); the server applies it and starts the

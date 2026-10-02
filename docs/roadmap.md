@@ -223,7 +223,7 @@ night") from vision captions/embeddings through the proxy. *Why:* Premiere Media
 **19. Performance-driven animation** (M) — *done:* [design/performance.md](design/performance.md) — drive a locked character from a webcam or phone performance, or a
 motion/pose reference, when the gateway exposes such a model. *Why:* Runway Act-Two, Marey pose transfer.
 
-**20. Editor engine performance** (M) — multi-threaded ffmpeg.wasm (core-mt under cross-origin isolation where
+**20. Editor engine performance** (M) — *done:* [design/engine-performance.md](design/engine-performance.md) — multi-threaded ffmpeg.wasm (core-mt under cross-origin isolation where
 available), WebGPU compositing, rendering that survives a backgrounded tab, local proxies made with WebCodecs when
 the source decodes.
 

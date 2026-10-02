@@ -230,6 +230,7 @@ export class EditorService extends Service {
       {
         status: 'finishing',
         engine: result.engine,
+        ...(result.compositor ? { compositor: result.compositor } : {}),
         width: result.width,
         height: result.height,
         durationSec: result.durationSec,

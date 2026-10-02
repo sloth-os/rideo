@@ -80,6 +80,11 @@ export const EnvSchema = z.object({
   RIDEO_VISION_MODEL: str(),
   RIDEO_STT_PROXY_DOMAIN: str(),
   RIDEO_STT_MODEL: str('whisper-1'),
+  /** Cross-origin isolation of the studio (docs/design/engine-performance.md): threads for ffmpeg.wasm. */
+  RIDEO_CROSS_ORIGIN_ISOLATION: z
+    .enum(['require-corp', 'credentialless', 'off'])
+    .optional()
+    .default('require-corp'),
   /** Semantic search by meaning (docs/design/search.md#the-index); words without it. */
   RIDEO_EMBEDDINGS_PROXY_DOMAIN: str(),
   RIDEO_EMBEDDINGS_MODEL: str('text-embedding-3-small'),
@@ -169,6 +174,8 @@ export interface Config {
   dataDir: string;
   cacheMaxBytes: number;
   webDist?: string;
+  /** COEP of the studio's files (docs/design/engine-performance.md); `off` sends no isolation headers. */
+  crossOriginIsolation: 'require-corp' | 'credentialless' | 'off';
   logLevel: string;
   production: boolean;
   webdav: {
@@ -280,6 +287,7 @@ export function loadConfig(
     dataDir: e.RIDEO_DATA_DIR!,
     cacheMaxBytes: e.RIDEO_CACHE_MAX_BYTES,
     webDist: e.RIDEO_WEB_DIST,
+    crossOriginIsolation: e.RIDEO_CROSS_ORIGIN_ISOLATION,
     logLevel: e.RIDEO_LOG_LEVEL!,
     production: e.NODE_ENV === 'production',
     webdav: {

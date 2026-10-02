@@ -1,6 +1,7 @@
 import { type Timeline, timelineDuration } from '@rideo/shared';
 import { scheduleAudio } from './audio';
 import { Compositor } from './compositor';
+import type { GpuRenderer } from './gpu';
 import type { MediaPool } from './media-pool';
 
 /** Preview playback clocked by the AudioContext; frames come from sequential WebCodecs iterators. */
@@ -29,6 +30,12 @@ export class Player {
     if (!ctx) throw new Error('2D canvas unavailable');
     this.ctx = ctx;
     this.compositor = new Compositor(pool, timeline);
+  }
+
+  /** Composites on the GPU from now on, and redraws (docs/design/engine-performance.md#webgpu-compositing). */
+  setGpu(renderer: GpuRenderer | null): void {
+    this.compositor.setGpu(renderer);
+    if (!this.playing) void this.draw();
   }
 
   get duration(): number {

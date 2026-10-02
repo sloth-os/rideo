@@ -286,6 +286,9 @@ export async function buildServer(
         resolve(import.meta.dirname, '../../web/dist'),
       ].find((dir) => existsSync(join(dir, 'index.html'))) ?? '');
   if (webDist && existsSync(join(webDist, 'index.html'))) {
+    // Cross-origin isolation: SharedArrayBuffer, so ffmpeg.wasm runs on every core
+    // (docs/design/engine-performance.md#cross-origin-isolation-and-multi-threaded-ffmpegwasm)
+    const isolation = config.crossOriginIsolation;
     await app.register(fastifyStatic, {
       root: webDist,
       wildcard: false,
@@ -293,6 +296,10 @@ export async function buildServer(
       // hashed build assets (including the 31 MB ffmpeg.wasm core) never change
       setHeaders: (res, path) => {
         if (/[\\/]assets[\\/]/.test(path)) res.header('cache-control', 'public, max-age=31536000, immutable');
+        if (isolation !== 'off') {
+          res.header('cross-origin-opener-policy', 'same-origin');
+          res.header('cross-origin-embedder-policy', isolation);
+        }
       },
     });
     app.setNotFoundHandler((req, reply) => {

@@ -36,7 +36,7 @@ const BUSY: Record<string, string> = {
 
 /** The tab's editor engine: ffmpeg.wasm state and the editor job it is running. */
 export function EngineStatus() {
-  const { ffmpeg, busy } = useEngine();
+  const { ffmpeg, busy, threads, compositor } = useEngine();
   const pct =
     busy && busy.progress.total > 0 ? Math.round((100 * busy.progress.done) / busy.progress.total) : null;
   const state = busy ? 'busy' : ffmpeg;
@@ -57,7 +57,10 @@ export function EngineStatus() {
       )}
       data-testid="engine-status"
       data-state={state}
-      title="Editor engine (ffmpeg.wasm + WebCodecs) of this tab"
+      data-threads={threads}
+      data-ticks={busy?.ticks}
+      data-compositor={compositor ?? undefined}
+      title={`Editor engine of this tab: ffmpeg.wasm (${threads > 1 ? `${threads} threads` : 'single-threaded'}), WebCodecs${compositor ? `, ${compositor === 'webgpu' ? 'WebGPU' : 'canvas'} compositing` : ''}`}
     >
       {busy || ffmpeg === 'loading' ? (
         <Loader2 className="size-3.5 animate-spin" />

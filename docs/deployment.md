@@ -43,6 +43,7 @@ editor-job staging area and, without a configured certificate, the development C
 | `RIDEO_DATA_DIR` | `./data` | embedded WebDAV root and caches |
 | `RIDEO_CACHE_MAX_BYTES` | `5368709120` | local media cache cap |
 | `RIDEO_WEB_DIST` | `packages/web/dist` | built UI served at `/` |
+| `RIDEO_CROSS_ORIGIN_ISOLATION` | `require-corp` | the studio's `Cross-Origin-Embedder-Policy` (with `Cross-Origin-Opener-Policy: same-origin`): cross-origin isolation, so ffmpeg.wasm runs multi-threaded ([engine performance](design/engine-performance.md)); `credentialless`, or `off` to send neither |
 | `RIDEO_LOG_LEVEL` | `info` | pino level |
 
 ### WebDAV

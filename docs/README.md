@@ -10,6 +10,7 @@
 | [design/take-editing.md](design/take-editing.md) | Derived takes: video-to-video edits (restyle, relight, replace, angle, remove), extensions, generative extend in the cut |
 | [design/accounts.md](design/accounts.md) | Accounts: OIDC sign-in, project members and roles, permissions on every surface, scoped agent tokens, the audit log |
 | [design/interchange.md](design/interchange.md) | NLE interchange: the cut as OpenTimelineIO, FCPXML, Final Cut Pro 7 XML and CMX 3600 EDL with its clips on WebDAV, and a re-edited cut back from OTIO |
+| [design/engine-performance.md](design/engine-performance.md) | Editor engine performance: multi-threaded ffmpeg.wasm under cross-origin isolation, WebGPU compositing, renders that survive a hidden tab, local proxies made with WebCodecs |
 | [design/performance.md](design/performance.md) | Performance-driven animation: a performance recorded in the studio (or footage) acted by the locked cast on a gateway performance model |
 | [design/search.md](design/search.md) | Semantic media search: frames of takes, footage, stills and references captioned by the vision model, searched by meaning (embeddings) or words |
 | [design/brand-kits.md](design/brand-kits.md) | Brand kits: fonts, colors, logo, intro and outro bumpers, lower-third templates and the brand bug, applied to projects |

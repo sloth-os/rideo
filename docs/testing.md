@@ -101,7 +101,9 @@ RIDEO_TEST_WEBDAV_URL=http://rideo:rideo@localhost:8080/ npx vitest run --projec
   kinds, the video at the matched frame, *Show*) and the overlay picker's search (a match from a second before it);
   performance requests (the first frame and the performance for its length, the phrase, rendered alone) and the
   performance recorder (countdown, the stop at the shot's length, the recording's length on the upload, the shot's
-  performance set, the camera released, a blocked camera).
+  performance set, the camera released, a blocked camera); the engine (threads of ffmpeg.wasm commands, WebGPU
+  geometry against the canvas transform, uniforms, half-float LUT texels, the compositor choice, proxy plans,
+  the worker ticker, the job lock and wake lock, heartbeats on the ticker).
 - **web**: live-event store reducer and optimistic timeline edits (apply, confirm, roll back), live client
   (sequence dedupe, UI-command acks, restart resync), UI command dispatch, WebCodecs codec/container
   selection, render engine choice, the editor-job worker against a fake API (claims only with a project and a
@@ -185,6 +187,8 @@ RIDEO_TEST_WEBDAV_URL=http://rideo:rideo@localhost:8080/ npx vitest run --projec
   admins and the studio token; agent tokens capped by role and projects over REST and MCP (commits by the agent on
   behalf of its owner, MCP sessions bound to their caller, revocation); people disabled by an admin; the audit log
   for admins and directors; live subscriptions refused to people without access.
+- **Cross-origin isolation** (`isolation.test.ts`): COOP and COEP on the studio, its assets and its routes;
+  none with `RIDEO_CROSS_ORIGIN_ISOLATION=off`.
 - **Performance** (`performance.test.ts`): a WebM recording set as a shot's performance; the model reported, none
   when the project turns them off (`422 performance_unavailable` on a regenerate); the take on `mock-performance-v1`
   from the keyframe, verified, as long as the performance and with its sound; the metric; MCP `performance_model`.
@@ -249,7 +253,7 @@ RIDEO_TEST_WEBDAV_URL=http://rideo:rideo@localhost:8080/ npx vitest run --projec
 Projects: `desktop` (1440×900) runs every spec except `responsive`; `mobile` (412×915, touch) runs
 `responsive`, `mcp-sync`, `provenance`, `elements`, `dialogue`, `storyboard`, `directing`, `take-editing`,
 `multi-shot`, `post-audio`, `localization`, `finishing`, `accounts`, `review`, `interchange`, `editor-depth`,
-`recipes`, `brand`, `search` and `performance`. The
+`recipes`, `brand`, `search`, `performance` and `engine`. The
 web server stops with SIGTERM so the stack removes its data; stale stack directories older than an hour are removed
 when a new stack starts. Specs:
 
@@ -261,6 +265,7 @@ when a new stack starts. Specs:
 | `history.spec.ts` | edit → history → diff → restore → UI updates |
 | `take-editing.spec.ts` | (desktop and mobile) relight a take and extend another by 2 s from the take tiles (lineage badges); generative extend of the first item in the editor (the lanes on desktop, the item list on phones) |
 | `accounts.spec.ts` | (desktop and mobile, on the stack's second server with accounts and a mock identity provider) sign-in; a director adds a reviewer by email in the Members card; an agent token created, used and revoked; people and the audit log; the reviewer's view (banner, no settings); sign-out |
+| `engine.spec.ts` | (desktop and mobile, WebGPU on SwiftShader through Vulkan) the studio cross-origin isolated; the same graded, overlaid frame from WebGPU and the canvas; an ffmpeg.wasm export on threads; a WebCodecs export composited by WebGPU in a hidden tab (worker heartbeats, the job's Web Lock); a 4K original previewed from a WebCodecs editing proxy in OPFS |
 | `performance.spec.ts` | (desktop and mobile, a fake camera and microphone) a performance recorded on a shot: countdown, recording, stop, playback, used as the shot's performance; the model shown; the regenerated take acted by `mock-performance-v1` and verified |
 | `search.spec.ts` | (desktop and mobile) footage and a still indexed from the Search view, found by words at the matched frame, filtered by kind, *Show* in Resources; the editor's overlay picker finds the still and puts it at the playhead |
 | `brand.spec.ts` | (desktop and mobile) a brand kit made on the Brand kits page with a logo and the bug on; applied to a project from its overview; a lower third from the kit's template in the editor; the export with the bug (on by default) rendered in the tab |

@@ -59,6 +59,11 @@ function ExportCard({ e, projectId }: { e: Export; projectId: string }) {
           </Badge>
           <Badge>{e.method}</Badge>
           {e.engine ? <Badge tone="info">{e.engine}</Badge> : null}
+          {e.compositor === 'webgpu' ? (
+            <Badge tone="info" testid="export-webgpu">
+              WebGPU
+            </Badge>
+          ) : null}
           <Badge>{e.quality}</Badge>
           {e.source === 'animatic' ? (
             <Badge tone="info" testid="export-animatic-badge">

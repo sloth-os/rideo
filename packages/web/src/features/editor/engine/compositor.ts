@@ -14,6 +14,8 @@ import {
 } from '@rideo/shared';
 import type { CanvasSink, WrappedCanvas } from 'mediabunny';
 import { VIDEO_FONT } from '../../../engine/fonts';
+import type { GpuRenderer } from './gpu';
+import { type CompositorKind, containPlacement, type GpuDraw, uvOf } from './gpu-plan';
 import type { MediaPool } from './media-pool';
 
 type Ctx2D = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
@@ -149,15 +151,27 @@ function shaped(layer: VideoLayer): boolean {
  */
 export class Compositor {
   private readonly cursors = new Map<string, FrameCursor>();
-  private readonly scratch: { picture: Scratch | null; matte: Scratch | null } = {
+  private readonly scratch: { picture: Scratch | null; matte: Scratch | null; titles: Scratch | null } = {
     picture: null,
     matte: null,
+    titles: null,
   };
+  private gpu: GpuRenderer | null = null;
 
   constructor(
     private readonly pool: MediaPool,
     private timeline: Timeline,
   ) {}
+
+  /** Composites on the GPU from now on (docs/design/engine-performance.md#webgpu-compositing); null: the canvas. */
+  setGpu(renderer: GpuRenderer | null): void {
+    this.gpu = renderer;
+  }
+
+  /** What draws the frames. */
+  get backend(): CompositorKind {
+    return this.gpu && !this.gpu.lost ? 'webgpu' : 'canvas';
+  }
 
   setTimeline(t: Timeline): void {
     this.timeline = t;
@@ -263,19 +277,41 @@ export class Compositor {
     ctx.restore();
   }
 
-  /** Renders one frame. `sequential` = playback/export (iterators); otherwise random access (scrubbing). */
-  async render(ctx: Ctx2D, time: number, w: number, h: number, sequential: boolean): Promise<void> {
-    const state = activeAt(this.timeline, time);
-    const frames = await Promise.all(state.video.map((l) => this.frame(l.item, l.sourceTime, sequential)));
-    if (sequential) {
-      const live = new Set(state.video.flatMap((l) => [l.item.id, `${l.item.id}#mask`]));
-      for (const [id, c] of this.cursors) {
-        if (!live.has(id)) {
-          c.dispose();
-          this.cursors.delete(id);
-        }
+  /** Iterators of items no longer on screen are closed (playback/export). */
+  private dropCursors(state: ReturnType<typeof activeAt>): void {
+    const live = new Set(state.video.flatMap((l) => [l.item.id, `${l.item.id}#mask`]));
+    for (const [id, c] of this.cursors) {
+      if (!live.has(id)) {
+        c.dispose();
+        this.cursors.delete(id);
       }
     }
+  }
+
+  /** Brand fonts load once per file before their first frame (docs/design/brand-kits.md). */
+  private fonts(state: ReturnType<typeof activeAt>): Promise<unknown> {
+    return Promise.all(
+      state.text.flatMap((t) =>
+        t.style.font ? [this.pool.font(t.style.font.media, t.style.font.family)] : [],
+      ),
+    );
+  }
+
+  /** Renders one frame. `sequential` = playback/export (iterators); otherwise random access (scrubbing). */
+  async render(ctx: Ctx2D, time: number, w: number, h: number, sequential: boolean): Promise<void> {
+    if (this.gpu && !this.gpu.lost) {
+      try {
+        await this.renderGpu(ctx, time, w, h, sequential);
+        return;
+      } catch (err) {
+        // The canvas draws the rest of the session
+        console.warn('WebGPU compositing failed; drawing with the canvas', err);
+        this.gpu = null;
+      }
+    }
+    const state = activeAt(this.timeline, time);
+    const frames = await Promise.all(state.video.map((l) => this.frame(l.item, l.sourceTime, sequential)));
+    if (sequential) this.dropCursors(state);
     ctx.save();
     ctx.globalAlpha = 1;
     ctx.fillStyle = '#000';
@@ -317,14 +353,105 @@ export class Compositor {
       }
       ctx.restore();
     }
-    // Brand fonts load once per file before their first frame (docs/design/brand-kits.md)
-    await Promise.all(
-      state.text.flatMap((t) =>
-        t.style.font ? [this.pool.font(t.style.font.media, t.style.font.family)] : [],
-      ),
-    );
+    await this.fonts(state);
     for (const t of state.text) drawText(ctx, t, w, h);
     ctx.restore();
+  }
+
+  /**
+   * The same frame on the GPU: each layer a draw with the canvas path's geometry (fitted rectangle, crop window,
+   * transform), effects, LUT, matte, opacity, dim and wipe; titles drawn by the canvas onto one transparent layer.
+   */
+  private async renderGpu(
+    ctx: Ctx2D,
+    time: number,
+    w: number,
+    h: number,
+    sequential: boolean,
+  ): Promise<void> {
+    const gpu = this.gpu!;
+    const state = activeAt(this.timeline, time);
+    const frames = await Promise.all(state.video.map((l) => this.frame(l.item, l.sourceTime, sequential)));
+    if (sequential) this.dropCursors(state);
+    const draws: GpuDraw[] = [];
+    for (const [i, layer] of state.video.entries()) {
+      const img = frames[i] as Frame | null;
+      if (!img) continue;
+      const item = layer.item;
+      if (shaped(layer)) {
+        const crop = !!item.crop;
+        const r = fittedRect(item.source.media, crop, w, h);
+        const src =
+          crop && item.crop
+            ? cropWindow(img, w / h, item.crop.focus, layer.sourceTime)
+            : isStillMedia(item.source.media)
+              ? { x: 0, y: 0, width: img.width, height: img.height }
+              : { x: r.x, y: r.y, width: r.w, height: r.h };
+        const cube = item.lut ? await this.pool.lut(item.lut.media).catch(() => null) : null;
+        const matte = (await this.matte(layer, sequential)) as Frame | null;
+        const tr = layer.transform ?? { x: 0.5, y: 0.5, scale: 1, rotation: 0, opacity: 1 };
+        draws.push({
+          kind: 'picture',
+          source: img,
+          uv: uvOf(src, img),
+          placement: {
+            cx: tr.x * w,
+            cy: tr.y * h,
+            w: r.w * tr.scale,
+            h: r.h * tr.scale,
+            rotation: tr.rotation,
+          },
+          effects: layer.effects,
+          opacity: layer.overlay ? tr.opacity : tr.opacity * layer.opacity,
+          lut: cube && item.lut ? { cube, intensity: item.lut.intensity } : null,
+          matte: matte
+            ? {
+                source: matte,
+                uv: uvOf({ x: r.x, y: r.y, width: r.w, height: r.h }, matte),
+                invert: !!item.mask?.invert,
+              }
+            : null,
+        });
+        if (!layer.overlay && layer.dim < 1)
+          draws.push({ kind: 'fill', opacity: layer.opacity * (1 - layer.dim) });
+        continue;
+      }
+      // Reframed around the subject (the ffmpeg crop's window), else fitted inside the frame
+      const win = item.crop ? cropWindow(img, w / h, item.crop.focus, layer.sourceTime) : null;
+      draws.push({
+        kind: 'picture',
+        source: img,
+        uv: win ? uvOf(win, img) : [0, 0, 1, 1],
+        placement: win ? { cx: w / 2, cy: h / 2, w, h, rotation: 0 } : containPlacement(img, w, h),
+        effects: layer.effects,
+        opacity: layer.opacity,
+        wipe: layer.wipe,
+      });
+      if (layer.dim < 1)
+        draws.push({ kind: 'fill', opacity: layer.opacity * (1 - layer.dim), wipe: layer.wipe });
+    }
+    await this.fonts(state);
+    let titles: Scratch | null = null;
+    if (state.text.length) {
+      titles = this.scratch.titles;
+      if (!titles || titles.width !== w || titles.height !== h) {
+        titles = new OffscreenCanvas(w, h);
+        this.scratch.titles = titles;
+      }
+      const t = titles.getContext('2d')!;
+      t.clearRect(0, 0, w, h);
+      for (const item of state.text) drawText(t, item, w, h);
+    }
+    const frame = gpu.render(draws, titles, w, h);
+    try {
+      ctx.save();
+      ctx.globalAlpha = 1;
+      ctx.filter = 'none';
+      ctx.drawImage(frame, 0, 0, w, h);
+      ctx.restore();
+    } finally {
+      frame.close();
+    }
   }
 
   dispose(): void {

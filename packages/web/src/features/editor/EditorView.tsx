@@ -70,6 +70,7 @@ import { useProject } from '../../store/project';
 import { reportError, useUi } from '../../store/ui';
 import { BrandTools } from './BrandTools';
 import { detectCaps, type EngineCaps } from './engine/capabilities';
+import { gpuRenderer } from './engine/gpu-choice';
 import { MediaPool } from './engine/media-pool';
 import { Player } from './engine/player';
 import { GenerativeExtend } from './GenerativeExtend';
@@ -826,12 +827,18 @@ export function EditorView() {
 
   useEffect(() => {
     if (!projectId || !canvasRef.current || !preview || !webcodecs) return;
-    const pool = new MediaPool(projectId, previewSize);
+    // Heavy originals preview from editing proxies (docs/design/engine-performance.md#local-proxies-made-with-webcodecs)
+    const pool = new MediaPool(projectId, previewSize, { editingProxies: true });
     const player = new Player(canvasRef.current, pool, preview);
     player.onTime = setTime;
     player.onPlaying = setPlaying;
     playerRef.current = player;
     void player.draw();
+    // ...and composite on the GPU once the tab's WebGPU renderer is ready (docs/design/engine-performance.md#webgpu-compositing)
+    void gpuRenderer().then((gpu) => {
+      useEngine.setState({ compositor: gpu ? 'webgpu' : 'canvas' });
+      if (gpu && playerRef.current === player) player.setGpu(gpu);
+    });
     return () => {
       player.dispose();
       pool.dispose();

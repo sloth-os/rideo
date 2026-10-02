@@ -1,7 +1,7 @@
 import type { MediaRef } from '@rideo/shared';
 import { Film, ImageOff, Loader2, Play } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { localProxy } from '../engine/local-proxy';
+import { playbackProxy } from '../engine/local-proxy';
 import { mediaUrl } from '../lib/api';
 import { cx } from './ui';
 
@@ -67,7 +67,7 @@ export function MediaVideo({
   const poster = media.poster ? mediaUrl(projectId, media.poster.path) : undefined;
   const prepare = () => {
     setState('building');
-    localProxy(projectId, media)
+    playbackProxy(projectId, media)
       .then((blob) => {
         setProxyUrl(URL.createObjectURL(blob));
         setState('proxy');

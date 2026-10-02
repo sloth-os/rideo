@@ -9,7 +9,7 @@ import {
   type InputVideoTrack,
   UrlSource,
 } from 'mediabunny';
-import { localProxy } from '../../../engine/local-proxy';
+import { editingProxy, playbackProxy } from '../../../engine/local-proxy';
 import { mediaUrl } from '../../../lib/api';
 
 export interface PoolEntry {
@@ -32,18 +32,23 @@ async function decodable([video, audio]: [InputVideoTrack | null, InputAudioTrac
 
 /**
  * One mediabunny Input per media file with pooled canvases sized for the preview/export surface. Originals are
- * read over HTTP ranges when WebCodecs decodes them; otherwise a local proxy is built with ffmpeg.wasm
- * (docs/design/editor.md#playback-compatibility-local-proxies).
+ * read over HTTP ranges when WebCodecs decodes them; otherwise a local proxy is built
+ * (docs/design/editor.md#playback-compatibility-local-proxies). A preview pool also reads heavy originals from an
+ * editing proxy once it is built (docs/design/engine-performance.md#local-proxies-made-with-webcodecs).
  */
 export class MediaPool {
   private readonly entries = new Map<string, Promise<PoolEntry>>();
   private readonly stills = new Map<string, Promise<ImageBitmap>>();
   private readonly luts = new Map<string, Promise<CubeLut>>();
   private readonly fonts = new Map<string, Promise<void>>();
+  /** Entries replaced by an editing proxy: frames being read may still come from them. */
+  private readonly retired: Promise<PoolEntry>[] = [];
+  private disposed = false;
 
   constructor(
     private readonly projectId: string,
     private readonly size: { width: number; height: number },
+    private readonly opts: { editingProxies?: boolean } = {},
   ) {}
 
   get(media: MediaRef): Promise<PoolEntry> {
@@ -52,21 +57,41 @@ export class MediaPool {
       p = this.open(media);
       this.entries.set(media.hash, p);
       p.catch(() => this.entries.delete(media.hash));
+      if (this.opts.editingProxies) void this.lighten(media, p);
     }
     return p;
   }
 
-  private async open(media: MediaRef): Promise<PoolEntry> {
+  /** A heavy original is read from its editing proxy once it is built (the next reads of it). */
+  private async lighten(media: MediaRef, original: Promise<PoolEntry>): Promise<void> {
+    const entry = await original.catch(() => null);
+    if (!entry || entry.proxied) return;
+    const light = await editingProxy(this.projectId, media).catch((err) => {
+      console.warn('editing proxy failed; previewing the original', err);
+      return null;
+    });
+    if (!light || this.disposed || this.entries.get(media.hash) !== original) return;
+    const next = this.open(media, light);
+    await next
+      .catch(() => null)
+      .then((e) => {
+        if (!e || this.disposed || this.entries.get(media.hash) !== original) return;
+        this.retired.push(original);
+        this.entries.set(media.hash, next);
+      });
+  }
+
+  private async open(media: MediaRef, proxy?: Blob): Promise<PoolEntry> {
     let input: Input = new Input({
-      source: new UrlSource(mediaUrl(this.projectId, media.path)),
+      source: proxy ? new BlobSource(proxy) : new UrlSource(mediaUrl(this.projectId, media.path)),
       formats: ALL_FORMATS,
     });
     let tracks = await tracksOf(input);
-    let proxied = false;
+    let proxied = !!proxy;
     if (!(await decodable(tracks))) {
       input.dispose();
       input = new Input({
-        source: new BlobSource(await localProxy(this.projectId, media)),
+        source: new BlobSource(await playbackProxy(this.projectId, media)),
         formats: ALL_FORMATS,
       });
       tracks = await tracksOf(input);
@@ -134,8 +159,11 @@ export class MediaPool {
   }
 
   dispose(): void {
-    for (const p of this.entries.values()) void p.then((e) => e.input.dispose()).catch(() => undefined);
+    this.disposed = true;
+    for (const p of [...this.entries.values(), ...this.retired])
+      void p.then((e) => e.input.dispose()).catch(() => undefined);
     this.entries.clear();
+    this.retired.length = 0;
     for (const p of this.stills.values()) void p.then((b) => b.close()).catch(() => undefined);
     this.stills.clear();
   }

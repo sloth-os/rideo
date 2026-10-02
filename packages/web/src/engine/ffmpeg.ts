@@ -1,13 +1,24 @@
 import wasmURL from '@ffmpeg/core/wasm?url';
 import coreURL from '@ffmpeg/core?url';
+import mtWasmURL from '@ffmpeg/core-mt/wasm?url';
+import mtWorkerURL from '@ffmpeg/core-mt/worker?url';
+import mtCoreURL from '@ffmpeg/core-mt?url';
 import { FFFSType, FFmpeg } from '@ffmpeg/ffmpeg';
+import { withThreads } from './threads';
 
 /**
- * The tab's ffmpeg.wasm instance (docs/design/editor.md#browser-media-engine): single-threaded FFmpeg 5.1 core
- * served from our origin, loaded on first use. Commands run one at a time; inputs are Blobs mounted read-only
- * with WORKERFS at /in/<name> (no copy into wasm memory); outputs are read back and deleted. Aborting a
- * command terminates the worker (the only way to stop ffmpeg.wasm) and the next command reloads the core.
+ * The tab's ffmpeg.wasm instance (docs/design/editor.md#browser-media-engine): the FFmpeg 5.1 core served from our
+ * origin, loaded on first use, multi-threaded when the tab is cross-origin isolated
+ * (docs/design/engine-performance.md#cross-origin-isolation-and-multi-threaded-ffmpegwasm). Commands run one at a
+ * time; inputs are Blobs mounted read-only with WORKERFS at /in/<name> (no copy into wasm memory); outputs are read
+ * back and deleted. Aborting a command terminates the worker (the only way to stop ffmpeg.wasm) and the next
+ * command reloads the core.
  */
+
+/** Whether this tab can run the multi-threaded core: cross-origin isolated, with SharedArrayBuffer. */
+export function canUseThreads(): boolean {
+  return globalThis.crossOriginIsolated === true && typeof SharedArrayBuffer !== 'undefined';
+}
 
 export type FfmpegStatus = 'unloaded' | 'loading' | 'ready' | 'failed';
 
@@ -55,6 +66,8 @@ class FfmpegRuntime {
   private log: string[] = [];
   private onTime: ((sec: number) => void) | null = null;
   status: FfmpegStatus = 'unloaded';
+  /** Threads commands use (1: the single-threaded core). */
+  threads = 1;
 
   subscribe(fn: (s: FfmpegStatus) => void): () => void {
     this.listeners.add(fn);
@@ -78,7 +91,11 @@ class FfmpegRuntime {
       ff.on('progress', ({ time }) => {
         if (time > 0) this.onTime?.(time / 1_000_000);
       });
-      await ff.load({ coreURL, wasmURL });
+      const multi = canUseThreads();
+      await ff.load(
+        multi ? { coreURL: mtCoreURL, wasmURL: mtWasmURL, workerURL: mtWorkerURL } : { coreURL, wasmURL },
+      );
+      this.threads = multi ? Math.max(2, Math.min(8, navigator.hardwareConcurrency || 2)) : 1;
       const font = await fetch(FONT_URL);
       if (font.ok) {
         await ff.createDir('/fonts');
@@ -120,7 +137,7 @@ class FfmpegRuntime {
     const onAbort = () => this.terminate();
     opts.signal?.addEventListener('abort', onAbort, { once: true });
     try {
-      const code = await ff.exec(args);
+      const code = await ff.exec(this.threads > 1 ? withThreads(args, this.threads) : args);
       const log = this.log;
       if (code !== 0 && !opts.allowFailure)
         throw new FfmpegError(`ffmpeg exited with ${code}: ${log.slice(-4).join(' | ')}`, code, log);

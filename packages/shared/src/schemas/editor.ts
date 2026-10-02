@@ -86,6 +86,8 @@ export type AnalysisSignalsResult = z.infer<typeof AnalysisSignalsResultSchema>;
 
 export const ExportRenderResultSchema = z.object({
   engine: RenderEngineSchema,
+  /** What composited a WebCodecs render (docs/design/engine-performance.md#webgpu-compositing); null for ffmpeg. */
+  compositor: z.enum(['webgpu', 'canvas']).nullable().default(null),
   codec: z.string().min(1).max(100),
   width: z.number().int().positive(),
   height: z.number().int().positive(),

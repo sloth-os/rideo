@@ -103,6 +103,10 @@ export const EngineStateSchema = z.object({
   ffmpeg: z.enum(['unloaded', 'loading', 'ready', 'failed']),
   webcodecs: z.object({ video: z.string().max(20).nullable(), audio: z.string().max(20).nullable() }),
   busyJobId: z.string().max(100).nullable(),
+  /** docs/design/engine-performance.md: the ffmpeg.wasm core's threads, the compositor, a hidden tab. */
+  threads: z.number().int().min(1).max(64).optional(),
+  compositor: z.enum(['webgpu', 'canvas']).nullable().optional(),
+  hidden: z.boolean().optional(),
 });
 export type EngineState = z.infer<typeof EngineStateSchema>;
 

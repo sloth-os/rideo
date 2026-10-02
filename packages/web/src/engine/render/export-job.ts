@@ -13,6 +13,7 @@ import {
   withDisclosure,
 } from '@rideo/shared';
 import { detectCaps } from '../../features/editor/engine/capabilities';
+import { gpuRenderer } from '../../features/editor/engine/gpu-choice';
 import { MediaPool } from '../../features/editor/engine/media-pool';
 import { api } from '../../lib/api';
 import { webCodecsCanDecode } from '../codecs';
@@ -63,6 +64,9 @@ export async function exportRenderJob(ctx: EditorJobContext): Promise<ExportRend
     }
   };
   const pool = engine === 'webcodecs' ? new MediaPool(ctx.projectId, size) : null;
+  // WebCodecs renders composite on the GPU when this browser has one (docs/design/engine-performance.md)
+  const gpu = engine === 'webcodecs' ? await gpuRenderer() : null;
+  let compositor: 'webgpu' | 'canvas' | null = engine === 'webcodecs' ? (gpu ? 'webgpu' : 'canvas') : null;
   const parts: string[] = [];
   try {
     if (engine === 'ffmpeg') await loadInputs();
@@ -91,8 +95,13 @@ export async function exportRenderJob(ctx: EditorJobContext): Promise<ExportRend
               size,
               caps,
               pool: pool!,
+              gpu,
               signal: ctx.signal,
               onFrame: (f) => report(f, label),
+              // a chunk the GPU could not finish was composited by the canvas
+              onBackend: (b) => {
+                if (b === 'canvas') compositor = 'canvas';
+              },
             });
       await ctx.upload(name, blob);
       framesDone += chunk.frames;
@@ -111,6 +120,7 @@ export async function exportRenderJob(ctx: EditorJobContext): Promise<ExportRend
   }
   return {
     engine,
+    compositor,
     codec: engine === 'ffmpeg' ? 'h264' : caps.video!,
     ...size,
     fps,

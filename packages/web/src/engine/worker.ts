@@ -1,7 +1,9 @@
 import type { EditorJobKind, Job } from '@rideo/shared';
 import { ApiError } from '../lib/api';
 import { type EditorJobContext, EditorJobError, type EditorJobHandler } from './context';
+import { keepAlive } from './keep-alive';
 import type { BusyJob } from './state';
+import { startTicker, type Ticker } from './ticker';
 
 export interface EditorApi {
   editorClaim(sessionId: string, projectId: string): Promise<{ job: Job | null }>;
@@ -23,6 +25,10 @@ export interface EditorWorkerOptions {
   /** Minimum interval between progress heartbeats. */
   progressMs?: number;
   onChange?: (busy: BusyJob | null) => void;
+  /** What times heartbeats (default: a worker, so a hidden tab keeps its lease). */
+  ticker?: (ms: number, onTick: () => void) => Ticker;
+  /** What keeps the tab alive while a job runs (default: a Web Lock and a screen wake lock). */
+  keepAlive?: <T>(jobId: string, run: () => Promise<T>) => Promise<T>;
 }
 
 const abortError = () => new DOMException('The operation was cancelled', 'AbortError');
@@ -30,17 +36,28 @@ const abortError = () => new DOMException('The operation was cancelled', 'AbortE
 /**
  * The tab's editor-job worker (docs/design/editor.md#editor-jobs): while a project is open it claims that
  * project's editor jobs one at a time, runs them with the engine, heartbeats on a timer (and with progress),
- * stages outputs and completes them. A cancelled job or a lost lease stops the run without reporting it.
+ * stages outputs and completes them. A cancelled job or a lost lease stops the run without reporting it. Hidden
+ * tabs keep going: heartbeats are timed by a worker and the job holds a Web Lock; a tab that comes back claims at
+ * once (docs/design/engine-performance.md#rendering-in-a-background-tab).
  */
 export class EditorWorker {
   private projectId: string | null = null;
   private sessionOf: () => string | null = () => null;
-  private current: { job: Job; controller: AbortController; progress: Job['progress'] } | null = null;
+  private current: {
+    job: Job;
+    controller: AbortController;
+    progress: Job['progress'];
+    ticks?: 'worker' | 'page';
+  } | null = null;
   private claiming = false;
   private retries = 0;
   private timer: ReturnType<typeof setInterval> | null = null;
 
-  constructor(private readonly opts: EditorWorkerOptions) {}
+  constructor(private readonly opts: EditorWorkerOptions) {
+    globalThis.document?.addEventListener('visibilitychange', () => {
+      if (globalThis.document.visibilityState === 'visible') void this.poke();
+    });
+  }
 
   /** Where the live session id comes from (the tab's live client). */
   setSession(source: () => string | null): void {
@@ -67,6 +84,7 @@ export class EditorWorker {
           kind: c.job.kind as EditorJobKind,
           projectId: c.job.projectId,
           progress: c.progress,
+          ticks: c.ticks,
         }
       : null;
   }
@@ -98,7 +116,7 @@ export class EditorWorker {
   private async run(job: Job, sessionId: string): Promise<void> {
     const handler = this.opts.handlers[job.kind as EditorJobKind];
     const controller = new AbortController();
-    const state = { job, controller, progress: job.progress };
+    const state: NonNullable<EditorWorker['current']> = { job, controller, progress: job.progress };
     this.current = state;
     this.emit();
     let lost = false;
@@ -118,7 +136,9 @@ export class EditorWorker {
         }
       }
     };
-    const timer = setInterval(() => void beat(true), this.opts.heartbeatMs ?? 10_000);
+    const ticker = (this.opts.ticker ?? startTicker)(this.opts.heartbeatMs ?? 10_000, () => void beat(true));
+    state.ticks = ticker.source;
+    this.emit();
     const ctx: EditorJobContext = {
       job,
       projectId: job.projectId,
@@ -140,7 +160,7 @@ export class EditorWorker {
     };
     try {
       if (!handler) throw new EditorJobError('unsupported_job', `this tab cannot run ${job.kind}`);
-      const result = await handler(ctx);
+      const result = await (this.opts.keepAlive ?? keepAlive)(job.id, () => handler(ctx));
       if (controller.signal.aborted) throw abortError();
       await this.opts.api.editorComplete(job.id, sessionId, result);
     } catch (err) {
@@ -152,7 +172,7 @@ export class EditorWorker {
           .catch(() => undefined);
       }
     } finally {
-      clearInterval(timer);
+      ticker.stop();
       this.current = null;
       this.emit();
       void this.poke();
