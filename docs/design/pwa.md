@@ -10,7 +10,10 @@ gates to approve, agents and jobs to watch.
 - **Manifest** (`/manifest.webmanifest`): name *Rideo Studio*, short name *Rideo*, `display: standalone`, the brand's
   background and theme colours (`#0B0D12`), the logo as SVG and as PNG icons (192 and 512 px, and maskable 512 px with
   the safe zone), and shortcuts to the Inbox and the projects.
-- **Service worker** (`/sw.js`, scope `/`, served `no-cache` so updates arrive): it keeps the app shell, never live
+- **Service worker** (`sw.js` next to the app, scoped to the studio's base path, so the app installs under a subpath
+  too ([subpath](subpath.md)); served `no-cache` so updates arrive; one self-contained script, since a classic worker
+  cannot load the app's chunks): it answers the media of projects kept in this browser from IndexedDB, with `Range`
+  ([browser storage](browser-storage.md#media-in-the-browser)), keeps the app shell, never live
   data:
 
 | Request | Strategy |

@@ -6,6 +6,7 @@ import {
   type ProjectEvent,
   type ServerMessage,
   type SessionInfo,
+  type StorageResult,
   type UiCommand,
 } from '@rideo/shared';
 import type { Metrics } from '../metrics';
@@ -44,8 +45,20 @@ const RING = 1000;
 const MAX_INLINE_DOCS = 512 * 1024;
 const OPEN = 1;
 
+/** Tabs that keep projects in their browser (docs/design/browser-storage.md#the-protocol). */
+export interface WorkspaceHandler {
+  attach(
+    session: { id: string; userId?: string; send: (msg: ServerMessage) => void },
+    workspaceId: string,
+    changed: string[],
+  ): boolean;
+  result(sessionId: string, msg: StorageResult): void;
+}
+
 /** Per-project event fan-out, replay, presence and UI command relay (docs/design/realtime-sync.md). */
 export class LiveHub {
+  /** Set when projects live in browsers: the workspace registry answers `workspace` and `storage-result`. */
+  workspaceHandler?: WorkspaceHandler;
   readonly instanceId = randomHex(8);
   private readonly sessions = new Map<string, Session>();
   private readonly seqs = new Map<string, number>();
@@ -189,6 +202,24 @@ export class LiveHub {
         break;
       case 'ping':
         this.send(session, { type: 'pong' });
+        break;
+      case 'workspace': {
+        const handler = this.workspaceHandler;
+        if (!handler) {
+          this.send(session, { type: 'error', message: 'this studio does not keep projects in browsers' });
+          break;
+        }
+        const ok = handler.attach(
+          { id: session.id, userId: session.userId, send: (m) => this.send(session, m) },
+          msg.workspaceId,
+          msg.changed ?? [],
+        );
+        if (!ok)
+          this.send(session, { type: 'error', message: 'forbidden: this workspace belongs to someone else' });
+        break;
+      }
+      case 'storage-result':
+        this.workspaceHandler?.result(session.id, msg);
         break;
     }
   }

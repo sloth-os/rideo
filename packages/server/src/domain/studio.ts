@@ -54,11 +54,13 @@ import { MediaStore } from '../media/store';
 import { Metrics } from '../metrics';
 import { C2paService } from '../provenance/c2pa';
 import { PushService } from '../push/service';
+import type { SettingsService } from '../settings/service';
 import type { StorageBackend } from '../storage/backend';
 import { Layout } from '../storage/layout';
 import { VERSION } from '../version';
 import { WatermarkService } from '../watermark/service';
 import { BrandService } from './brand';
+import { BundleService } from './bundles';
 import { ClipService } from './clips';
 import type { Deps, Logger } from './deps';
 import { EditService } from './edit';
@@ -83,8 +85,12 @@ import { WorkflowService } from './workflow';
 
 export interface Studio {
   config: Config;
+  /** Studio settings (docs/design/settings.md), set by the host on every studio it builds. */
+  settings?: SettingsService;
   deps: HandlerDeps;
   projects: ProjectService;
+  /** Project files (docs/design/browser-storage.md#project-files-export-and-import). */
+  bundles: BundleService;
   workflow: WorkflowService;
   story: StoryService;
   elements: ElementService;
@@ -177,6 +183,7 @@ export function createStudio(
     log: log.child({ component: 'jobs' }),
     lanes: config.lanes,
     editorLeaseMs: config.editor.leaseSec * 1000,
+    gatewayConfigured: config.gateway.configured,
   });
   const staging = new Staging(config.dataDir);
   const projectsRegistry = new ProjectRegistry({
@@ -243,8 +250,10 @@ export function createStudio(
     voiceJudge: config.voiceJudge ? new LlmVoiceJudge(llm) : null,
   };
   const workflow = new WorkflowService(deps);
+  const projectService = new ProjectService(deps);
   const services = {
-    projects: new ProjectService(deps),
+    projects: projectService,
+    bundles: new BundleService(deps, projectService),
     workflow,
     story: new StoryService(deps),
     elements: new ElementService(deps),
@@ -465,6 +474,8 @@ export function createStudio(
         syncTimer = setInterval(() => {
           for (const projectId of hub.subscribedProjects()) {
             if (syncing.has(projectId)) continue;
+            // Projects kept in a browser change only through Rideo (docs/design/browser-storage.md).
+            if (storage.externallyEditable?.(layout.project(projectId)) === false) continue;
             syncing.add(projectId);
             services.projects
               .sync(projectId)

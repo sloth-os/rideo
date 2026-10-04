@@ -1,10 +1,24 @@
-import { Cpu, Inbox, KeyRound, Loader2, LogOut, Moon, Palette, ShieldCheck, Sun, Users } from 'lucide-react';
+import {
+  Cpu,
+  Inbox,
+  KeyRound,
+  Loader2,
+  LogOut,
+  Moon,
+  Palette,
+  Settings,
+  ShieldCheck,
+  Sun,
+  Users,
+} from 'lucide-react';
 import { type ReactNode, useEffect, useState } from 'react';
 import { Link } from 'react-router';
 import { cx } from '../../components/ui';
 import { useEngine } from '../../engine/state';
 import { api } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
+import { logoUrl } from '../../lib/brand-assets';
+import { useStudioShell } from '../../lib/studio-context';
 import { useNotifications } from '../../store/notifications';
 import { useUi } from '../../store/ui';
 import { NotificationsBell } from '../review/NotificationsBell';
@@ -182,13 +196,20 @@ function InboxButton() {
 }
 
 export function AppHeader({ children }: { children?: ReactNode }) {
-  const { theme, setTheme } = useUi();
+  const setTheme = useUi((s) => s.setTheme);
+  const admin = useAuth((s) => s.me?.admin);
+  // A host app may bring its own header, name and mark (docs/design/embedding.md#options)
+  const shell = useStudioShell();
+  const theme = shell.mode;
+  if (!shell.chrome.header) return null;
   return (
     // The installed app draws under the status bar: the bar grows by its inset (docs/design/pwa.md#the-app-shell)
     <header className="sticky top-0 z-30 flex h-[calc(3.5rem+env(safe-area-inset-top))] items-center gap-2 border-b border-border bg-bg/95 px-3 pt-[env(safe-area-inset-top)] backdrop-blur sm:gap-3 sm:px-4">
       <Link to="/" className="flex shrink-0 items-center gap-2 font-semibold tracking-tight">
-        <img src="/logo.svg" alt="" className="size-7" />
-        <span className="hidden sm:inline">Rideo</span>
+        <img src={shell.theme.brand?.logoUrl ?? logoUrl} alt="" className="size-7" />
+        <span className="hidden sm:inline" data-testid="studio-name">
+          {shell.theme.brand?.name ?? 'Rideo'}
+        </span>
       </Link>
       <div className="min-w-0 flex-1">{children}</div>
       <EngineStatus />
@@ -210,6 +231,17 @@ export function AppHeader({ children }: { children?: ReactNode }) {
       >
         <ShieldCheck className="size-4" />
       </Link>
+      {admin ? (
+        <Link
+          to="/settings"
+          className="rounded p-1.5 text-muted hover:text-text"
+          aria-label="Settings"
+          title="Settings"
+          data-testid="settings-link"
+        >
+          <Settings className="size-4" />
+        </Link>
+      ) : null}
       <button
         type="button"
         className="rounded p-1.5 text-muted hover:text-text"

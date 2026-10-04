@@ -71,7 +71,7 @@ function cut(): Timeline {
 
 describe('brand kits (docs/design/brand-kits.md)', () => {
   it('recognises fonts by their signature', () => {
-    const dejavu = readFileSync(resolve(import.meta.dirname, '../../web/public/fonts/DejaVuSans.ttf'));
+    const dejavu = readFileSync(resolve(import.meta.dirname, '../../web/src/engine/fonts/DejaVuSans.ttf'));
     expect(isFontFile(dejavu)).toBe(true);
     expect(isFontFile(Buffer.from('OTTO1234'))).toBe(true);
     expect(isFontFile(Buffer.from('\x89PNG'))).toBe(false);

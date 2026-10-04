@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Rideo">
+  <rect width="64" height="64" rx="14" fill="#12151C"/>
+  <path d="M20 14h6v36h-6z" fill="#FF6B3D"/>
+  <path d="M26 14l24 18-24 18z" fill="#FF6B3D"/>
+  <path d="M26 32l12 9" stroke="#12151C" stroke-width="4" stroke-linecap="round"/>
+</svg>

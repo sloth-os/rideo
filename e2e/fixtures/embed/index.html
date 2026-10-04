@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Host app</title>
+    <!-- a host with its own global styles: the studio must not be bent by them, nor bend them -->
+    <style>
+      body { margin: 0; font-family: Georgia, serif; background: #fffbea; color: #3b2f00; }
+      a { color: rgb(0, 0, 255); }
+      button { background: rgb(255, 0, 0); }
+      header.host { padding: 8px 16px; background: #3b2f00; color: #fffbea; }
+      #studio { height: calc(100vh - 40px); }
+    </style>
+  </head>
+  <body>
+    <header class="host" data-testid="host-header">Host app · <a href="/about" data-testid="host-link">a host link</a></header>
+    <div id="studio" data-testid="host-container"></div>
+    <script type="module" src="./host.ts"></script>
+  </body>
+</html>

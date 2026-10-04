@@ -6,8 +6,10 @@ milliseconds, and MCP agents can also steer the UI itself.
 
 ## Channel
 
-`GET /api/live` upgrades to a WebSocket (auth: `?token=` when `RIDEO_API_TOKEN` is set). All messages are
-JSON and validated with the zod unions in `shared/src/schemas/live.ts`.
+`GET /api/live` upgrades to a WebSocket (auth: `?token=` when `RIDEO_API_TOKEN` is set), under the studio's base
+path when it has one ([subpath](subpath.md)). All messages are JSON and validated with the zod unions in
+`shared/src/schemas/live.ts`. A settings change reloads the studio's services ([settings](settings.md#applying-a-change)):
+the socket closes, the tab reconnects and, seeing a new `instanceId`, resyncs.
 
 ### Server → client
 
@@ -18,6 +20,8 @@ JSON and validated with the zod unions in `shared/src/schemas/live.ts`.
 | `{type: "resync", projectId, reason}` | The client must refetch `GET /api/projects/:id/state` (a sequence gap it cannot replay). |
 | `{type: "ui", command}` | A UI command from an agent (below). |
 | `{type: "notification", notification}` | Something for the person in this tab: a mention, a reply, a decision on their review, a gate approved through one ([review](review.md#notifications)). Sent to every tab of that person, whatever project it shows. |
+| `{type: "storage", id, op, path, …}` | Browser storage: a storage operation on this browser's projects ([protocol](browser-storage.md#the-protocol)). |
+| `{type: "workspace-ready", workspaceId, projects}` | The server has listed this browser's projects and serves them (after every attach). |
 | `{type: "pong"}` | Heartbeat. |
 
 ### Client → server
@@ -29,6 +33,8 @@ JSON and validated with the zod unions in `shared/src/schemas/live.ts`.
 | `{type: "presence", projectId, route, selection?, viewport, engine?}` | What the user is looking at, and the tab's editor engine (`{ffmpeg, webcodecs: {video, audio}, busyJobId, threads, compositor, hidden}`: ffmpeg.wasm's threads, `webgpu` or `canvas` compositing, and whether the tab is hidden, [engine performance](engine-performance.md)). Agents read it with `ui_sessions`. |
 | `{type: "ui-ack", commandId, ok, error?}` | Acknowledges a UI command. |
 | `{type: "ping"}` | Heartbeat every 20 s; the server closes the socket after 60 s of silence. |
+| `{type: "workspace", workspaceId, changed?}` | Browser storage: this tab serves its browser's projects; `changed` names projects it changed by itself (an import) ([protocol](browser-storage.md#the-protocol)). |
+| `{type: "storage-result", id, ok, result?, data?, error?}` | The answer to a `storage` operation. |
 
 ## Project events
 

@@ -86,8 +86,10 @@ export async function analysisSuggest(deps: HandlerDeps, ctx: JobContext) {
     });
     let ai: EditSuggestion[] = [];
     let summary = `${probe.durationSec.toFixed(1)}s, ${analysis.scenes.length} scene(s), ${analysis.silences.length} silence(s), ${analysis.blackSegments.length} black segment(s)${loudnessLufs !== null ? `, ${loudnessLufs.toFixed(1)} LUFS` : ''}.`;
-    ctx.progress(0.4, 1, 'asking the editor model for suggestions');
+    // Without a gateway the rule-based suggestions are the analysis (docs/design/settings.md#without-mm-gateway).
+    if (deps.config.gateway.configured) ctx.progress(0.4, 1, 'asking the editor model for suggestions');
     try {
+      if (!deps.config.gateway.configured) throw new Error('no gateway');
       const out = await deps.llm.analyzeFootage(
         {
           durationSec: probe.durationSec,
@@ -107,10 +109,11 @@ export async function analysisSuggest(deps: HandlerDeps, ctx: JobContext) {
       if (out.summary) summary = `${out.summary} (${summary})`;
     } catch (err) {
       if (ctx.signal.aborted) throw err;
-      ctx.log.warn(
-        { err: (err as Error).message },
-        'AI footage analysis failed; keeping rule-based suggestions',
-      );
+      if (deps.config.gateway.configured)
+        ctx.log.warn(
+          { err: (err as Error).message },
+          'AI footage analysis failed; keeping rule-based suggestions',
+        );
     }
     await commitAs(
       deps,

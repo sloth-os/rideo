@@ -28,7 +28,7 @@ export interface ReadResult {
 
 /** Everything Rideo persists goes through this interface (docs/design/storage-webdav.md). */
 export interface StorageBackend {
-  readonly kind: 'webdav' | 'memory';
+  readonly kind: 'webdav' | 'memory' | 'fs' | 'browser' | 'routed';
   read(path: string): Promise<Buffer | null>;
   readStream(path: string, range?: { start: number; end?: number }): Promise<ReadResult | null>;
   write(path: string, data: Buffer | string | Readable, opts?: WriteOptions): Promise<{ etag?: string }>;
@@ -37,6 +37,11 @@ export interface StorageBackend {
   delete(path: string): Promise<void>;
   move(from: string, to: string): Promise<void>;
   capabilities(): Promise<{ conditionalWrites: boolean }>;
+  /**
+   * Whether files under this project folder can change outside Rideo (the WebDAV sync looks for edits); false for
+   * projects kept in a browser (docs/design/browser-storage.md). Absent: yes.
+   */
+  externallyEditable?(projectDir: string): boolean;
 }
 
 export class PreconditionFailedError extends Error {

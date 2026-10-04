@@ -15,3 +15,6 @@ blob-report/
 .tmp/
 data-demo/
 mm-gateway.yaml
+dist-lib/
+build/types/
+e2e/fixtures/embed/dist/

@@ -3,7 +3,8 @@
 ## Goals and constraints
 
 1. Assets are managed on **WebDAV**, so any WebDAV client or storage product can hold, browse and edit a
-   project.
+   project. Without a WebDAV server, projects live in the **browser** that made them and travel as project files
+   ([browser storage](design/browser-storage.md)).
 2. **Character consistency is guaranteed**: no take reaches an approved clip or an export unless its
    characters were verified against locked references, or a human recorded an explicit override.
 3. Every document change is **versioned** (who, when, why) and can be diffed and restored.
@@ -15,16 +16,23 @@
    consent records and force a visible disclosure label.
 7. **Editing runs in the browser**: ffmpeg.wasm probes, analyzes, transcodes and renders, and WebCodecs
    plays back and encodes in hardware. The server never edits media; it keeps native ffmpeg only for the
-   generation pipeline and the keyed watermark.
+   generation pipeline and the keyed watermark. Without mm-gateway the studio is a complete editor.
+8. **Configured in the studio**: administrators set storage, the gateway, models, accounts and the rest in Settings,
+   applied at once; the environment keeps only what the process needs to start and can pin any setting
+   ([settings](design/settings.md)).
+9. **Deployable anywhere, embeddable**: the studio serves at the root or under a subpath behind a reverse proxy
+   ([subpath](design/subpath.md)), and its frontend is a library other apps mount with their own routes and theme
+   ([embedding](design/embedding.md)).
 
 ## System overview
 
 ```mermaid
 flowchart LR
   subgraph Browser
-    UI[React studio UI]
+    UI[React studio UI<br/>standalone or embedded library]
     ENG[Editor engine<br/>ffmpeg.wasm · WebCodecs/mediabunny]
     EJ[Editor-job worker]
+    WS[Workspace<br/>IndexedDB projects]
   end
   subgraph Agents
     CC[Claude Code / MCP clients]
@@ -40,8 +48,9 @@ flowchart LR
     C2PA[Provenance: C2PA signer]
     MEDIA[Media toolkit ffmpeg<br/>generation + watermark only]
     VCS[Version store]
-    STORE[Storage backend]
+    STORE[Storage backend<br/>WebDAV · routed to workspaces]
     DAV[Embedded WebDAV /dav]
+    SET[Settings · studio host]
     GW[Gateway client<br/>mm-gateway-js SDK]
     PX[Proxy client<br/>LLM · vision · STT]
   end
@@ -65,7 +74,9 @@ flowchart LR
   JOBS --> C2PA
   SVC -- events --> LIVE
   STORE -- WebDAV client --> WEBDAV
-  STORE -. default .-> DAV
+  STORE -. built-in .-> DAV
+  STORE <-. storage ops over the live channel .-> WS
+  SET -- reloads --> SVC
 ```
 
 ### Layers
@@ -77,8 +88,11 @@ flowchart LR
 | Application services | `packages/server/src/domain` | Use cases (create project, approve gate, generate clip…). Each takes an `Actor`, writes through the version store and emits live events. REST and MCP both call these. |
 | Infrastructure | `packages/server/src/{storage,vcs,media,gateway,ai,jobs,watermark,provenance,live}` | WebDAV I/O, commits, ffmpeg, SDK/proxy clients, job execution, watermarking, WebSocket fan-out. |
 | Surfaces | `packages/server/src/http`, `packages/server/src/mcp` | REST routes and MCP tools: thin adapters that validate input and call services. |
+| Studio host and settings | `packages/server/src/http/host.ts`, `packages/server/src/settings` | Builds the studio from the environment over the settings file and swaps it in-process when settings change ([settings](design/settings.md)). |
 | UI | `packages/web` | Studio UI. Its state is a projection of server documents, updated by live events (timeline edits apply optimistically). |
 | Editor engine | `packages/web/src/engine` | ffmpeg.wasm and WebCodecs media work: upload preparation, local proxies, analysis signals, chunked rendering, and the editor-job worker. |
+| Browser workspace | `packages/web/src/workspace` | The IndexedDB project store that answers the server's storage operations, and project files built and read in the browser ([browser storage](design/browser-storage.md)). |
+| Library | `packages/web/src/embed` | `RideoStudio` and `mountRideo`: the studio for other apps, with its runtime base, routing and theme ([embedding](design/embedding.md)). |
 
 ## Data flow of a change
 
@@ -129,10 +143,14 @@ uploads the outputs and completes it. See [editor](design/editor.md#editor-jobs)
 │   │   ├── prompt/         identity + shot prompt compiler
 │   │   ├── watermark/      dct, prng, crc, payload, embed/extract (luma + rgba)
 │   │   ├── provenance/     disclosure rule and label
+│   │   ├── settings/       the settings table (docs/design/settings.md)
+│   │   ├── theme/          themes: schema, brand tokens, CSS properties (docs/design/embedding.md#themes)
+│   │   ├── bundle/         project files: manifest, tar, history rewrite of copies
 │   │   ├── media/          probe banner parser, analysis log parser, media commands, render chunk planner + filtergraphs
 │   │   └── diff/           json diff
 │   ├── server/src
-│   │   ├── storage/        backend interface, webdav + memory backends, embedded dav, layout
+│   │   ├── storage/        backend interface, webdav, memory, fs, routed and workspace backends, embedded dav, layout
+│   │   ├── settings/       the settings file and service (docs/design/settings.md)
 │   │   ├── vcs/            object store, repository, work tree
 │   │   ├── media/          ffmpeg runner, probe, frames, posters, reference sheets (generation side)
 │   │   ├── gateway/        SDK wrapper (images/videos/music/models), proxy client
@@ -145,7 +163,8 @@ uploads the outputs and completes it. See [editor](design/editor.md#editor-jobs)
 │   │   ├── live/           event hub, sessions, UI command relay
 │   │   ├── http/           routes
 │   │   └── mcp/            MCP server + tools
-│   ├── web/src             studio UI (features/*) and editor engine (engine/: ffmpeg.wasm, local proxies, analysis, rendering, editor jobs)
+│   ├── web/src             studio UI (features/*), editor engine (engine/: ffmpeg.wasm, local proxies, analysis, rendering, editor jobs),
+│   │                       browser workspace (workspace/), the library entry (embed/)
 │   └── mock-gateway/src    mm-gateway contract mock
 ├── e2e                     Playwright specs
 └── docs

@@ -225,7 +225,7 @@ the `client` lane that an open studio tab of that project claims and runs. See [
 
 | Module | Role |
 |---|---|
-| `ffmpeg.ts` | One ffmpeg.wasm instance per tab (`@ffmpeg/ffmpeg` 0.12, FFmpeg 5.1 core served from our origin, loaded lazily: the multi-threaded core in a cross-origin isolated tab, [engine performance](engine-performance.md)). Runs one command at a time (queue). Inputs are `Blob`s mounted read-only with `WORKERFS` (no copy into wasm memory); outputs are read back and deleted. Log lines are captured for the shared parsers. Cancelling terminates the worker and reloads the core (≈ 1 s). |
+| `ffmpeg.ts` | One ffmpeg.wasm instance per tab (`@ffmpeg/ffmpeg` 0.12, FFmpeg 5.1 core served from our origin, loaded lazily: the multi-threaded core in a cross-origin isolated tab, [engine performance](engine-performance.md)). Its worker is passed explicitly and always runs with the page's origin, also inside an app that embeds the studio ([embedding](embedding.md#package)). Runs one command at a time (queue). Inputs are `Blob`s mounted read-only with `WORKERFS` (no copy into wasm memory); outputs are read back and deleted. Log lines are captured for the shared parsers. Cancelling terminates the worker and reloads the core (≈ 1 s). |
 | `media-files.ts` | Blob access to project media: files this tab uploaded are reused from memory, others are downloaded once (LRU). |
 | `prepare.ts` | Probe (`ffmpeg -i` banner, parsed by `shared/media/probe.ts`) and poster for a file. |
 | `codecs.ts`, `local-proxy.ts`, `proxy-plan.ts` | Whether WebCodecs decodes a media file, and the local proxies (see below). |
@@ -341,7 +341,8 @@ for transitions, `concat` for cuts. A transformed, masked or LUT-graded item add
 transformed or masked primary item is overlaid on black at the output size); overlay tracks are then composited on
 the result ([multitrack](#multitrack-transforms-and-keyframes)); text comes last, on top. Every stream is on `AV_TIME_BASE` (`settb=AVTB`) because `concat`
 outputs that timebase and `xfade` rejects inputs whose timebases differ. Text items overlapping the chunk
-become `drawtext` (bundled DejaVu Sans, `fonts/DejaVuSans.ttf`) with `enable='between(t,a,b)'` in chunk
+become `drawtext` (bundled DejaVu Sans, emitted with the app's assets and written to `/fonts/DejaVuSans.ttf` in
+ffmpeg's file system) with `enable='between(t,a,b)'` in chunk
 time; an animated caption draws one `drawtext` per word frame (`textFrames`), and `activeAt` gives the compositor and
 the preview the same frames ([localization](localization.md#captions-and-word-timing)). The `label` preset is small and boxed, aligned to a corner (`align` left or right, `position` top or
 bottom); the export's [disclosure label](provenance.md#disclosure-label) is such an item, added to the render

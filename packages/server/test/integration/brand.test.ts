@@ -20,7 +20,7 @@ afterAll(async () => {
   await stack?.stop();
 });
 
-const FONT = resolve(import.meta.dirname, '../../../web/public/fonts/DejaVuSans.ttf');
+const FONT = resolve(import.meta.dirname, '../../../web/src/engine/fonts/DejaVuSans.ttf');
 const code = (p: Promise<unknown>) =>
   p.then(
     () => 'ok',

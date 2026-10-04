@@ -2,7 +2,15 @@
 
 Every byte Rideo persists (documents, media, version history, job records, the watermark registry) lives on
 a **WebDAV** server. Rideo talks WebDAV even to its own embedded server, so the external and embedded setups
-exercise one code path.
+exercise one code path. When no WebDAV server is configured, projects live in the browsers that made them
+instead ([browser storage](browser-storage.md)); `RIDEO_STORAGE` (or Settings → Storage) chooses.
+
+| `RIDEO_STORAGE` | Projects | Studio-wide data (accounts, brand kits, recipes, watermark registry) |
+|---|---|---|
+| `webdav` | the external WebDAV server | the same server |
+| `embedded` | the built-in server at `/dav` (`<dataDir>/dav`) | the same server |
+| `browser` | each person's browser (IndexedDB) | `<dataDir>/dav`, through an `FsBackend` (not served at `/dav`) |
+| `auto` (default) | `webdav` with a URL; `embedded` when the built-in store already holds projects; else `browser` | |
 
 ## Backends
 
@@ -24,6 +32,9 @@ type WriteOptions = { ifMatch?: string; ifNoneMatch?: '*'; contentType?: string;
 |---|---|
 | `WebDavBackend` | Production. Wraps the `webdav` client. It creates parent collections on demand (MKCOL, with a known-directory cache), streams uploads and downloads, forwards `Range`, and sends `If-Match` / `If-None-Match` when the server supports them. |
 | `MemoryBackend` | Unit tests. Same semantics, including conditional writes. |
+| `FsBackend` | A local directory: studio-wide data when projects live in browsers ([browser storage](browser-storage.md#fsbackend)). |
+| `WorkspaceStorage` | One browser's projects, every operation a round trip to one of its tabs ([browser storage](browser-storage.md#the-protocol)). |
+| `RoutedStorage` | Browser mode: project folders to their workspace, everything else to the `FsBackend`, the project listing as the union ([routing](browser-storage.md#routing-on-the-server)). |
 
 `capabilities()` probes once per process. It writes a probe file twice with `If-None-Match: *`; a `412` on the
 second write means the server honours preconditions (Apache mod_dav, Nextcloud and rclone do; the embedded
@@ -37,6 +48,9 @@ When `RIDEO_WEBDAV_URL` is empty, Rideo mounts `webdav-server` v2 at **`/dav`** 
 by `${RIDEO_DATA_DIR}/dav`. It is mounted through the Fastify `serverFactory`, before Fastify routing, so
 WebDAV methods and bodies never reach Fastify's parsers. The storage backend then points at
 `http://127.0.0.1:${port}/dav` over loopback. Optional Basic auth: `RIDEO_DAV_USERNAME` / `RIDEO_DAV_PASSWORD`.
+
+Under a subpath the server is at `<base>/dav/` and writes its `href`s with that prefix
+([subpath](subpath.md#what-the-server-writes-with-the-base)).
 
 Mount it like any WebDAV share:
 

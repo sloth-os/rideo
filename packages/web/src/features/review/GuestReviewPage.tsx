@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useParams } from 'react-router';
 import { Badge, Button, Card, cx, EmptyState, Field, Input, Spinner, Textarea } from '../../components/ui';
 import { ApiError, api, type GuestReview, guestMediaUrl } from '../../lib/api';
+import { logoUrl } from '../../lib/brand-assets';
 import { reportError } from '../../store/ui';
 import { ReviewPlayer } from './ReviewPlayer';
 
@@ -275,7 +276,7 @@ function Shell({ title, children }: { title?: string; children: React.ReactNode 
   return (
     <div className="min-h-full">
       <header className="sticky top-0 z-30 flex h-14 items-center gap-2 border-b border-border bg-bg/95 px-3 backdrop-blur sm:px-4">
-        <img src="/logo.svg" alt="" className="size-7" />
+        <img src={logoUrl} alt="" className="size-7" />
         <span className="font-semibold tracking-tight">Rideo</span>
         <span className="text-muted">review</span>
         {title ? (

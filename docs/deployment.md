@@ -1,12 +1,22 @@
 # Deployment and configuration
 
+Rideo needs almost nothing to start: with no configuration at all it serves the studio on port 8787, keeps
+projects in each person's browser ([browser storage](design/browser-storage.md)) and works as an editor without AI.
+Everything else (WebDAV, mm-gateway, models, voices, accounts, brand, provenance, limits, the theme) is set by an
+administrator in **Settings** ([settings](design/settings.md)) and applied at once. The environment remains for what
+the process needs before it can serve a page, and it can pin any setting (the UI then shows it locked).
+
 ## Docker Compose
 
 ```bash
-cp .env.example .env                                 # fill in the values below
+cp .env.example .env                                 # optional: only what must be fixed before start
 cp deploy/mm-gateway.example.yaml mm-gateway.yaml    # gateway backends, proxies and keys
 docker compose up -d        # rideo on :8787 (UI, API, /mcp, /dav) + mm-gateway
 ```
+
+Then open the studio, go to Settings (the gear in the header) and choose where projects are stored and which models
+to use. `docker-compose.yml` sets `MM_GATEWAY_URL` to the compose service, so the gateway shows as set by the
+environment.
 
 `docker-compose.yml` runs `ghcr.io/sloth-os/rideo` next to `ghcr.io/sloth-os/mm-gateway` (config mounted at
 `/etc/mm-gateway/config.yaml`). For a fully offline demo, `docker compose -f docker-compose.demo.yml up`
@@ -20,42 +30,61 @@ reports health through `/api/health`. CI publishes `ghcr.io/sloth-os/rideo:lates
 
 The image contains ffmpeg (used by the server only for generated takes and the watermark) and the built web
 app, including the ffmpeg.wasm core (31 MB, served from `/assets/` with immutable caching; no cross-origin
-isolation headers are needed for the single-threaded core). All state lives on the WebDAV store.
-`RIDEO_DATA_DIR` (`/data`) holds only the embedded WebDAV root (when used), the media cache, the
-editor-job staging area and, without a configured certificate, the development C2PA signer.
+isolation headers are needed for the single-threaded core). Projects live where `RIDEO_STORAGE` says: on the
+WebDAV store, in the built-in one, or in people's browsers. `RIDEO_DATA_DIR` (`/data`) holds the settings file
+(`settings.json`, secrets included: keep the volume private), the embedded WebDAV root (studio-wide data such as
+accounts and brand kits when projects live in browsers), the media cache, the editor-job staging area and, without a
+configured certificate, the development C2PA signer.
+
+## Behind a reverse proxy, under a subpath
+
+Rideo can be served under a path of another site (`https://example.com/rideo/`) behind Caddy, nginx or Apache
+httpd, with the prefix stripped by the proxy or kept. Set `RIDEO_PUBLIC_URL=https://example.com/rideo` (or
+`RIDEO_BASE_PATH=/rideo`), or let the proxy send `X-Forwarded-Prefix`. Ready-made configurations are in
+`deploy/caddy/Caddyfile`, `deploy/nginx/rideo.conf` and `deploy/httpd/rideo.conf`; see
+[serving under a subpath](design/subpath.md).
 
 ## Environment
+
+Every variable below is read from the environment (and `.env`). Those that also appear in the
+[settings table](design/settings.md#the-settings-table) (most of them) can be set in **Settings** instead: a variable
+that is set in the environment wins and shows locked there; one that is not can be changed in the UI and is kept in
+`<RIDEO_DATA_DIR>/settings.json`. Variables marked *environment only* cannot be set in the UI.
 
 ### Server
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `RIDEO_HOST` / `RIDEO_PORT` | `0.0.0.0` / `8787` | listen address |
-| `RIDEO_PUBLIC_URL` | `http://localhost:8787` | external base URL (links in MCP results) |
-| `RIDEO_API_TOKEN` | – | bearer token for `/api`, `/api/live`, `/mcp` (unset = open, for local use); with accounts it stays a studio token acting as the configured user with admin rights |
+| `RIDEO_HOST` / `RIDEO_PORT` | `0.0.0.0` / `8787` | listen address (*environment only*) |
+| `RIDEO_PUBLIC_URL` | `http://localhost:8787` + the base path | external base URL, with the subpath (links in MCP results, share links, the OIDC redirect URI) (*environment only*) |
+| `RIDEO_BASE_PATH` | the path of `RIDEO_PUBLIC_URL` | serve under a subpath, e.g. `/rideo` ([subpath](design/subpath.md)); a proxy's `X-Forwarded-Prefix` overrides it per request (*environment only*) |
+| `RIDEO_CORS_ORIGINS` | – | comma-separated origins (or `*`) whose pages may use this server through the studio library ([embedding](design/embedding.md#talking-to-a-server-on-another-origin)) |
+| `RIDEO_THEME` | – | the studio theme as JSON: default mode, colors, fonts, radii, brand ([themes](design/embedding.md#themes)) |
+| `RIDEO_API_TOKEN` | – | bearer token for `/api`, `/api/live`, `/mcp` (unset = open, for local use); with accounts it stays a studio token acting as the configured user with admin rights (*environment only*) |
 | `RIDEO_OIDC_ISSUER` | – | accounts ([accounts](design/accounts.md)): the OpenID Connect issuer; people sign in through it and the redirect URI is `RIDEO_PUBLIC_URL/api/auth/callback` |
 | `RIDEO_OIDC_CLIENT_ID` / `RIDEO_OIDC_CLIENT_SECRET` | – | the client registered at the issuer (no secret: a public client with PKCE) |
 | `RIDEO_OIDC_SCOPES` / `RIDEO_OIDC_NAME` | `openid profile email` / `your identity provider` | requested scopes; the provider's name on the sign-in button |
 | `RIDEO_ADMINS` | – | comma-separated emails of administrators |
 | `RIDEO_OIDC_ALLOWED_DOMAINS` | – | comma-separated email domains that may join (empty: anyone the provider signs in) |
 | `RIDEO_SESSION_DAYS` | `14` | sign-in session lifetime (renewed on use) |
-| `RIDEO_USER_ID` / `RIDEO_USER_NAME` | `local` / `You` | actor for REST calls |
-| `RIDEO_DATA_DIR` | `./data` | embedded WebDAV root and caches |
+| `RIDEO_USER_ID` / `RIDEO_USER_NAME` | `local` / `You` | actor for REST calls (the id is *environment only*) |
+| `RIDEO_DATA_DIR` | `./data` | settings, embedded WebDAV root (studio data in browser mode) and caches (*environment only*) |
 | `RIDEO_CACHE_MAX_BYTES` | `5368709120` | local media cache cap |
-| `RIDEO_WEB_DIST` | `packages/web/dist` | built UI served at `/` |
-| `RIDEO_VAPID_PUBLIC_KEY` / `RIDEO_VAPID_PRIVATE_KEY` | – (made once, `<dataDir>/push/vapid.json`) | the Web Push key pair (P-256, base64url) of [the installable app](design/pwa.md); set both to keep it across data dirs |
+| `RIDEO_WEB_DIST` | `packages/web/dist` | built UI served at the base path (*environment only*) |
+| `RIDEO_VAPID_PUBLIC_KEY` / `RIDEO_VAPID_PRIVATE_KEY` | – (made once, `<dataDir>/push/vapid.json`) | the Web Push key pair (P-256, base64url) of [the installable app](design/pwa.md); set both to keep it across data dirs (*environment only*) |
 | `RIDEO_VAPID_SUBJECT` | `mailto:rideo@localhost` | the contact push services see (`mailto:` or `https:`) |
 | `RIDEO_CROSS_ORIGIN_ISOLATION` | `require-corp` | the studio's `Cross-Origin-Embedder-Policy` (with `Cross-Origin-Opener-Policy: same-origin`): cross-origin isolation, so ffmpeg.wasm runs multi-threaded ([engine performance](design/engine-performance.md)); `credentialless`, or `off` to send neither |
-| `RIDEO_LOG_LEVEL` | `info` | pino level |
+| `RIDEO_LOG_LEVEL` | `info` | pino level (*environment only*) |
 
-### WebDAV
+### Storage
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `RIDEO_WEBDAV_URL` | – | external WebDAV base URL; empty = embedded `/dav` |
+| `RIDEO_STORAGE` | `auto` | where projects live: `browser` (each person's browser, [browser storage](design/browser-storage.md)), `webdav` (`RIDEO_WEBDAV_URL`), `embedded` (the built-in server at `/dav`, files in `RIDEO_DATA_DIR/dav`); `auto` = `webdav` with a URL, `embedded` when the built-in store already holds projects, else `browser` |
+| `RIDEO_WEBDAV_URL` | – | external WebDAV base URL |
 | `RIDEO_WEBDAV_USERNAME` / `RIDEO_WEBDAV_PASSWORD` | – | credentials for the external server |
 | `RIDEO_WEBDAV_ROOT` | `/rideo` | root folder inside the share |
-| `RIDEO_EMBEDDED_DAV` | `auto` | `auto` (on when no external URL) / `true` / `false` |
+| `RIDEO_EMBEDDED_DAV` | `auto` | mount the built-in server at `/dav`: `auto` (with `embedded` storage) / `true` (also beside other storage) / `false` (*environment only*) |
 | `RIDEO_DAV_USERNAME` / `RIDEO_DAV_PASSWORD` | – | Basic auth for the embedded `/dav` |
 | `RIDEO_WEBDAV_SYNC_INTERVAL_SEC` | `15` | external-edit sync period for watched projects (0 = off) |
 | `RIDEO_COALESCE_WINDOW_SEC` | `30` | commit coalescing window |
@@ -64,7 +93,7 @@ editor-job staging area and, without a configured certificate, the development C
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `MM_GATEWAY_URL` | `http://localhost:8000` | gateway base URL |
+| `MM_GATEWAY_URL` | – | gateway base URL; unset: no AI, the editor works ([without mm-gateway](design/settings.md#without-mm-gateway)) |
 | `MM_GATEWAY_API_KEY` | – | gateway bearer key |
 | `MM_GATEWAY_ROUTING_PROFILE` | – | optional `routing.profile` |
 | `RIDEO_IMAGE_MODEL` / `RIDEO_VIDEO_MODEL` / `RIDEO_MUSIC_MODEL` | `auto` | default models (projects can override; the pilot pins them) |
@@ -94,11 +123,11 @@ editor-job staging area and, without a configured certificate, the development C
 | `RIDEO_CONSISTENCY_THRESHOLD` | `0.75` | default threshold for new projects |
 | `RIDEO_CONSISTENCY_MAX_ATTEMPTS` | `3` | default attempts per step |
 | `RIDEO_LANES` | `control=16,llm=2,image=2,video=2,music=1,media=1` | job lane concurrency |
-| `RIDEO_WATERMARK_KEY` | – (required in production; dev generates and stores one in `RIDEO_DATA_DIR`) | secret key for the invisible watermark |
-| `RIDEO_WATERMARK_KEYS_OLD` | – | comma-separated retired keys still tried by detection |
+| `RIDEO_WATERMARK_KEY` | – (set it in production; otherwise one is generated once and kept in `RIDEO_DATA_DIR`) | secret key for the invisible watermark (*environment only*) |
+| `RIDEO_WATERMARK_KEYS_OLD` | – | comma-separated retired keys still tried by detection (*environment only*) |
 | `RIDEO_WATERMARK_STRENGTH` | `16` | embedding strength `T` |
 | `RIDEO_BRAND_NAME` / `RIDEO_BRAND_OWNER` / `RIDEO_BRAND_URL` | `Rideo` / – / – | brand written into provenance and metadata |
-| `RIDEO_FFMPEG_PATH` / `RIDEO_FFPROBE_PATH` | `ffmpeg` / `ffprobe` | binaries (generation and watermark) |
+| `RIDEO_FFMPEG_PATH` / `RIDEO_FFPROBE_PATH` | `ffmpeg` / `ffprobe` | binaries (generation and watermark) (*environment only*) |
 
 ### Provenance (C2PA)
 

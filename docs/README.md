@@ -3,6 +3,10 @@
 | Document | What it covers |
 |---|---|
 | [architecture.md](architecture.md) | System overview, components, data flow, repository layout, technology choices |
+| [design/settings.md](design/settings.md) | Studio settings in the web UI: the settings table, environment over settings over defaults, applying a change by reloading the studio, running without mm-gateway |
+| [design/browser-storage.md](design/browser-storage.md) | Projects kept in the browser (IndexedDB) when no WebDAV is configured: workspaces, the storage protocol over the live channel, routing, project files (export and import) |
+| [design/subpath.md](design/subpath.md) | Serving under a subpath behind Caddy, nginx or Apache httpd: the base path, both proxy styles, what the server writes, proxy configurations |
+| [design/embedding.md](design/embedding.md) | The studio as a library: `RideoStudio` and `mountRideo`, options, a server on another origin, themes, styles scoped to the container |
 | [design/workflows.md](design/workflows.md) | Declarative stage machines for the story → movie and footage → edit workflows |
 | [design/storage-webdav.md](design/storage-webdav.md) | WebDAV asset layout, storage backends, embedded `/dav` server, external edits and the inbox |
 | [design/version-control.md](design/version-control.md) | Content-addressed objects, commits, branches, tags, coalescing, diff, restore |
@@ -52,3 +56,6 @@
 | Timeline | Tracks of items that reference takes or media, edited with pure operations. |
 | Gate | An approval that moves a workflow to its next stage. |
 | Actor | Who made a change: `user`, `agent` (MCP client), `system` (jobs), or `webdav` (external edit). |
+| Workspace | A browser's project store (IndexedDB) when projects are kept in browsers. |
+| Project file | A project as one `.rideo` file (documents, history, media) to export and import. |
+| Setting | A value the studio reads from the environment or, when the environment leaves it unset, from Settings. |

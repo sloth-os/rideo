@@ -3,7 +3,18 @@
   "compilerOptions": {
     "lib": ["ES2023", "DOM", "DOM.Iterable"],
     "jsx": "react-jsx",
-    "types": ["vite/client"]
+    "types": ["vite/client"],
+    "paths": {
+      "@rideo/web": ["./src/embed/index.tsx"],
+      "@rideo/web/style.css": ["./src/styles/index.css"]
+    }
   },
-  "include": ["src", "test", "vite.config.ts", "vitest.config.ts"]
+  "include": [
+    "src",
+    "test",
+    "vite.config.ts",
+    "vite.lib.config.ts",
+    "vitest.config.ts",
+    "../../e2e/fixtures/embed/host.ts"
+  ]
 }

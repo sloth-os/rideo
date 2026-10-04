@@ -15,6 +15,11 @@ can also upload existing footage and let the AI suggest and apply an edit.
 | Copyright | Every generated clip and export carries an **invisible watermark** (keyed DCT-domain payload) and provenance metadata. A detector recovers the brand and asset record. |
 | Review and teams | People sign in with the studio's identity provider (OIDC) and work on projects by role; agents act through scoped tokens. Reviewers leave **timecoded notes and drawings** on takes and cuts, clients review through **share links** without an account, and a review can approve a workflow gate. See [docs/design/review.md](docs/design/review.md). |
 | App | Installs on phones and desktops as an app (PWA): an **Inbox** of gates to approve, reviews to decide, jobs and agents' work across projects, and **Web Push** notifications. See [docs/design/pwa.md](docs/design/pwa.md). |
+| Settings | Almost everything is configured in the studio's **Settings** page (storage, mm-gateway, models, voices, accounts, brand, provenance, limits, the theme) and applied at once; the environment can still pin any value. See [docs/design/settings.md](docs/design/settings.md). |
+| Storage anywhere | Without a WebDAV server, projects live **in each person's browser** (IndexedDB) and travel as **project files** (`.rideo`) that export and import anywhere. See [docs/design/browser-storage.md](docs/design/browser-storage.md). |
+| Editor without AI | Without mm-gateway the studio is a complete browser video editor: footage analysis by rules, the timeline, exports. AI features appear when a gateway is connected in Settings. |
+| Deployment | Serves at the root or **under a subpath** behind Caddy, nginx or Apache httpd. See [docs/design/subpath.md](docs/design/subpath.md). |
+| Library | The studio is also a **package** other apps embed (`RideoStudio`, `mountRideo`), on their own routes, with their **theme**. See [docs/design/embedding.md](docs/design/embedding.md). |
 | Engine | The browser engine runs ffmpeg.wasm on every core (cross-origin isolated), composites on the GPU (WebGPU, the canvas as fallback), keeps rendering in a hidden tab and makes local proxies with the hardware codecs. See [docs/design/engine-performance.md](docs/design/engine-performance.md). |
 | Performance | **Performance-driven animation**: act a shot into a webcam or phone and the locked characters perform it (expressions, lips, motion, timing, your voice) on a gateway performance model. See [docs/design/performance.md](docs/design/performance.md). |
 | Search | **Semantic media search**: takes, footage, stills and references found by what they show ("close-ups of Mira at night"), by meaning with an embeddings model or by words; in the studio, the editor's overlay picker and over MCP. See [docs/design/search.md](docs/design/search.md). |
@@ -47,12 +52,9 @@ npm run dev:demo      # server + web + mock mm-gateway (fully offline demo)
 # open http://localhost:5173
 ```
 
-To use a real mm-gateway:
-
-```bash
-cp .env.example .env  # set MM_GATEWAY_URL, MM_GATEWAY_API_KEY, RIDEO_LLM_* ...
-npm run dev           # server on :8787, web on :5173
-```
+To use a real mm-gateway, run `npm run dev` (server on :8787, web on :5173), open the studio and set the gateway in
+**Settings**, or pin it in `.env` (`cp .env.example .env`). With no configuration at all, projects are kept in your
+browser and the studio works as an editor without AI.
 
 Connect Claude Code to the running studio:
 
@@ -60,12 +62,15 @@ Connect Claude Code to the running studio:
 claude mcp add --transport http rideo http://localhost:8787/mcp
 ```
 
+When projects are kept in browsers, copy the command from a project's Overview instead: it names your browser
+(`?workspace=…`), whose projects the agent works on while a studio tab is open.
+
 ## Repository layout
 
 ```
 packages/shared        domain schemas, timeline ops, workflow definitions, prompt compiler, watermark core
 packages/server        Fastify API, WebDAV storage, version control, jobs, gateway + LLM clients, MCP, live sync
-packages/web           React + Vite studio UI, WebCodecs preview/export
+packages/web           React + Vite studio UI, WebCodecs preview/export; also the embeddable library (dist-lib)
 packages/mock-gateway  mm-gateway contract mock (REST + proxy LLM) for tests and the offline demo
 e2e                    Playwright end-to-end tests
 docs                   architecture and design documents (start here)

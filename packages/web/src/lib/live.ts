@@ -4,9 +4,11 @@ import {
   type Presence,
   type ProjectEvent,
   ServerMessageSchema,
+  type StorageRequest,
   type UiCommand,
 } from '@rideo/shared';
 import { getToken } from './api';
+import { liveUrl } from './runtime';
 
 export type LiveStatus = 'connecting' | 'live' | 'offline';
 
@@ -17,6 +19,12 @@ export interface LiveHandlers {
   onStatus: (status: LiveStatus) => void;
   /** Something for the person in this tab (docs/design/review.md#notifications). */
   onNotification?: (notification: Notification) => void;
+  /** Browser storage (docs/design/browser-storage.md#the-protocol): the workspace this tab serves, if any. */
+  workspace?: () => string | null;
+  /** A storage operation on this browser's workspace. */
+  onStorage?: (request: StorageRequest) => void;
+  /** The server serves this browser's projects (after every (re)connect). */
+  onWorkspaceReady?: (projects: number) => void;
 }
 
 /**
@@ -38,12 +46,9 @@ export class LiveClient {
 
   connect(): void {
     this.closed = false;
-    const proto = location.protocol === 'https:' ? 'wss' : 'ws';
     const token = getToken();
     this.handlers.onStatus('connecting');
-    const ws = new WebSocket(
-      `${proto}://${location.host}/api/live${token ? `?token=${encodeURIComponent(token)}` : ''}`,
-    );
+    const ws = new WebSocket(`${liveUrl('/live')}${token ? `?token=${encodeURIComponent(token)}` : ''}`);
     this.ws = ws;
     ws.onopen = () => {
       this.retry = 0;
@@ -69,8 +74,16 @@ export class LiveClient {
     this.ws?.close();
   }
 
-  private send(msg: ClientMessage): void {
+  /** Sends a message when the socket is open (storage answers, presence). */
+  send(msg: ClientMessage): void {
     if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify(msg));
+  }
+
+  /** Offers this tab as a server of its browser's workspace; `changed` names projects changed here (an import). */
+  attachWorkspace(changed?: string[]): void {
+    const workspaceId = this.handlers.workspace?.();
+    if (workspaceId && this.sessionId)
+      this.send({ type: 'workspace', workspaceId, ...(changed?.length ? { changed } : {}) });
   }
 
   private onMessage(raw: string): void {
@@ -89,6 +102,7 @@ export class LiveClient {
         this.instanceId = msg.instanceId;
         this.sessionId = msg.sessionId;
         this.handlers.onStatus('live');
+        this.attachWorkspace();
         for (const [projectId, seq] of this.subscriptions) {
           if (restarted) this.handlers.onResync(projectId, 'server restarted');
           this.send({ type: 'subscribe', projectId, ...(restarted ? {} : { lastSeq: seq }) });
@@ -118,6 +132,12 @@ export class LiveClient {
       }
       case 'notification':
         this.handlers.onNotification?.(msg.notification);
+        return;
+      case 'storage':
+        this.handlers.onStorage?.(msg);
+        return;
+      case 'workspace-ready':
+        this.handlers.onWorkspaceReady?.(msg.projects);
         return;
       default:
         return;

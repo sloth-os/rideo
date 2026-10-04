@@ -1,7 +1,8 @@
 import { formatDuration, type ProjectSummary } from '@rideo/shared';
-import { Clapperboard, Film, Plus, ScanSearch, Scissors, Trash2 } from 'lucide-react';
+import { Clapperboard, Download, Film, Plus, ScanSearch, Scissors, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
+import { AiNotice } from '../../components/AiNotice';
 import {
   Badge,
   Button,
@@ -16,8 +17,11 @@ import {
   Textarea,
 } from '../../components/ui';
 import { api, mediaUrl } from '../../lib/api';
+import { useAi } from '../../lib/config';
 import { reportError } from '../../store/ui';
+import { useWorkspaceStatus } from '../../workspace/status';
 import { AppHeader } from '../workspace/AppHeader';
+import { BrowserStorageNote, exportProject, ImportProjectButton } from './ProjectFiles';
 
 const DURATION_PRESETS = [
   { label: '40 min', sec: 2400 },
@@ -176,7 +180,17 @@ function ProjectCard({ p, onDelete }: { p: ProjectSummary; onDelete: () => void 
           ) : null}
         </div>
       </Link>
-      <div className="flex justify-end border-t border-border px-2 py-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100">
+      <div className="flex justify-end gap-1 border-t border-border px-2 py-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
+        <Button
+          size="sm"
+          variant="ghost"
+          icon={<Download className="size-3.5" />}
+          onClick={() => void exportProject(p).catch(reportError)}
+          aria-label={`Export ${p.title}`}
+          data-testid="export-project"
+        >
+          Export
+        </Button>
         <Button
           size="sm"
           variant="ghost"
@@ -194,26 +208,36 @@ function ProjectCard({ p, onDelete }: { p: ProjectSummary; onDelete: () => void 
 export function Dashboard() {
   const [projects, setProjects] = useState<ProjectSummary[] | null>(null);
   const [creating, setCreating] = useState<'story' | 'edit' | null>(null);
+  // Without mm-gateway the studio is an editor: films from ideas need AI (docs/design/settings.md#without-mm-gateway)
+  const ai = useAi();
+  const navigate = useNavigate();
   const load = useCallback(() => {
     api.projects().then(setProjects).catch(reportError);
   }, []);
-  useEffect(load, [load]);
+  // Projects in this browser: listed again once the server serves them (after it restarts).
+  const ready = useWorkspaceStatus((s) => s.ready);
+  useEffect(load, [load, ready]);
   return (
     <div className="min-h-full">
       <AppHeader />
       <main className="mx-auto max-w-6xl px-3 py-6 sm:px-6">
+        {ai === false ? (
+          <AiNotice className="mb-3">AI is off. Edit footage now; films from ideas need mm-gateway.</AiNotice>
+        ) : null}
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <button
             type="button"
             onClick={() => setCreating('story')}
-            className="rounded-[var(--radius-card)] border border-border bg-surface p-4 text-left transition-colors hover:border-accent"
+            disabled={ai === false}
+            className="rounded-[var(--radius-card)] border border-border bg-surface p-4 text-left transition-colors hover:border-accent disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:border-border"
             data-testid="new-story"
           >
             <Film className="mb-2 size-6 text-accent" />
             <div className="font-semibold">Idea → movie</div>
             <p className="mt-1 text-[13px] text-muted">
-              Screenplay, locked cast, a pilot clip, then the whole film (40–60 min) with guaranteed character
-              consistency.
+              {ai === false
+                ? 'Needs mm-gateway: screenplay, locked cast, a pilot clip, then the whole film.'
+                : 'Screenplay, locked cast, a pilot clip, then the whole film (40–60 min) with guaranteed character consistency.'}
             </p>
           </button>
           <button
@@ -225,15 +249,27 @@ export function Dashboard() {
             <ScanSearch className="mb-2 size-6 text-accent" />
             <div className="font-semibold">Footage → edit</div>
             <p className="mt-1 text-[13px] text-muted">
-              Upload a video; the AI analyzes it, suggests an edit and cuts it for you.
+              {ai === false
+                ? 'Upload a video; Rideo finds scenes, silences and black frames, suggests cuts and edits it with you.'
+                : 'Upload a video; the AI analyzes it, suggests an edit and cuts it for you.'}
             </p>
           </button>
         </div>
-        <div className="mt-8 mb-3 flex items-center justify-between">
+        <div className="mt-8 mb-3 flex flex-wrap items-center justify-between gap-2">
           <h2 className="text-lg font-semibold">Projects</h2>
-          <Button size="sm" icon={<Plus className="size-4" />} onClick={() => setCreating('story')}>
-            New
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <ImportProjectButton onImported={(id) => navigate(`/p/${id}`)} />
+            <Button
+              size="sm"
+              icon={<Plus className="size-4" />}
+              onClick={() => setCreating(ai === false ? 'edit' : 'story')}
+            >
+              New
+            </Button>
+          </div>
+        </div>
+        <div className="mb-3">
+          <BrowserStorageNote />
         </div>
         {projects === null ? (
           <Spinner />
@@ -248,7 +284,13 @@ export function Dashboard() {
                 key={p.id}
                 p={p}
                 onDelete={() => {
-                  if (confirm(`Move “${p.title}” to the trash?`))
+                  if (
+                    confirm(
+                      useWorkspaceStatus.getState().enabled
+                        ? `Delete “${p.title}” from this browser? Export it first to keep a copy.`
+                        : `Move “${p.title}” to the trash?`,
+                    )
+                  )
                     api.deleteProject(p.id).then(load).catch(reportError);
                 }}
               />

@@ -12,6 +12,7 @@ import {
 import sdk, { type HttpInfo, type SdkError, type SdkTask } from '@sloth-os/mm-gateway-js';
 import type { Metrics } from '../metrics';
 import { abortError, sleep } from '../util/abort';
+import { gatewayNotConfigured } from './proxy-client';
 
 export type Modality = 'image' | 'video' | 'music';
 
@@ -99,7 +100,8 @@ export class GatewayClient {
 
   constructor(
     private readonly cfg: {
-      url: string;
+      /** Unset: no gateway; every call fails with `gateway_not_configured`. */
+      url?: string;
       apiKey?: string;
       routingProfile?: string;
       pollMs: number;
@@ -108,7 +110,7 @@ export class GatewayClient {
       log?: { info: (o: unknown, m?: string) => void; warn: (o: unknown, m?: string) => void };
     },
   ) {
-    this.client = new sdk.ApiClient(cfg.url);
+    this.client = new sdk.ApiClient(cfg.url ?? 'http://gateway.invalid');
     if (cfg.apiKey) this.client.authentications.BearerAuth.accessToken = cfg.apiKey;
     this.client.timeout = 120_000;
     this.client.defaultHeaders = { 'User-Agent': 'rideo/0.1 (@sloth-os/mm-gateway-js)' };
@@ -118,7 +120,12 @@ export class GatewayClient {
     this.meta = new sdk.MetaApi(this.client);
   }
 
+  get configured(): boolean {
+    return !!this.cfg.url;
+  }
+
   async health(): Promise<boolean> {
+    if (!this.cfg.url) return false;
     try {
       return (await this.meta.getHealth()).status === 'ok';
     } catch {
@@ -127,6 +134,7 @@ export class GatewayClient {
   }
 
   async modelLimits(modality: Modality): Promise<ModelLimitsEntry[]> {
+    if (!this.cfg.url) throw gatewayNotConfigured();
     const hit = this.limitsCache.get(modality);
     if (hit && Date.now() - hit.at < 5 * 60_000) return hit.entries;
     try {
@@ -180,6 +188,7 @@ export class GatewayClient {
     req: GatewayImageRequest | GatewayVideoRequest | GatewayMusicRequest,
     opts: GenerateOptions,
   ): Promise<GatewayTask> {
+    if (!this.cfg.url) throw gatewayNotConfigured();
     const body = {
       ...req,
       ...(this.cfg.routingProfile && !req.routing ? { routing: { profile: this.cfg.routingProfile } } : {}),

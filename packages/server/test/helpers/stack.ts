@@ -47,6 +47,8 @@ export async function startStack(
       RIDEO_PORT: '0',
       RIDEO_HOST: '127.0.0.1',
       RIDEO_DATA_DIR: dataDir,
+      // The built-in WebDAV server: the stack's own client drives projects without a browser.
+      RIDEO_STORAGE: 'embedded',
       MM_GATEWAY_URL: gw.url,
       RIDEO_LOG_LEVEL: 'warn',
       NODE_ENV: 'test',

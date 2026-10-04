@@ -2,11 +2,20 @@
   "name": "@rideo/web",
   "version": "0.1.0",
   "private": true,
+  "description": "Rideo studio UI: the standalone app (dist) and the embeddable library (dist-lib, docs/design/embedding.md)",
   "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist-lib/rideo.d.ts",
+      "import": "./dist-lib/rideo.js"
+    },
+    "./style.css": "./dist-lib/rideo.css"
+  },
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "build:lib": "node scripts/build-lib.mjs"
   },
   "dependencies": {
     "@ffmpeg/core": "0.12.10",
@@ -28,7 +37,9 @@
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
     "@vitejs/plugin-react": "6.1.1",
+    "fake-indexeddb": "6.2.5",
     "jsdom": "30.1.1",
+    "postcss": "8.5.28",
     "tailwindcss": "4.3.3",
     "vite": "8.3.1"
   }

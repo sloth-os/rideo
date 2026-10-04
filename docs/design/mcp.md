@@ -17,6 +17,10 @@ resulting change streams live to the frontend.
   `project.comment`). A session stays bound to the caller that
   opened it (403 for anyone else).
 - Clients that only support stdio can bridge with `npx mcp-remote http://HOST:8787/mcp`.
+- Under a subpath the endpoint is `<base>/mcp` ([subpath](subpath.md)). When projects live in browsers, an agent
+  reaches the projects of browsers that have a studio tab open; `?workspace=ws_…` on the URL (the Overview's command
+  adds it) names the browser whose projects it works on and where new ones go
+  ([browser storage](browser-storage.md#routing-on-the-server)).
 
 ```bash
 claude mcp add --transport http rideo http://localhost:8787/mcp \
@@ -59,6 +63,10 @@ or keep going and `job_wait` until a tab picks the job up.
 | `project_get` | `projectId`, `include?[]` | project snapshot (documents, active jobs, workflow evaluation) |
 | `project_update` | `projectId`, `title?`, `brief?`, `settings?` (deep-merged) | project |
 | `project_sync` | `projectId`, `discardInvalid?` | WebDAV sync report |
+| `project_export` | `projectId` | `{url}` of the project file to download with the agent's token ([project files](browser-storage.md#project-files-export-and-import)) |
+| `project_import` | `url` (http(s), downloaded by the server), `mode?` (`new`, `replace`, `copy`) | `{id, title, kind, mode, files, skipped}` |
+| `settings_get` | – | the studio settings view (secrets masked); administrators only ([settings](settings.md#surfaces)) |
+| `settings_update` | `values` (`{<ENV_NAME>: string \| null}`) | the new view with `{applied, changed}`; reloads the studio's services; administrators only |
 | `doc_get` | `projectId`, `path`, `at?` (commit) | raw document |
 | `workflow_status` | `projectId` | stage, gates, unmet requirements |
 | `workflow_approve` | `projectId`, `gate` | new stage (or `gate_unmet` with details) |

@@ -29,9 +29,10 @@ export function createEmbeddedDav(opts: { root: string; username?: string; passw
         !!url && (url === DAV_PREFIX || url.startsWith(`${DAV_PREFIX}/`) || url.startsWith(`${DAV_PREFIX}?`))
       );
     },
-    handle(req: IncomingMessage, res: ServerResponse): void {
+    /** Serves a request; `rootPath` is where clients see the server (`<base>/dav/`, docs/design/subpath.md). */
+    handle(req: IncomingMessage, res: ServerResponse, rootPath = `${DAV_PREFIX}/`): void {
       req.url = (req.url ?? '').slice(DAV_PREFIX.length) || '/';
-      server.executeRequest(req, res, `${DAV_PREFIX}/`);
+      server.executeRequest(req, res, rootPath);
     },
   };
 }

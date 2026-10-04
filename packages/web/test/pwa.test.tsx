@@ -6,7 +6,13 @@ import { MemoryRouter } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { InboxPage } from '../src/features/inbox/InboxPage';
 import { usePwa } from '../src/pwa/register';
-import { notificationOf, SHELL_FILES, strategyFor } from '../src/pwa/sw-strategy';
+import {
+  notificationOf,
+  SHELL_FILES,
+  shellUrls,
+  strategyFor,
+  workspaceMediaPath,
+} from '../src/pwa/sw-strategy';
 
 afterEach(() => {
   cleanup();
@@ -56,19 +62,48 @@ describe('the app shell (docs/design/pwa.md#the-app-shell)', () => {
   it('has a manifest an installable app needs, with its icons', () => {
     const pub = resolve(import.meta.dirname, '../public');
     const m = JSON.parse(readFileSync(resolve(pub, 'manifest.webmanifest'), 'utf8'));
+    // relative to the manifest, so the app installs under a subpath too (docs/design/subpath.md)
     expect(m).toMatchObject({
       name: 'Rideo Studio',
       short_name: 'Rideo',
-      start_url: '/',
+      start_url: './',
+      scope: './',
       display: 'standalone',
     });
     const sizes = m.icons.map((i: { sizes: string }) => i.sizes);
     expect(sizes).toEqual(expect.arrayContaining(['192x192', '512x512']));
     expect(m.icons.some((i: { purpose?: string }) => i.purpose === 'maskable')).toBe(true);
-    for (const icon of [...m.icons, ...m.shortcuts.flatMap((s: { icons: unknown[] }) => s.icons)])
-      expect(existsSync(resolve(pub, `.${(icon as { src: string }).src}`))).toBe(true);
-    for (const f of SHELL_FILES.filter((f) => f !== '/'))
-      expect(existsSync(resolve(pub, `.${f}`))).toBe(true);
+    for (const icon of [...m.icons, ...m.shortcuts.flatMap((s: { icons: unknown[] }) => s.icons)]) {
+      const src = (icon as { src: string }).src;
+      expect(src.startsWith('/')).toBe(false);
+      expect(existsSync(resolve(pub, src))).toBe(true);
+    }
+    for (const sc of m.shortcuts) expect(sc.url.startsWith('./')).toBe(true);
+    for (const f of SHELL_FILES.filter((f) => f !== './')) expect(existsSync(resolve(pub, f))).toBe(true);
+  });
+
+  it('answers under a subpath scope, and media of browser projects from the workspace', () => {
+    const scope = 'https://example.com/rideo/';
+    const at = (p: string) => new URL(p, 'https://example.com');
+    expect(strategyFor(at('/rideo/p/prj_1/editor'), scope, 'GET', 'navigate')).toBe('network-first-shell');
+    expect(strategyFor(at('/rideo/assets/index-abc.js'), scope, 'GET', 'no-cors')).toBe('cache-first');
+    expect(strategyFor(at('/rideo/api/projects'), scope, 'GET', 'cors')).toBe('network');
+    // other apps on the same origin are not the studio's
+    expect(strategyFor(at('/other/assets/x.js'), scope, 'GET', 'no-cors')).toBe('network');
+    const media = at('/rideo/api/projects/prj_0123456789ab/media/media/uploads/a%20b-0123.mp4?ws=ws_x');
+    expect(strategyFor(media, scope, 'GET', 'no-cors')).toBe('workspace-media');
+    expect(workspaceMediaPath(media, scope)).toBe('/projects/prj_0123456789ab/media/uploads/a b-0123.mp4');
+    expect(
+      workspaceMediaPath(at('/rideo/api/projects/prj_0123456789ab/media/project.json?ws=x'), scope),
+    ).toBeNull();
+    // URLs resolve dot segments (even encoded ones) themselves; encoded slashes are refused after decoding
+    expect(
+      workspaceMediaPath(at('/rideo/api/projects/prj_0123456789ab/media/a%2F..%2Fb?ws=x'), scope),
+    ).toBeNull();
+    expect(shellUrls(scope)).toContain('https://example.com/rideo/manifest.webmanifest');
+    const n = notificationOf({ title: 'x', link: '/p/prj_1/overview?review=rev_1' }, scope);
+    expect(n.options.data.link).toBe('/rideo/p/prj_1/overview?review=rev_1');
+    expect(n.options.icon).toBe('/rideo/icons/icon-192.png');
   });
 });
 

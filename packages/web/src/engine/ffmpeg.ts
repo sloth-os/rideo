@@ -4,6 +4,8 @@ import mtWasmURL from '@ffmpeg/core-mt/wasm?url';
 import mtWorkerURL from '@ffmpeg/core-mt/worker?url';
 import mtCoreURL from '@ffmpeg/core-mt?url';
 import { FFFSType, FFmpeg } from '@ffmpeg/ffmpeg';
+import classWorkerURL from '@ffmpeg/ffmpeg/worker?worker&url';
+import { VIDEO_FONT_URL } from './fonts';
 import { withThreads } from './threads';
 
 /**
@@ -22,8 +24,8 @@ export function canUseThreads(): boolean {
 
 export type FfmpegStatus = 'unloaded' | 'loading' | 'ready' | 'failed';
 
+/** Where drawtext finds the font inside ffmpeg's file system (fetched from the app's assets on load). */
 export const FONT_PATH = '/fonts/DejaVuSans.ttf';
-const FONT_URL = '/fonts/DejaVuSans.ttf';
 
 export interface RunOptions {
   /** Read-only inputs, visible to ffmpeg at `/in/<name>`. */
@@ -57,6 +59,25 @@ export class FfmpegError extends Error {
 }
 
 const abortError = () => new DOMException('The operation was cancelled', 'AbortError');
+
+const sameOriginUrls = new Map<string, Promise<string>>();
+
+/**
+ * A script a worker can run with this page's origin. The bundler of an app that embeds the studio may inline a small
+ * file (ffmpeg's worker, the core's thread worker) as a data: URL, whose opaque origin cannot load the core: such a
+ * script becomes a blob: URL of this origin (docs/design/embedding.md#package).
+ */
+export function sameOriginScript(url: string): Promise<string> {
+  if (!url.startsWith('data:')) return Promise.resolve(url);
+  let made = sameOriginUrls.get(url);
+  if (!made) {
+    made = fetch(url)
+      .then((res) => res.text())
+      .then((code) => URL.createObjectURL(new Blob([code], { type: 'text/javascript' })));
+    sameOriginUrls.set(url, made);
+  }
+  return made;
+}
 
 class FfmpegRuntime {
   private ff: FFmpeg | null = null;
@@ -92,11 +113,20 @@ class FfmpegRuntime {
         if (time > 0) this.onTime?.(time / 1_000_000);
       });
       const multi = canUseThreads();
+      // ffmpeg's worker is given explicitly, so it always runs with this page's origin (see sameOriginScript)
+      const worker = await sameOriginScript(classWorkerURL);
       await ff.load(
-        multi ? { coreURL: mtCoreURL, wasmURL: mtWasmURL, workerURL: mtWorkerURL } : { coreURL, wasmURL },
+        multi
+          ? {
+              classWorkerURL: worker,
+              coreURL: mtCoreURL,
+              wasmURL: mtWasmURL,
+              workerURL: await sameOriginScript(mtWorkerURL),
+            }
+          : { classWorkerURL: worker, coreURL, wasmURL },
       );
       this.threads = multi ? Math.max(2, Math.min(8, navigator.hardwareConcurrency || 2)) : 1;
-      const font = await fetch(FONT_URL);
+      const font = await fetch(VIDEO_FONT_URL);
       if (font.ok) {
         await ff.createDir('/fonts');
         await ff.writeFile(FONT_PATH, new Uint8Array(await font.arrayBuffer()));

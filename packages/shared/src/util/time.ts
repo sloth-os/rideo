@@ -20,3 +20,17 @@ export function formatTimecode(totalSec: number, fps: number): string {
 export function nowIso(): string {
   return new Date().toISOString();
 }
+
+/** Bytes as KB, MB, GB (decimal units, one decimal from MB up). */
+export function formatBytes(bytes: number): string {
+  const n = Math.max(0, bytes);
+  if (n < 1000) return `${Math.round(n)} B`;
+  const units = ['KB', 'MB', 'GB', 'TB'];
+  let v = n / 1000;
+  let u = 0;
+  while (v >= 1000 && u < units.length - 1) {
+    v /= 1000;
+    u++;
+  }
+  return `${u === 0 ? Math.round(v) : v.toFixed(1)} ${units[u]}`;
+}

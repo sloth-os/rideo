@@ -79,6 +79,46 @@ export const JOB_LANES: Record<JobKind, Lane> = {
   'export.finish': 'media',
 };
 
+/**
+ * What a job kind needs from mm-gateway (docs/design/settings.md#without-mm-gateway): `required` kinds fail at once
+ * with `gateway_not_configured` when the studio has no gateway; `optional` ones do less (rule-based suggestions,
+ * evenly spaced thumbnails, centered reframing, ffmpeg instead of an enhancement model); `none` never call it.
+ */
+export const JOB_GATEWAY: Record<JobKind, 'required' | 'optional' | 'none'> = {
+  'screenplay.generate': 'required',
+  'screenplay.extend': 'required',
+  'character.describe': 'required',
+  'character.refs': 'required',
+  'element.refs': 'required',
+  'voice.design': 'required',
+  'storyboard.generate': 'required',
+  'shot.board': 'required',
+  'take.edit': 'required',
+  'take.extend': 'required',
+  'timeline.extend': 'required',
+  'mask.generate': 'required',
+  'recipe.run': 'optional',
+  'voices.cast': 'required',
+  'search.index': 'required',
+  'clip.plan': 'required',
+  'clip.generate': 'required',
+  'shot.generate': 'required',
+  'shot.group': 'required',
+  'batch.generate': 'required',
+  'music.generate': 'required',
+  'score.generate': 'required',
+  'sfx.generate': 'required',
+  'localize.generate': 'required',
+  'export.prepare': 'optional',
+  'media.process': 'none',
+  'analysis.signals': 'none',
+  'analysis.suggest': 'optional',
+  'edit.auto': 'none',
+  'timeline.assemble': 'none',
+  'export.render': 'none',
+  'export.finish': 'optional',
+};
+
 export const EDITOR_JOB_KINDS = ['media.process', 'analysis.signals', 'export.render'] as const;
 export const EditorJobKindSchema = z.enum(EDITOR_JOB_KINDS);
 export type EditorJobKind = z.infer<typeof EditorJobKindSchema>;

@@ -10,6 +10,8 @@ import {
   AssembleInputSchema,
   BatchVariationsInputSchema,
   BoardApproveInputSchema,
+  BUNDLE_MIME,
+  BundleImportModeSchema,
   CharacterInputSchema,
   CharacterUpdateInputSchema,
   CloneVoiceInputSchema,
@@ -825,6 +827,33 @@ export function registerRoutes(app: FastifyInstance, studio: Studio): void {
 
   // Editor jobs (docs/design/editor.md#editor-jobs)
   app.addContentTypeParser('application/octet-stream', (_req, payload, done) => done(null, payload));
+
+  // Project files (docs/design/browser-storage.md#project-files-export-and-import)
+  app.get('/api/projects/:id/export', async (req, reply) => {
+    const out = await studio.bundles.export(pid(req));
+    return reply
+      .type(BUNDLE_MIME)
+      .header('content-length', out.size)
+      .header('cache-control', 'no-store')
+      .header(
+        'content-disposition',
+        `attachment; filename="${out.filename.replace(/[^\x20-\x7e]|"/g, '_')}"; filename*=UTF-8''${encodeURIComponent(out.filename)}`,
+      )
+      .send(out.stream);
+  });
+  app.post('/api/projects/import', { bodyLimit: 64 * 1024 ** 3 }, async (req, reply) => {
+    const q = parse(z.object({ mode: BundleImportModeSchema.optional() }), req.query);
+    const body = req.body as NodeJS.ReadableStream | undefined;
+    if (!body || typeof (body as { pipe?: unknown }).pipe !== 'function')
+      throw invalid('send the project file as application/octet-stream');
+    const tmp = studio.deps.media.tmp('tar');
+    try {
+      await pipeline(body, createWriteStream(tmp));
+      return reply.code(201).send(await studio.bundles.import(actor(), tmp, q.mode ?? 'new'));
+    } finally {
+      await rm(tmp, { force: true });
+    }
+  });
   const jobId = (req: FastifyRequest) =>
     parse(z.object({ jobId: z.string().regex(/^job_[0-9a-z]+$/) }), req.params).jobId;
   // Editor jobs edit their project (docs/design/accounts.md): the project is in the body or the job.

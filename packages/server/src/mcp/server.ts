@@ -46,6 +46,7 @@ import {
   ScriptFormatSchema,
   SearchKindSchema,
   SearchQuerySchema,
+  SettingsUpdateInputSchema,
   StartFrameSchema,
   slugify,
   sortedClips,
@@ -1267,6 +1268,58 @@ function buildServer(studio: Studio): McpServer {
     { projectId: PROJECT },
     (a) => studio.search.status(a.projectId),
     ro,
+  );
+
+  // Studio settings (docs/design/settings.md#surfaces): administrators only, the same service as the Settings page
+  const settingsService = () => {
+    if (!studio.settings) throw new Error('settings are not available');
+    return studio.settings;
+  };
+  tool(
+    'settings_get',
+    "The studio's settings (docs/design/settings.md): every setting by its environment variable with its value (secrets masked), where it comes from (env, settings, default) and whether the environment locks it; where projects are stored and whether mm-gateway is connected. Administrators only.",
+    {},
+    async () => settingsService().view(currentPrincipal()),
+    ro,
+  );
+  tool(
+    'settings_update',
+    'Change studio settings by environment variable name (a string sets, null clears back to the default; omitted keys keep their value). Validated like the environment; applied at once by reloading the studio (running jobs resume). Settings set in the environment cannot be changed (setting_locked). Administrators only.',
+    { values: z.record(z.string(), z.string().nullable()) },
+    async (a) => settingsService().update(currentPrincipal(), SettingsUpdateInputSchema.parse(a)),
+  );
+
+  // Project files (docs/design/browser-storage.md#project-files-export-and-import)
+  tool(
+    'project_export',
+    'A download URL of the project as a project file (.rideo: a tar of its documents, history and media) to keep a copy or move it to another studio or browser. Fetch it with your token.',
+    { projectId: PROJECT },
+    async (a) => {
+      await studio.deps.projects.existing(a.projectId);
+      return {
+        url: `${studio.config.publicUrl}/api/projects/${a.projectId}/export`,
+        format: 'rideo-project (POSIX tar)',
+      };
+    },
+    ro,
+  );
+  tool(
+    'project_import',
+    'Import a project file (.rideo) from an http(s) URL the server can download. mode: new (default; fails with conflict when the project is already here), replace (the existing one goes to the trash), copy (a new id and a copied history). Returns {id, title, kind, mode, files, skipped}.',
+    {
+      url: z.string().url().describe('http(s) URL of the .rideo file'),
+      mode: z.enum(['new', 'replace', 'copy']).optional(),
+    },
+    async (a, actor) => {
+      if (!/^https?:\/\//i.test(a.url)) throw invalid('an http:// or https:// URL');
+      const tmp = studio.deps.media.tmp('tar');
+      try {
+        await studio.deps.media.downloadTo(a.url, tmp);
+        return await studio.bundles.import(actor, tmp, a.mode ?? 'new');
+      } finally {
+        await rm(tmp, { force: true });
+      }
+    },
   );
 
   // Brand kits (docs/design/brand-kits.md)

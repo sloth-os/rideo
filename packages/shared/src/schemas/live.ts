@@ -76,6 +76,64 @@ export const UiCommandSchema = z.object({
 });
 export type UiCommand = z.infer<typeof UiCommandSchema>;
 
+/** A browser's project store (docs/design/browser-storage.md#workspaces). */
+export const WorkspaceIdSchema = z
+  .string()
+  .regex(/^ws_[0-9a-z]{26}$/, 'a workspace id (ws_ and 26 characters)');
+export type WorkspaceId = z.infer<typeof WorkspaceIdSchema>;
+
+/** Payloads up to this size travel inside the socket's messages; larger ones over HTTP transfers. */
+export const STORAGE_INLINE_MAX = 256 * 1024;
+
+/** A path inside a workspace: relative to the studio's root, absolute-looking, no `.` or `..` segments. */
+export const WorkspacePathSchema = z
+  .string()
+  .min(1)
+  .max(1024)
+  .refine((p) => p.startsWith('/') && !p.split('/').some((s) => s === '.' || s === '..'), 'a workspace path');
+
+export const STORAGE_OPS = ['read', 'stat', 'list', 'write', 'delete', 'move'] as const;
+export type StorageOp = (typeof STORAGE_OPS)[number];
+
+/** A storage operation the server asks a workspace's tab to perform (docs/design/browser-storage.md#the-protocol). */
+export const StorageRequestSchema = z.object({
+  type: z.literal('storage'),
+  id: z.string().min(1).max(64),
+  op: z.enum(STORAGE_OPS),
+  path: WorkspacePathSchema,
+  /** `move`: the destination. */
+  to: WorkspacePathSchema.optional(),
+  /** `read`: a byte range (inclusive). */
+  range: z
+    .object({ start: z.number().int().nonnegative(), end: z.number().int().nonnegative().optional() })
+    .optional(),
+  /** `write`: the bytes (base64), up to STORAGE_INLINE_MAX. */
+  data: z.string().optional(),
+  /** `write`: fetch the bytes from `GET /api/workspace/transfers/<transfer>`. */
+  transfer: z.string().min(1).max(64).optional(),
+  size: z.number().int().nonnegative().optional(),
+  ifMatch: z.string().max(200).optional(),
+  ifNoneMatch: z.literal('*').optional(),
+  contentType: z.string().max(200).optional(),
+});
+export type StorageRequest = z.infer<typeof StorageRequestSchema>;
+
+/** A workspace's answer to a storage operation. */
+export const StorageResultSchema = z.object({
+  type: z.literal('storage-result'),
+  id: z.string().min(1).max(64),
+  ok: z.boolean(),
+  /** `stat`: Stat | null; `list`: Entry[]; `read`: {size, start, end} | null; `write`: {etag}. */
+  result: z.unknown().optional(),
+  /** `read`: the bytes (base64), when they fit. */
+  data: z
+    .string()
+    .max(Math.ceil((STORAGE_INLINE_MAX * 4) / 3) + 8)
+    .optional(),
+  error: z.object({ code: z.string().max(64), message: z.string().max(2000) }).optional(),
+});
+export type StorageResult = z.infer<typeof StorageResultSchema>;
+
 export const ServerMessageSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('hello'),
@@ -95,6 +153,14 @@ export const ServerMessageSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('error'), message: z.string() }),
   /** For the signed-in person (docs/design/review.md#notifications). */
   z.object({ type: z.literal('notification'), notification: NotificationSchema }),
+  /** Browser storage (docs/design/browser-storage.md#the-protocol). */
+  StorageRequestSchema,
+  /** The server has listed the workspace's projects: it serves them now. */
+  z.object({
+    type: z.literal('workspace-ready'),
+    workspaceId: WorkspaceIdSchema,
+    projects: z.number().int(),
+  }),
 ]);
 export type ServerMessage = z.infer<typeof ServerMessageSchema>;
 
@@ -130,6 +196,19 @@ export const ClientMessageSchema = z.discriminatedUnion('type', [
     error: z.string().optional(),
   }),
   z.object({ type: z.literal('ping') }),
+  /**
+   * This tab serves a browser workspace (docs/design/browser-storage.md#the-protocol); `changed` names projects the
+   * browser changed by itself (an import), so the server reads them afresh.
+   */
+  z.object({
+    type: z.literal('workspace'),
+    workspaceId: WorkspaceIdSchema,
+    changed: z
+      .array(z.string().regex(/^prj_[0-9a-z]{10,32}$/))
+      .max(100)
+      .optional(),
+  }),
+  StorageResultSchema,
 ]);
 export type ClientMessage = z.infer<typeof ClientMessageSchema>;
 

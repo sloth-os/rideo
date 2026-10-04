@@ -1,5 +1,16 @@
-import { useEffect } from 'react';
-import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router';
+import type { Theme } from '@rideo/shared';
+import { type RefObject, useEffect, useRef } from 'react';
+import {
+  BrowserRouter,
+  HashRouter,
+  MemoryRouter,
+  Navigate,
+  Route,
+  Routes,
+  useLocation,
+  useNavigate,
+} from 'react-router';
+import { ThemeRoot } from './components/ThemeRoot';
 import { Toaster } from './components/Toaster';
 import { Spinner } from './components/ui';
 import { AdminPage } from './features/account/AdminPage';
@@ -9,11 +20,12 @@ import { TokensPage } from './features/account/TokensPage';
 import { Dashboard } from './features/dashboard/Dashboard';
 import { InboxPage } from './features/inbox/InboxPage';
 import { GuestReviewPage } from './features/review/GuestReviewPage';
+import { SettingsPage } from './features/settings/SettingsPage';
 import { VerifyPage } from './features/verify/VerifyPage';
 import { Workspace } from './features/workspace/Workspace';
 import { loginUrl, useAuth } from './lib/auth';
 import { LiveBridge } from './lib/live-bridge';
-import { useUi } from './store/ui';
+import { getRuntime } from './lib/runtime';
 
 /** With accounts, everything but sign-in and verification needs a signed-in person (docs/design/accounts.md). */
 function Signed({ children }: { children: React.ReactNode }) {
@@ -36,18 +48,64 @@ function Live() {
   return location.pathname.startsWith('/review/') ? null : <LiveBridge />;
 }
 
-export function App() {
-  const theme = useUi((s) => s.theme);
-  const load = useAuth((s) => s.load);
+/** How the studio routes (docs/design/embedding.md#options). */
+export interface StudioRouting {
+  mode?: 'browser' | 'hash' | 'memory';
+  basename?: string;
+  initialPath?: string;
+}
+
+/** The host's handle on the router: navigate from outside, hear every route change. */
+function RouterBridge({
+  navigatorRef,
+  onNavigate,
+}: {
+  navigatorRef?: RefObject<((path: string) => void) | null>;
+  onNavigate?: (path: string) => void;
+}) {
+  const navigate = useNavigate();
+  const location = useLocation();
+  // the latest callback, so a host passing a new function on each render hears each route change once
+  const heard = useRef(onNavigate);
+  heard.current = onNavigate;
   useEffect(() => {
-    document.documentElement.dataset.theme = theme;
-  }, [theme]);
+    if (navigatorRef) navigatorRef.current = (path) => void navigate(path);
+  }, [navigate, navigatorRef]);
+  useEffect(() => {
+    heard.current?.(location.pathname + location.search);
+  }, [location.pathname, location.search]);
+  return null;
+}
+
+/**
+ * The whole studio: its routes inside a router of the chosen kind, in its themed root (docs/design/embedding.md).
+ * The standalone app is this with the browser's URL under the page's base (docs/design/subpath.md).
+ */
+export function Studio({
+  routing = {},
+  theme,
+  chrome,
+  embedded = false,
+  navigatorRef,
+  onNavigate,
+}: {
+  routing?: StudioRouting;
+  theme?: Theme | null;
+  chrome?: { header?: boolean };
+  embedded?: boolean;
+  navigatorRef?: RefObject<((path: string) => void) | null>;
+  onNavigate?: (path: string) => void;
+}) {
+  const load = useAuth((s) => s.load);
   useEffect(() => {
     void load();
   }, [load]);
-  return (
-    <BrowserRouter>
+  const mode = routing.mode ?? 'browser';
+  const basename = routing.basename?.replace(/\/+$/, '') || undefined;
+  const routes = (
+    <>
       <Live />
+      <RouterBridge navigatorRef={navigatorRef} onNavigate={onNavigate} />
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/review/:token" element={<GuestReviewPage />} />
@@ -85,6 +143,14 @@ export function App() {
           }
         />
         <Route
+          path="/settings"
+          element={
+            <Signed>
+              <SettingsPage />
+            </Signed>
+          }
+        />
+        <Route
           path="/inbox"
           element={
             <Signed>
@@ -118,6 +184,22 @@ export function App() {
         />
       </Routes>
       <Toaster />
-    </BrowserRouter>
+    </>
   );
+  return (
+    <ThemeRoot theme={theme} chrome={chrome} embedded={embedded}>
+      {mode === 'memory' ? (
+        <MemoryRouter initialEntries={[routing.initialPath ?? '/']}>{routes}</MemoryRouter>
+      ) : mode === 'hash' ? (
+        <HashRouter>{routes}</HashRouter>
+      ) : (
+        <BrowserRouter basename={basename}>{routes}</BrowserRouter>
+      )}
+    </ThemeRoot>
+  );
+}
+
+/** The standalone studio, under the base the server wrote into the page (docs/design/subpath.md). */
+export function App() {
+  return <Studio routing={{ mode: 'browser', basename: getRuntime().routerBase }} />;
 }

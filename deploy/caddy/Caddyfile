@@ -1,0 +1,19 @@
+# Rideo under https://example.com/rideo/ (docs/design/subpath.md).
+# Set RIDEO_PUBLIC_URL=https://example.com/rideo on Rideo so links that leave the browser carry the subpath.
+example.com {
+	# the bare prefix goes to the studio's page
+	redir /rideo /rideo/ 308
+
+	# handle_path strips /rideo; X-Forwarded-Prefix tells Rideo where it lives
+	handle_path /rideo/* {
+		reverse_proxy 127.0.0.1:8787 {
+			header_up X-Forwarded-Prefix /rideo
+			# stream media, uploads and the live channel as they come
+			flush_interval -1
+			transport http {
+				read_timeout 1h
+				write_timeout 1h
+			}
+		}
+	}
+}

@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { assetUrl, getRuntime } from '../lib/runtime';
 
 /** The installable app's state in this tab (docs/design/pwa.md#the-app-shell). */
 interface PwaState {
@@ -47,8 +48,9 @@ export function startPwa(): void {
   window.addEventListener('appinstalled', () => usePwa.setState({ installable: false, install: null }));
   window.addEventListener('online', () => usePwa.setState({ offline: false }));
   window.addEventListener('offline', () => usePwa.setState({ offline: true }));
+  // Next to the app, scoped to its base: the app works under a subpath (docs/design/subpath.md).
   if (import.meta.env.PROD && 'serviceWorker' in navigator)
-    navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch((err) => {
+    navigator.serviceWorker.register(assetUrl('sw.js'), { scope: getRuntime().assetBase }).catch((err) => {
       console.warn('service worker not registered', err);
     });
 }

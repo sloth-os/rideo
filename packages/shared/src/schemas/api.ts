@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { AuditEventTypeSchema } from './accounts';
 import { EditSuggestionSchema } from './analysis';
 import { CharacterRoleSchema, ConsentInputSchema, IdentitySchema, ReferenceViewSchema } from './character';
 import {
@@ -393,19 +394,7 @@ export const AuditQueryInputSchema = z.object({
   until: z.string().max(40).optional(),
   projectId: IdSchema.optional(),
   actor: z.string().max(128).optional(),
-  type: z
-    .enum([
-      'auth.login',
-      'auth.logout',
-      'auth.failed',
-      'auth.denied',
-      'token.created',
-      'token.revoked',
-      'user.updated',
-      'project.access',
-      'project.approval',
-    ])
-    .optional(),
+  type: AuditEventTypeSchema.optional(),
   limit: z.coerce.number().int().min(1).max(1000).optional(),
 });
 

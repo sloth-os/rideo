@@ -190,6 +190,36 @@ export class Metrics {
     new Counter('rideo_post_audio_total', 'Post-audio operations (score_cue, sfx, loudness) by outcome'),
   );
 
+  /** Settings changes applied by reloading the studio (docs/design/settings.md#applying-a-change), by result. */
+  readonly settingsReloads = this.add(
+    new Counter('rideo_settings_reloads_total', 'Studio reloads after a settings change, by result'),
+  );
+  /** Browser storage (docs/design/browser-storage.md): operations sent to workspaces, by op and outcome. */
+  readonly workspaceOps = this.add(
+    new Counter(
+      'rideo_workspace_storage_ops_total',
+      'Storage operations served by browser workspaces, by op and outcome',
+    ),
+  );
+  /** Browser storage: bytes moved between the server and workspaces, by direction. */
+  readonly workspaceBytes = this.add(
+    new Counter(
+      'rideo_workspace_storage_bytes_total',
+      'Bytes moved to (write) and from (read) browser workspaces',
+    ),
+  );
+  /** Browser storage: workspaces with at least one attached tab. */
+  readonly workspaces = this.add(
+    new Gauge('rideo_workspaces_attached', 'Browser workspaces with an attached tab'),
+  );
+  /** Project files (docs/design/browser-storage.md#project-files-export-and-import), by direction and outcome. */
+  readonly bundles = this.add(
+    new Counter(
+      'rideo_project_bundles_total',
+      'Project files exported and imported, by direction and outcome',
+    ),
+  );
+
   add<M extends Metric>(m: M): M {
     this.all.push(m);
     return m;

@@ -43,12 +43,18 @@ import type {
   SearchKind,
   SearchResponse,
   SearchStatus,
+  SettingsTestResult,
+  SettingsView,
   TagInfo,
+  Theme,
   Timeline,
   TimelineOp,
   TokenInfo,
   WorkflowEvaluation,
 } from '@rideo/shared';
+
+import { workspaceEnabled, workspaceId } from '../workspace/id';
+import { apiUrl, getRuntime } from './runtime';
 
 export interface ProblemDetails {
   type: string;
@@ -95,8 +101,17 @@ export interface PublicConfig {
   version: string;
   brand: { name: string; owner: string; url: string };
   user: { id: string; name: string };
+  /** The base path the studio is served under (docs/design/subpath.md). */
+  basePath?: string;
+  /** The studio theme (docs/design/embedding.md#themes). */
+  theme?: Theme | null;
   features: {
     mcp: boolean;
+    /** mm-gateway is configured: AI features are on (docs/design/settings.md#without-mm-gateway). */
+    gateway?: boolean;
+    ai?: boolean;
+    /** Where projects are stored (docs/design/browser-storage.md). */
+    storage?: 'browser' | 'webdav' | 'embedded';
     embeddedDav: boolean;
     davUrl: string | null;
     webdavRoot: string;
@@ -110,18 +125,30 @@ export interface PublicConfig {
     /** NLE hand-off: the WebDAV root as clients reach it (docs/design/interchange.md). */
     interchange?: { mediaBase: string };
   };
-  llm: { provider: string; model: string; vision: string };
+  llm: { provider: string; model: string; vision: string } | null;
   models: Record<'image' | 'video' | 'music', { id: string; limits?: Record<string, unknown> | null }[]>;
 }
 
 const TOKEN_KEY = 'rideo.token';
 
 export function getToken(): string | null {
+  // A host page embedding the studio may pass its own token (docs/design/embedding.md#options).
+  const given = getRuntime().token;
+  if (given !== undefined) return typeof given === 'function' ? given() : given;
   try {
     return localStorage.getItem(TOKEN_KEY);
   } catch {
     return null;
   }
+}
+
+/** Query of URLs elements load (they send no headers): the token, and the workspace in browser storage. */
+function access(q = new URLSearchParams()): string {
+  const token = getToken();
+  if (token) q.set('token', token);
+  if (workspaceEnabled()) q.set('ws', workspaceId());
+  const qs = q.toString();
+  return qs ? `?${qs}` : '';
 }
 
 export function setToken(token: string | null): void {
@@ -148,13 +175,15 @@ async function request<T>(
   const token = getToken();
   const isForm = typeof FormData !== 'undefined' && body instanceof FormData;
   const isBlob = typeof Blob !== 'undefined' && body instanceof Blob;
-  const res = await fetch(`/api${path}`, {
+  const res = await fetch(apiUrl(path), {
     method,
     headers: {
       ...(body !== undefined && !isForm
         ? { 'content-type': isBlob ? 'application/octet-stream' : 'application/json' }
         : {}),
       ...(token ? { authorization: `Bearer ${token}` } : {}),
+      // Browser storage (docs/design/browser-storage.md#routing-on-the-server): which browser asks
+      'x-rideo-workspace': workspaceId(),
       ...headers,
     },
     body:
@@ -185,19 +214,16 @@ async function request<T>(
 
 /** A download of the shot list (the token rides in the query like media URLs). */
 export function shotListUrl(projectId: string, format: 'csv' | 'pdf'): string {
-  const token = getToken();
-  return `/api/projects/${projectId}/shotlist.${format}${token ? `?token=${encodeURIComponent(token)}` : ''}`;
+  return apiUrl(`/projects/${projectId}/shotlist.${format}${access()}`);
 }
 
 export function mediaUrl(projectId: string, path: string): string {
-  const token = getToken();
-  return `/api/projects/${projectId}/media/${path}${token ? `?token=${encodeURIComponent(token)}` : ''}`;
+  return apiUrl(`/projects/${projectId}/media/${path}${access()}`);
 }
 
 /** A brand kit's file (the Brand kits page); the token rides in the query like media URLs. */
 export function brandFileUrl(kitId: string, file: string): string {
-  const token = getToken();
-  return `/api/brand-kits/${kitId}/files/${file}${token ? `?token=${encodeURIComponent(token)}` : ''}`;
+  return apiUrl(`/brand-kits/${kitId}/files/${file}${access()}`);
 }
 
 /** The cut as an NLE file (docs/design/interchange.md#surfaces); the token rides in the query like media URLs. */
@@ -209,20 +235,19 @@ export function interchangeUrl(
   const q = new URLSearchParams();
   if (opts.mediaBase?.trim()) q.set('mediaBase', opts.mediaBase.trim());
   if (opts.source && opts.source !== 'timeline') q.set('source', opts.source);
-  const token = getToken();
-  if (token) q.set('token', token);
-  const qs = q.toString();
-  return `/api/projects/${projectId}/interchange.${format}${qs ? `?${qs}` : ''}`;
+  return apiUrl(`/projects/${projectId}/interchange.${format}${access(q)}`);
 }
 
 /** The cut's subtitles, in a language when given (docs/design/localization.md#subtitle-files). */
 export function subtitlesUrl(projectId: string, format: 'srt' | 'vtt', language?: string): string {
   const q = new URLSearchParams();
   if (language) q.set('language', language);
-  const token = getToken();
-  if (token) q.set('token', token);
-  const qs = q.toString();
-  return `/api/projects/${projectId}/subtitles.${format}${qs ? `?${qs}` : ''}`;
+  return apiUrl(`/projects/${projectId}/subtitles.${format}${access(q)}`);
+}
+
+/** The project as a project file, built by the server (docs/design/browser-storage.md#project-files-export-and-import). */
+export function projectExportUrl(projectId: string): string {
+  return apiUrl(`/projects/${projectId}/export${access()}`);
 }
 
 const p = (id: string) => `/projects/${id}`;
@@ -230,6 +255,25 @@ const p = (id: string) => `/projects/${id}`;
 /** Typed REST client (docs/api/rest.md). */
 export const api = {
   config: () => request<PublicConfig>('GET', '/config'),
+  // Studio settings (docs/design/settings.md#surfaces)
+  settings: () => request<SettingsView>('GET', '/settings'),
+  updateSettings: (values: Record<string, string | null>) =>
+    request<SettingsView & { applied: boolean; changed: string[] }>('PUT', '/settings', { values }),
+  testSettings: (target: 'webdav' | 'gateway', values: Record<string, string | null>) =>
+    request<SettingsTestResult>('POST', '/settings/test', { target, values }),
+  // Project files (docs/design/browser-storage.md#project-files-export-and-import)
+  importProject: (file: Blob, mode: 'new' | 'replace' | 'copy' = 'new') =>
+    request<{
+      id: string;
+      title: string;
+      kind: 'story' | 'edit';
+      mode: string;
+      files: number;
+      skipped: string[];
+    }>('POST', `/projects/import?mode=${mode}`, file),
+  /** Before importing by itself: whether the id is taken by a project the server knows in another browser. */
+  projectIdTaken: (projectId: string) =>
+    request<{ elsewhere: boolean }>('GET', `/workspace/projects/${projectId}`),
   projects: () => request<ProjectSummary[]>('GET', '/projects'),
   createProject: (body: {
     kind: 'story' | 'edit';
@@ -522,10 +566,11 @@ export const api = {
   editorHeartbeatRequest: (jobId: string) => {
     const token = getToken();
     return {
-      url: `/api/editor/jobs/${jobId}/heartbeat`,
+      url: apiUrl(`/editor/jobs/${jobId}/heartbeat`),
       headers: {
         'content-type': 'application/json',
         ...(token ? { authorization: `Bearer ${token}` } : {}),
+        'x-rideo-workspace': workspaceId(),
       },
     };
   },
@@ -671,7 +716,7 @@ export interface GuestReview {
 }
 
 export function guestMediaUrl(token: string, path: string): string {
-  return `/api/review/${token}/media/${path}`;
+  return apiUrl(`/review/${token}/media/${path}`);
 }
 
 export interface WatermarkDetection {

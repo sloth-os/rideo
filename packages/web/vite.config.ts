@@ -4,7 +4,9 @@ import { defineConfig } from 'vite';
 
 const target = process.env.RIDEO_API_URL ?? 'http://127.0.0.1:8787';
 
-export default defineConfig({
+export default defineConfig(({ command }) => ({
+  // Built with a relative base: the server writes the studio's base path into every page (docs/design/subpath.md)
+  base: command === 'build' ? './' : '/',
   plugins: [react(), tailwindcss()],
   server: {
     port: 5173,
@@ -37,4 +39,4 @@ export default defineConfig({
       },
     },
   },
-});
+}));

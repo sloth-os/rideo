@@ -30,6 +30,9 @@ const STATUS: Record<ErrorCode, number> = {
   performance_unavailable: 422,
   localization_incomplete: 409,
   board_unapprovable: 409,
+  setting_locked: 409,
+  gateway_not_configured: 409,
+  storage_offline: 503,
   internal_error: 500,
 };
 

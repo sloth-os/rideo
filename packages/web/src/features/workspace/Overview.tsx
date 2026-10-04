@@ -5,7 +5,18 @@ import {
   type ProjectSettings,
   workflowFor,
 } from '@rideo/shared';
-import { Bot, Check, CircleAlert, Copy, FolderSync, RotateCcw, Settings2, X } from 'lucide-react';
+import {
+  Bot,
+  Check,
+  CircleAlert,
+  Copy,
+  Download,
+  FolderSync,
+  HardDrive,
+  RotateCcw,
+  Settings2,
+  X,
+} from 'lucide-react';
 import { useState } from 'react';
 import { JobRow } from '../../components/JobProgress';
 import {
@@ -23,8 +34,11 @@ import { WorkflowStepper } from '../../components/WorkflowStepper';
 import { api } from '../../lib/api';
 import { useProjectRole } from '../../lib/auth';
 import { useConfig } from '../../lib/config';
+import { serverUrl } from '../../lib/runtime';
 import { useProject } from '../../store/project';
 import { reportError, useUi } from '../../store/ui';
+import { workspaceEnabled, workspaceId } from '../../workspace';
+import { exportProject } from '../dashboard/ProjectFiles';
 import { ReviewsCard } from '../review/ReviewsCard';
 import { BrandCard } from './BrandCard';
 import { MembersCard } from './MembersCard';
@@ -330,7 +344,19 @@ export function Overview() {
       setBusy(null);
     }
   };
-  const mcp = `claude mcp add --transport http rideo ${location.origin}/mcp`;
+  // Under a subpath, and naming this browser when it keeps the projects (docs/design/browser-storage.md).
+  const inBrowser = cfg?.features.storage === 'browser' || workspaceEnabled();
+  const mcp = `claude mcp add --transport http rideo ${serverUrl('mcp')}${inBrowser ? `?workspace=${workspaceId()}` : ''}`;
+  const exportFile = (
+    <Button
+      size="sm"
+      icon={<Download className="size-3.5" />}
+      onClick={() => void exportProject({ id: projectId, title: project.title }).catch(reportError)}
+      data-testid="overview-export"
+    >
+      Export project file
+    </Button>
+  );
   const folder = `${cfg?.features.webdavRoot ?? '/rideo'}/projects/${projectId}/`;
   return (
     <div className="mx-auto max-w-5xl space-y-5">
@@ -501,44 +527,62 @@ export function Overview() {
         <ReviewsCard docs={docs} />
         <RecipesCard />
         <BrandCard project={docs.project} />
-        <Card className="p-4">
-          <div className="mb-2 flex items-center gap-2 font-medium">
-            <FolderSync className="size-4 text-muted" /> Assets on WebDAV
-          </div>
-          <p className="text-[13px] text-muted">
-            Mount the share in Finder or Explorer; edits and files dropped into <code>inbox/</code> sync back
-            here.
-          </p>
-          <div className="mt-2 font-mono text-[12px] break-all text-muted" data-testid="webdav-folder">
-            {cfg?.features.davUrl ? `${cfg.features.davUrl.replace(/\/$/, '')}${folder}` : folder}
-          </div>
-          <Button
-            size="sm"
-            className="mt-3"
-            icon={<FolderSync className="size-3.5" />}
-            onClick={() =>
-              api
-                .sync(projectId)
-                .then((r) =>
-                  useUi
-                    .getState()
-                    .toast(`Synced: ${r.changed.length} changed, ${r.imported.length} imported`, 'success'),
-                )
-                .catch(reportError)
-            }
-          >
-            Sync now
-          </Button>
-          {syncIssues.length ? (
-            <ul className="mt-3 space-y-1">
-              {syncIssues.map((i) => (
-                <li key={i.path} className="flex gap-2 text-[12px] text-warning">
-                  <CircleAlert className="mt-0.5 size-3.5 shrink-0" /> {i.path}: {i.error}
-                </li>
-              ))}
-            </ul>
-          ) : null}
-        </Card>
+        {inBrowser ? (
+          <Card className="p-4" data-testid="browser-project-card">
+            <div className="mb-2 flex items-center gap-2 font-medium">
+              <HardDrive className="size-4 text-warning" /> Stored in this browser
+            </div>
+            <p className="text-[13px] text-muted">
+              Its documents, history and media are in this browser. Export a project file to keep a copy or to
+              open it in another browser or studio.
+            </p>
+            <div className="mt-3">{exportFile}</div>
+          </Card>
+        ) : (
+          <Card className="p-4">
+            <div className="mb-2 flex items-center gap-2 font-medium">
+              <FolderSync className="size-4 text-muted" /> Assets on WebDAV
+            </div>
+            <p className="text-[13px] text-muted">
+              Mount the share in Finder or Explorer; edits and files dropped into <code>inbox/</code> sync
+              back here.
+            </p>
+            <div className="mt-2 font-mono text-[12px] break-all text-muted" data-testid="webdav-folder">
+              {cfg?.features.davUrl ? `${cfg.features.davUrl.replace(/\/$/, '')}${folder}` : folder}
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {exportFile}
+              <Button
+                size="sm"
+                icon={<FolderSync className="size-3.5" />}
+                onClick={() =>
+                  api
+                    .sync(projectId)
+                    .then((r) =>
+                      useUi
+                        .getState()
+                        .toast(
+                          `Synced: ${r.changed.length} changed, ${r.imported.length} imported`,
+                          'success',
+                        ),
+                    )
+                    .catch(reportError)
+                }
+              >
+                Sync now
+              </Button>
+            </div>
+            {syncIssues.length ? (
+              <ul className="mt-3 space-y-1">
+                {syncIssues.map((i) => (
+                  <li key={i.path} className="flex gap-2 text-[12px] text-warning">
+                    <CircleAlert className="mt-0.5 size-3.5 shrink-0" /> {i.path}: {i.error}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </Card>
+        )}
       </div>
       <div className="flex flex-wrap gap-2 text-[12px] text-muted">
         <Badge>{project.settings.aspectRatio}</Badge>

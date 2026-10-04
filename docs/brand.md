@@ -6,9 +6,11 @@ actions and the playhead.
 
 ## Tokens
 
-Defined as CSS custom properties in `packages/web/src/styles/tokens.css` and exposed to Tailwind v4 via
-`@theme`. Light mode swaps the values under `[data-theme="light"]`. The default follows
-`prefers-color-scheme`.
+Defined as CSS custom properties in `packages/web/src/styles/index.css` (and as data in
+`packages/shared/src/theme`, `BRAND_TOKENS`) and exposed to Tailwind v4 via `@theme`. Light mode swaps the values under
+`[data-theme="light"]`. The default follows `prefers-color-scheme`. A **theme** (the studio's, set in Settings →
+Appearance, or a host app's, given to the library) overrides any of them on the studio's root element; see
+[themes](design/embedding.md#themes).
 
 | Token | Dark | Light | Use |
 |---|---|---|---|

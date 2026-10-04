@@ -45,6 +45,13 @@ Errors are RFC 9457 problem details (`application/problem+json`) with a stable `
 | `consent_required` | 422 | an uploaded reference or voice sample of a real person lacks its consent record ([provenance](../design/provenance.md#consent-records)) |
 | `unauthorized` | 401 | not signed in, or a missing, wrong, revoked or expired token |
 | `forbidden` | 403 | the caller's role in the project does not allow it, or an admin-only route |
+| `setting_locked` | 409 | a setting set in the environment cannot be changed in Settings ([settings](../design/settings.md#surfaces)) |
+| `gateway_not_configured` | 409 | work that needs mm-gateway while none is configured ([without mm-gateway](../design/settings.md#without-mm-gateway)) |
+| `storage_offline` | 503 | the project is kept in a browser that has no tab open (retryable; [browser storage](../design/browser-storage.md#routing-on-the-server)) |
+
+Under a subpath every path below starts with the base path, e.g. `/rideo/api/projects` ([subpath](../design/subpath.md)).
+When projects live in browsers, the app names its browser on every call with `x-rideo-workspace: ws_…` (and `?ws=` on
+media URLs); see [browser storage](../design/browser-storage.md#routing-on-the-server).
 
 ## System
 
@@ -52,8 +59,29 @@ Errors are RFC 9457 problem details (`application/problem+json`) with a stable `
 |---|---|---|
 | GET | `/api/health` | `{status: "ok", version, instanceId}` |
 | GET | `/api/ready` | `{status, checks: {storage, gateway, ffmpeg, llm}}` |
-| GET | `/api/config` | public config: brand, features (`mcp`, `embeddedDav`, `judge`, `stt`), defaults, model catalogue from the gateway |
+| GET | `/api/config` | public config: brand, `basePath`, `theme`, features (`mcp`, `gateway`, `ai`, `storage`, `embeddedDav`, `judge`, `stt`, …), defaults, model catalogue from the gateway (empty without one), `llm` (null without a gateway) |
 | GET | `/metrics` | Prometheus text |
+
+## Settings
+
+Administrators only: the studio principal (no accounts, or the studio token) and studio admins; never agent tokens
+(403). See [settings](../design/settings.md#surfaces).
+
+| Method | Path | Body | Result |
+|---|---|---|---|
+| GET | `/api/settings` | – | `SettingsView`: `{fields: {<ENV_NAME>: {value, source, locked, set}}, storage, gateway, updatedAt, updatedBy, error, runningJobs}`; secrets have `value: null` |
+| PUT | `/api/settings` | `{values: {<ENV_NAME>: string \| null}}` | the new view with `{applied, changed}`; applied at once (the studio's services reload); `409 setting_locked`, `422 validation_error` with `errors[{path: <ENV_NAME>, message}]`, or 422 when the studio could not start with them (rolled back) |
+| POST | `/api/settings/test` | `{target: "webdav" \| "gateway", values}` | `{ok, detail, models?}`; nothing is saved |
+
+## Browser storage
+
+See [browser storage](../design/browser-storage.md#the-protocol).
+
+| Method | Path | Body / headers | Result |
+|---|---|---|---|
+| GET | `/api/workspace/transfers/:id` | – | the bytes of a write the server sent to this browser (once) |
+| PUT | `/api/workspace/transfers/:id` | the bytes of a read (`application/octet-stream`), `x-rideo-size`, `x-rideo-range: start-end` | `204` |
+| GET | `/api/workspace/projects/:projectId` | – | `{elsewhere}`: whether the server knows the id in another browser or its data directory (before a browser imports a project file by itself) |
 
 ## Accounts
 
@@ -175,7 +203,9 @@ review does not show is `403 forbidden`.
 | POST | `/api/projects` | `{kind, title, brief?: {prompt}, settings?}` | `201 Project` |
 | GET | `/api/projects/:id/state` | – | `{seq, head, docs, jobs, workflow, syncIssues}` |
 | PATCH | `/api/projects/:id` | `{title?, brief?, settings?}` (deep merge) | `Project` |
-| DELETE | `/api/projects/:id` | – | `204` (moved to `/rideo/trash/`) |
+| DELETE | `/api/projects/:id` | – | `204` (moved to `/rideo/trash/`; in a browser, to its trash, emptied after 7 days) |
+| GET | `/api/projects/:id/export` | – | the project file (`application/x-tar`, `<title>.rideo`, streamed) ([project files](../design/browser-storage.md#project-files-export-and-import)) |
+| POST | `/api/projects/import` | the project file (`application/octet-stream`), `?mode=new\|replace\|copy` | `201 {id, title, kind, mode, files, skipped}`; `409 conflict` when the project is already here and no mode says what to do |
 | POST | `/api/projects/:id/sync` | `{discardInvalid?}` | WebDAV sync report |
 | POST | `/api/projects/:id/gc` | – | GC report |
 | GET | `/api/projects/:id/docs/*path` | `?at=<commit>` | document |

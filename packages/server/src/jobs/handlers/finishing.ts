@@ -60,15 +60,18 @@ export async function exportPrepare(deps: HandlerDeps, ctx: JobContext) {
         await extractFrame(deps.ff, local, at, out, 512, ctx.signal);
         frames.push(await readFile(out));
       }
-      const answer = await deps.llm.focus(
-        {
-          shot: shot.description,
-          characters: shot.characterIds.map((id) => docs.characters[id]?.name ?? '').filter(Boolean),
-          frames: times.map((at, index) => ({ index, t: at })),
-        },
-        frames,
-        ctx.signal,
-      );
+      // Without a gateway the subject is assumed centered (docs/design/settings.md#without-mm-gateway).
+      const answer = deps.config.gateway.configured
+        ? await deps.llm.focus(
+            {
+              shot: shot.description,
+              characters: shot.characterIds.map((id) => docs.characters[id]?.name ?? '').filter(Boolean),
+              frames: times.map((at, index) => ({ index, t: at })),
+            },
+            frames,
+            ctx.signal,
+          )
+        : { frames: [] as { index: number; x: number; y: number }[] };
       return times.map((at, index): FocusPoint => {
         const f = answer.frames.find((x) => x.index === index);
         return { t: at, x: f?.x ?? 0.5, y: f?.y ?? 0.5 };
@@ -227,6 +230,12 @@ export const DELIVERY_FILE: Record<Delivery['format'], { ext: string; mime: stri
  * Thumbnails (docs/design/finishing.md#thumbnails): six candidate frames of the finished film, ranked by the vision
  * LLM, the best three as signed JPEGs.
  */
+/** `count` indices spread over `n` candidates (the middle of each slice). */
+export function evenlySpaced(n: number, count: number): number[] {
+  const k = Math.min(n, count);
+  return Array.from({ length: k }, (_, i) => Math.min(n - 1, Math.floor(((i + 0.5) * n) / k)));
+}
+
 export async function makeThumbnails(
   deps: HandlerDeps,
   ctx: JobContext,
@@ -248,15 +257,18 @@ export async function makeThumbnails(
     await input.frameAt(at, out);
     frames.push(out);
   }
-  const ranked = await deps.llm.pickThumbnails(
-    {
-      title: input.title,
-      count: Math.min(3, frames.length),
-      frames: times.map((t, index) => ({ index, t })),
-    },
-    await Promise.all(frames.map((f) => readFile(f))),
-    ctx.signal,
-  );
+  // The vision model ranks the candidates; without a gateway, evenly spaced frames are the thumbnails.
+  const ranked = deps.config.gateway.configured
+    ? await deps.llm.pickThumbnails(
+        {
+          title: input.title,
+          count: Math.min(3, frames.length),
+          frames: times.map((t, index) => ({ index, t })),
+        },
+        await Promise.all(frames.map((f) => readFile(f))),
+        ctx.signal,
+      )
+    : { picks: evenlySpaced(frames.length, 3).map((index) => ({ index })) };
   const picks = [...new Set(ranked.picks.map((p) => p.index).filter((i) => i < frames.length))].slice(0, 3);
   const out: MediaRef[] = [];
   for (const [k, index] of picks.entries()) {

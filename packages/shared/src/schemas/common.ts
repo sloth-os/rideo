@@ -115,6 +115,11 @@ export const ERROR_CODES = [
   'performance_unavailable',
   'localization_incomplete',
   'board_unapprovable',
+  /** docs/design/settings.md */
+  'setting_locked',
+  'gateway_not_configured',
+  /** docs/design/browser-storage.md */
+  'storage_offline',
   'internal_error',
 ] as const;
 export const ErrorCodeSchema = z.enum(ERROR_CODES);

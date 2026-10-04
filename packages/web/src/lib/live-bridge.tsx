@@ -6,6 +6,9 @@ import { enginePresence } from '../engine/state';
 import { useNotifications } from '../store/notifications';
 import { useProject } from '../store/project';
 import { useUi } from '../store/ui';
+import { serveStorage, setWorkspaceEnabled, workspaceEnabled, workspaceId } from '../workspace';
+import { useWorkspaceStatus } from '../workspace/status';
+import { useConfigStore } from './config';
 import { LiveClient } from './live';
 import { handleUiCommand } from './ui-commands';
 
@@ -63,10 +66,28 @@ export function LiveBridge() {
         useUi.getState().setLive(s);
         if (s === 'live') void editorWorker.poke();
       },
+      // Browser storage (docs/design/browser-storage.md): this tab serves its browser's projects.
+      workspace: () => (workspaceEnabled() ? workspaceId() : null),
+      onStorage: (request) => void serveStorage(request, (msg) => c.send(msg)),
+      onWorkspaceReady: () => useWorkspaceStatus.getState().markReady(),
     });
     client = c;
     editorWorker.setSession(() => c.sessionId);
     c.connect();
+    // The config says where projects live: in this browser, the tab attaches its workspace.
+    const applyStorage = (storage: string | undefined) => {
+      const on = storage === 'browser';
+      if (on === workspaceEnabled()) return;
+      setWorkspaceEnabled(on);
+      useWorkspaceStatus.getState().setEnabled(on);
+      if (on) c.attachWorkspace();
+    };
+    const unsubscribe = useConfigStore.subscribe((st) => applyStorage(st.config?.features.storage));
+    applyStorage(useConfigStore.getState().config?.features.storage);
+    useConfigStore
+      .getState()
+      .load()
+      .catch(() => undefined);
     detectEngineCaps();
     // Leaving mid-render would drop the job back into the queue: ask first.
     const guard = (e: BeforeUnloadEvent) => {
@@ -78,6 +99,7 @@ export function LiveBridge() {
     window.addEventListener('beforeunload', guard);
     return () => {
       window.removeEventListener('beforeunload', guard);
+      unsubscribe();
       c.close();
       client = null;
     };

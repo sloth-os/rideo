@@ -25,8 +25,10 @@
     "test": "npm run test:unit && npm run test:integration",
     "test:unit": "vitest run --project shared --project server-unit --project web",
     "test:integration": "vitest run --project server-integration --project mock-gateway",
-    "test:e2e": "npm run build -w @rideo/web && playwright test",
-    "test:coverage": "vitest run --project shared --project server-unit --project web --coverage"
+    "test:e2e": "npm run build -w @rideo/web && npm run build:lib && npm run build:e2e-host && playwright test",
+    "test:coverage": "vitest run --project shared --project server-unit --project web --coverage",
+    "build:lib": "npm run build:lib -w @rideo/web",
+    "build:e2e-host": "vite build --config e2e/fixtures/embed/vite.config.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.14",

@@ -1,11 +1,26 @@
+import { AppError } from '../errors';
+
+/** The error of every AI call while the studio has no gateway (docs/design/settings.md#without-mm-gateway). */
+export function gatewayNotConfigured(): AppError {
+  return new AppError(
+    'gateway_not_configured',
+    'This needs mm-gateway: connect one in Settings (AI features are off until then)',
+  );
+}
+
 /**
  * All non-generation AI traffic (LLM, vision, STT) goes through the mm-gateway reverse proxy:
  * `${MM_GATEWAY_URL}/proxy/{domain}/{path}` with the gateway bearer key (docs/design/ai-gateway.md).
  */
 export class ProxyClient {
-  constructor(private readonly cfg: { baseUrl: string; apiKey?: string; timeoutMs?: number }) {}
+  constructor(private readonly cfg: { baseUrl?: string; apiKey?: string; timeoutMs?: number }) {}
+
+  get configured(): boolean {
+    return !!this.cfg.baseUrl;
+  }
 
   url(domain: string, path: string): string {
+    if (!this.cfg.baseUrl) throw gatewayNotConfigured();
     if (!/^[a-z0-9.-]+(:\d+)?$/i.test(domain)) throw new Error(`invalid proxy domain ${domain}`);
     return `${this.cfg.baseUrl}/proxy/${domain}/${path.replace(/^\/+/, '')}`;
   }
@@ -15,6 +30,7 @@ export class ProxyClient {
     path: string,
     init: RequestInit & { timeoutMs?: number } = {},
   ): Promise<Response> {
+    if (!this.cfg.baseUrl) throw gatewayNotConfigured();
     const headers = new Headers(init.headers);
     if (this.cfg.apiKey) headers.set('authorization', `Bearer ${this.cfg.apiKey}`);
     const timeout = AbortSignal.timeout(init.timeoutMs ?? this.cfg.timeoutMs ?? 180_000);

@@ -18,10 +18,12 @@ import {
 import { type ComponentType, lazy, Suspense, useEffect, useState } from 'react';
 import { NavLink, useParams } from 'react-router';
 import { ActivityFeed } from '../../components/ActivityFeed';
+import { AiNotice } from '../../components/AiNotice';
 import { JobRow } from '../../components/JobProgress';
 import { Badge, cx, Spinner } from '../../components/ui';
 import { editorWorker } from '../../engine';
 import { useProjectRole } from '../../lib/auth';
+import { useAi } from '../../lib/config';
 import { liveClient } from '../../lib/live-bridge';
 import { useProject } from '../../store/project';
 import { AnalysisView } from '../analysis/AnalysisView';
@@ -119,6 +121,7 @@ export function Workspace() {
   const { projectId = '', view: rawView } = useParams();
   const { load, docs, loading, error, head } = useProject();
   const access = useProjectRole(docs?.project);
+  const ai = useAi();
   const [more, setMore] = useState(false);
   useEffect(() => {
     let cancelled = false;
@@ -205,6 +208,12 @@ export function Workspace() {
           className="min-w-0 flex-1 overflow-y-auto px-3 pt-4 pb-24 sm:px-6 md:pb-8"
           data-testid={`view-${view}`}
         >
+          {ai === false && docs.project.kind === 'story' ? (
+            <AiNotice className="mx-auto mb-3 max-w-5xl">
+              AI is off: screenplays, cast references, clips, music and voices need mm-gateway. Editing,
+              review and exports work.
+            </AiNotice>
+          ) : null}
           {access.role === 'reviewer' ? (
             <p
               className="mx-auto mb-3 max-w-5xl rounded-[var(--radius-control)] border border-border bg-surface-2 px-3 py-2 text-[13px] text-muted"

@@ -23,7 +23,7 @@ import { ff } from '../helpers/media';
 let dir: string;
 const pattern = f.media({ durationSec: 20 });
 const red = f.media({ durationSec: 20, hasAudio: false });
-const FONT = resolve(import.meta.dirname, '../../../web/public/fonts/DejaVuSans.ttf');
+const FONT = resolve(import.meta.dirname, '../../../web/src/engine/fonts/DejaVuSans.ttf');
 
 beforeAll(async () => {
   dir = await mkdtemp(join(tmpdir(), 'rideo-render-'));

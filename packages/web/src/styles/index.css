@@ -1,7 +1,9 @@
 @import "tailwindcss";
 
-/* Brand tokens (docs/brand.md). Dark first; light under [data-theme="light"]. */
+/* Brand tokens (docs/brand.md). Dark first; light under [data-theme="light"]. A theme overrides them on the
+   studio's root element (docs/design/embedding.md#themes). */
 :root,
+.rideo-root,
 [data-theme="dark"] {
   --color-bg: #0b0d12;
   --color-surface: #12151c;
@@ -58,6 +60,17 @@ html,
 body,
 #root {
   height: 100%;
+}
+
+/* The studio's root: standalone it fills the page, embedded its container (docs/design/embedding.md). */
+.rideo-root {
+  height: 100%;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
 }
 
 body {

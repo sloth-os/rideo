@@ -8,7 +8,18 @@ Rideo never talks to an AI provider directly. It has two paths into
 | Image, video, music generation | **`@sloth-os/mm-gateway-js` SDK**: `ImagesApi`, `VideosApi`, `MusicApi`, `MetaApi` | `server/src/gateway/gateway-client.ts` |
 | Everything else: LLM text, vision judge, speech-to-text | **Gateway reverse proxy**: `{MM_GATEWAY_URL}/proxy/{domain}/{path}` | `server/src/gateway/proxy-client.ts`, `server/src/ai/*` |
 
-Both use the same gateway bearer key (`MM_GATEWAY_API_KEY`). Upstream credentials stay in the gateway.
+Both use the same gateway bearer key (`MM_GATEWAY_API_KEY`). Upstream credentials stay in the gateway. The gateway's
+URL, key, routing profile and models are set in Settings or the environment ([settings](settings.md)).
+
+## Without a gateway
+
+`MM_GATEWAY_URL` has no default. Without it `GatewayClient` and `ProxyClient` refuse every call with
+`gateway_not_configured` at once (no connection attempt, no timeout), the optional endpoints (speech-to-text,
+embeddings, voices, sound effects, the speaker check) are not configured, and `JOB_GATEWAY`
+(`shared/src/schemas/job.ts`) decides per job kind: `required` kinds are refused when queued, `optional` ones do
+less (footage analysis keeps its rule-based suggestions, thumbnails are evenly spaced, reframing keeps the subject
+centered, enhancement uses ffmpeg), `none` never call the gateway. See
+[settings](settings.md#without-mm-gateway).
 
 ## SDK usage
 

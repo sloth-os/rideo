@@ -72,6 +72,12 @@ RIDEO_TEST_WEBDAV_URL=http://rideo:rideo@localhost:8080/ npx vitest run --projec
   transcript words with punctuation and standalone fillers, `.cube` parsing and the trilinear lookup, overlay tracks,
   ramps, splits and `remove_ranges` in the reducer, overlay layers and sound in the queries, the chunk graph with a
   LUT, an inverted matte, keyframed position and fades as `sendcmd` commands, and ramps).
+- **shared, settings and project files** (`settings-theme.test.ts`, `bundle.test.ts`): the settings table (each
+  setting once, in a known group, environment-only configuration and key material kept out, secrets marked,
+  `showIf` targets); themes (CSS values that cannot break out, mode colors over shared ones, a readable text color
+  for any accent, the brand tokens' WCAG contrast, merging); ustar headers (long names in the prefix, base-256 sizes,
+  checksums), the entries a project file carries and the unsafe ones it refuses, the manifest, and the history
+  rewrite of a copy (every commit names the new id, other documents and subtrees shared, merges kept).
 - **server**: repository commit, log, diff, restore, branches, tags, coalescing and GC on `MemoryBackend`;
   job queue (lanes, priorities, dedupe, retry classification, cancel propagation, restart recovery; the
   `client` lane: claim order, leases, heartbeats, expiry and session release, cancel, staged files);
@@ -108,6 +114,15 @@ RIDEO_TEST_WEBDAV_URL=http://rideo:rideo@localhost:8080/ npx vitest run --projec
   worker's strategies, pushed messages opening only the app's links, the manifest and its icons, the Inbox's
   approvals, reviews, jobs and agents with approve and cancel); Web Push messages (RFC 8291 Appendix A byte for
   byte, round trips with fresh keys, VAPID tokens that verify).
+- **server, settings, storage and subpaths** (`config.test.ts`, `settings.test.ts`, `browser-storage.test.ts`,
+  `base-path.test.ts`): the settings file merged under the environment (empty variables unset), rules across settings
+  reported on the setting to fix, `auto` storage resolution, base paths from the public URL; the settings file
+  (settings only, mode 0600, a broken file ignored) and the service (administrators only, never agent tokens, masked
+  secrets, locks); `FsBackend` (atomic writes, ranges, conditional writes, refused escapes); the workspace registry
+  and `RoutedStorage` with stand-in tabs (studio data in the data directory, a new project in the asking browser,
+  listings per caller, the trash beside the project, another person's workspace refused, a closed tab failing its
+  operations, a reconnecting tab waited for, preconditions passed through); prefix stripping for both proxy styles,
+  `X-Forwarded-Prefix` that cannot name another host, the page's `<base>`.
 - **web**: live-event store reducer and optimistic timeline edits (apply, confirm, roll back), live client
   (sequence dedupe, UI-command acks, restart resync), UI command dispatch, WebCodecs codec/container
   selection, render engine choice, the editor-job worker against a fake API (claims only with a project and a
@@ -118,11 +133,34 @@ RIDEO_TEST_WEBDAV_URL=http://rideo:rideo@localhost:8080/ npx vitest run --projec
   playback start). Resuming an interrupted render
   is covered by the editor-jobs integration test, local proxies by the story e2e spec.
 
+- **web, settings, workspace and library** (`settings.test.tsx`, `workspace.test.ts`, `runtime.test.ts`,
+  `embed.test.tsx`, `library-build.test.ts`, `pwa.test.tsx`): the Settings page (groups from the table, locks,
+  masked secrets, only changes saved, server errors under the setting, a confirmation before running jobs restart,
+  people who are not administrators); the IndexedDB workspace on fake-indexeddb (folders, ranges, preconditions in
+  the transaction, moves without copying bytes), the provider (inline and transferred payloads), project files out
+  of and into the browser and the service worker's ranged answers from IndexedDB (never creating the database); URLs
+  under a `<base>` and of a server on another origin, `ws=` on media in browser storage; `mountRideo` (the host's
+  theme over the studio's, memory routing, `navigate`, `setTheme`, a person's mode winning, nothing set on the host
+  document); the scoped stylesheet (selectors, flattened layers, global keyframes); inlined worker scripts made
+  same-origin; the service worker under a subpath scope.
+
 ### Integration
 
 - **Storage conformance** (`storage.test.ts`): one suite against `MemoryBackend`, the embedded WebDAV server
   and (optionally) an external server: read/write/stat/list/move/delete, nested MKCOL, streaming, ranges,
   conditional writes when advertised.
+- **Settings** (`settings.test.ts`): a studio started without mm-gateway is ready, refuses AI work with
+  `gateway_not_configured` and edits footage end to end (rule-based suggestions, auto edit, an export with evenly
+  spaced thumbnails); the settings view (sources, locks, no secrets), locked, unknown and invalid values, connection
+  tests that save nothing, connecting the gateway (applied at once, audited without values, kept across a restart),
+  a change the studio cannot start with rolled back, and the same over MCP.
+- **Browser storage** (`browser-storage.test.ts`) with a Node **reference workspace** (`test/helpers/workspace-client.ts`,
+  the protocol over a real live socket and the HTTP transfers): nothing kept without a browser, projects created in
+  the asking browser and listed to it, media in and out (ranges inline, whole files transferred), jobs and their
+  records in the browser, a server restart followed by the reconnecting tab, a project file exported and imported
+  into another browser as a copy (history rewritten, media served), the trash, `storage_offline` when the tab is gone.
+- **Embedding origins** (`embedding.test.ts`): preflights and calls of `RIDEO_CORS_ORIGINS` answered with the CORS and
+  CORP headers, others not; the live channel refused to other sites (4003).
 - **Render plan** (`render.test.ts`): the shared chunk graphs and soundtrack graph run through native ffmpeg
   (a cut followed by a crossfade; a split and trimmed clip before a wipe, with speed and fades; text) and
   every chunk must have exactly its planned frame count; the concatenated chunks must equal the planned
@@ -260,7 +298,7 @@ RIDEO_TEST_WEBDAV_URL=http://rideo:rideo@localhost:8080/ npx vitest run --projec
 Projects: `desktop` (1440×900) runs every spec except `responsive`; `mobile` (412×915, touch) runs
 `responsive`, `mcp-sync`, `provenance`, `elements`, `dialogue`, `storyboard`, `directing`, `take-editing`,
 `multi-shot`, `post-audio`, `localization`, `finishing`, `accounts`, `review`, `interchange`, `editor-depth`,
-`recipes`, `brand`, `search`, `performance`, `engine` and `pwa`. The
+`recipes`, `brand`, `search`, `performance`, `engine`, `pwa`, `settings`, `browser-storage`, `subpath` and `embed`. The
 web server stops with SIGTERM so the stack removes its data; stale stack directories older than an hour are removed
 when a new stack starts. Specs:
 
@@ -291,9 +329,17 @@ when a new stack starts. Specs:
 | `elements.spec.ts` | (desktop and mobile) the screenplay's location in the Elements view → generate, approve, lock; add a prop and link it to a scene in the Story view |
 | `provenance.spec.ts` | (desktop and mobile) uploading a likeness opens the consent dialog; a real person needs subject, grantor and date and marks the character; the disclosure setting labels the export; the export card and the public Verify page show the Content Credentials |
 | `responsive.spec.ts` | every main view on mobile: no horizontal overflow, navigation reachable, primary actions visible |
+| `settings.spec.ts` | (desktop and mobile, each on a studio of its own) without a gateway the dashboard says AI is off; Settings: a locked value, the gateway tested, an invalid value refused under its field, the gateway saved and applied (the dashboard and the live channel follow without a reload, a film can be started), then cleared again |
+| `browser-storage.spec.ts` | (desktop and mobile, on the studio without WebDAV and gateway) a project kept in IndexedDB with its upload and poster; its project file downloaded; deleted and imported back; imported again as a copy; still there after a reload. Desktop: analysis by rules, auto edit and an export rendered in the tab, the export stored in the browser and served by the service worker from IndexedDB |
+| `subpath.spec.ts` | (desktop and mobile) the studio under `/studio` with the prefix kept and under `/rideo` through a prefix-stripping proxy: the bare prefix, the injected `<base>`, the live channel, a project's deep link reloaded, the MCP command, the manifest and the service worker's scope, no request outside the prefix, problems for unknown API routes |
+| `embed.spec.ts` | (desktop and mobile) a host app built with Vite against `@rideo/web` on another origin: its theme and name, light mode, the host's styles and the studio's kept apart, the browser-storage studio reached across origins (live channel too), hash routes heard by the host, `navigate` and `setTheme` from the host, an upload probed by ffmpeg.wasm loaded from the host's build, the project in the host origin's IndexedDB; browser routing under the host's `/video` without the studio's header |
 
-The e2e stack starts through Playwright's `webServer`: mock gateway, Rideo server with the embedded
-WebDAV (temporary data dir), and the built web app served by the Rideo server. Tiny media sizes (320×180)
+The e2e stack starts through Playwright's `webServer` (`e2e/support/stack.ts`, ports in `e2e/support/ports.ts`): the
+mock gateway, the main studio with the embedded WebDAV (temporary data dir) serving the built web app, a studio with
+accounts, one that keeps projects in browsers without a gateway (and allows the host page's origin), one under
+`/studio` with a prefix-stripping proxy in front of it at `/rideo`, two whose settings the settings spec changes, and
+the library's host page (`e2e/fixtures/embed`, built by `npm run build:e2e-host` against `dist-lib`). The main studio
+starts last, so its readiness means all are up. `npm run test:e2e` builds the app, the library and the host first. Tiny media sizes (320×180)
 and short durations keep the suite fast. Playwright's Chromium decodes H.264 with WebCodecs, so the story
 spec emulates a browser without an H.264 decoder (an init script hides AVC from `VideoDecoder`): the preview
 must play through local proxies and `auto` must pick the ffmpeg.wasm engine. The footage spec renders with

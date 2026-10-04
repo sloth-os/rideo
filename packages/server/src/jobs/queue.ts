@@ -1,6 +1,7 @@
 import {
   type Actor,
   isTerminalJob,
+  JOB_GATEWAY,
   JOB_LANES,
   type Job,
   type JobKind,
@@ -10,6 +11,7 @@ import {
   newId,
 } from '@rideo/shared';
 import { AppError, notFound, toAppError } from '../errors';
+import { gatewayNotConfigured } from '../gateway/proxy-client';
 import type { LiveHub } from '../live/hub';
 import type { Metrics } from '../metrics';
 import type { StorageBackend } from '../storage/backend';
@@ -92,6 +94,8 @@ export class JobQueue {
       lanes: Record<string, number>;
       /** How long a tab holds an editor job without a heartbeat. */
       editorLeaseMs?: number;
+      /** Whether mm-gateway is configured: kinds that require it fail at once without (JOB_GATEWAY). */
+      gatewayConfigured?: boolean;
     },
   ) {
     for (const lane of LANES)
@@ -100,6 +104,13 @@ export class JobQueue {
 
   private get leaseMs(): number {
     return this.deps.editorLeaseMs ?? 60_000;
+  }
+
+  /** Jobs running now: a settings change interrupts them (docs/design/settings.md#applying-a-change). */
+  runningCount(): number {
+    let n = 0;
+    for (const j of this.jobs.values()) if (j.status === 'running') n++;
+    return n;
   }
 
   register(kind: JobKind, handler: JobHandler): void {
@@ -183,6 +194,8 @@ export class JobQueue {
     if (this.closed) throw new AppError('conflict', 'job queue is shutting down');
     if (JOB_LANES[input.kind] !== 'client' && !this.handlers.has(input.kind))
       throw new AppError('internal_error', `no handler for ${input.kind}`);
+    if (this.deps.gatewayConfigured === false && JOB_GATEWAY[input.kind] === 'required')
+      throw gatewayNotConfigured();
     if (input.dedupeKey) {
       const dup = [...this.jobs.values()].find(
         (j) => j.projectId === input.projectId && j.dedupeKey === input.dedupeKey && !isTerminalJob(j),

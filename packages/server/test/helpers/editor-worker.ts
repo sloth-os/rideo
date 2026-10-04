@@ -41,7 +41,7 @@ import type { Stack } from './stack';
  */
 
 const FFMPEG = process.env.RIDEO_FFMPEG_PATH ?? 'ffmpeg';
-const FONT = resolve(import.meta.dirname, '../../../web/public/fonts/DejaVuSans.ttf');
+const FONT = resolve(import.meta.dirname, '../../../web/src/engine/fonts/DejaVuSans.ttf');
 
 function ffmpeg(args: string[]): Promise<{ code: number | null; log: string[] }> {
   return new Promise((done, fail) => {
