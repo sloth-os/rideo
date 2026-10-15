@@ -86,7 +86,9 @@ export async function finishTake(
       watermarkId,
       models: input.models,
       consistency: { status: input.report.status, score: input.report.score, judge: input.report.judge },
-      keyframe: input.keyframe ? await deps.media.localPath(projectId, input.keyframe) : null,
+      keyframe: input.keyframe
+        ? { path: await deps.media.localPath(projectId, input.keyframe), mime: input.keyframe.mime }
+        : null,
       ...(input.parent
         ? {
             parent: {

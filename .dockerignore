@@ -6,6 +6,7 @@ data
 data-demo
 test-results
 playwright-report
+playwright-report-real
 blob-report
 coverage
 .env

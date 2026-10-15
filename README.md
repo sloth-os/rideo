@@ -10,7 +10,7 @@ can also upload existing footage and let the AI suggest and apply an edit.
 | Asset management | Every project asset (screenplay, characters, clips, timeline, media) lives on a **WebDAV** store: an external server (OpenList, Nextcloud, Apache, rclone…) or the embedded `/dav` server. You can mount it in Finder or Explorer and edit it there. |
 | Character consistency | A hard **consistency gate**. Characters are identity-locked with approved reference images, every generation is conditioned on those references, and every keyframe and clip is judged against them before it can enter the cut. See [docs/design/character-consistency.md](docs/design/character-consistency.md). |
 | Version control | A git-like, content-addressed history (commits, branches, tags, diff, restore) stored next to the assets on WebDAV. |
-| Generation | Images, video and music go through the [`@sloth-os/mm-gateway-js`](https://github.com/sloth-os/mm-gateway-js) SDK for [mm-gateway](https://github.com/sloth-os/mm-gateway). All other AI calls (LLM, vision, speech-to-text) go through the gateway's `/proxy/{domain}/{path}` reverse proxy. |
+| Generation | Images, video and music go through the [`@sloth-os/mm-gateway-ts`](https://github.com/sloth-os/mm-gateway-ts) SDK for [mm-gateway](https://github.com/sloth-os/mm-gateway). All other AI calls (LLM, vision, speech-to-text) go through the gateway's `/proxy/{domain}/{path}` reverse proxy. |
 | Agent control | A built-in **MCP** server (`/mcp`) lets Claude Code or any MCP client drive the backend and the open browser UI. Every change appears live in the frontend. |
 | Copyright | Every generated clip and export carries an **invisible watermark** (keyed DCT-domain payload) and provenance metadata. A detector recovers the brand and asset record. |
 | Review and teams | People sign in with the studio's identity provider (OIDC) and work on projects by role; agents act through scoped tokens. Reviewers leave **timecoded notes and drawings** on takes and cuts, clients review through **share links** without an account, and a review can approve a workflow gate. See [docs/design/review.md](docs/design/review.md). |
@@ -88,6 +88,7 @@ npm run typecheck     # tsc --noEmit for every package and the e2e suite
 npm run test:unit     # vitest unit suites
 npm run test:integration   # server + embedded WebDAV + mock gateway + ffmpeg
 npx playwright install chromium && npm run test:e2e   # Playwright (desktop + mobile viewports)
+npm run test:e2e:real # on real models: mm-gateway in Docker + your image, video and vision models (docs/testing.md)
 npm run build         # web app + bundled server and mock gateway (scripts/bundle.mjs)
 ```
 

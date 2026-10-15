@@ -9,7 +9,17 @@ import {
   ModelLimitsEntrySchema,
   TERMINAL_TASK_STATUSES,
 } from '@rideo/shared';
-import sdk, { type HttpInfo, type SdkError, type SdkTask } from '@sloth-os/mm-gateway-js';
+import {
+  Configuration,
+  type ImageRequest,
+  ImagesApi,
+  MetaApi,
+  MusicApi,
+  type MusicRequest,
+  type VideoRequest,
+  VideosApi,
+} from '@sloth-os/mm-gateway-ts';
+import axios, { type AxiosResponse, isAxiosError, isCancel } from 'axios';
 import type { Metrics } from '../metrics';
 import { abortError, sleep } from '../util/abort';
 import { gatewayNotConfigured } from './proxy-client';
@@ -59,43 +69,55 @@ export interface GenerateOptions {
   onTask?: (task: GatewayTask) => void;
 }
 
-function toHttpError(err: unknown): GatewayHttpError {
-  const e = err as SdkError;
-  const body = (e?.body ?? e?.response?.body) as
-    | { detail?: string; code?: string; title?: string }
-    | undefined;
-  const status = e?.status;
-  const message =
-    body?.detail ??
-    body?.title ??
-    e?.error?.message ??
-    (err instanceof Error ? err.message : 'gateway request failed');
+/** The SDK's generated request type of each modality: Rideo's wire objects must be assignable to it. */
+interface WireRequest {
+  image: ImageRequest;
+  video: VideoRequest;
+  music: MusicRequest;
+}
+
+/** Create and poll calls of one modality's API (`ImagesApi`, `VideosApi`, `MusicApi`). */
+type TaskCalls = {
+  [M in Modality]: {
+    create(
+      body: WireRequest[M],
+      idempotencyKey: string,
+      signal?: AbortSignal,
+    ): Promise<AxiosResponse<object>>;
+    get(id: string, signal?: AbortSignal): Promise<AxiosResponse<object>>;
+  };
+};
+
+/** An axios rejection as the error the job queue classifies; a cancelled request is the job's abort. */
+function toError(err: unknown, signal?: AbortSignal): Error {
+  if (isCancel(err) || signal?.aborted) return abortError(String(signal?.reason ?? 'aborted'));
+  if (!isAxiosError(err)) return err instanceof Error ? err : new Error(String(err));
+  const status = err.response?.status;
+  const body = err.response?.data as { detail?: string; code?: string; title?: string } | string | undefined;
+  const problem = body && typeof body === 'object' ? body : undefined;
   return new GatewayHttpError(
-    `mm-gateway ${status ?? 'network'}: ${message}`,
+    `mm-gateway ${status ?? 'network'}: ${problem?.detail ?? problem?.title ?? err.message}`,
     status,
-    body?.code,
+    problem?.code,
     !status || status === 429 || status >= 500,
   );
 }
 
-function plain(task: SdkTask): GatewayTask {
-  return GatewayTaskSchema.parse(JSON.parse(JSON.stringify(task)));
+function task(res: AxiosResponse<object>): GatewayTask {
+  return GatewayTaskSchema.parse(res.data);
 }
 
 /** Retry-After in ms, clamped to [1 s, 10 s]. */
-function retryAfterMs(info: HttpInfo<unknown>): number | undefined {
-  const raw = info.response?.headers?.['retry-after'];
-  const sec = raw ? Number.parseFloat(raw) : Number.NaN;
+function retryAfterMs(res: AxiosResponse): number | undefined {
+  const raw = res.headers['retry-after'];
+  const sec = typeof raw === 'string' ? Number.parseFloat(raw) : Number.NaN;
   return Number.isFinite(sec) ? Math.min(10_000, Math.max(1_000, sec * 1000)) : undefined;
 }
 
-/** Image, video and music generation through the @sloth-os/mm-gateway-js SDK (docs/design/ai-gateway.md#sdk-usage). */
+/** Image, video and music generation through the @sloth-os/mm-gateway-ts SDK (docs/design/ai-gateway.md#sdk-usage). */
 export class GatewayClient {
-  private readonly client: InstanceType<typeof sdk.ApiClient>;
-  private readonly images: InstanceType<typeof sdk.ImagesApi>;
-  private readonly videos: InstanceType<typeof sdk.VideosApi>;
-  private readonly music: InstanceType<typeof sdk.MusicApi>;
-  private readonly meta: InstanceType<typeof sdk.MetaApi>;
+  private readonly calls: TaskCalls;
+  private readonly meta: MetaApi;
   private readonly limitsCache = new Map<Modality, { at: number; entries: ModelLimitsEntry[] }>();
 
   constructor(
@@ -110,14 +132,34 @@ export class GatewayClient {
       log?: { info: (o: unknown, m?: string) => void; warn: (o: unknown, m?: string) => void };
     },
   ) {
-    this.client = new sdk.ApiClient(cfg.url ?? 'http://gateway.invalid');
-    if (cfg.apiKey) this.client.authentications.BearerAuth.accessToken = cfg.apiKey;
-    this.client.timeout = 120_000;
-    this.client.defaultHeaders = { 'User-Agent': 'rideo/0.1 (@sloth-os/mm-gateway-js)' };
-    this.images = new sdk.ImagesApi(this.client);
-    this.videos = new sdk.VideosApi(this.client);
-    this.music = new sdk.MusicApi(this.client);
-    this.meta = new sdk.MetaApi(this.client);
+    const configuration = new Configuration({
+      basePath: (cfg.url ?? 'http://gateway.invalid').replace(/\/+$/, ''),
+      accessToken: cfg.apiKey,
+    });
+    // A direct connection, like the proxy client's fetch: environment proxies are not used.
+    const http = axios.create({
+      timeout: 120_000,
+      proxy: false,
+      headers: { 'User-Agent': 'rideo/0.1 (@sloth-os/mm-gateway-ts)' },
+    });
+    const images = new ImagesApi(configuration, undefined, http);
+    const videos = new VideosApi(configuration, undefined, http);
+    const music = new MusicApi(configuration, undefined, http);
+    this.meta = new MetaApi(configuration, undefined, http);
+    this.calls = {
+      image: {
+        create: (body, key, signal) => images.createImage(body, key, { signal }),
+        get: (id, signal) => images.getImage(id, undefined, { signal }),
+      },
+      video: {
+        create: (body, key, signal) => videos.createVideo(body, key, { signal }),
+        get: (id, signal) => videos.getVideo(id, undefined, { signal }),
+      },
+      music: {
+        create: (body, key, signal) => music.createMusic(body, key, { signal }),
+        get: (id, signal) => music.getMusic(id, undefined, { signal }),
+      },
+    };
   }
 
   get configured(): boolean {
@@ -127,7 +169,7 @@ export class GatewayClient {
   async health(): Promise<boolean> {
     if (!this.cfg.url) return false;
     try {
-      return (await this.meta.getHealth()).status === 'ok';
+      return (await this.meta.getHealth()).data.status === 'ok';
     } catch {
       return false;
     }
@@ -138,14 +180,12 @@ export class GatewayClient {
     const hit = this.limitsCache.get(modality);
     if (hit && Date.now() - hit.at < 5 * 60_000) return hit.entries;
     try {
-      const res = await this.meta.listModelLimits({ modality });
-      const entries = (JSON.parse(JSON.stringify(res.data)) as unknown[]).map((e) =>
-        ModelLimitsEntrySchema.parse(e),
-      );
+      const res = await this.meta.listModelLimits(modality);
+      const entries = res.data.data.map((e) => ModelLimitsEntrySchema.parse(e));
       this.limitsCache.set(modality, { at: Date.now(), entries });
       return entries;
     } catch (err) {
-      throw toHttpError(err);
+      throw toError(err);
     }
   }
 
@@ -171,81 +211,73 @@ export class GatewayClient {
     return this.run('music', req, opts);
   }
 
-  private create(modality: Modality, body: object, key: string): Promise<HttpInfo<SdkTask>> {
-    if (modality === 'image') return this.images.createImageWithHttpInfo(body, { idempotencyKey: key });
-    if (modality === 'video') return this.videos.createVideoWithHttpInfo(body, { idempotencyKey: key });
-    return this.music.createMusicWithHttpInfo(body, { idempotencyKey: key });
-  }
-
-  private get(modality: Modality, id: string): Promise<HttpInfo<SdkTask>> {
-    if (modality === 'image') return this.images.getImageWithHttpInfo(id);
-    if (modality === 'video') return this.videos.getVideoWithHttpInfo(id);
-    return this.music.getMusicWithHttpInfo(id);
-  }
-
-  private async run(
-    modality: Modality,
-    req: GatewayImageRequest | GatewayVideoRequest | GatewayMusicRequest,
+  private async run<M extends Modality>(
+    modality: M,
+    req: WireRequest[M],
     opts: GenerateOptions,
   ): Promise<GatewayTask> {
     if (!this.cfg.url) throw gatewayNotConfigured();
-    const body = {
+    const calls: TaskCalls[M] = this.calls[modality];
+    const body: WireRequest[M] = {
       ...req,
       ...(this.cfg.routingProfile && !req.routing ? { routing: { profile: this.cfg.routingProfile } } : {}),
       metadata: { ...req.metadata, ...opts.metadata },
     };
     if (opts.signal?.aborted) throw abortError();
-    let info: HttpInfo<SdkTask>;
+    let res: AxiosResponse<object>;
     try {
-      info = await this.create(modality, body, opts.idempotencyKey);
+      res = await calls.create(body, opts.idempotencyKey, opts.signal);
     } catch (err) {
-      const e = toHttpError(err);
-      this.cfg.metrics?.gatewayTasks.inc({ modality, status: 'rejected' });
+      const e = toError(err, opts.signal);
+      if (e instanceof GatewayHttpError) this.cfg.metrics?.gatewayTasks.inc({ modality, status: 'rejected' });
       throw e;
     }
-    let task = plain(info.data);
-    opts.onTask?.(task);
-    this.cfg.log?.info({ modality, taskId: task.id, model: task.model }, 'gateway task created');
+    let current = task(res);
+    opts.onTask?.(current);
+    this.cfg.log?.info({ modality, taskId: current.id, model: current.model }, 'gateway task created');
     const deadline = Date.now() + this.cfg.timeoutsSec[modality] * 1000;
     let transient = 0;
-    while (!TERMINAL_TASK_STATUSES.includes(task.status)) {
+    while (!TERMINAL_TASK_STATUSES.includes(current.status)) {
       if (Date.now() > deadline) {
         this.cfg.metrics?.gatewayTasks.inc({ modality, status: 'timeout' });
         throw new GatewayTaskError(
           'timeout',
-          `${modality} task ${task.id} did not finish in ${this.cfg.timeoutsSec[modality]}s`,
-          task,
+          `${modality} task ${current.id} did not finish in ${this.cfg.timeoutsSec[modality]}s`,
+          current,
         );
       }
       // A sub-second poll interval is a fast-poll mode (tests, local mocks); otherwise honour Retry-After.
       await sleep(
-        this.cfg.pollMs < 1000 ? this.cfg.pollMs : (retryAfterMs(info) ?? this.cfg.pollMs),
+        this.cfg.pollMs < 1000 ? this.cfg.pollMs : (retryAfterMs(res) ?? this.cfg.pollMs),
         opts.signal,
       );
       try {
-        info = await this.get(modality, task.id);
+        res = await calls.get(current.id, opts.signal);
         transient = 0;
       } catch (err) {
-        const e = toHttpError(err);
-        if (e.retryable && ++transient <= 5) {
-          this.cfg.log?.warn({ modality, taskId: task.id, err: e.message }, 'gateway poll failed, retrying');
+        const e = toError(err, opts.signal);
+        if (e instanceof GatewayHttpError && e.retryable && ++transient <= 5) {
+          this.cfg.log?.warn(
+            { modality, taskId: current.id, err: e.message },
+            'gateway poll failed, retrying',
+          );
           continue;
         }
         throw e;
       }
-      task = plain(info.data);
-      opts.onTask?.(task);
+      current = task(res);
+      opts.onTask?.(current);
     }
-    this.cfg.metrics?.gatewayTasks.inc({ modality, status: task.status });
-    if (task.status !== 'succeeded') {
+    this.cfg.metrics?.gatewayTasks.inc({ modality, status: current.status });
+    if (current.status !== 'succeeded') {
       throw new GatewayTaskError(
-        task.error?.code ?? task.status,
-        task.error?.message ?? `${modality} task ${task.status}`,
-        task,
+        current.error?.code ?? current.status,
+        current.error?.message ?? `${modality} task ${current.status}`,
+        current,
       );
     }
-    if (!task.outputs?.length)
-      throw new GatewayTaskError('no_output', `${modality} task ${task.id} returned no outputs`, task);
-    return task;
+    if (!current.outputs?.length)
+      throw new GatewayTaskError('no_output', `${modality} task ${current.id} returned no outputs`, current);
+    return current;
   }
 }

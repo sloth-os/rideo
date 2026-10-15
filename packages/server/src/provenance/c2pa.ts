@@ -4,6 +4,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { Builder, Context, LocalSigner, Reader } from '@contentauth/c2pa-node';
 import type { ContentCredentialsStamp, DisclosureStamp } from '@rideo/shared';
+import mimeTypes from 'mime-types';
 import type { Logger } from '../domain/deps';
 import type { Metrics } from '../metrics';
 import { createDevSigner } from './dev-cert';
@@ -46,8 +47,8 @@ export interface TakeManifest {
   watermarkId: string | null;
   models: { imageModel?: string; videoModel?: string };
   consistency: { status: string; score: number; judge: string };
-  /** The verified keyframe the video started from (a local PNG). */
-  keyframe?: string | null;
+  /** The verified keyframe the video started from, as the image model returned it (a local PNG, JPEG, …). */
+  keyframe?: { path: string; mime: string } | null;
   /** A derived take: its parent take (a local MP4 with its own manifest) and the operation (take-editing.md). */
   parent?: {
     path: string;
@@ -247,9 +248,14 @@ export class C2paService {
     const keyframe = m.keyframe
       ? [
           {
-            json: { title: 'keyframe.png', format: 'image/png', relationship: 'inputTo', label: 'keyframe' },
-            path: m.keyframe,
-            mime: 'image/png',
+            json: {
+              title: `keyframe.${mimeTypes.extension(m.keyframe.mime) || 'img'}`,
+              format: m.keyframe.mime,
+              relationship: 'inputTo',
+              label: 'keyframe',
+            },
+            path: m.keyframe.path,
+            mime: m.keyframe.mime,
           },
         ]
       : [];

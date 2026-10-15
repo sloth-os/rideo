@@ -51,7 +51,7 @@ flowchart LR
     STORE[Storage backend<br/>WebDAV · routed to workspaces]
     DAV[Embedded WebDAV /dav]
     SET[Settings · studio host]
-    GW[Gateway client<br/>mm-gateway-js SDK]
+    GW[Gateway client<br/>mm-gateway-ts SDK]
     PX[Proxy client<br/>LLM · vision · STT]
   end
   subgraph External
@@ -121,7 +121,7 @@ uploads the outputs and completes it. See [editor](design/editor.md#editor-jobs)
 | Validation | zod 4 | Runtime validation at every boundary; MCP tool schemas come from the same definitions. |
 | WebDAV client | `webdav` (perry-mitchell) | Mature client with streaming and ranges. |
 | Embedded WebDAV | `webdav-server` v2 mounted at `/dav` via the HTTP server factory | Works with Finder, Explorer and davfs out of the box. |
-| AI generation | `@sloth-os/mm-gateway-js` (OpenAPI SDK, pinned git dependency) | Required by the product constraints. |
+| AI generation | `@sloth-os/mm-gateway-ts` (OpenAPI `typescript-axios` SDK, pinned git dependency) | Required by the product constraints; its generated types check Rideo's requests at compile time. |
 | Other AI | `fetch` against `${MM_GATEWAY_URL}/proxy/{domain}/{path}` | Required by the product constraints. Supports streaming and abort. |
 | MCP | `@modelcontextprotocol/sdk` Streamable HTTP transport | Supported by Claude Code, Codex, Cursor and others; stdio-only clients can use `mcp-remote`. |
 | Browser media processing | ffmpeg.wasm (`@ffmpeg/ffmpeg` 0.12, FFmpeg 5.1 single-threaded core, self-hosted) | Every filter the editor needs (analysis, xfade, drawtext, amix…), any input codec, x264/VP8/VP9/AAC/Opus encoders. |

@@ -23,7 +23,7 @@ export class Api {
     return body as T;
   }
 
-  async waitJob(projectId: string, jobId: string, timeoutMs = 120_000): Promise<Job> {
+  async waitJob(projectId: string, jobId: string, timeoutMs = 120_000, pollMs = 150): Promise<Job> {
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
       const job = await this.call<Job>('GET', `/projects/${projectId}/jobs/${jobId}`);
@@ -32,7 +32,7 @@ export class Api {
           throw new Error(`job ${job.kind} ${job.status}: ${JSON.stringify(job.error)}`);
         return job;
       }
-      await new Promise((r) => setTimeout(r, 150));
+      await new Promise((r) => setTimeout(r, pollMs));
     }
     throw new Error(`job ${jobId} did not finish`);
   }

@@ -5,6 +5,9 @@ const baseURL = `http://127.0.0.1:${port}`;
 
 export default defineConfig({
   testDir: 'e2e',
+  // Specs only: e2e/real runs on real models with its own config (playwright.real.config.ts).
+  testMatch: /\.spec\.ts$/,
+  testIgnore: /[\\/]real[\\/]/,
   timeout: 240_000,
   expect: { timeout: 30_000 },
   fullyParallel: false,
@@ -21,11 +24,12 @@ export default defineConfig({
   projects: [
     {
       name: 'desktop',
-      testIgnore: /responsive\.spec\.ts/,
+      testIgnore: [/responsive\.spec\.ts/, /[\\/]real[\\/]/],
       use: { browserName: 'chromium', viewport: { width: 1440, height: 900 } },
     },
     {
       name: 'mobile',
+      testIgnore: /[\\/]real[\\/]/,
       testMatch:
         /(responsive|mcp-sync|provenance|elements|dialogue|storyboard|directing|take-editing|multi-shot|post-audio|localization|finishing|accounts|review|interchange|editor-depth|recipes|brand|search|performance|engine|pwa|settings|browser-storage|subpath|embed)\.spec\.ts/,
       use: {

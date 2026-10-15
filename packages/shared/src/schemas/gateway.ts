@@ -3,26 +3,32 @@ import { z } from 'zod';
 /**
  * mm-gateway wire types (snake_case, exactly as the public contract / SDK serializes them).
  * Only the members Rideo sends or reads are modelled; responses are parsed leniently (additive contract).
+ * The server checks the requests against the SDK's generated types (docs/design/ai-gateway.md#sdk-usage): the
+ * roles a part may carry differ by modality, as in the contract.
  */
 export type GatewayTextPart = { type: 'text'; text: string };
 export type GatewayLyricsPart = { type: 'lyrics'; text: string };
+/** An input image of an image request (no role: every image conditions the picture). */
+export type GatewayImageInputPart = { type: 'image'; uri: string };
 export type GatewayImagePart = {
   type: 'image';
   uri: string;
   role?: 'first_frame' | 'last_frame' | 'reference_image';
 };
-export type GatewayAudioPart = {
+export type GatewayAudioPart = { type: 'audio'; uri: string; role?: 'reference_audio' };
+export type GatewayMusicAudioPart = {
   type: 'audio';
   uri: string;
   role?: 'reference_audio' | 'continuation_audio';
 };
+export type GatewayMusicImagePart = { type: 'image'; uri: string; role?: 'reference_image' };
 export type GatewayVideoPart = { type: 'video'; uri: string; role?: 'reference_video' };
 
 export type Dimensions = { width: number; height: number };
 
 export interface GatewayImageRequest {
   model?: string;
-  input: (GatewayTextPart | GatewayImagePart)[];
+  input: (GatewayTextPart | GatewayImageInputPart)[];
   parameters?: {
     dimensions?: Dimensions;
     seed?: number;
@@ -63,7 +69,7 @@ export interface GatewayVideoRequest {
 
 export interface GatewayMusicRequest {
   model?: string;
-  input: (GatewayTextPart | GatewayLyricsPart | GatewayImagePart | GatewayAudioPart)[];
+  input: (GatewayTextPart | GatewayLyricsPart | GatewayMusicImagePart | GatewayMusicAudioPart)[];
   parameters?: {
     title?: string;
     duration_seconds?: number;

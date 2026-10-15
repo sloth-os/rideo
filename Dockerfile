@@ -16,7 +16,6 @@ COPY packages/server/package.json packages/server/
 COPY packages/web/package.json packages/web/
 RUN npm ci
 COPY tsconfig.base.json ./
-COPY types types
 COPY scripts scripts
 COPY packages packages
 RUN npm run build

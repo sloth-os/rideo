@@ -32,7 +32,7 @@ When the delivery is larger than the rendered picture (**upscale**) or faster th
 
 1. **A gateway model** when one is available: `settings.models.enhance` (`auto` picks the first model of
    `GET /v1/models/limits` with `supports_upscale`, and with `supports_frame_interpolation` and `max_fps ≥ fps`
-   when interpolating; `off` never uses a model). Each part is one request through `@sloth-os/mm-gateway-js`:
+   when interpolating; `off` never uses a model). Each part is one request through `@sloth-os/mm-gateway-ts`:
    the part as a `reference_video`, `dimensions` and `fps` as asked.
 2. **ffmpeg** otherwise: `scale` with Lanczos and the `framerate` filter (blended frames). The export says which
    (`delivery.enhance = {upscale: "model" | "ffmpeg" | null, interpolate: …, model}`), and its Content

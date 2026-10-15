@@ -162,7 +162,24 @@ keys:
 ```
 
 For OpenAI-compatible LLMs add `base_url: https://api.openai.com` with an `authorization: Bearer …` account
-and set `RIDEO_LLM_PROXY_DOMAIN=api.openai.com`.
+and set `RIDEO_LLM_PROXY_DOMAIN=api.openai.com`. Rideo adds the API version itself (`v1/chat/completions`), so an
+API documented with a base URL like `https://ai.example.com/v1` is proxied at `base_url: https://ai.example.com`, with
+`RIDEO_LLM_PROXY_DOMAIN=ai.example.com` (and the same for `RIDEO_VISION_*`).
+
+A model the gateway does not know yet is pinned on its backend and described in the gateway's catalog, so the
+gateway lists it and Rideo plans shots it can render:
+
+```yaml
+backends:
+  - { name: video, type: dashscope, base_url: "https://…", api_key: "${VIDEO_API_KEY}", tags: [prod],
+      extra: { video_model: my-video-model } }
+catalog:
+  models:
+    my-video-model: { modality: video, min_duration_seconds: 5, max_duration_seconds: 5 }
+```
+
+Then pin it in Settings (`RIDEO_VIDEO_MODEL`). The [real-model suite](testing.md#real-models-e2ereal) builds this
+configuration from its variables.
 
 ## External WebDAV examples
 

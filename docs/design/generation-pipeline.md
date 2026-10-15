@@ -81,7 +81,7 @@ deadlock a lane.
 ```mermaid
 sequenceDiagram
   participant J as Job handler
-  participant C as GatewayClient (mm-gateway-js)
+  participant C as GatewayClient (mm-gateway-ts)
   participant G as mm-gateway
   J->>C: generateVideo(request, {idempotencyKey, signal})
   C->>G: POST /v1/videos (Idempotency-Key)

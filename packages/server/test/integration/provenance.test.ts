@@ -6,7 +6,7 @@ import type { Resource } from '@rideo/shared';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createDevSigner } from '../../src/provenance/dev-cert';
 import { startEditorWorker } from '../helpers/editor-worker';
-import { makeFootage } from '../helpers/media';
+import { makeFootage, makeStill } from '../helpers/media';
 import { type Stack, startStack } from '../helpers/stack';
 
 const PNG = Buffer.from(
@@ -16,7 +16,7 @@ const PNG = Buffer.from(
 
 /**
  * Provenance (docs/design/provenance.md): C2PA manifests on exports, the disclosure label, consent records and
- * the public detection tool. Generated takes are covered by the story test.
+ * the public detection tool. Generated takes are covered by the story test, their keyframes' formats here.
  */
 
 const PROBE = {
@@ -164,6 +164,36 @@ describe('export provenance', () => {
       subject: 'Ada Lovelace',
       recordedBy: { kind: 'user' },
     });
+  });
+});
+
+describe('take provenance', () => {
+  let stack: Stack;
+  beforeAll(async () => {
+    stack = await startStack();
+  });
+  afterAll(async () => {
+    await stack?.stop();
+  });
+
+  it("carries the keyframe as the image model returned it: Seedream's JPEG is a JPEG ingredient", async () => {
+    const studio = stack.server.studio;
+    const signed = join(stack.dataDir, 'take-from-jpeg.mp4');
+    await studio.deps.c2pa.signTake({
+      input: await makeFootage(stack.dataDir),
+      output: signed,
+      title: 'take.mp4',
+      projectId: 'prj_jpegkeyframe01',
+      asset: { clipId: 'clp_jpegkeyframe01', shotId: 'sht_jpegkeyframe01', takeId: 'tak_jpegkeyframe01' },
+      watermarkId: null,
+      models: { imageModel: 'doubao-seedream-5.0-pro', videoModel: 'mock-video-v1' },
+      consistency: { status: 'passed', score: 0.9, judge: 'vision-llm' },
+      keyframe: { path: await makeStill(stack.dataDir, 'keyframe.jpg'), mime: 'image/jpeg' },
+    });
+    const store = (await Reader.fromAsset({ path: signed, mimeType: 'video/mp4' }))!.json() as any;
+    expect(store.manifests[store.active_manifest].ingredients).toEqual([
+      expect.objectContaining({ title: 'keyframe.jpg', format: 'image/jpeg', relationship: 'inputTo' }),
+    ]);
   });
 });
 

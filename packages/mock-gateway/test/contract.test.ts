@@ -14,9 +14,10 @@ import {
   ThumbnailPickOutputSchema,
   TranslateOutputSchema,
 } from '@rideo/shared';
-import MmGateway from '@sloth-os/mm-gateway-js';
+import { Configuration, ImagesApi, MetaApi } from '@sloth-os/mm-gateway-ts';
 import Ajv2020 from 'ajv/dist/2020.js';
 import addFormats from 'ajv-formats';
+import { isAxiosError } from 'axios';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { type RunningMockGateway, startMockGateway } from '../src';
 import { encodePng } from '../src/png';
@@ -185,27 +186,48 @@ describe('public contract', () => {
   });
 });
 
-describe('SDK compatibility (@sloth-os/mm-gateway-js)', () => {
+describe('SDK compatibility (@sloth-os/mm-gateway-ts)', () => {
+  // The configuration's basePath wins over the API constructor's.
+  const configuration = () => new Configuration({ basePath: gw.url, accessToken: 'test-key' });
+
   it('creates and polls tasks through the generated client', async () => {
-    const client = new MmGateway.ApiClient(gw.url);
-    client.authentications.BearerAuth.accessToken = 'test-key';
-    const images = new MmGateway.ImagesApi(client);
-    const created = await images.createImageWithHttpInfo(
-      { input: [{ type: 'text', text: 'sdk image' }], parameters: { dimensions: { width: 64, height: 64 } } },
-      { idempotencyKey: 'sdk-1' },
-    );
-    expect(created.response.status).toBe(202);
+    const images = new ImagesApi(configuration());
+    const body = {
+      input: [{ type: 'text' as const, text: 'sdk image' }],
+      parameters: { dimensions: { width: 64, height: 64 } },
+    };
+    const created = await images.createImage(body, 'sdk-1');
+    expect(created.status).toBe(202);
     expect(created.data.id).toMatch(/^img_/);
+    expectSchema('ImageTaskResponse', created.data);
     let task = created.data;
     for (let i = 0; i < 200 && !['succeeded', 'failed'].includes(task.status); i++) {
       await new Promise((r) => setTimeout(r, 30));
-      task = await images.getImage(task.id);
+      task = (await images.getImage(task.id)).data;
     }
     expect(task.status).toBe('succeeded');
     expect(task.outputs?.[0]?.uri).toContain('/files/');
-    const meta = new MmGateway.MetaApi(client);
-    const limits = await meta.listModelLimits({ modality: 'image' });
-    expect(limits.data[0]?.id).toBe('mock-image-v1');
+    // The same key and body replay the task.
+    expect((await images.createImage(body, 'sdk-1')).data.id).toBe(task.id);
+    const limits = await new MetaApi(configuration()).listModelLimits('image');
+    expect(limits.data.data[0]?.id).toBe('mock-image-v1');
+  });
+
+  it('rejects with the problem details as an axios error', async () => {
+    const images = new ImagesApi(configuration());
+    const bad = await images
+      .createImage({ input: [{ type: 'text', text: 'x' }], parameters: { size: '1x1' } as never }, 'sdk-2')
+      .catch((e: unknown) => e);
+    expect(isAxiosError(bad)).toBe(true);
+    if (!isAxiosError(bad)) return;
+    expect(bad.response?.status).toBe(422);
+    expect(bad.response?.headers['content-type']).toContain('application/problem+json');
+    expect(bad.response?.data).toMatchObject({ code: 'validation_error' });
+    expectSchema('ProblemDetail', bad.response?.data);
+    const anonymous = await new ImagesApi(new Configuration({ basePath: gw.url }))
+      .createImage({ input: [{ type: 'text', text: 'x' }] }, 'sdk-3')
+      .catch((e: unknown) => e);
+    expect(isAxiosError(anonymous) && anonymous.response?.status).toBe(401);
   });
 });
 

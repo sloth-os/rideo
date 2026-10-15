@@ -1,5 +1,7 @@
+import { createServer, type IncomingHttpHeaders } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { type RunningMockGateway, startMockGateway } from '@rideo/mock-gateway';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { GatewayClient, GatewayHttpError, GatewayTaskError } from '../../src/gateway/gateway-client';
 import { ProxyClient } from '../../src/gateway/proxy-client';
 import { Metrics } from '../../src/metrics';
@@ -74,6 +76,58 @@ describe('GatewayClient (SDK)', () => {
       .catch((e) => e);
     expect(net).toMatchObject({ retryable: true });
     expect(await offline.health()).toBe(false);
+  });
+
+  it('aborts the request in flight with the job and reports what the gateway answered', async () => {
+    const seen: IncomingHttpHeaders[] = [];
+    let closed = 0;
+    // A gateway that never answers video creates and sits behind a proxy that fails images with an HTML page.
+    const server = createServer((req, res) => {
+      seen.push(req.headers);
+      if (req.url === '/v1/videos') {
+        res.on('close', () => closed++);
+        return;
+      }
+      res.writeHead(502, { 'content-type': 'text/html' }).end('<html>bad gateway</html>');
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const local = new Metrics();
+    const stuck = new GatewayClient({
+      url: `http://127.0.0.1:${(server.address() as AddressInfo).port}/`,
+      apiKey: 'secret',
+      pollMs: 20,
+      timeoutsSec: { image: 5, video: 5, music: 5 },
+      metrics: local,
+    });
+    try {
+      const ctrl = new AbortController();
+      const pending = stuck
+        .generateVideo(
+          { input: [{ type: 'text', text: 'x' }] },
+          { idempotencyKey: 'a1', signal: ctrl.signal },
+        )
+        .catch((e) => e);
+      await vi.waitFor(() => expect(seen).toHaveLength(1));
+      ctrl.abort();
+      expect(await pending).toMatchObject({ name: 'AbortError' });
+      await vi.waitFor(() => expect(closed).toBe(1));
+      expect(seen[0]).toMatchObject({
+        authorization: 'Bearer secret',
+        'idempotency-key': 'a1',
+        'content-type': 'application/json',
+        'user-agent': 'rideo/0.1 (@sloth-os/mm-gateway-ts)',
+      });
+      const html = await stuck
+        .generateImage({ input: [{ type: 'text', text: 'x' }] }, { idempotencyKey: 'h1' })
+        .catch((e) => e);
+      expect(html).toBeInstanceOf(GatewayHttpError);
+      expect(html).toMatchObject({ status: 502, problemCode: undefined, retryable: true });
+      expect(html.message).toBe('mm-gateway 502: Request failed with status code 502');
+      expect(local.gatewayTasks.get({ modality: 'video', status: 'rejected' })).toBe(0);
+      expect(local.gatewayTasks.get({ modality: 'image', status: 'rejected' })).toBe(1);
+    } finally {
+      server.close();
+    }
   });
 
   it('reads model limits and the proxy authenticates with the gateway key', async () => {

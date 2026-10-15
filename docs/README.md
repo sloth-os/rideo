@@ -37,7 +37,7 @@
 | [design/provenance.md](design/provenance.md) | C2PA Content Credentials, the public detection tool, the disclosure label, consent records (EU AI Act Article 50) |
 | [design/editor.md](design/editor.md) | Timeline model and ops, the browser media engine (ffmpeg.wasm + WebCodecs), local proxies, analysis, chunked rendering, editor jobs |
 | [api/rest.md](api/rest.md) | REST API reference |
-| [testing.md](testing.md) | Test pyramid, suites, fixtures, CI jobs |
+| [testing.md](testing.md) | Test pyramid, suites, fixtures, the real-model suite, CI jobs |
 | [deployment.md](deployment.md) | Configuration, Docker, connecting mm-gateway and an external WebDAV server |
 | [brand.md](brand.md) | Brand and UI design tokens |
 | [roadmap.md](roadmap.md) | Market research (Sept 2026) and the prioritized list of features to build next |

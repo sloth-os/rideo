@@ -105,7 +105,7 @@ the same bound.
    user's direction (optional, ≤ 300 characters) and the cues (length, scene heading, summary, action, whether
    people speak) and returns one composition per cue: a prompt with instrumentation, mood and dynamics, a `bpm`,
    and the arc of the cue (how it starts and ends). The answer is validated with zod (`ScorePlanOutputSchema`).
-3. **Generate.** Every cue is a `music.generate` request through `@sloth-os/mm-gateway-js` (instrumental, the cue's
+3. **Generate.** Every cue is a `music.generate` request through `@sloth-os/mm-gateway-ts` (instrumental, the cue's
    length plus a 2 s tail for the crossfade, within the model's limits; `bpm`; a seed from the project and the cue)
    imported as a `music` resource with its generation (prompt, model, task).
 4. **Lay.** One commit replaces the Music track's items with the cues: cue *k* starts at its scene, overlaps the

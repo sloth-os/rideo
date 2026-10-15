@@ -40,6 +40,15 @@ export default defineConfig({
         },
       },
       './packages/web/vitest.config.ts',
+      {
+        test: {
+          // The real-model suite's configuration (docs/testing.md#real-models-e2ereal); its specs run in Playwright.
+          name: 'e2e-harness',
+          root: './e2e',
+          include: ['real/**/*.test.ts'],
+          environment: 'node',
+        },
+      },
     ],
     coverage: {
       provider: 'v8',

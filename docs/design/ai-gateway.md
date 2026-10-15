@@ -5,7 +5,7 @@ Rideo never talks to an AI provider directly. It has two paths into
 
 | Traffic | Path | Module |
 |---|---|---|
-| Image, video, music generation | **`@sloth-os/mm-gateway-js` SDK**: `ImagesApi`, `VideosApi`, `MusicApi`, `MetaApi` | `server/src/gateway/gateway-client.ts` |
+| Image, video, music generation | **`@sloth-os/mm-gateway-ts` SDK**: `ImagesApi`, `VideosApi`, `MusicApi`, `MetaApi` | `server/src/gateway/gateway-client.ts` |
 | Everything else: LLM text, vision judge, speech-to-text | **Gateway reverse proxy**: `{MM_GATEWAY_URL}/proxy/{domain}/{path}` | `server/src/gateway/proxy-client.ts`, `server/src/ai/*` |
 
 Both use the same gateway bearer key (`MM_GATEWAY_API_KEY`). Upstream credentials stay in the gateway. The gateway's
@@ -23,27 +23,34 @@ centered, enhancement uses ffmpeg), `none` never call the gateway. See
 
 ## SDK usage
 
-The SDK is an OpenAPI-generated CommonJS package. It is pinned as a git dependency
-(`github:sloth-os/mm-gateway-js#<commit>`) and built by its own `prepare` script. `GatewayClient` owns one
-`ApiClient` configured with `basePath`, the bearer key, and a timeout:
+The SDK is [`@sloth-os/mm-gateway-ts`](https://github.com/sloth-os/mm-gateway-ts), generated from the gateway's OpenAPI
+contract by `typescript-axios`: typed requests and tasks, one class per API, CommonJS with declarations. It is pinned as a
+git dependency (`github:sloth-os/mm-gateway-ts#<commit>`) and built by its own `prepare` script. `GatewayClient` owns one
+`Configuration` (the gateway URL as `basePath`, the bearer key as `accessToken`) and one axios instance (a 120 s timeout,
+the `User-Agent`, a direct connection like the proxy client's `fetch`) shared by `ImagesApi`, `VideosApi`, `MusicApi` and
+`MetaApi`:
 
 ```ts
-const client = new GatewayClient({ baseUrl, apiKey, routingProfile, pollIntervalMs, timeouts });
+const client = new GatewayClient({ url, apiKey, routingProfile, pollMs, timeoutsSec, metrics, log });
 await client.health();                                   // MetaApi.getHealth
-await client.listModelLimits('video');                   // MetaApi.listModelLimits (cached 5 min)
-const task = await client.generateImage(req, { idempotencyKey, signal, onUpdate });
-const task = await client.generateVideo(req, { idempotencyKey, signal, onUpdate });
-const task = await client.generateMusic(req, { idempotencyKey, signal, onUpdate });
+await client.modelLimits('video');                       // MetaApi.listModelLimits (cached 5 min)
+const task = await client.generateImage(req, { idempotencyKey, signal, metadata, onTask });
+const task = await client.generateVideo(req, { idempotencyKey, signal, metadata, onTask });
+const task = await client.generateMusic(req, { idempotencyKey, signal, metadata, onTask });
 ```
 
 - Requests are plain objects in the gateway's snake_case wire format (`duration_seconds`,
-  `negative_prompt`, …), built by the shared prompt compiler and validated with zod before sending. The
-  SDK serializes them unchanged.
-- `generate*` = `create*WithHttpInfo` (202 + task) → poll `get*WithHttpInfo` until `status` is terminal,
-  honouring `Retry-After`. The result is a normalized `GatewayTask {id, model, status, outputs[], usage, error}`.
-- Errors: HTTP problem details (`application/problem+json`) become `GatewayHttpError {status, code, detail}`.
-  Failed tasks become `GatewayTaskError {code, message}`. Both carry `retryable` (429 and 5xx, and the task
-  codes `timeout`, `rate_limited`, `provider_unavailable`, `upstream_error`).
+  `negative_prompt`, …), built by the shared prompt compiler. Their types in `@rideo/shared`
+  (`GatewayImageRequest`, `GatewayVideoRequest`, `GatewayMusicRequest`) are checked against the SDK's generated
+  `ImageRequest`, `VideoRequest` and `MusicRequest` when the server compiles, so a part role or a parameter the
+  contract does not have fails the typecheck rather than a gateway `422`.
+- `generate*` = `create*` (202 + task, `Idempotency-Key`) → poll `get*` until `status` is terminal,
+  honouring `Retry-After`. The job's `AbortSignal` goes with every request: cancelling a job aborts the request in
+  flight. The result is a normalized `GatewayTask {id, model, status, outputs[], usage, error}`, validated with zod.
+- Errors: an HTTP problem (`application/problem+json`) becomes `GatewayHttpError {status, code, detail}`, no
+  response at all (refused, reset, timed out) a `GatewayHttpError` without a status. Failed tasks become
+  `GatewayTaskError {code, message}`. Both carry `retryable` (no response, 429 and 5xx, and the task codes
+  `timeout`, `rate_limited`, `provider_unavailable`, `upstream_error`, `provider_timeout`, `internal_error`).
 - `routing.profile` is sent when `MM_GATEWAY_ROUTING_PROFILE` is set. `model` is sent when the project pins
   one; otherwise it is omitted and the gateway auto-routes by limits.
 - `metadata` carries `{rideo_project, rideo_job, rideo_step}` for cross-system tracing.

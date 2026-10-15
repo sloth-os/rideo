@@ -1,19 +1,23 @@
 # Testing
 
-Three layers, all runnable locally and in CI. Tests never call real AI providers. The
-[mock gateway](design/ai-gateway.md#mock-gateway) stands in for mm-gateway, including its proxy.
+Three layers, all runnable locally and in CI, never call a real AI provider: the
+[mock gateway](design/ai-gateway.md#mock-gateway) stands in for mm-gateway, including its proxy. A fourth, the
+[real-model suite](#real-models-e2ereal), runs the studio against a real mm-gateway and real image, video and vision
+models.
 
 | Layer | Runner | Real processes | Location |
 |---|---|---|---|
-| Unit | Vitest (node / jsdom) | none (in-memory storage, fake judge, fake clock) | `packages/*/test/unit`, `packages/shared/test` |
+| Unit | Vitest (node / jsdom) | none (in-memory storage, fake judge, fake clock) | `packages/*/test/unit`, `packages/shared/test`, `e2e/real/*.test.ts` |
 | Integration | Vitest (node) | Rideo server, embedded WebDAV, mock gateway, ffmpeg | `packages/server/test/integration`, `packages/mock-gateway/test` |
 | End-to-end | Playwright | full stack + built web app in Chromium at desktop and mobile viewports | `e2e/` |
+| Real models | Playwright | a studio, mm-gateway (Docker) and the providers behind it, Chromium at the desktop viewport | `e2e/real/` |
 
 ```bash
 npm run test:unit
 npm run test:integration          # needs ffmpeg/ffprobe on PATH
 npx playwright install chromium   # once
 npm run test:e2e                  # builds the web app, starts the stack, runs Playwright
+npm run test:e2e:real             # the real-model suite: needs the variables below and Docker
 
 # external WebDAV conformance against Apache httpd + mod_dav (Docker)
 scripts/webdav/run.sh
@@ -177,8 +181,10 @@ RIDEO_TEST_WEBDAV_URL=http://rideo:rideo@localhost:8080/ npx vitest run --projec
 - **Watermark robustness** (`watermark.test.ts`): embed into an ffmpeg-generated textured clip, then detect
   after x264 CRF 23 and 28, VP9, a 2 s trim, a metadata strip, and a downscale/upscale. Assert no detection
   on the unmarked source.
-- **SDK contract** (`mock-gateway/test/contract.test.ts`): the real `@sloth-os/mm-gateway-js` SDK against the
-  mock. Responses are validated against the vendored gateway `openapi.json`. The proxy answers the post-audio
+- **SDK contract** (`mock-gateway/test/contract.test.ts`): the real `@sloth-os/mm-gateway-ts` SDK against the
+  mock (create with an idempotency key, poll, model limits, a problem as an axios error with its status and code).
+  Responses are validated against the vendored gateway `openapi.json` (`mock-gateway/openapi/`, the spec the SDK is
+  generated from). The proxy answers the post-audio
   tasks (`score.plan`, `sfx.plan`), ElevenLabs sound generation, `dialogue.translate`, `reframe.focus`,
   `thumbnail.pick` and `frame.caption` (colour, light and the known names), OpenAI-style embeddings (in order,
   synonyms close), `mock-enhance-v1` upscales and interpolates, and `mock-performance-v1` acts a performance from the
@@ -345,6 +351,68 @@ spec emulates a browser without an H.264 decoder (an init script hides AVC from 
 must play through local proxies and `auto` must pick the ffmpeg.wasm engine. The footage spec renders with
 both engines explicitly, and the MCP spec checks that `auto` picks WebCodecs when every source decodes.
 
+## Real models (`e2e/real`)
+
+The mock proves Rideo against the gateway's contract; the real-model suite proves it against the real thing: the SDK
+and the proxy client against a real mm-gateway, the models' own answers through Rideo's schemas, and their pictures and
+videos through the pipeline. It does not grade the models: an answer passes when it fits the contract.
+
+| Variable | Secret | Example | Meaning |
+|---|---|---|---|
+| `IMAGE_MODEL_TYPE` | | `volcengine` | the mm-gateway backend type of the image model |
+| `IMAGE_MODEL_BASE_URL` | | `https://ai.ctaigw.cn/v1` | its endpoint |
+| `IMAGE_MODEL` | | `doubao-seedream-5.0-pro` | its id |
+| `IMAGE_MODEL_API_KEY` | yes | | its key |
+| `VIDEO_GEN_MODEL_TYPE` | | `dashscope` | the mm-gateway backend type of the video model |
+| `VIDEO_GEN_BASE_URL` | | `https://ai.ctaigw.cn` | its endpoint: the API root, or for `dashscope` the host alone |
+| `VIDEO_GEN_MODEL` | | `wan3.0-video-prime` | its id |
+| `VIDEO_GEN_API_KEY` | yes | | its key |
+| `VISION_MODEL_TYPE` | | `openai` | the API the vision model speaks: `openai` (or compatible), `gemini`, `anthropic` |
+| `VISION_MODEL_BASE_URL` | | `https://ai.ctaigw.cn/v1` | its base URL, API version included |
+| `VISION_MODEL` | | `qwen3.8-max` | its id |
+| `VISION_MODEL_API_KEY` | yes | | its key |
+| `VIDEO_GEN_DURATION_SEC` | | `5` (default) | the shot length the video model renders |
+| `MM_GATEWAY_IMAGE` | | `ghcr.io/sloth-os/mm-gateway:sha-b11490a` (default) | the gateway image to run |
+| `MM_GATEWAY_URL` / `MM_GATEWAY_API_KEY` | | | use a running gateway configured the same way instead |
+
+```bash
+export IMAGE_MODEL_TYPE=… # and the rest of the table
+npm run test:e2e:real     # builds the web app, starts mm-gateway in Docker and a studio, runs e2e/real
+```
+
+`e2e/real/env.ts` validates the variables (zod; every missing one is named) and maps them, as data, to:
+
+- **mm-gateway's configuration**: a backend per generation model (`IMAGE_MODEL_TYPE` with the model pinned as
+  `extra.image_model`, `VIDEO_GEN_MODEL_TYPE` with `extra.video_model`) at its SDK's API root (a `dashscope` base URL
+  that names only a host gets `/api/v1` on DashScope's hosts and `/v1` on a DashScope-compatible gateway: `ai.ctaigw.cn`
+  serves the DashScope API under `/v1` and answers anything else with its catch-all); a proxy for the vision model at its base URL
+  without the API version (Rideo's adapters add `v1/chat/completions`, `v1beta/…` or `v1/messages`), with the key in
+  the header that API reads (`authorization: Bearer`, `x-goog-api-key`, `x-api-key`); one key for the studio; and the
+  video model's shot length in `catalog.models`, so the shot planner asks for what the model renders. The file names
+  the keys (`${IMAGE_MODEL_API_KEY}`); their values reach the container's environment only.
+- **the studio's environment**: the gateway and its key; the vision model as both the language model
+  (`RIDEO_LLM_*`: the screenplay, the shot plans) and the vision model (`RIDEO_VISION_*`: attachments, the consistency
+  judge, footage); the image and video models pinned; no speech, effects, embeddings or voice-judge provider.
+
+`e2e/real/stack.ts` (Playwright's web server) pulls and starts the gateway image with that configuration, waits for
+`/health`, then starts one studio on the built-in WebDAV server, which logs to `test-results/real/studio.log` (every AI
+task with its model, latency and usage); on stop it saves the gateway's log to `test-results/real/mm-gateway.log`,
+without any form of the keys (whole or masked), and removes the container. `e2e/real/env.test.ts` and `gateway.test.ts` (in
+`npm run test:unit`) check the mapping for each vision API, base URLs with and without a version, the API roots of
+hosts, the duration override, the missing variables and the redacted log.
+
+| Spec | Real calls | Flow |
+|---|---|---|
+| `gateway.spec.ts` | none that generate | readiness asks the gateway's `/health`; `/api/config` lists the pinned image and video models through the SDK, the video model with the lengths of the gateway's catalog, and the vision model as the language and vision model; Settings tests the connection |
+| `story.spec.ts` | vision: `media.describe`, `screenplay.generate`, `clip.plan`, `consistency.judge`; image: references and keyframes; video: the pilot's shots | a brief with an image and a video attached → screenplay → one front reference per character and one view per element in use → cast locked (storyboard off) → the pilot clip planned in shots of the catalog's length: every shot gets a take with a keyframe from the image model and the vision model's verdict on it; at least one take has a video from the video model, started from its keyframe and judged on its frames (a shot whose keyframe fails the gate twice gets none) |
+| `footage.spec.ts` | vision: `footage.analyze` | footage uploaded → analysis → the model's summary and suggestions next to the rules' → accept all → auto edit |
+
+Each spec also reads the studio's `/metrics` (`rideo_llm_calls_total`, `rideo_gateway_tasks_total`) to check that the
+calls it expects were made and succeeded. The suite's projects judge with a threshold of 0.5 and two attempts per
+keyframe and per video: the cost stays bounded, and a strict verdict on a good picture does not keep the video model
+from being exercised. A run takes about 10–20 minutes and costs a few images, two short videos and a few dozen vision
+calls. Retries are off: a failure is reported, not paid for twice.
+
 ## CI (`.github/workflows/ci.yml`)
 
 | Job | Runs |
@@ -354,4 +422,6 @@ both engines explicitly, and the MCP spec checks that `auto` picks WebCodecs whe
 | `integration` | integration suites (ffmpeg installed via apt) |
 | `webdav-compat` | storage conformance against Apache httpd 2.4 + `mod_dav` (`scripts/webdav/run.sh`) |
 | `e2e` | Playwright desktop + mobile; traces and screenshots uploaded on failure |
+| `real-ai-check` | on pushes to `main` and manual runs (never pull requests): whether the suite's variables and secrets are set (repository or organization); a notice names what is missing |
+| `real-ai` | when they are: the real-model suite (`playwright.real.config.ts`); the keys reach that step only, not `npm ci`; the report, the studio's log and the gateway's (redacted) log are uploaded |
 | `docker` | builds the production image (pushed to GHCR on `main`) |

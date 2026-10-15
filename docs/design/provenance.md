@@ -43,7 +43,7 @@ Signed in the shot pipeline right after the watermark is embedded, before the ta
 | `c2pa.actions.v2` | `c2pa.created` (software agent: the video model mm-gateway reported, parameters `{imageModel, videoModel, gateway: "mm-gateway"}`), then `c2pa.watermarked` when the watermark is on |
 | `c2pa.soft-binding` | `{alg: "org.rideo.watermark.1", blocks: [{scope: {}, value: base64(watermark id)}]}` |
 | `org.rideo.provenance` | `{project, asset: {kind: "take", clipId, shotId, takeId}, consistency: {status, score, judge}}` |
-| ingredients | the verified keyframe the video started from (`inputTo`), when one was generated |
+| ingredients | the verified keyframe the video started from (`inputTo`), in the format the image model returned (PNG, JPEG, WebP), when one was generated |
 
 ### Exports
 

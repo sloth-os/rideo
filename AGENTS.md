@@ -10,7 +10,7 @@
 - Frontend work follows `docs/brand.md` (tokens, typography, components).
 - Domain types live in `packages/shared` and are validated with zod at every boundary (REST, MCP,
   WebDAV documents, LLM output).
-- Image/video/music generation goes through `@sloth-os/mm-gateway-js`. Every other AI call goes through
+- Image/video/music generation goes through `@sloth-os/mm-gateway-ts`. Every other AI call goes through
   the mm-gateway `/proxy/{domain}/{path}` surface (`packages/server/src/gateway/proxy-client.ts`).
   Never call a provider directly.
 - REST handlers and MCP tools must call the same application service (`packages/server/src/domain`)

@@ -105,6 +105,89 @@ jobs:
             test-results/
           retention-days: 7
 
+  # The real-model suite (docs/testing.md#real-models-e2ereal): a real mm-gateway and real providers, so real costs.
+  # Pushes to main and manual runs only; pull requests never get it (and forks get no secrets).
+  real-ai-check:
+    name: Real models configured?
+    runs-on: ubuntu-24.04
+    if: github.event_name != 'pull_request'
+    outputs:
+      configured: ${{ steps.check.outputs.configured }}
+    steps:
+      - id: check
+        env:
+          IMAGE_MODEL_TYPE: ${{ vars.IMAGE_MODEL_TYPE }}
+          IMAGE_MODEL_BASE_URL: ${{ vars.IMAGE_MODEL_BASE_URL }}
+          IMAGE_MODEL: ${{ vars.IMAGE_MODEL }}
+          IMAGE_MODEL_API_KEY: ${{ secrets.IMAGE_MODEL_API_KEY }}
+          VIDEO_GEN_MODEL_TYPE: ${{ vars.VIDEO_GEN_MODEL_TYPE }}
+          VIDEO_GEN_BASE_URL: ${{ vars.VIDEO_GEN_BASE_URL }}
+          VIDEO_GEN_MODEL: ${{ vars.VIDEO_GEN_MODEL }}
+          VIDEO_GEN_API_KEY: ${{ secrets.VIDEO_GEN_API_KEY }}
+          VISION_MODEL_TYPE: ${{ vars.VISION_MODEL_TYPE }}
+          VISION_MODEL_BASE_URL: ${{ vars.VISION_MODEL_BASE_URL }}
+          VISION_MODEL: ${{ vars.VISION_MODEL }}
+          VISION_MODEL_API_KEY: ${{ secrets.VISION_MODEL_API_KEY }}
+        run: |
+          missing=()
+          for v in IMAGE_MODEL_TYPE IMAGE_MODEL_BASE_URL IMAGE_MODEL IMAGE_MODEL_API_KEY \
+            VIDEO_GEN_MODEL_TYPE VIDEO_GEN_BASE_URL VIDEO_GEN_MODEL VIDEO_GEN_API_KEY \
+            VISION_MODEL_TYPE VISION_MODEL_BASE_URL VISION_MODEL VISION_MODEL_API_KEY; do
+            [ -n "${!v}" ] || missing+=("$v")
+          done
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::notice title=Real-model suite skipped::not set: ${missing[*]} (docs/testing.md#real-models-e2ereal)"
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  real-ai:
+    name: End-to-end on real models
+    runs-on: ubuntu-24.04
+    needs: real-ai-check
+    if: needs.real-ai-check.outputs.configured == 'true'
+    timeout-minutes: 60
+    env:
+      IMAGE_MODEL_TYPE: ${{ vars.IMAGE_MODEL_TYPE }}
+      IMAGE_MODEL_BASE_URL: ${{ vars.IMAGE_MODEL_BASE_URL }}
+      IMAGE_MODEL: ${{ vars.IMAGE_MODEL }}
+      VIDEO_GEN_MODEL_TYPE: ${{ vars.VIDEO_GEN_MODEL_TYPE }}
+      VIDEO_GEN_BASE_URL: ${{ vars.VIDEO_GEN_BASE_URL }}
+      VIDEO_GEN_MODEL: ${{ vars.VIDEO_GEN_MODEL }}
+      VIDEO_GEN_DURATION_SEC: ${{ vars.VIDEO_GEN_DURATION_SEC }}
+      VISION_MODEL_TYPE: ${{ vars.VISION_MODEL_TYPE }}
+      VISION_MODEL_BASE_URL: ${{ vars.VISION_MODEL_BASE_URL }}
+      VISION_MODEL: ${{ vars.VISION_MODEL }}
+      MM_GATEWAY_IMAGE: ${{ vars.MM_GATEWAY_IMAGE }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - name: Install ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+      - run: npm ci
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+      - run: npm run build -w @rideo/web
+      # The keys reach this step only: the stack hands them to the gateway container's environment.
+      - name: Real-model suite
+        env:
+          IMAGE_MODEL_API_KEY: ${{ secrets.IMAGE_MODEL_API_KEY }}
+          VIDEO_GEN_API_KEY: ${{ secrets.VIDEO_GEN_API_KEY }}
+          VISION_MODEL_API_KEY: ${{ secrets.VISION_MODEL_API_KEY }}
+        run: npx playwright test -c playwright.real.config.ts
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: real-ai
+          path: |
+            playwright-report-real/
+            test-results/real/
+          retention-days: 7
+
   docker:
     name: Docker image
     runs-on: ubuntu-24.04
