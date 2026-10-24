@@ -841,44 +841,61 @@ export function EditorView() {
     setSnappingState(on);
     writeSnap(on);
   }, []);
-  // The session's edit history and clipboard (docs/design/editing-tools.md#undo-and-redo). Undo and redo run one
-  // after the other, each reading the history the last one left, so quick presses all count.
+  // The session's edit history and clipboard (docs/design/editing-tools.md#undo-and-redo). Edits, undo and redo run
+  // one after the other in one queue, each on the history the last one left: an edit is sent once the one before it
+  // is answered, and an undo steps back from the last edit made before it.
   const historyRef = useRef<EditHistory>({ undo: [], redo: [], current: null });
   const [, rerender] = useReducer((n: number) => n + 1, 0);
   const setHistory = useCallback((next: (h: EditHistory) => EditHistory) => {
     historyRef.current = next(historyRef.current);
     rerender();
   }, []);
-  const steps = useRef<Promise<void>>(Promise.resolve());
+  const queue = useRef<Promise<void>>(Promise.resolve());
+  const pendingEdits = useProject((s) => s.pendingEdits.length);
   const seededFor = useRef<string | null>(null);
   const clipboard = useRef<Clip | null>(null);
   const reverse = useRef<ReturnType<typeof setInterval> | null>(null);
   // Small frames and sound for the lanes' filmstrips and waveforms (docs/design/editor.md#waveforms-and-filmstrips)
   const [lanePool, setLanePool] = useState<MediaPool | null>(null);
   const [webcodecs] = useState(() => typeof globalThis.VideoDecoder !== 'undefined');
-  // Optimistic: the shared reducer updates the timeline at once; the server's result is authoritative.
+  /** Runs `task` after everything queued before it, then fetches the timeline if a commit changed it meanwhile. */
+  const enqueue = useCallback(
+    (task: () => Promise<void>) => {
+      queue.current = queue.current
+        .then(async () => {
+          await task();
+          const s = useProject.getState();
+          if (!projectId || !s.timelineBehind || s.pendingEdits.length > 0) return;
+          const next = await api.timeline(projectId).catch(() => null);
+          if (next) useProject.getState().confirmTimeline(next);
+        })
+        .catch(reportError);
+    },
+    [projectId],
+  );
+  // Optimistic (docs/design/editor.md#operations): the shared reducer updates the timeline at once and the ops wait in
+  // the queue; the server's answer is authoritative, with the edits it has not answered yet replayed on top.
   const apply = useCallback(
     (ops: TimelineOp[]) => {
       if (!projectId || ops.length === 0) return;
-      let rollback: () => void;
       try {
-        rollback = useProject.getState().applyLocalOps(ops);
+        useProject.getState().applyLocalOps(ops);
       } catch (err) {
         reportError(err);
         return;
       }
-      api
-        .applyOps(projectId, ops)
-        .then((r) => {
-          useProject.getState().confirmTimeline(r.timeline);
+      enqueue(async () => {
+        try {
+          const r = await api.applyOps(projectId, ops);
+          useProject.getState().confirmEdit(projectId, r.timeline);
           setHistory((h) => recordEdit(h, r.commit));
-        })
-        .catch((err) => {
-          rollback();
+        } catch (err) {
+          useProject.getState().rejectEdit(projectId);
           reportError(err);
-        });
+        }
+      });
     },
-    [projectId, setHistory],
+    [projectId, setHistory, enqueue],
   );
   const previewSize = useMemo(() => {
     if (!timeline) return { width: 640, height: 360 };
@@ -957,10 +974,13 @@ export function EditorView() {
     void playerRef.current?.seek(at);
   }, []);
 
-  /** Undo and redo restore the timeline from a commit (a new commit; docs/design/editing-tools.md#undo-and-redo). */
+  /**
+   * Undo and redo restore the timeline from a commit (a new commit; docs/design/editing-tools.md#undo-and-redo), once
+   * the edits made before them are answered.
+   */
   const step = useCallback(
     (dir: 'undo' | 'redo') => {
-      steps.current = steps.current.then(async () => {
+      enqueue(async () => {
         const h = historyRef.current;
         const target = dir === 'undo' ? undoTarget(h) : redoTarget(h);
         if (!projectId || !target) return;
@@ -976,7 +996,7 @@ export function EditorView() {
         }
       });
     },
-    [projectId, setHistory],
+    [projectId, setHistory, enqueue],
   );
   const history = historyRef.current;
 
@@ -1280,7 +1300,16 @@ export function EditorView() {
     <div className="mx-auto max-w-6xl space-y-4">
       <SectionHeader
         title="Editor"
-        subtitle={`${formatDuration(duration)} · ${timeline.width}×${timeline.height} @ ${timeline.fps} fps`}
+        subtitle={
+          <>
+            {`${formatDuration(duration)} · ${timeline.width}×${timeline.height} @ ${timeline.fps} fps`}
+            {pendingEdits > 0 ? (
+              <span data-testid="edits-pending" aria-live="polite">
+                {` · Saving ${pendingEdits === 1 ? '1 edit' : `${pendingEdits} edits`}…`}
+              </span>
+            ) : null}
+          </>
+        }
         actions={
           <>
             {docs.project.kind === 'story' ? (
@@ -1306,7 +1335,7 @@ export function EditorView() {
             <BrandTools brand={docs.project.settings.brand} time={time} apply={apply} />
             <Button
               icon={<Undo2 className="size-4" />}
-              disabled={!undoTarget(history) || !canEdit}
+              disabled={!(undoTarget(history) || pendingEdits > 0) || !canEdit}
               onClick={() => step('undo')}
               title="Undo (Ctrl/⌘+Z)"
               data-testid="undo"
@@ -1315,7 +1344,7 @@ export function EditorView() {
             </Button>
             <Button
               icon={<Redo2 className="size-4" />}
-              disabled={!redoTarget(history) || !canEdit}
+              disabled={!redoTarget(history) || pendingEdits > 0 || !canEdit}
               onClick={() => step('redo')}
               title="Redo (Ctrl/⌘+Shift+Z)"
               data-testid="redo"

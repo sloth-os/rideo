@@ -37,6 +37,15 @@ export interface ProjectSlice {
   syncIssues: { path: string; error: string }[];
   /** Entities changed by others recently (pulse highlight), keyed by `${kind}:${id}`. */
   touched: Record<string, number>;
+  /**
+   * Timeline edits made here that the server has not answered yet, oldest first: the timeline shown is
+   * `serverTimeline` with them replayed (docs/design/editor.md#operations).
+   */
+  pendingEdits: TimelineOp[][];
+  /** The timeline as the server last answered it. */
+  serverTimeline: Timeline | null;
+  /** A commit changed the timeline while edits were pending: the editor fetches it once they are answered. */
+  timelineBehind: boolean;
 }
 
 export const emptySlice: ProjectSlice = {
@@ -50,7 +59,41 @@ export const emptySlice: ProjectSlice = {
   activity: [],
   syncIssues: [],
   touched: {},
+  pendingEdits: [],
+  serverTimeline: null,
+  timelineBehind: false,
 };
+
+const TIMELINE = 'timeline.json';
+
+/** An empty timeline in the project's format, for the first edit of a project without one. */
+const blankTimeline = (docs: ProjectDocs): Timeline =>
+  emptyTimeline({
+    fps: docs.project.settings.fps,
+    width: docs.project.settings.resolution.width,
+    height: docs.project.settings.resolution.height,
+  });
+
+/**
+ * The timeline shown while edits are pending (docs/design/editor.md#operations): the server's, with each pending batch
+ * replayed in order. A batch that no longer applies is skipped here; it stays queued, and the server refuses it when
+ * its turn comes.
+ */
+export function replayEdits(
+  server: Timeline | null,
+  pending: readonly TimelineOp[][],
+  blank: () => Timeline,
+): Timeline | null {
+  let timeline = server;
+  for (const ops of pending) {
+    try {
+      timeline = applyOps(timeline ?? blank(), ops);
+    } catch {
+      // skipped until the server answers it
+    }
+  }
+  return timeline;
+}
 
 function touchedFromPaths(paths: string[]): Record<string, number> {
   const now = Date.now();
@@ -90,7 +133,13 @@ export function reduceEvent(
       const onBranch = !state.head || !event.commit.branch || event.commit.branch === state.head.branch;
       if (!onBranch) return { next: { ...state, seq, commits }, refetch: false };
       if (!event.docs || !state.docs) return { next: { ...state, seq, commits }, refetch: true };
-      const docs = applyDocChanges(state.docs, event.docs);
+      // While edits are pending a commit cannot say which of them it includes: the shown timeline stays, behind
+      const timelineChanged = TIMELINE in event.docs;
+      const behind = timelineChanged && state.pendingEdits.length > 0;
+      const changes = behind
+        ? Object.fromEntries(Object.entries(event.docs).filter(([path]) => path !== TIMELINE))
+        : event.docs;
+      const docs = applyDocChanges(state.docs, changes);
       const fromOthers = event.commit.author.kind !== 'user';
       return {
         next: {
@@ -100,6 +149,8 @@ export function reduceEvent(
           docs,
           workflow: evaluateWorkflow(docs),
           head: state.head ? { ...state.head, commit: event.commit.id } : state.head,
+          serverTimeline: timelineChanged && !behind ? (docs.timeline ?? null) : state.serverTimeline,
+          timelineBehind: state.timelineBehind || behind,
           touched: fromOthers
             ? { ...state.touched, ...touchedFromPaths(Object.keys(event.docs)) }
             : state.touched,
@@ -147,11 +198,15 @@ interface ProjectStore extends ProjectSlice {
   refresh(): Promise<void>;
   applyEvent(seq: number, event: ProjectEvent): boolean;
   /**
-   * Optimistic timeline edit (docs/design/editor.md#operations): applies the ops with the shared reducer and
-   * returns a rollback. Throws `TimelineOpError` for invalid ops, before anything is sent.
+   * Optimistic timeline edit (docs/design/editor.md#operations): applies the ops with the shared reducer and queues
+   * them until the server answers. Throws `TimelineOpError` for invalid ops, before anything is queued.
    */
-  applyLocalOps(ops: TimelineOp[]): () => void;
-  /** The server's timeline replaces the local one. */
+  applyLocalOps(ops: TimelineOp[]): void;
+  /** The server answered the oldest pending edit of `projectId` with its timeline: the rest replay on top of it. */
+  confirmEdit(projectId: string, timeline: Timeline): void;
+  /** The server refused the oldest pending edit of `projectId`: the rest replay on the server's timeline. */
+  rejectEdit(projectId: string): void;
+  /** The server's timeline (a restore, a fetch): pending edits replay on top of it, and it is no longer behind. */
   confirmTimeline(timeline: Timeline): void;
   focus(kind: FocusKind, id: string): void;
   player(action: 'play' | 'pause' | 'seek', time?: number): void;
@@ -175,17 +230,25 @@ export const useProject = create<ProjectStore>((set, get) => ({
         api.state(projectId),
         api.history(projectId, { limit: 100 }),
       ]);
+      // A reload while edits are pending keeps the shown timeline: it is fetched once they are answered
+      const before = get();
+      const pending = before.projectId === projectId ? before.pendingEdits : [];
+      const keep = pending.length > 0 && before.docs !== null;
+      const docs = keep ? { ...state.docs, timeline: before.docs!.timeline } : state.docs;
       const slice: ProjectSlice = {
         ...emptySlice,
         projectId,
         seq: state.seq,
         head: state.head,
-        docs: state.docs,
-        workflow: evaluateWorkflow(state.docs),
+        docs,
+        workflow: evaluateWorkflow(docs),
         jobs: Object.fromEntries(state.jobs.map((j) => [j.id, j])),
         commits,
-        activity: get().projectId === projectId ? get().activity : [],
+        activity: before.projectId === projectId ? before.activity : [],
         syncIssues: state.syncIssues,
+        pendingEdits: pending,
+        serverTimeline: keep ? before.serverTimeline : (state.docs.timeline ?? null),
+        timelineBehind: keep,
       };
       set({ ...slice, loading: false });
       return slice;
@@ -204,23 +267,30 @@ export const useProject = create<ProjectStore>((set, get) => ({
     return refetch;
   },
   applyLocalOps(ops) {
-    const docs = get().docs;
-    if (!docs) return () => undefined;
-    const s = docs.project.settings;
-    const before = docs.timeline;
-    const next = applyOps(
-      before ?? emptyTimeline({ fps: s.fps, width: s.resolution.width, height: s.resolution.height }),
-      ops,
-    );
-    set({ docs: { ...docs, timeline: next } });
-    return () => {
-      const d = get().docs;
-      if (d && d.timeline === next) set({ docs: { ...d, timeline: before } });
-    };
+    const { docs, pendingEdits } = get();
+    if (!docs) return;
+    const next = applyOps(docs.timeline ?? blankTimeline(docs), ops);
+    set({ docs: { ...docs, timeline: next }, pendingEdits: [...pendingEdits, ops] });
+  },
+  confirmEdit(projectId, timeline) {
+    const { docs, pendingEdits } = get();
+    if (get().projectId !== projectId || !docs) return;
+    const rest = pendingEdits.slice(1);
+    const shown = replayEdits(timeline, rest, () => blankTimeline(docs));
+    set({ serverTimeline: timeline, pendingEdits: rest, docs: { ...docs, timeline: shown } });
+  },
+  rejectEdit(projectId) {
+    const { docs, pendingEdits, serverTimeline } = get();
+    if (get().projectId !== projectId || !docs) return;
+    const rest = pendingEdits.slice(1);
+    const shown = replayEdits(serverTimeline, rest, () => blankTimeline(docs));
+    set({ pendingEdits: rest, docs: { ...docs, timeline: shown } });
   },
   confirmTimeline(timeline) {
-    const d = get().docs;
-    if (d) set({ docs: { ...d, timeline } });
+    const { docs, pendingEdits } = get();
+    if (!docs) return;
+    const shown = replayEdits(timeline, pendingEdits, () => blankTimeline(docs));
+    set({ serverTimeline: timeline, timelineBehind: false, docs: { ...docs, timeline: shown } });
   },
   focus(kind, id) {
     set({ highlight: { kind, id, at: Date.now() } });

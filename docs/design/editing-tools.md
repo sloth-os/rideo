@@ -40,10 +40,13 @@ tested):
 - **Redo** does the opposite.
 
 At load the undo stack holds one entry, the parent of the last commit that changed the timeline, so the last edit can
-be undone after a reload. Stacks keep the last 100 states. Undo and redo run one after the other, each on the history
-the previous one left, so quick presses all count. A restore puts back the whole timeline, so changes others made
-since that state go too; history keeps them. Buttons: *Undo* and *Redo* (disabled with empty stacks); keys:
-`Ctrl/⌘+Z`, `Ctrl/⌘+Shift+Z` and `Ctrl+Y`.
+be undone after a reload. Stacks keep the last 100 states. Undo and redo wait in the editor's edit queue
+([operations](editor.md#operations)) behind every edit made before them, and run one after the other, each on the
+history the previous one left, so quick presses all count and an undo always steps back from the last edit made
+before it, even while the server is still committing earlier ones. Edits made after an undo wait behind it. A restore
+puts back the whole timeline, so changes others made since that state go too; history keeps them. Buttons: *Undo*
+(enabled while edits are pending or the stack has a state) and *Redo* (disabled with an empty stack or pending edits,
+which empty it); keys: `Ctrl/⌘+Z`, `Ctrl/⌘+Shift+Z` and `Ctrl+Y`.
 
 ### Markers
 

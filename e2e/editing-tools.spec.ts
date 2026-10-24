@@ -218,3 +218,64 @@ test('editing tools: markers, shortcuts, undo, freeze, detach, snapping, tracks,
   // The whole cut renders in this tab with ffmpeg.wasm: freeze, mirror, adjustments, key and slide
   await exportInThisTab(page, { quality: 'draft', engine: 'ffmpeg' });
 });
+
+/**
+ * A slow server (docs/design/editor.md#operations): edits made quicker than the server commits them wait in order, the
+ * header says they are being saved, and Undo steps back from the last edit made, not from the last one answered.
+ */
+test('edits queue for a slow server and undo steps back from the last edit', async ({
+  page,
+  request,
+}, testInfo) => {
+  test.setTimeout(180_000);
+  const api = new Api(request);
+  const pid = await api.editProjectWithClip(
+    `Slow server (${testInfo.project.name})`,
+    makeFootage(testInfo.outputPath('clip.mp4')),
+  );
+  const timeline = () => api.call<Timeline>('GET', `/projects/${pid}/timeline`);
+  const phone = (page.viewportSize()?.width ?? 1280) < 768;
+  // every edit takes 1.5 s to reach the server, like a storage that takes seconds per commit
+  await page.route('**/timeline/ops', async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    await route.continue();
+  });
+  await page.goto(`/p/${pid}/editor`);
+  const item = phone
+    ? page.getByTestId('timeline-list').locator('button').first()
+    : page.locator('[data-track-name="Video"]').getByTestId('timeline-item').first();
+  await expect(item).toBeVisible();
+
+  // Two markers and a freeze frame, quicker than the server answers
+  for (const t of [1, 2]) {
+    await seekTo(page, t);
+    if (phone) await page.getByTestId('marker-add').click();
+    else await page.keyboard.press('m');
+  }
+  await item.click();
+  await seekTo(page, 3);
+  await page.getByTestId('freeze-frame').click();
+  await expect(page.getByTestId('edits-pending')).toContainText(/Saving \d edits?…/);
+
+  // Undo while they are being saved: it waits for them, then takes back the freeze frame only
+  await page.getByTestId('undo').click();
+  await expect(page.getByTestId('edits-pending')).toBeHidden({ timeout: 60_000 });
+  await expect
+    .poll(
+      async () => {
+        const t = await timeline();
+        return [t.markers?.map((m) => m.t), t.tracks[0]!.items.length];
+      },
+      { timeout: 60_000 },
+    )
+    .toEqual([[1, 2], 1]);
+  // the server committed them in the order they were made
+  const history = await api.call<{ message: string }[]>('GET', `/projects/${pid}/history?limit=20`);
+  const edits = history.map((c) => c.message.replace(/ from \w+$/, '')).filter((m) => / timeline/.test(m));
+  expect(edits.slice(0, 4)).toEqual([
+    'Restore timeline.json',
+    'Edit timeline (freeze_frame)',
+    'Edit timeline (add_marker)',
+    'Edit timeline (add_marker)',
+  ]);
+});

@@ -114,10 +114,16 @@ editor's undo and redo move between the session's timeline states by restoring `
 (`history_restore {paths: ["timeline.json"]}`, [undo and redo](editing-tools.md#undo-and-redo)).
 
 The browser applies its own edits **optimistically**: the same reducer runs locally on the current
-timeline, the UI updates at once, and the ops are sent to `POST /timeline/ops`. The server's result (or
-the live `commit` event) is authoritative and replaces the local copy; a rejected batch rolls the local
-timeline back and shows the error. Concurrent edits by agents therefore never diverge for more than one
-round trip.
+timeline, the UI updates at once, and the ops are queued for `POST /timeline/ops`. The queue sends one batch at a
+time, in order, each once the one before it is answered, so the server commits them in the order they were made. The
+timeline shown is always the server's last answer with the batches it has not answered yet replayed on top
+(`store/project.ts`: `pendingEdits`, `serverTimeline`): an answer replaces the server's copy and the rest replay on
+it, a rejected batch is dropped and its error shown, and a queued batch that no longer applies is skipped locally
+(the server refuses it when its turn comes). While batches are pending, live `commit` events that change the timeline
+leave the shown timeline alone (they cannot say which pending batches they include) and mark it behind; once the
+queue is empty the editor fetches the timeline. A storage that takes seconds per commit therefore never makes the
+timeline jump back to an older state, and the header says how many edits are still being saved ("Saving 3 edits…").
+Concurrent edits by agents never diverge for longer than the queue takes to drain.
 
 ### Queries (shared, used by preview and render)
 

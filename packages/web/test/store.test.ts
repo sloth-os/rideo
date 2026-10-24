@@ -1,7 +1,16 @@
-import { docPath, evaluateWorkflow, type Job } from '@rideo/shared';
+import {
+  applyOps,
+  docPath,
+  emptyTimeline,
+  evaluateWorkflow,
+  type Job,
+  type ProjectDocs,
+  type TimelineOp,
+} from '@rideo/shared';
 import * as f from '@rideo/shared/testing';
-import { describe, expect, it } from 'vitest';
-import { emptySlice, type ProjectSlice, reduceEvent, useProject } from '../src/store/project';
+import { describe, expect, it, vi } from 'vitest';
+import { api } from '../src/lib/api';
+import { emptySlice, type ProjectSlice, reduceEvent, replayEdits, useProject } from '../src/store/project';
 
 const agent = { kind: 'agent' as const, id: 'claude-code', name: 'Claude Code' };
 
@@ -91,37 +100,128 @@ describe('reduceEvent', () => {
   });
 });
 
-describe('optimistic timeline edits', () => {
-  it('apply locally, confirm with the server result, roll back on rejection', () => {
+describe('optimistic timeline edits (docs/design/editor.md#operations)', () => {
+  const media = f.media({ durationSec: 8 });
+  const track = 'trk_primaryvideo01';
+  const insert = (id: string, out: number): TimelineOp => ({
+    op: 'insert',
+    trackId: track,
+    item: { id, kind: 'video', source: { type: 'media', media }, in: 0, out },
+  });
+  const ids = () => useProject.getState().docs!.timeline!.tracks[0]!.items.map((i) => i.id);
+  /** The server's copy: the project's empty timeline at 25 fps (so it can be told apart) with the given ops. */
+  const server = (docs: ProjectDocs, ...ops: TimelineOp[]) =>
+    applyOps(
+      emptyTimeline({
+        fps: 25,
+        width: docs.project.settings.resolution.width,
+        height: docs.project.settings.resolution.height,
+      }),
+      ops,
+    );
+
+  /** A loaded project (its id and documents) in the store. */
+  const open = () => {
+    const s = slice();
+    useProject.setState({ ...s, loading: false });
+    return { docs: s.docs!, pid: s.projectId! };
+  };
+
+  it('queue locally, replay the rest on each answer, and drop a refused edit', () => {
+    const { docs, pid } = open();
+    const store = useProject.getState;
+    store().applyLocalOps([insert('itm_first00000000000', 8)]);
+    store().applyLocalOps([insert('itm_second0000000000', 4)]);
+    expect(store().pendingEdits).toHaveLength(2);
+    expect(ids()).toEqual(['itm_first00000000000', 'itm_second0000000000']);
+    // the first is answered: the second replays on the server's copy, so nothing jumps back
+    const first = server(docs, insert('itm_first00000000000', 8));
+    store().confirmEdit(pid, first);
+    expect(store().pendingEdits).toHaveLength(1);
+    expect(store().serverTimeline).toBe(first);
+    expect(store().docs!.timeline!.fps).toBe(25);
+    expect(ids()).toEqual(['itm_first00000000000', 'itm_second0000000000']);
+    // an answer for another project changes nothing
+    store().confirmEdit('prj_someotherproject', server(docs));
+    expect(store().pendingEdits).toHaveLength(1);
+    // the second is refused: the server's copy is shown
+    store().rejectEdit(pid);
+    expect(store().pendingEdits).toEqual([]);
+    expect(store().docs!.timeline).toEqual(first);
+    // invalid ops throw before anything is queued
+    expect(() => store().applyLocalOps([{ op: 'remove', itemId: 'itm_doesnotexist0000' }])).toThrow();
+    expect(store().pendingEdits).toEqual([]);
+    store().clear();
+  });
+
+  it('a refused first edit of a project without a timeline leaves it without one', () => {
+    const { docs } = open();
+    useProject.getState().applyLocalOps([insert('itm_first00000000000', 8)]);
+    expect(ids()).toEqual(['itm_first00000000000']);
+    useProject.getState().rejectEdit(docs.project.id);
+    expect(useProject.getState().docs!.timeline).toBeNull();
+    useProject.getState().clear();
+  });
+
+  it('skips a queued edit that no longer applies until the server refuses it', () => {
     const docs = f.docs();
-    useProject.setState({ ...slice(), docs, loading: false });
-    const media = f.media({ durationSec: 8 });
-    const track = 'trk_primaryvideo01';
-    const rollback = useProject.getState().applyLocalOps([
-      {
-        op: 'insert',
-        trackId: track,
-        item: { kind: 'video', source: { type: 'media', media }, in: 0, out: 8 },
-      },
-    ]);
-    const local = useProject.getState().docs!.timeline!;
-    expect(local.tracks[0]!.items).toHaveLength(1);
-    rollback();
-    expect(useProject.getState().docs!.timeline ?? null).toBeNull();
-    const again = useProject.getState().applyLocalOps([
-      {
-        op: 'insert',
-        trackId: track,
-        item: { kind: 'video', source: { type: 'media', media }, in: 0, out: 4 },
-      },
-    ]);
-    const server = { ...useProject.getState().docs!.timeline!, fps: 25 };
-    useProject.getState().confirmTimeline(server);
-    again(); // a late rollback must not undo the confirmed server state
-    expect(useProject.getState().docs!.timeline!.fps).toBe(25);
-    expect(() =>
-      useProject.getState().applyLocalOps([{ op: 'remove', itemId: 'itm_doesnotexist0000' }]),
-    ).toThrow();
+    const base = server(docs, insert('itm_first00000000000', 8));
+    const gone: TimelineOp[] = [{ op: 'remove', itemId: 'itm_first00000000000' }];
+    const shown = replayEdits(base, [gone, gone, [insert('itm_second0000000000', 4)]], () => server(docs));
+    expect(shown!.tracks[0]!.items.map((i) => i.id)).toEqual(['itm_second0000000000']);
+    expect(replayEdits(null, [], () => server(docs))).toBeNull();
+  });
+
+  it('keeps the shown timeline when a commit changes it while edits are pending, and catches up after', () => {
+    const { docs, pid } = open();
+    const store = useProject.getState;
+    store().applyLocalOps([insert('itm_first00000000000', 8)]);
+    // the first edit's own commit, or anyone's: which pending edits it includes is unknown
+    const theirs = server(docs, insert('itm_theirs0000000000', 2));
+    const c = f.character();
+    store().applyEvent(1, {
+      kind: 'commit',
+      commit: commit('c1'),
+      docs: { 'timeline.json': theirs, [docPath.character(c.id)]: c },
+    });
+    expect(ids()).toEqual(['itm_first00000000000']);
+    expect(store().docs!.characters[c.id]).toEqual(c);
+    expect(store().timelineBehind).toBe(true);
+    // answered, then fetched: the shown timeline is the server's
+    store().confirmEdit(
+      pid,
+      server(docs, insert('itm_theirs0000000000', 2), insert('itm_first00000000000', 8)),
+    );
+    expect(store().timelineBehind).toBe(true);
+    const fetched = server(docs, insert('itm_theirs0000000000', 2), insert('itm_first00000000000', 8));
+    store().confirmTimeline(fetched);
+    expect(store().timelineBehind).toBe(false);
+    expect(ids()).toEqual(['itm_theirs0000000000', 'itm_first00000000000']);
+    // with nothing pending a commit's timeline is shown at once
+    const later = server(docs, insert('itm_later00000000000', 3));
+    store().applyEvent(2, { kind: 'commit', commit: commit('c2'), docs: { 'timeline.json': later } });
+    expect(store().docs!.timeline).toEqual(later);
+    expect(store().serverTimeline).toEqual(later);
+    store().clear();
+  });
+
+  it('a reload while edits are pending keeps the shown timeline and marks it behind', async () => {
+    const { docs } = open();
+    useProject.getState().applyLocalOps([insert('itm_first00000000000', 8)]);
+    const reloaded = { ...docs, timeline: server(docs, insert('itm_theirs0000000000', 2)) };
+    vi.spyOn(api, 'state').mockResolvedValue({
+      seq: 9,
+      head: { branch: 'main', commit: 'c9' },
+      docs: reloaded,
+      jobs: [],
+      syncIssues: [],
+    } as unknown as Awaited<ReturnType<typeof api.state>>);
+    vi.spyOn(api, 'history').mockResolvedValue([]);
+    await useProject.getState().refresh();
+    expect(ids()).toEqual(['itm_first00000000000']);
+    expect(useProject.getState().pendingEdits).toHaveLength(1);
+    expect(useProject.getState().timelineBehind).toBe(true);
+    vi.restoreAllMocks();
     useProject.getState().clear();
   });
 });
