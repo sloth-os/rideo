@@ -22,3 +22,6 @@ export const PORTS = {
 } as const;
 
 export const at = (port: number, path = '') => `http://127.0.0.1:${port}${path}`;
+
+/** The mock gateway's management token: the settings spec registers API keys with it (docs/design/settings.md). */
+export const GATEWAY_ADMIN_KEY = 'e2e-gateway-admin';

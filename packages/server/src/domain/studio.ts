@@ -23,6 +23,7 @@ import { LlmVoiceJudge } from '../consistency/voice';
 import { AppError } from '../errors';
 import { GatewayClient } from '../gateway/gateway-client';
 import { ProxyClient } from '../gateway/proxy-client';
+import { GatewayProxies } from '../gateway/proxy-sync';
 import { batchGenerate, clipGenerate, clipPlan } from '../jobs/handlers/clips';
 import type { HandlerDeps } from '../jobs/handlers/common';
 import { exportPrepare } from '../jobs/handlers/finishing';
@@ -140,7 +141,18 @@ export function createStudio(
     maxCacheBytes: config.cacheMaxBytes,
     log,
   });
-  const proxy = new ProxyClient({ baseUrl: config.gateway.url, apiKey: config.gateway.apiKey });
+  // API keys set in Settings become gateway proxies; their calls use the studio's own gateway key
+  // (docs/design/settings.md#registration-in-mm-gateway).
+  const gatewayProxies = new GatewayProxies({
+    config,
+    metrics,
+    log: log.child({ component: 'gateway-proxies' }),
+  });
+  const proxy = new ProxyClient({
+    baseUrl: config.gateway.url,
+    apiKey: config.gateway.apiKey,
+    routes: gatewayProxies,
+  });
   const llm = new LlmTasks(createAdapter(proxy, config.llm), createAdapter(proxy, config.vision), {
     metrics,
     log: log.child({ component: 'llm' }),
@@ -233,6 +245,8 @@ export function createStudio(
     media,
     ff,
     gateway,
+    proxy,
+    gatewayProxies,
     llm,
     judge: config.consistency.judge === 'off' ? new OffJudge() : new VisionLlmJudge(llm),
     offJudge: new OffJudge(),
@@ -241,9 +255,9 @@ export function createStudio(
     hub,
     jobs,
     staging,
-    ...(config.stt ? { stt: new SttClient(proxy, config.stt.domain, config.stt.model) } : {}),
+    ...(config.stt ? { stt: new SttClient(proxy, config.stt, config.stt.model) } : {}),
     ...(config.embeddings
-      ? { embeddings: new EmbeddingsClient(proxy, config.embeddings.domain, config.embeddings.model) }
+      ? { embeddings: new EmbeddingsClient(proxy, config.embeddings, config.embeddings.model) }
       : {}),
     ...(config.tts ? { tts: createTts(proxy, config.tts, metrics) } : {}),
     ...(config.sfx ? { sfx: new SfxClient(proxy, config.sfx, metrics) } : {}),
@@ -458,6 +472,7 @@ export function createStudio(
       await accounts.init();
       await notifications.init();
       await push.init();
+      await gatewayProxies.start();
       let recovered = 0;
       for (const id of await projectsRegistry.listIds()) {
         try {
@@ -490,6 +505,7 @@ export function createStudio(
       }
     },
     async stop() {
+      gatewayProxies.stop();
       if (syncTimer) clearInterval(syncTimer);
       services.search.close();
       if (sweepTimer) clearInterval(sweepTimer);

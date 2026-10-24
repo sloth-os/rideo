@@ -15,6 +15,7 @@ import {
   validateRequest,
 } from './generate';
 import { handleChat, multipartFile } from './llm';
+import { ManagementError, type MockKey, MockManagement } from './management';
 import { MOCK_MODELS, type Modality } from './models';
 import { embeddings } from './search';
 import { handleSpeech } from './speech';
@@ -25,6 +26,10 @@ const execFileP = promisify(execFile);
 export interface MockGatewayOptions {
   /** Bearer key required on /v1 and /proxy (open when unset). */
   apiKey?: string;
+  /** Management token of /v1/management (docs/design/ai-gateway.md#mock-gateway); disabled when unset. */
+  managementKey?: string;
+  /** Only domains with a registered proxy are served (404 otherwise), like the real gateway. */
+  strictProxies?: boolean;
   /** pending→running→done latency (ms). */
   latencyMs?: number;
   /** Every n-th identity-bearing generation drifts (drops signatures). 0 = never. */
@@ -45,7 +50,15 @@ export interface MockGatewayApp {
   app: FastifyInstance;
   store: TaskStore;
   dir: string;
-  counters: { generations: number; flaky: number; proxyCalls: Record<string, number> };
+  counters: {
+    generations: number;
+    flaky: number;
+    proxyCalls: Record<string, number>;
+    /** The account and gateway key of the last call to each registered proxy. */
+    proxyAccounts: Record<string, { account: string; key: string; headers: Record<string, string> }>;
+  };
+  /** The management API's state: proxies and keys with their real credentials. */
+  management: MockManagement;
   close(): Promise<void>;
 }
 
@@ -53,7 +66,14 @@ export async function buildMockGateway(opts: MockGatewayOptions = {}): Promise<M
   const dir = opts.dir ?? (await mkdtemp(join(tmpdir(), 'rideo-mock-gateway-')));
   const ownsDir = !opts.dir;
   const store = new TaskStore(opts.latencyMs ?? 200);
-  const counters = { generations: 0, flaky: 0, proxyCalls: {} as Record<string, number> };
+  const counters: MockGatewayApp['counters'] = {
+    generations: 0,
+    flaky: 0,
+    proxyCalls: {},
+    proxyAccounts: {},
+  };
+  const management = new MockManagement({ apiKey: opts.apiKey, managementKey: opts.managementKey });
+  const keyOf = new WeakMap<FastifyRequest, MockKey>();
   const flakyEvery = opts.flakyEvery ?? Number(process.env.MOCK_FLAKY_EVERY ?? 0);
   // Closing ends every connection: a test's gateway stops at once even when a client keeps a socket open
   const app = Fastify({
@@ -88,12 +108,58 @@ export async function buildMockGateway(opts: MockGatewayOptions = {}): Promise<M
   const baseUrl = (req: FastifyRequest) => `${req.protocol}://${req.host}`;
 
   app.addHook('onRequest', async (req, reply) => {
-    if (!opts.apiKey) return;
-    if (!req.url.startsWith('/v1/') && !req.url.startsWith('/proxy/')) return;
-    if (req.headers.authorization !== `Bearer ${opts.apiKey}`) {
-      return problem(req, reply, 401, 'unauthorized', 'Missing or unknown API key.');
+    if (req.url.startsWith('/v1/management/')) {
+      try {
+        management.authorize(req.headers.authorization);
+      } catch (err) {
+        const e = err as ManagementError;
+        return problem(req, reply, e.status, e.code, e.message);
+      }
+      return;
     }
+    if (!req.url.startsWith('/v1/') && !req.url.startsWith('/proxy/')) return;
+    const token = /^Bearer (.+)$/.exec(req.headers.authorization ?? '')?.[1];
+    const key = management.keyFor(token);
+    if (!key) return problem(req, reply, 401, 'unauthorized', 'Missing or unknown API key.');
+    keyOf.set(req, key);
   });
+
+  // Management (docs/design/ai-gateway.md#mock-gateway)
+  const managed =
+    (fn: (req: FastifyRequest) => ReturnType<MockManagement['view']>) =>
+    async (req: FastifyRequest, reply: FastifyReply) => {
+      try {
+        const out = fn(req);
+        return reply.header('etag', `"${out.revision}"`).header('cache-control', 'no-store').send(out);
+      } catch (err) {
+        if (!(err instanceof ManagementError)) throw err;
+        return problem(req, reply, err.status, err.code, err.message);
+      }
+    };
+  const ifMatch = (req: FastifyRequest) => req.headers['if-match'] as string | undefined;
+  const param = (req: FastifyRequest, name: string) => (req.params as Record<string, string>)[name]!;
+  const jsonBody = (req: FastifyRequest): unknown =>
+    Buffer.isBuffer(req.body) ? JSON.parse(req.body.toString('utf8')) : req.body;
+  app.get(
+    '/v1/management/config',
+    managed(() => management.view()),
+  );
+  app.put(
+    '/v1/management/proxies/:domain',
+    managed((req) => management.putProxy(param(req, 'domain'), jsonBody(req), ifMatch(req))),
+  );
+  app.delete(
+    '/v1/management/proxies/:domain',
+    managed((req) => management.deleteProxy(param(req, 'domain'), ifMatch(req))),
+  );
+  app.put(
+    '/v1/management/keys/:id',
+    managed((req) => management.putKey(param(req, 'id'), jsonBody(req), ifMatch(req))),
+  );
+  app.delete(
+    '/v1/management/keys/:id',
+    managed((req) => management.deleteKey(param(req, 'id'), ifMatch(req))),
+  );
 
   app.get('/health', async () => ({ status: 'ok' }));
   app.get('/metrics', async (_req, reply) =>
@@ -222,7 +288,51 @@ export async function buildMockGateway(opts: MockGatewayOptions = {}): Promise<M
   app.all('/proxy/:domain/*', async (req, reply) => {
     const { domain } = req.params as { domain: string; '*': string };
     const path = (req.params as { '*': string })['*'];
+    // A registered proxy is served like mm-gateway does: to the keys its tags allow, with an account's credential
+    const registered = management.proxy(domain);
+    if (registered) {
+      const key = keyOf.get(req)!;
+      if (!management.allowed(key, registered))
+        return problem(
+          req,
+          reply,
+          403,
+          'forbidden',
+          `API key '${key.id}' is not allowed to use proxy '${domain}'.`,
+        );
+      const account = registered.accounts.find((a) => Object.keys(a.headers).length);
+      if (!account)
+        return problem(
+          req,
+          reply,
+          503,
+          'provider_not_configured',
+          `Proxy '${domain}' has no configured account.`,
+        );
+      counters.proxyAccounts[domain] = { account: account.id, key: key.id, headers: account.headers };
+      reply.header('x-mm-gateway-proxy-account', account.id);
+    } else if (opts.strictProxies) {
+      return problem(
+        req,
+        reply,
+        404,
+        'generation_service_not_found',
+        'The requested generation service was not found.',
+      );
+    }
     counters.proxyCalls[domain] = (counters.proxyCalls[domain] ?? 0) + 1;
+    // Model lists (endpoint tests): the mock's chat and speech models
+    if (req.method === 'GET' && /(^|\/)models$/.test(path))
+      return {
+        object: 'list',
+        data: [
+          'mock-llm',
+          'gpt-4.1-mini',
+          'eleven_multilingual_v2',
+          'eleven_text_to_sound_v2',
+          'gpt-4o-mini-tts',
+        ].map((id) => ({ id, object: 'model', owned_by: 'mock' })),
+      };
     const speech = await handleSpeech(path, req.body, String(req.headers['content-type'] ?? ''), dir);
     if (speech) return reply.code(speech.status).headers(speech.headers).send(speech.body);
     if (/audio\/transcriptions$/.test(path)) {
@@ -298,6 +408,7 @@ export async function buildMockGateway(opts: MockGatewayOptions = {}): Promise<M
     store,
     dir,
     counters,
+    management,
     async close() {
       await app.close();
       if (ownsDir) await rm(dir, { recursive: true, force: true });

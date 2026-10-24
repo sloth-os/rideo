@@ -8,8 +8,12 @@ Rideo never talks to an AI provider directly. It has two paths into
 | Image, video, music generation | **`@sloth-os/mm-gateway-ts` SDK**: `ImagesApi`, `VideosApi`, `MusicApi`, `MetaApi` | `server/src/gateway/gateway-client.ts` |
 | Everything else: LLM text, vision judge, speech-to-text | **Gateway reverse proxy**: `{MM_GATEWAY_URL}/proxy/{domain}/{path}` | `server/src/gateway/proxy-client.ts`, `server/src/ai/*` |
 
-Both use the same gateway bearer key (`MM_GATEWAY_API_KEY`). Upstream credentials stay in the gateway. The gateway's
-URL, key, routing profile and models are set in Settings or the environment ([settings](settings.md)).
+Both use the gateway bearer key (`MM_GATEWAY_API_KEY`), except that proxies the studio registered itself are called
+with the studio's own gateway key (below). Upstream credentials always stay in the gateway: either its operator
+configured them, or an administrator typed an API key in Settings and Rideo registered it as a proxy account through
+the gateway's management API ([provider endpoints and API keys](settings.md#provider-endpoints-and-api-keys)). No
+request Rideo sends carries an upstream credential. The gateway's URL, keys, routing profile and models are set in
+Settings or the environment ([settings](settings.md)).
 
 ## Without a gateway
 
@@ -59,9 +63,28 @@ const task = await client.generateMusic(req, { idempotencyKey, signal, metadata,
 ## Proxy usage (LLM, vision, STT, embeddings)
 
 ```ts
-const res = await proxy.fetch(domain, path, { method: 'POST', body, headers, signal });
-// → fetch(`${MM_GATEWAY_URL}/proxy/${domain}/${path}`, { headers: { authorization: `Bearer ${key}` } })
+const res = await proxy.fetch(api, path, { method: 'POST', body, headers, signal });
+// api = { domain, prefix } from the endpoint's API base URL (parseApiBase)
+// → fetch(`${MM_GATEWAY_URL}/proxy/${api.domain}/${withPrefix(path, api.prefix)}`,
+//         { headers: { authorization: `Bearer ${keyFor(api.domain)}` } })
 ```
+
+`path` is the adapter's path with its API version (`v1/chat/completions`, `v1beta/models/…`); a base URL with a path
+replaces that first segment (`https://ark.cn-beijing.volces.com/api/v3` → `api/v3/chat/completions`), a bare domain or a
+URL without a path keeps it ([API base URL](settings.md#api-base-url)). `keyFor(domain)` is the studio's own gateway key
+for the domains whose proxy it registered, else `MM_GATEWAY_API_KEY`. A call to a domain whose registration is still
+running waits for it.
+
+### Proxies registered by the studio
+
+When API keys are set in Settings, `GatewayProxies` (`server/src/gateway/proxy-sync.ts`) keeps the gateway's proxies
+in step with them through the SDK's `ManagementApi` (`getManagementConfig`, `putManagementProxy`,
+`deleteManagementProxy`, `putManagementKey`, `deleteManagementKey`, each with the revision in `If-Match`; a `412`
+re-reads and re-plans, three times at most). The plan is a pure function of the gateway's (redacted) configuration and
+the desired proxies, so it is unit-tested without a gateway; what it creates, keeps and removes is in
+[registration in mm-gateway](settings.md#registration-in-mm-gateway). The management calls use the admin token
+(`MM_GATEWAY_ADMIN_KEY`, else the gateway key), a 15 s timeout and a direct connection, and are never retried in a
+loop: a failure is reported on the Settings page and retried at the next start, save or endpoint test.
 
 `LlmClient` adapters speak the upstream's native API through the proxy:
 
@@ -151,7 +174,8 @@ and the offline demo (`npm run dev:demo`).
 |---|---|
 | `GET /health`, `/v1/models`, `/v1/models/limits` | `mock-image-v1` (image-to-image, ≤4 input images), `mock-video-v1` (2–10 s, first/last frame, reference images, audio and video), `mock-video-lite-v1` (no last frame, no reference audio or video), `mock-multishot-v1` (`max_shots: 4`, 2–20 s; [multi-shot](multi-shot.md)), `mock-enhance-v1` (upscale and frame interpolation of a reference video; [finishing](finishing.md)), `mock-segment-v1` (`supports_segmentation`: an ellipse matte of the reference video; [editor](editor.md#segmentation-masks-remove-the-background)), `mock-lipsync-v1`, `mock-music-v1` |
 | `POST /v1/images`, `/v1/videos`, `/v1/music` + `GET …/{id}` | Real async lifecycle (`pending → running → succeeded`, `Retry-After`, `Idempotency-Key` replay and 409 on body mismatch, `ETag`/`304`). Produces real media: PNGs (pngjs), H.264 MP4 via ffmpeg (a first frame, when given, is animated with a slow zoom), WAV/MP3 tones. |
-| `/proxy/{domain}/{path}` | OpenAI, Gemini and Anthropic request/response shapes. It routes on the `rideo-task:` marker and returns deterministic JSON derived from the input. |
+| `/proxy/{domain}/{path}` | OpenAI, Gemini and Anthropic request/response shapes. It routes on the `rideo-task:` marker and returns deterministic JSON derived from the input (`settings.test` answers `OK`). `GET …/models` lists the mock's models. A domain registered through the management API is served like the real gateway: only to keys its tags allow (`403` otherwise), with the first account's id in `x-mm-gateway-proxy-account`; other domains are open, or refused with `404` with `MOCK_GATEWAY_STRICT_PROXIES=1`. |
+| `/v1/management/config`, `/v1/management/proxies/{domain}`, `/v1/management/keys/{id}` | The management subset Rideo uses, behind `MOCK_GATEWAY_MANAGEMENT_KEY`: the redacted configuration with its revision (`ETag`), proxies and keys created, replaced and deleted with `If-Match` (`428` without, `412` when stale), `[redacted]` values kept from the stored ones. Tests read the stored credentials from `gw.management`. |
 | `POST /proxy/*/v1/audio/transcriptions` | segments sized to the audio duration (every other line with filler words) and their word timings (`words`) |
 | `POST /proxy/*/v1/sound-generation` | a pink-noise burst of `duration_seconds` (MP3) |
 

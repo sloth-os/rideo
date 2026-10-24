@@ -30,7 +30,7 @@ export class SfxClient {
   async generate(req: { text: string; durationSec: number; signal?: AbortSignal }): Promise<SoundEffect> {
     let res: Response;
     try {
-      res = await this.proxy.fetch(this.endpoint.domain, 'v1/sound-generation?output_format=mp3_44100_128', {
+      res = await this.proxy.fetch(this.endpoint, 'v1/sound-generation?output_format=mp3_44100_128', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({

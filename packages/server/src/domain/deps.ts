@@ -9,6 +9,8 @@ import type { Config } from '../config';
 import type { ConsistencyJudge } from '../consistency/judge';
 import type { VoiceJudge } from '../consistency/voice';
 import type { GatewayClient } from '../gateway/gateway-client';
+import type { ProxyClient } from '../gateway/proxy-client';
+import type { GatewayProxies } from '../gateway/proxy-sync';
 import type { JobQueue } from '../jobs/queue';
 import type { LiveHub } from '../live/hub';
 import type { Ffmpeg } from '../media/ffmpeg';
@@ -40,6 +42,10 @@ export interface Deps {
   media: MediaStore;
   ff: Ffmpeg;
   gateway: GatewayClient;
+  /** Every other AI call: the gateway proxy (docs/design/ai-gateway.md#proxy-usage-llm-vision-stt-embeddings). */
+  proxy: ProxyClient;
+  /** API keys set in Settings, registered as gateway proxies (docs/design/settings.md#registration-in-mm-gateway). */
+  gatewayProxies: GatewayProxies;
   llm: LlmTasks;
   judge: ConsistencyJudge;
   offJudge: ConsistencyJudge;

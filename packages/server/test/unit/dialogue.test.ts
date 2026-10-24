@@ -1,18 +1,20 @@
-import type { ConsistencyReport } from '@rideo/shared';
+import { type ConsistencyReport, withPrefix } from '@rideo/shared';
 import { describe, expect, it } from 'vitest';
 import { AnthropicAdapter, GeminiAdapter, type LlmRequest, OpenAiAdapter } from '../../src/ai/llm';
 import { SfxClient } from '../../src/ai/sfx';
 import { alignedWords, ElevenLabsTts, OpenAiTts } from '../../src/ai/tts';
 import { type VoiceJudge, verifyVoices } from '../../src/consistency/voice';
-import type { ProxyClient } from '../../src/gateway/proxy-client';
+import type { ProxyClient, ProxyTarget } from '../../src/gateway/proxy-client';
 import { Metrics } from '../../src/metrics';
 
 /** Records proxy calls and answers each path from a table (docs/design/dialogue.md#providers). */
 class FakeProxy {
   calls: { domain: string; path: string; body: any; form?: FormData }[] = [];
   constructor(private readonly replies: Record<string, () => Response>) {}
-  async fetch(domain: string, path: string, init: RequestInit) {
+  async fetch(target: ProxyTarget, rawPath: string, init: RequestInit) {
     const form = init.body instanceof FormData ? init.body : undefined;
+    const domain = typeof target === 'string' ? target : target.domain;
+    const path = withPrefix(rawPath, typeof target === 'string' ? null : target.prefix);
     this.calls.push({ domain, path, body: form ? null : JSON.parse(String(init.body)), form });
     const key = Object.keys(this.replies).find((k) => path.startsWith(k));
     return key ? this.replies[key]!() : new Response('{"detail":"no"}', { status: 404 });

@@ -95,25 +95,27 @@ that is set in the environment wins and shows locked there; one that is not can 
 |---|---|---|
 | `MM_GATEWAY_URL` | – | gateway base URL; unset: no AI, the editor works ([without mm-gateway](design/settings.md#without-mm-gateway)) |
 | `MM_GATEWAY_API_KEY` | – | gateway bearer key |
+| `MM_GATEWAY_ADMIN_KEY` | – (the gateway key is tried) | the gateway's management token (`MANAGEMENT_API_KEY`), used only to register the API keys set below as gateway proxies ([provider API keys](design/settings.md#provider-endpoints-and-api-keys)) |
 | `MM_GATEWAY_ROUTING_PROFILE` | – | optional `routing.profile` |
 | `RIDEO_IMAGE_MODEL` / `RIDEO_VIDEO_MODEL` / `RIDEO_MUSIC_MODEL` | `auto` | default models (projects can override; the pilot pins them) |
 | `RIDEO_GATEWAY_POLL_MS` | `2000` | poll interval when there is no `Retry-After` |
 | `RIDEO_GATEWAY_TIMEOUT_IMAGE_SEC` / `_VIDEO_SEC` / `_MUSIC_SEC` | `300` / `1200` / `600` | task timeouts |
 | `RIDEO_LLM_PROVIDER` | `openai` | `openai` (or compatible), `gemini`, `anthropic` |
-| `RIDEO_LLM_PROXY_DOMAIN` | provider default | gateway proxy domain for the LLM |
+| `RIDEO_LLM_PROXY_DOMAIN` | provider default | the LLM's API base URL (`https://ai.example.com/v1`) or just its domain; the host is the gateway proxy ([API base URL](design/settings.md#api-base-url)) |
+| `RIDEO_LLM_API_KEY` | – | the LLM's API key: registered in mm-gateway as a proxy account; empty: the gateway's own account for the domain |
 | `RIDEO_LLM_MODEL` | `gpt-4.1-mini` | text model |
-| `RIDEO_VISION_PROVIDER` / `_PROXY_DOMAIN` / `_MODEL` | LLM values | vision model for the judge and descriptions |
-| `RIDEO_STT_PROXY_DOMAIN` / `RIDEO_STT_MODEL` | – / `whisper-1` | optional speech-to-text |
-| `RIDEO_EMBEDDINGS_PROXY_DOMAIN` / `RIDEO_EMBEDDINGS_MODEL` | – / `text-embedding-3-small` | optional caption embeddings: media search by meaning ([search](design/search.md)); without them it ranks by words |
+| `RIDEO_VISION_PROVIDER` / `_PROXY_DOMAIN` / `_API_KEY` / `_MODEL` | LLM values (the key of an endpoint with the same origin) | vision model for the judge and descriptions |
+| `RIDEO_STT_PROXY_DOMAIN` / `_API_KEY` / `RIDEO_STT_MODEL` | – / – / `whisper-1` | optional speech-to-text (OpenAI-style) |
+| `RIDEO_EMBEDDINGS_PROXY_DOMAIN` / `_API_KEY` / `RIDEO_EMBEDDINGS_MODEL` | – / – / `text-embedding-3-small` | optional caption embeddings: media search by meaning ([search](design/search.md)); without them it ranks by words |
 | `RIDEO_TTS_PROVIDER` | `off` | dialogue voices ([dialogue](design/dialogue.md)): `elevenlabs` (design, clone, speech with timings), `openai` (preset voices) or `off`; new projects speak their dialogue when set |
 | `RIDEO_SFX_PROVIDER` | `off` | generated sound effects ([post audio](design/post-audio.md)): `elevenlabs` (sound generation through the proxy) or `off` (`sfx_unavailable`) |
-| `RIDEO_SFX_PROXY_DOMAIN` / `RIDEO_SFX_MODEL` | `api.elevenlabs.io` / `eleven_text_to_sound_v2` | sound-effects endpoint behind the gateway proxy |
-| `RIDEO_TTS_PROXY_DOMAIN` / `RIDEO_TTS_MODEL` | provider default (`api.elevenlabs.io` / `eleven_multilingual_v2`, `api.openai.com` / `gpt-4o-mini-tts`) | TTS endpoint behind the gateway proxy |
+| `RIDEO_SFX_PROXY_DOMAIN` / `_API_KEY` / `RIDEO_SFX_MODEL` | `api.elevenlabs.io` / – / `eleven_text_to_sound_v2` | sound-effects endpoint behind the gateway proxy |
+| `RIDEO_TTS_PROXY_DOMAIN` / `_API_KEY` / `RIDEO_TTS_MODEL` | provider default (`api.elevenlabs.io` / `eleven_multilingual_v2`, `api.openai.com` / `gpt-4o-mini-tts`) | TTS endpoint behind the gateway proxy |
 | `RIDEO_EDIT_MODEL` | `auto` | video-to-video model of take edits ([take editing](design/take-editing.md)); projects can override `models.edit` |
 | `RIDEO_PERFORMANCE_MODEL` | `auto` | model of performance takes ([performance](design/performance.md)): `auto` picks the first gateway model with `supports_performance`, `off` disables them; projects can override `models.performance` |
 | `RIDEO_ENHANCE_MODEL` | `auto` | upscale and frame-interpolation model of exports ([finishing](design/finishing.md)): `auto` picks the first gateway model with the capabilities, `off` uses ffmpeg; projects can override `models.enhance` |
 | `RIDEO_LIPSYNC_MODEL` | `auto` | video model of the lip-sync pass (projects can override `models.lipSync`) |
-| `RIDEO_VOICE_JUDGE_PROVIDER` / `_PROXY_DOMAIN` / `_MODEL` | the vision provider (none for Anthropic) / provider domain / `gpt-4o-audio-preview` or `gemini-2.5-flash` | audio-capable model of the speaker check (rule V4); `off` disables it |
+| `RIDEO_VOICE_JUDGE_PROVIDER` / `_PROXY_DOMAIN` / `_API_KEY` / `_MODEL` | the vision provider (none for Anthropic) / the vision base URL for the same provider, else the provider's / the key of an endpoint with the same origin / `gpt-4o-audio-preview` or `gemini-2.5-flash` | audio-capable model of the speaker check (rule V4); `off` disables it |
 
 ### Consistency, jobs, watermark
 
@@ -162,9 +164,19 @@ keys:
 ```
 
 For OpenAI-compatible LLMs add `base_url: https://api.openai.com` with an `authorization: Bearer …` account
-and set `RIDEO_LLM_PROXY_DOMAIN=api.openai.com`. Rideo adds the API version itself (`v1/chat/completions`), so an
-API documented with a base URL like `https://ai.example.com/v1` is proxied at `base_url: https://ai.example.com`, with
-`RIDEO_LLM_PROXY_DOMAIN=ai.example.com` (and the same for `RIDEO_VISION_*`).
+and set `RIDEO_LLM_PROXY_DOMAIN=api.openai.com`. Proxies are registered at the API's origin: an API documented with a
+base URL like `https://ai.example.com/v1` is proxied at `base_url: https://ai.example.com`, with
+`RIDEO_LLM_PROXY_DOMAIN=https://ai.example.com/v1` (or `ai.example.com`; the same for `RIDEO_VISION_*`).
+
+### Or set the API keys in Settings
+
+Instead of writing provider credentials into the gateway's configuration, give Rideo the gateway's management token
+(`MM_GATEWAY_ADMIN_KEY`, the gateway's `MANAGEMENT_API_KEY`) and set each provider's API base URL and API key in
+**Settings → Language, vision and speech** (and **Voices and sound**). Rideo registers them in the gateway as proxies
+tagged `rideo-<instance>`, with a gateway key of its own to use them, and removes them again when the keys are cleared
+([registration in mm-gateway](design/settings.md#registration-in-mm-gateway)). The gateway needs its management API
+(`MANAGEMENT_API_KEY` set; mm-gateway's Docker Compose setup has it) and, to keep the registrations across restarts,
+`MANAGEMENT_CONFIG_PATH`; Rideo registers them again at every start in any case.
 
 A model the gateway does not know yet is pinned on its backend and described in the gateway's catalog, so the
 gateway lists it and Rideo plans shots it can render:

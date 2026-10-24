@@ -76,9 +76,13 @@ RIDEO_TEST_WEBDAV_URL=http://rideo:rideo@localhost:8080/ npx vitest run --projec
   transcript words with punctuation and standalone fillers, `.cube` parsing and the trilinear lookup, overlay tracks,
   ramps, splits and `remove_ranges` in the reducer, overlay layers and sound in the queries, the chunk graph with a
   LUT, an inverted matte, keyframed position and fades as `sendcmd` commands, and ramps).
-- **shared, settings and project files** (`settings-theme.test.ts`, `bundle.test.ts`): the settings table (each
-  setting once, in a known group, environment-only configuration and key material kept out, secrets marked,
-  `showIf` targets); themes (CSS values that cannot break out, mode colors over shared ones, a readable text color
+- **shared, settings and project files** (`settings-theme.test.ts`, `settings-endpoints.test.ts`, `bundle.test.ts`):
+  the settings table (each setting once, in a known group, environment-only configuration and key material kept out,
+  secrets marked, `showIf` targets, option labels for every option); the endpoint table (every endpoint's settings
+  exist in its group, API keys are secrets, fallbacks point earlier), API base URLs (bare domains, URLs with and
+  without a path, ports, refused credentials, queries and schemes), proxy paths with a prefix, credential headers per
+  provider, keys shared by origin, desired proxies (one account per key, header names merged, a second origin on one
+  domain refused); themes (CSS values that cannot break out, mode colors over shared ones, a readable text color
   for any accent, the brand tokens' WCAG contrast, merging); ustar headers (long names in the prefix, base-256 sizes,
   checksums), the entries a project file carries and the unsafe ones it refuses, the manifest, and the history
   rewrite of a copy (every commit names the new id, other documents and subtrees shared, merges kept).
@@ -118,11 +122,17 @@ RIDEO_TEST_WEBDAV_URL=http://rideo:rideo@localhost:8080/ npx vitest run --projec
   worker's strategies, pushed messages opening only the app's links, the manifest and its icons, the Inbox's
   approvals, reviews, jobs and agents with approve and cancel); Web Push messages (RFC 8291 Appendix A byte for
   byte, round trips with fresh keys, VAPID tokens that verify).
-- **server, settings, storage and subpaths** (`config.test.ts`, `settings.test.ts`, `browser-storage.test.ts`,
-  `base-path.test.ts`): the settings file merged under the environment (empty variables unset), rules across settings
-  reported on the setting to fix, `auto` storage resolution, base paths from the public URL; the settings file
-  (settings only, mode 0600, a broken file ignored) and the service (administrators only, never agent tokens, masked
-  secrets, locks); `FsBackend` (atomic writes, ranges, conditional writes, refused escapes); the workspace registry
+- **server, settings, storage and subpaths** (`config.test.ts`, `settings.test.ts`, `proxy-sync.test.ts`,
+  `browser-storage.test.ts`, `base-path.test.ts`): the settings file merged under the environment (empty variables
+  unset), rules across settings reported on the setting to fix, `auto` storage resolution, base paths from the public
+  URL, endpoints from API base URLs with their keys (own, shared by origin, the vision and speaker-check fallbacks); the
+  settings file (settings only, mode 0600, a broken file ignored) and the service (administrators only, never agent
+  tokens, masked secrets, locks); the proxy-sync plan (create, a no-op when nothing changed, a new key replacing the
+  old account, other accounts and headers sent back as `[redacted]`, its own proxy moved to a new origin, conflicts at
+  another URL or turned off, removal of what is no longer wanted, the studio's key created, rewritten and deleted)
+  and the sync against the mock
+  gateway's management API and a server without one (`412` re-planned, `401`, `404` and no answer reported with their
+  codes, the metric, the identity file's mode, and the key each domain is called with); `FsBackend` (atomic writes, ranges, conditional writes, refused escapes); the workspace registry
   and `RoutedStorage` with stand-in tabs (studio data in the data directory, a new project in the asking browser,
   listings per caller, the trash beside the project, another person's workspace refused, a closed tab failing its
   operations, a reconnecting tab waited for, preconditions passed through); prefix stripping for both proxy styles,
@@ -138,9 +148,11 @@ RIDEO_TEST_WEBDAV_URL=http://rideo:rideo@localhost:8080/ npx vitest run --projec
   is covered by the editor-jobs integration test, local proxies by the story e2e spec.
 
 - **web, settings, workspace and library** (`settings.test.tsx`, `workspace.test.ts`, `runtime.test.ts`,
-  `embed.test.tsx`, `library-build.test.ts`, `pwa.test.tsx`): the Settings page (groups from the table, locks,
-  masked secrets, only changes saved, server errors under the setting, a confirmation before running jobs restart,
-  people who are not administrators); the IndexedDB workspace on fake-indexeddb (folders, ranges, preconditions in
+  `embed.test.tsx`, `library-build.test.ts`, `pwa.test.tsx`): the Settings page (sections from the table and the
+  hash, search across sections, locks, advanced settings opening by themselves, secrets set, replaced and removed
+  without being shown, only changes saved, checks while typing, server errors under the setting and their section
+  opened, a confirmation before running jobs restart, endpoint cards with their status, what they call and a test
+  that asks to save first, people who are not administrators); the IndexedDB workspace on fake-indexeddb (folders, ranges, preconditions in
   the transaction, moves without copying bytes), the provider (inline and transferred payloads), project files out
   of and into the browser and the service worker's ranged answers from IndexedDB (never creating the database); URLs
   under a `<base>` and of a server on another origin, `ws=` on media in browser storage; `mountRideo` (the host's
@@ -157,7 +169,10 @@ RIDEO_TEST_WEBDAV_URL=http://rideo:rideo@localhost:8080/ npx vitest run --projec
   `gateway_not_configured` and edits footage end to end (rule-based suggestions, auto edit, an export with evenly
   spaced thumbnails); the settings view (sources, locks, no secrets), locked, unknown and invalid values, connection
   tests that save nothing, connecting the gateway (applied at once, audited without values, kept across a restart),
-  a change the studio cannot start with rolled back, and the same over MCP.
+  a change the studio cannot start with rolled back, and the same over MCP; API keys against the mock gateway's
+  management API (the key registered as the proxy's account with the provider's header, the studio's own gateway key
+  used for it and its text model answering through it, a second endpoint sharing the key, the endpoint statuses,
+  a refused admin token reported without undoing the save, a cleared key removed from the gateway, endpoint tests).
 - **Browser storage** (`browser-storage.test.ts`) with a Node **reference workspace** (`test/helpers/workspace-client.ts`,
   the protocol over a real live socket and the HTTP transfers): nothing kept without a browser, projects created in
   the asking browser and listed to it, media in and out (ranges inline, whole files transferred), jobs and their
@@ -188,7 +203,10 @@ RIDEO_TEST_WEBDAV_URL=http://rideo:rideo@localhost:8080/ npx vitest run --projec
   tasks (`score.plan`, `sfx.plan`), ElevenLabs sound generation, `dialogue.translate`, `reframe.focus`,
   `thumbnail.pick` and `frame.caption` (colour, light and the known names), OpenAI-style embeddings (in order,
   synonyms close), `mock-enhance-v1` upscales and interpolates, and `mock-performance-v1` acts a performance from the
-  first frame for the performance's length.
+  first frame for the performance's length. The management subset: the redacted configuration (`ManagementConfigResponse`)
+  behind its own token, writes refused without `If-Match` (`428`) or with a stale one (`412`), `[redacted]` values
+  kept (and refused on a new account), and a registered proxy served to the keys its tags allow with an account's
+  credential (`403` for another key, `404` for an unregistered domain in strict mode).
 - **Story workflow** (`story.test.ts`): REST from brief to export on the mock gateway, including a
   consistency failure and retry (`MOCK_FLAKY_EVERY`), R1 rejection, approval gates, batch to a 60 s target,
   timeline assembly, an export rendered by the reference editor worker, watermark detection of the export,
@@ -335,7 +353,7 @@ when a new stack starts. Specs:
 | `elements.spec.ts` | (desktop and mobile) the screenplay's location in the Elements view → generate, approve, lock; add a prop and link it to a scene in the Story view |
 | `provenance.spec.ts` | (desktop and mobile) uploading a likeness opens the consent dialog; a real person needs subject, grantor and date and marks the character; the disclosure setting labels the export; the export card and the public Verify page show the Content Credentials |
 | `responsive.spec.ts` | every main view on mobile: no horizontal overflow, navigation reachable, primary actions visible |
-| `settings.spec.ts` | (desktop and mobile, each on a studio of its own) without a gateway the dashboard says AI is off; Settings: a locked value, the gateway tested, an invalid value refused under its field, the gateway saved and applied (the dashboard and the live channel follow without a reload, a film can be started), then cleared again |
+| `settings.spec.ts` | (desktop and mobile, each on a studio of its own) without a gateway the dashboard says AI is off; Settings: sections and search, a locked value, the gateway tested, an invalid value refused under its field and its section opened, the gateway saved and applied (the dashboard and the live channel follow without a reload, a film can be started); the text model's API base URL and API key set with the gateway's admin token, registered in the mock gateway (the card says so, the vision card shares the key, **Test** answers), the key replaced and removed; then the gateway cleared again; no horizontal scroll |
 | `browser-storage.spec.ts` | (desktop and mobile, on the studio without WebDAV and gateway) a project kept in IndexedDB with its upload and poster; its project file downloaded; deleted and imported back; imported again as a copy; still there after a reload. Desktop: analysis by rules, auto edit and an export rendered in the tab, the export stored in the browser and served by the service worker from IndexedDB |
 | `subpath.spec.ts` | (desktop and mobile) the studio under `/studio` with the prefix kept and under `/rideo` through a prefix-stripping proxy: the bare prefix, the injected `<base>`, the live channel, a project's deep link reloaded, the MCP command, the manifest and the service worker's scope, no request outside the prefix, problems for unknown API routes |
 | `embed.spec.ts` | (desktop and mobile) a host app built with Vite against `@rideo/web` on another origin: its theme and name, light mode, the host's styles and the studio's kept apart, the browser-storage studio reached across origins (live channel too), hash routes heard by the host, `navigate` and `setTheme` from the host, an upload probed by ffmpeg.wasm loaded from the host's build, the project in the host origin's IndexedDB; browser routing under the host's `/video` without the studio's header |
@@ -403,7 +421,7 @@ hosts, the duration override, the missing variables and the redacted log.
 
 | Spec | Real calls | Flow |
 |---|---|---|
-| `gateway.spec.ts` | none that generate | readiness asks the gateway's `/health`; `/api/config` lists the pinned image and video models through the SDK, the video model with the lengths of the gateway's catalog, and the vision model as the language and vision model; Settings tests the connection |
+| `gateway.spec.ts` | vision: the text model's one-word `settings.test` | readiness asks the gateway's `/health`; `/api/config` lists the pinned image and video models through the SDK, the video model with the lengths of the gateway's catalog, and the vision model as the language and vision model; Settings tests the connection, and the text model's card answers its test with one real word through the proxy |
 | `story.spec.ts` | vision: `media.describe`, `screenplay.generate`, `clip.plan`, `consistency.judge`; image: references and keyframes; video: the pilot's shots | a brief with an image and a video attached → screenplay → one front reference per character and one view per element in use → cast locked (storyboard off) → the pilot clip planned in shots of the catalog's length: every shot gets a take with a keyframe from the image model and the vision model's verdict on it; at least one take has a video from the video model, started from its keyframe and judged on its frames (a shot whose keyframe fails the gate twice gets none) |
 | `footage.spec.ts` | vision: `footage.analyze` | footage uploaded → analysis → the model's summary and suggestions next to the rules' → accept all → auto edit |
 

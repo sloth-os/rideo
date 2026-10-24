@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Principal } from '../../src/auth/context';
 import { loadConfig } from '../../src/config';
+import { GatewayProxies } from '../../src/gateway/proxy-sync';
 import type { StudioHost } from '../../src/http/host';
 import { effectiveConfig } from '../../src/http/host';
 import { Metrics } from '../../src/metrics';
@@ -64,9 +65,15 @@ describe('settings store and service (docs/design/settings.md)', () => {
   it('is for administrators, never agent tokens, and masks secrets', async () => {
     const store = await new SettingsStore(join(dir, 'settings.json')).load();
     await store.save({ MM_GATEWAY_API_KEY: 'k-secret' }, null);
+    const config = loadConfig({ RIDEO_STORAGE: 'embedded' });
     const host = {
-      config: loadConfig({ RIDEO_STORAGE: 'embedded' }),
-      studio: { deps: { jobs: { runningCount: () => 0 } } },
+      config,
+      studio: {
+        deps: {
+          jobs: { runningCount: () => 0 },
+          gatewayProxies: new GatewayProxies({ config, log, metrics: new Metrics() }),
+        },
+      },
     } as unknown as StudioHost;
     const service = new SettingsService({
       store,
@@ -89,6 +96,10 @@ describe('settings store and service (docs/design/settings.md)', () => {
       locked: true,
       set: true,
     });
+    // without a gateway the endpoints are off, and nothing is being registered
+    expect(view.endpoints.llm).toMatchObject({ on: false, proxy: 'off', url: 'https://api.openai.com/v1' });
+    expect(view.endpoints.stt).toMatchObject({ on: false, proxy: 'off', url: null });
+    expect(view.proxySync).toEqual({ status: 'idle', at: null, code: null, detail: null });
     expect(() => service.view(null)).toThrow(/Sign in/);
     expect(() =>
       service.view(

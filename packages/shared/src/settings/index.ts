@@ -1,5 +1,14 @@
 import { z } from 'zod';
 import { ActorSchema } from '../schemas/common';
+import {
+  EndpointStatusSchema,
+  PROVIDER_APIS,
+  ProxySyncStateSchema,
+  SETTING_ENDPOINT_IDS,
+  SettingEndpointIdSchema,
+} from './endpoints';
+
+export * from './endpoints';
 
 /**
  * Studio settings edited in the web UI (docs/design/settings.md): declared once as data. A setting is stored under the
@@ -26,9 +35,13 @@ export const SETTING_GROUPS = [
   {
     id: 'ai',
     label: 'Language, vision and speech',
-    help: 'Models reached through the gateway proxy: the writer, the consistency judge, transcripts and search.',
+    help: 'Models reached through the gateway proxy: the writer, the consistency judge, transcripts and search. Set an API key to have the studio register it in mm-gateway; leave it empty to use the gateway’s own account.',
   },
-  { id: 'audio', label: 'Voices and sound', help: 'Dialogue voices, sound effects and the speaker check.' },
+  {
+    id: 'audio',
+    label: 'Voices and sound',
+    help: 'Dialogue voices, sound effects and the speaker check, through the gateway proxy like the models above.',
+  },
   { id: 'consistency', label: 'Consistency', help: 'The gate every generated take passes.' },
   {
     id: 'accounts',
@@ -69,13 +82,19 @@ export interface SettingField {
   kind: SettingKind;
   /** Choices of a `select`; '' stands for "not set" (the default). */
   options?: readonly string[];
+  /** What each option of a `select` reads as. */
+  optionLabels?: Readonly<Record<string, string>>;
   /** The documented default, shown when the field is empty. */
   placeholder?: string;
+  /** Rarely changed: under "Advanced" in its section. */
+  advanced?: boolean;
   /** Shown only while another setting has one of these values (its effective value, '' when unset). */
   showIf?: { env: string; in: readonly string[] };
 }
 
 const PROVIDERS = ['openai', 'gemini', 'anthropic'] as const;
+const PROVIDER_LABELS = Object.fromEntries(Object.entries(PROVIDER_APIS).map(([id, api]) => [id, api.label]));
+const BASE_URL_HELP = 'The API base URL as the provider documents it, or just its domain.';
 
 export const SETTING_FIELDS: readonly SettingField[] = [
   // Storage (docs/design/browser-storage.md, docs/design/storage-webdav.md)
@@ -85,8 +104,14 @@ export const SETTING_FIELDS: readonly SettingField[] = [
     label: 'Projects are stored',
     kind: 'select',
     options: ['auto', 'browser', 'webdav', 'embedded'],
+    optionLabels: {
+      auto: 'Automatic',
+      browser: 'In each person’s browser',
+      webdav: 'On a WebDAV server',
+      embedded: 'In the built-in WebDAV server',
+    },
     placeholder: 'auto',
-    help: '`browser`: in each person’s browser (export project files to keep a copy). `webdav`: on a WebDAV server. `embedded`: in the built-in WebDAV server on this machine. `auto`: WebDAV when a URL is set, else the browser.',
+    help: 'In each person’s browser: export project files to keep a copy. On a WebDAV server, or in the built-in one on this machine. Automatic: WebDAV when a URL is set, else the built-in server when it holds projects, else the browser.',
   },
   {
     env: 'RIDEO_WEBDAV_URL',
@@ -139,6 +164,7 @@ export const SETTING_FIELDS: readonly SettingField[] = [
     label: 'External-edit sync (seconds)',
     kind: 'number',
     placeholder: '15',
+    advanced: true,
     help: 'How often open projects pick up edits made over WebDAV (0 turns it off).',
   },
   {
@@ -147,6 +173,7 @@ export const SETTING_FIELDS: readonly SettingField[] = [
     label: 'Commit coalescing window (seconds)',
     kind: 'number',
     placeholder: '30',
+    advanced: true,
   },
   // mm-gateway (docs/design/ai-gateway.md)
   {
@@ -158,13 +185,27 @@ export const SETTING_FIELDS: readonly SettingField[] = [
     help: 'Empty: no AI. The editor, uploads, analysis rules, exports and review keep working.',
   },
   { env: 'MM_GATEWAY_API_KEY', group: 'gateway', label: 'Gateway key', kind: 'secret' },
-  { env: 'MM_GATEWAY_ROUTING_PROFILE', group: 'gateway', label: 'Routing profile', kind: 'text' },
+  {
+    env: 'MM_GATEWAY_ADMIN_KEY',
+    group: 'gateway',
+    label: 'Admin token',
+    kind: 'secret',
+    help: 'The gateway’s `MANAGEMENT_API_KEY`: lets the studio register the API keys set under Language, vision and speech and Voices and sound as gateway proxies. Empty: the gateway key is tried.',
+  },
+  {
+    env: 'MM_GATEWAY_ROUTING_PROFILE',
+    group: 'gateway',
+    label: 'Routing profile',
+    kind: 'text',
+    advanced: true,
+  },
   {
     env: 'RIDEO_GATEWAY_POLL_MS',
     group: 'gateway',
     label: 'Task poll interval (ms)',
     kind: 'number',
     placeholder: '2000',
+    advanced: true,
   },
   {
     env: 'RIDEO_GATEWAY_TIMEOUT_IMAGE_SEC',
@@ -172,6 +213,7 @@ export const SETTING_FIELDS: readonly SettingField[] = [
     label: 'Image timeout (seconds)',
     kind: 'number',
     placeholder: '300',
+    advanced: true,
   },
   {
     env: 'RIDEO_GATEWAY_TIMEOUT_VIDEO_SEC',
@@ -179,6 +221,7 @@ export const SETTING_FIELDS: readonly SettingField[] = [
     label: 'Video timeout (seconds)',
     kind: 'number',
     placeholder: '1200',
+    advanced: true,
   },
   {
     env: 'RIDEO_GATEWAY_TIMEOUT_MUSIC_SEC',
@@ -186,6 +229,7 @@ export const SETTING_FIELDS: readonly SettingField[] = [
     label: 'Music timeout (seconds)',
     kind: 'number',
     placeholder: '600',
+    advanced: true,
   },
   // Models (projects can override; the pilot pins them)
   { env: 'RIDEO_IMAGE_MODEL', group: 'models', label: 'Image', kind: 'text', placeholder: 'auto' },
@@ -209,143 +253,206 @@ export const SETTING_FIELDS: readonly SettingField[] = [
     placeholder: 'auto',
     help: '`off` disables them.',
   },
-  // Language, vision and speech through the gateway proxy
+  // Language, vision and speech through the gateway proxy (docs/design/settings.md#provider-endpoints-and-api-keys)
   {
     env: 'RIDEO_LLM_PROVIDER',
     group: 'ai',
-    label: 'Text model provider',
+    label: 'Provider',
     kind: 'select',
     options: PROVIDERS,
+    optionLabels: PROVIDER_LABELS,
     placeholder: 'openai',
   },
+  { env: 'RIDEO_LLM_MODEL', group: 'ai', label: 'Model', kind: 'text', placeholder: 'gpt-4.1-mini' },
   {
     env: 'RIDEO_LLM_PROXY_DOMAIN',
     group: 'ai',
-    label: 'Text model proxy domain',
-    kind: 'text',
-    placeholder: 'the provider’s (api.openai.com)',
+    label: 'API base URL',
+    kind: 'url',
+    placeholder: 'https://api.openai.com/v1',
+    help: BASE_URL_HELP,
   },
-  { env: 'RIDEO_LLM_MODEL', group: 'ai', label: 'Text model', kind: 'text', placeholder: 'gpt-4.1-mini' },
+  {
+    env: 'RIDEO_LLM_API_KEY',
+    group: 'ai',
+    label: 'API key',
+    kind: 'secret',
+    help: 'Empty: mm-gateway’s own account for this API.',
+  },
   {
     env: 'RIDEO_VISION_PROVIDER',
     group: 'ai',
-    label: 'Vision provider',
+    label: 'Provider',
     kind: 'select',
     options: ['', ...PROVIDERS],
+    optionLabels: { '': 'Same as the text model', ...PROVIDER_LABELS },
     placeholder: 'the text model’s',
   },
+  { env: 'RIDEO_VISION_MODEL', group: 'ai', label: 'Model', kind: 'text', placeholder: 'the text model' },
   {
     env: 'RIDEO_VISION_PROXY_DOMAIN',
     group: 'ai',
-    label: 'Vision proxy domain',
-    kind: 'text',
-    placeholder: 'the provider’s',
+    label: 'API base URL',
+    kind: 'url',
+    placeholder: 'the text model’s, for the same provider',
+    help: BASE_URL_HELP,
   },
   {
-    env: 'RIDEO_VISION_MODEL',
+    env: 'RIDEO_VISION_API_KEY',
     group: 'ai',
-    label: 'Vision model',
-    kind: 'text',
-    placeholder: 'the text model',
+    label: 'API key',
+    kind: 'secret',
+    help: 'Empty: the key of another endpoint on the same API, else mm-gateway’s own account.',
   },
   {
     env: 'RIDEO_STT_PROXY_DOMAIN',
     group: 'ai',
-    label: 'Speech-to-text proxy domain',
-    kind: 'text',
-    help: 'Empty: footage is analyzed without a transcript.',
+    label: 'API base URL',
+    kind: 'url',
+    placeholder: 'https://api.openai.com/v1',
+    help: 'An OpenAI-style API. Empty: footage is analyzed without a transcript.',
   },
+  { env: 'RIDEO_STT_MODEL', group: 'ai', label: 'Model', kind: 'text', placeholder: 'whisper-1' },
   {
-    env: 'RIDEO_STT_MODEL',
+    env: 'RIDEO_STT_API_KEY',
     group: 'ai',
-    label: 'Speech-to-text model',
-    kind: 'text',
-    placeholder: 'whisper-1',
+    label: 'API key',
+    kind: 'secret',
+    help: 'Empty: the key of another endpoint on the same API, else mm-gateway’s own account.',
   },
   {
     env: 'RIDEO_EMBEDDINGS_PROXY_DOMAIN',
     group: 'ai',
-    label: 'Embeddings proxy domain',
-    kind: 'text',
-    help: 'Empty: media search ranks by words instead of meaning.',
+    label: 'API base URL',
+    kind: 'url',
+    placeholder: 'https://api.openai.com/v1',
+    help: 'An OpenAI-style API. Empty: media search ranks by words instead of meaning.',
   },
   {
     env: 'RIDEO_EMBEDDINGS_MODEL',
     group: 'ai',
-    label: 'Embeddings model',
+    label: 'Model',
     kind: 'text',
     placeholder: 'text-embedding-3-small',
+  },
+  {
+    env: 'RIDEO_EMBEDDINGS_API_KEY',
+    group: 'ai',
+    label: 'API key',
+    kind: 'secret',
+    help: 'Empty: the key of another endpoint on the same API, else mm-gateway’s own account.',
   },
   // Voices and sound (docs/design/dialogue.md, docs/design/post-audio.md)
   {
     env: 'RIDEO_TTS_PROVIDER',
     group: 'audio',
-    label: 'Dialogue voices',
+    label: 'Provider',
     kind: 'select',
     options: ['off', 'elevenlabs', 'openai'],
+    optionLabels: {
+      off: 'Off',
+      elevenlabs: 'ElevenLabs (design, clone, timings)',
+      openai: 'OpenAI (preset voices)',
+    },
     placeholder: 'off',
   },
   {
-    env: 'RIDEO_TTS_PROXY_DOMAIN',
+    env: 'RIDEO_TTS_MODEL',
     group: 'audio',
-    label: 'Voices proxy domain',
+    label: 'Model',
     kind: 'text',
     placeholder: 'the provider’s',
     showIf: { env: 'RIDEO_TTS_PROVIDER', in: ['elevenlabs', 'openai'] },
   },
   {
-    env: 'RIDEO_TTS_MODEL',
+    env: 'RIDEO_TTS_PROXY_DOMAIN',
     group: 'audio',
-    label: 'Voices model',
-    kind: 'text',
+    label: 'API base URL',
+    kind: 'url',
     placeholder: 'the provider’s',
+    help: BASE_URL_HELP,
+    showIf: { env: 'RIDEO_TTS_PROVIDER', in: ['elevenlabs', 'openai'] },
+  },
+  {
+    env: 'RIDEO_TTS_API_KEY',
+    group: 'audio',
+    label: 'API key',
+    kind: 'secret',
+    help: 'Empty: the key of another endpoint on the same API, else mm-gateway’s own account.',
     showIf: { env: 'RIDEO_TTS_PROVIDER', in: ['elevenlabs', 'openai'] },
   },
   {
     env: 'RIDEO_SFX_PROVIDER',
     group: 'audio',
-    label: 'Sound effects',
+    label: 'Provider',
     kind: 'select',
     options: ['off', 'elevenlabs'],
+    optionLabels: { off: 'Off', elevenlabs: 'ElevenLabs' },
     placeholder: 'off',
-  },
-  {
-    env: 'RIDEO_SFX_PROXY_DOMAIN',
-    group: 'audio',
-    label: 'Sound effects proxy domain',
-    kind: 'text',
-    placeholder: 'api.elevenlabs.io',
-    showIf: { env: 'RIDEO_SFX_PROVIDER', in: ['elevenlabs'] },
   },
   {
     env: 'RIDEO_SFX_MODEL',
     group: 'audio',
-    label: 'Sound effects model',
+    label: 'Model',
     kind: 'text',
     placeholder: 'eleven_text_to_sound_v2',
     showIf: { env: 'RIDEO_SFX_PROVIDER', in: ['elevenlabs'] },
   },
   {
-    env: 'RIDEO_VOICE_JUDGE_PROVIDER',
+    env: 'RIDEO_SFX_PROXY_DOMAIN',
     group: 'audio',
-    label: 'Speaker check provider',
-    kind: 'select',
-    options: ['', 'openai', 'gemini', 'off'],
-    placeholder: 'the vision provider’s',
+    label: 'API base URL',
+    kind: 'url',
+    placeholder: 'https://api.elevenlabs.io/v1',
+    help: BASE_URL_HELP,
+    showIf: { env: 'RIDEO_SFX_PROVIDER', in: ['elevenlabs'] },
   },
   {
-    env: 'RIDEO_VOICE_JUDGE_PROXY_DOMAIN',
+    env: 'RIDEO_SFX_API_KEY',
     group: 'audio',
-    label: 'Speaker check proxy domain',
-    kind: 'text',
-    placeholder: 'the provider’s',
+    label: 'API key',
+    kind: 'secret',
+    help: 'Empty: the key of another endpoint on the same API, else mm-gateway’s own account.',
+    showIf: { env: 'RIDEO_SFX_PROVIDER', in: ['elevenlabs'] },
+  },
+  {
+    env: 'RIDEO_VOICE_JUDGE_PROVIDER',
+    group: 'audio',
+    label: 'Provider',
+    kind: 'select',
+    options: ['', 'openai', 'gemini', 'off'],
+    optionLabels: {
+      '': 'Same as vision',
+      openai: PROVIDER_APIS.openai.label,
+      gemini: PROVIDER_APIS.gemini.label,
+      off: 'Off',
+    },
+    placeholder: 'the vision provider’s',
   },
   {
     env: 'RIDEO_VOICE_JUDGE_MODEL',
     group: 'audio',
-    label: 'Speaker check model',
+    label: 'Model',
     kind: 'text',
     placeholder: 'gpt-4o-audio-preview',
+    showIf: { env: 'RIDEO_VOICE_JUDGE_PROVIDER', in: ['', 'openai', 'gemini'] },
+  },
+  {
+    env: 'RIDEO_VOICE_JUDGE_PROXY_DOMAIN',
+    group: 'audio',
+    label: 'API base URL',
+    kind: 'url',
+    placeholder: 'the vision model’s, for the same provider',
+    help: BASE_URL_HELP,
+    showIf: { env: 'RIDEO_VOICE_JUDGE_PROVIDER', in: ['', 'openai', 'gemini'] },
+  },
+  {
+    env: 'RIDEO_VOICE_JUDGE_API_KEY',
+    group: 'audio',
+    label: 'API key',
+    kind: 'secret',
+    help: 'Empty: the key of another endpoint on the same API, else mm-gateway’s own account.',
+    showIf: { env: 'RIDEO_VOICE_JUDGE_PROVIDER', in: ['', 'openai', 'gemini'] },
   },
   // Consistency (docs/design/character-consistency.md)
   {
@@ -354,6 +461,7 @@ export const SETTING_FIELDS: readonly SettingField[] = [
     label: 'Judge',
     kind: 'select',
     options: ['vision-llm', 'off'],
+    optionLabels: { 'vision-llm': 'The vision model', off: 'Off' },
     placeholder: 'vision-llm',
     help: '`off` fails closed: takes stay unverified until a person overrides them.',
   },
@@ -393,6 +501,7 @@ export const SETTING_FIELDS: readonly SettingField[] = [
     label: 'Scopes',
     kind: 'text',
     placeholder: 'openid profile email',
+    advanced: true,
   },
   {
     env: 'RIDEO_OIDC_NAME',
@@ -415,6 +524,7 @@ export const SETTING_FIELDS: readonly SettingField[] = [
     label: 'Session lifetime (days)',
     kind: 'number',
     placeholder: '14',
+    advanced: true,
   },
   {
     env: 'RIDEO_USER_NAME',
@@ -434,6 +544,7 @@ export const SETTING_FIELDS: readonly SettingField[] = [
     label: 'Watermark strength',
     kind: 'number',
     placeholder: '16',
+    advanced: true,
   },
   {
     env: 'RIDEO_C2PA',
@@ -441,6 +552,7 @@ export const SETTING_FIELDS: readonly SettingField[] = [
     label: 'Content Credentials (C2PA)',
     kind: 'select',
     options: ['on', 'off'],
+    optionLabels: { on: 'On', off: 'Off' },
     placeholder: 'on',
   },
   {
@@ -451,12 +563,19 @@ export const SETTING_FIELDS: readonly SettingField[] = [
     help: 'Leaf first. Empty: a development signer made in the data directory.',
   },
   { env: 'RIDEO_C2PA_KEY', group: 'provenance', label: 'Signing key (PEM)', kind: 'secret' },
-  { env: 'RIDEO_C2PA_TSA_URL', group: 'provenance', label: 'Time-stamp authority', kind: 'url' },
+  {
+    env: 'RIDEO_C2PA_TSA_URL',
+    group: 'provenance',
+    label: 'Time-stamp authority',
+    kind: 'url',
+    advanced: true,
+  },
   {
     env: 'RIDEO_C2PA_TRUST_ANCHORS',
     group: 'provenance',
     label: 'Trusted CAs (PEM bundle)',
     kind: 'pem',
+    advanced: true,
   },
   {
     env: 'RIDEO_VAPID_SUBJECT',
@@ -465,6 +584,7 @@ export const SETTING_FIELDS: readonly SettingField[] = [
     kind: 'text',
     placeholder: 'mailto:rideo@localhost',
     help: 'What push services see (mailto: or https:).',
+    advanced: true,
   },
   // Jobs and limits
   {
@@ -473,6 +593,7 @@ export const SETTING_FIELDS: readonly SettingField[] = [
     label: 'Lane concurrency',
     kind: 'text',
     placeholder: 'control=16,llm=2,image=2,video=2,music=1,media=1',
+    advanced: true,
   },
   {
     env: 'RIDEO_EDITOR_LEASE_SEC',
@@ -480,6 +601,7 @@ export const SETTING_FIELDS: readonly SettingField[] = [
     label: 'Editor-job lease (seconds)',
     kind: 'number',
     placeholder: '60',
+    advanced: true,
   },
   {
     env: 'RIDEO_EDITOR_FILE_MAX_BYTES',
@@ -487,6 +609,7 @@ export const SETTING_FIELDS: readonly SettingField[] = [
     label: 'Largest editor-job file (bytes)',
     kind: 'number',
     placeholder: '4294967296',
+    advanced: true,
   },
   {
     env: 'RIDEO_PUBLIC_DETECT_MAX_BYTES',
@@ -494,6 +617,7 @@ export const SETTING_FIELDS: readonly SettingField[] = [
     label: 'Largest file of the public detector (bytes)',
     kind: 'number',
     placeholder: '536870912',
+    advanced: true,
   },
   {
     env: 'RIDEO_CACHE_MAX_BYTES',
@@ -501,6 +625,7 @@ export const SETTING_FIELDS: readonly SettingField[] = [
     label: 'Media cache (bytes)',
     kind: 'number',
     placeholder: '5368709120',
+    advanced: true,
   },
   {
     env: 'RIDEO_CROSS_ORIGIN_ISOLATION',
@@ -510,6 +635,7 @@ export const SETTING_FIELDS: readonly SettingField[] = [
     options: ['require-corp', 'credentialless', 'off'],
     placeholder: 'require-corp',
     help: 'Lets the editor engine run on every core.',
+    advanced: true,
   },
   {
     env: 'RIDEO_CORS_ORIGINS',
@@ -575,6 +701,10 @@ export const SettingsViewSchema = z.object({
   error: z.string().nullable(),
   /** Jobs that a change would interrupt (they resume after the reload). */
   runningJobs: z.number().int().nonnegative(),
+  /** Each AI endpoint: what it resolves to and how it is reached (docs/design/settings.md#endpoint-status-and-tests). */
+  endpoints: z.record(SettingEndpointIdSchema, EndpointStatusSchema),
+  /** Registering the API keys in mm-gateway (docs/design/settings.md#registration-in-mm-gateway). */
+  proxySync: ProxySyncStateSchema,
 });
 export type SettingsView = z.infer<typeof SettingsViewSchema>;
 
@@ -593,8 +723,12 @@ export const SettingsUpdateInputSchema = z.object({
 });
 export type SettingsUpdateInput = z.infer<typeof SettingsUpdateInputSchema>;
 
+export const SETTINGS_TEST_TARGETS = ['webdav', 'gateway', ...SETTING_ENDPOINT_IDS] as const;
+export type SettingsTestTarget = (typeof SETTINGS_TEST_TARGETS)[number];
+
 export const SettingsTestInputSchema = z.object({
-  target: z.enum(['webdav', 'gateway']),
+  /** A connection with the values as they would be saved, or an AI endpoint with the saved settings. */
+  target: z.enum(SETTINGS_TEST_TARGETS),
   values: z
     .record(
       SettingKeySchema,
@@ -612,6 +746,8 @@ export const SettingsTestResultSchema = z.object({
   detail: z.string(),
   /** The gateway's model catalogue, by modality (gateway tests). */
   models: z.record(z.string(), z.array(z.string())).optional(),
+  /** How long the call took (endpoint tests). */
+  latencyMs: z.number().nonnegative().optional(),
 });
 export type SettingsTestResult = z.infer<typeof SettingsTestResultSchema>;
 

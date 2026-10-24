@@ -1,5 +1,8 @@
 import {
+  type EndpointStatus,
+  SETTING_ENDPOINT_IDS,
   SETTING_FIELDS,
+  type SettingEndpointId,
   type SettingsTestInput,
   type SettingsTestResult,
   type SettingsUpdateInput,
@@ -15,7 +18,11 @@ import { describeConfigError, embeddedHasProjects, type StudioHost } from '../ht
 import type { Metrics } from '../metrics';
 import { WebDavBackend } from '../storage/webdav';
 import { randomHex } from '../util/crypto';
+import { endpointStatus, probeEndpoint } from './probes';
 import type { SettingsStore } from './store';
+
+/** How long a save waits for the API keys to be registered in mm-gateway before answering. */
+const SYNC_WAIT_MS = 20_000;
 
 /** Settings are for administrators: the studio principal or an admin signed in; never an agent token. */
 function requireAdmin(p: Principal | null): Principal {
@@ -74,6 +81,10 @@ export class SettingsService {
       };
     }
     const config = this.deps.host.config;
+    const proxies = this.deps.host.studio.deps.gatewayProxies;
+    const endpoints = Object.fromEntries(
+      SETTING_ENDPOINT_IDS.map((id) => [id, endpointStatus(config, proxies, id)]),
+    ) as Record<SettingEndpointId, EndpointStatus>;
     return {
       fields,
       storage: config.storage.mode === 'auto' ? 'embedded' : config.storage.mode,
@@ -82,6 +93,8 @@ export class SettingsService {
       updatedBy: this.deps.store.updatedBy,
       error: this.error,
       runningJobs: this.deps.host.studio.deps.jobs.runningCount(),
+      endpoints,
+      proxySync: proxies.state,
     };
   }
 
@@ -144,12 +157,32 @@ export class SettingsService {
     this.error = null;
     this.deps.log.info({ keys: changed, durationMs: Date.now() - started }, 'settings applied');
     await this.deps.host.studio.deps.accounts.record(p, 'settings.update', { detail: { keys: changed } });
+    // The new studio registers the API keys in mm-gateway; the answer says how that went (docs/design/settings.md)
+    let timer: NodeJS.Timeout | undefined;
+    await Promise.race([
+      this.deps.host.studio.deps.gatewayProxies.settled(),
+      new Promise((resolve) => {
+        timer = setTimeout(resolve, SYNC_WAIT_MS);
+      }),
+    ]);
+    clearTimeout(timer);
     return { ...this.view(p), applied: true, changed };
   }
 
-  /** Tries a connection with the values as they would be saved; nothing is stored. */
+  /**
+   * Tries a connection with the values as they would be saved (nothing is stored), or an AI endpoint with the saved
+   * settings (docs/design/settings.md#endpoint-status-and-tests).
+   */
   async test(principal: Principal | null, input: SettingsTestInput): Promise<SettingsTestResult> {
     requireAdmin(principal);
+    if (input.target !== 'webdav' && input.target !== 'gateway') {
+      const { config, gatewayProxies, proxy } = this.deps.host.studio.deps;
+      const ep = config.endpoints[input.target];
+      // A key not registered yet (a failed or never-run sync) is registered again first
+      if (ep?.apiKey && gatewayProxies.domainState(ep.base.domain)?.state !== 'registered')
+        await gatewayProxies.sync();
+      return probeEndpoint(config, proxy, input.target);
+    }
     const env = this.env();
     const values = this.merged(
       Object.fromEntries(Object.entries(input.values).filter(([k]) => !(k in env))) as Record<string, string>,

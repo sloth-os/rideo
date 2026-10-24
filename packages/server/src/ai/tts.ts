@@ -102,7 +102,7 @@ abstract class ProxiedTts {
     const provider = this.endpoint.provider;
     let res: Response;
     try {
-      res = await this.proxy.fetch(this.endpoint.domain, path, { timeoutMs: 120_000, ...init });
+      res = await this.proxy.fetch(this.endpoint, path, { timeoutMs: 120_000, ...init });
     } catch (err) {
       if ((err as Error)?.name === 'AbortError' && init.signal?.aborted) throw err;
       this.metrics?.tts.inc({ provider, op, outcome: 'error' });

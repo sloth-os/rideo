@@ -1,4 +1,15 @@
-import { parseThemeJson, type Theme, ThemeSchema } from '@rideo/shared';
+import {
+  apiBaseProblem,
+  desiredProxies,
+  parseThemeJson,
+  type ResolvedEndpoint,
+  type ResolvedEndpoints,
+  resolveEndpoints,
+  SETTING_ENDPOINTS,
+  settingEndpoint,
+  type Theme,
+  ThemeSchema,
+} from '@rideo/shared';
 import { z } from 'zod';
 
 /**
@@ -23,12 +34,6 @@ const str = (def?: string) =>
     .string()
     .optional()
     .transform((v) => (v === undefined || v === '' ? def : v));
-
-const LLM_DEFAULT_DOMAINS = {
-  openai: 'api.openai.com',
-  gemini: 'generativelanguage.googleapis.com',
-  anthropic: 'api.anthropic.com',
-} as const;
 
 /** A comma-separated list, lowercased. */
 const list = (v: string | undefined) =>
@@ -117,6 +122,8 @@ export const EnvSchema = z
     /** No default: without a gateway the studio runs without AI (docs/design/settings.md#without-mm-gateway). */
     MM_GATEWAY_URL: str(),
     MM_GATEWAY_API_KEY: str(),
+    /** The gateway's management token: registers the API keys below as proxies (docs/design/settings.md). */
+    MM_GATEWAY_ADMIN_KEY: str(),
     MM_GATEWAY_ROUTING_PROFILE: str(),
     RIDEO_IMAGE_MODEL: str('auto'),
     RIDEO_VIDEO_MODEL: str('auto'),
@@ -125,14 +132,19 @@ export const EnvSchema = z
     RIDEO_GATEWAY_TIMEOUT_IMAGE_SEC: num(300),
     RIDEO_GATEWAY_TIMEOUT_VIDEO_SEC: num(1200),
     RIDEO_GATEWAY_TIMEOUT_MUSIC_SEC: num(600),
+    // AI endpoints through the gateway proxy (docs/design/settings.md#provider-endpoints-and-api-keys): the base URL
+    // (or domain) and key of each; defaults and fallbacks are in SETTING_ENDPOINTS.
     RIDEO_LLM_PROVIDER: z.enum(['openai', 'gemini', 'anthropic']).optional().default('openai'),
     RIDEO_LLM_PROXY_DOMAIN: str(),
-    RIDEO_LLM_MODEL: str('gpt-4.1-mini'),
+    RIDEO_LLM_API_KEY: str(),
+    RIDEO_LLM_MODEL: str(),
     RIDEO_VISION_PROVIDER: z.enum(['openai', 'gemini', 'anthropic']).optional(),
     RIDEO_VISION_PROXY_DOMAIN: str(),
+    RIDEO_VISION_API_KEY: str(),
     RIDEO_VISION_MODEL: str(),
     RIDEO_STT_PROXY_DOMAIN: str(),
-    RIDEO_STT_MODEL: str('whisper-1'),
+    RIDEO_STT_API_KEY: str(),
+    RIDEO_STT_MODEL: str(),
     /** Web Push (docs/design/pwa.md#notifications-on-the-phone-web-push): VAPID keys, made once when unset. */
     RIDEO_VAPID_PUBLIC_KEY: str(),
     RIDEO_VAPID_PRIVATE_KEY: str(),
@@ -146,13 +158,16 @@ export const EnvSchema = z
       .default('require-corp'),
     /** Semantic search by meaning (docs/design/search.md#the-index); words without it. */
     RIDEO_EMBEDDINGS_PROXY_DOMAIN: str(),
-    RIDEO_EMBEDDINGS_MODEL: str('text-embedding-3-small'),
+    RIDEO_EMBEDDINGS_API_KEY: str(),
+    RIDEO_EMBEDDINGS_MODEL: str(),
     RIDEO_TTS_PROVIDER: z.enum(['elevenlabs', 'openai', 'off']).optional().default('off'),
     RIDEO_TTS_PROXY_DOMAIN: str(),
+    RIDEO_TTS_API_KEY: str(),
     RIDEO_TTS_MODEL: str(),
     RIDEO_SFX_PROVIDER: z.enum(['elevenlabs', 'off']).optional().default('off'),
-    RIDEO_SFX_PROXY_DOMAIN: str('api.elevenlabs.io'),
-    RIDEO_SFX_MODEL: str('eleven_text_to_sound_v2'),
+    RIDEO_SFX_PROXY_DOMAIN: str(),
+    RIDEO_SFX_API_KEY: str(),
+    RIDEO_SFX_MODEL: str(),
     RIDEO_LIPSYNC_MODEL: str('auto'),
     RIDEO_EDIT_MODEL: str('auto'),
     /** Performance takes (docs/design/performance.md): `auto`, a model id or `off`. */
@@ -160,6 +175,7 @@ export const EnvSchema = z
     RIDEO_ENHANCE_MODEL: str('auto'),
     RIDEO_VOICE_JUDGE_PROVIDER: z.enum(['openai', 'gemini', 'off']).optional(),
     RIDEO_VOICE_JUDGE_PROXY_DOMAIN: str(),
+    RIDEO_VOICE_JUDGE_API_KEY: str(),
     RIDEO_VOICE_JUDGE_MODEL: str(),
     RIDEO_CONSISTENCY_JUDGE: z.enum(['vision-llm', 'off']).optional().default('vision-llm'),
     RIDEO_CONSISTENCY_THRESHOLD: num(0.75),
@@ -209,6 +225,20 @@ export const EnvSchema = z
       if (v && !/^https?:\/\/[^\s/]+/i.test(v))
         ctx.addIssue({ code: 'custom', path: [key], message: 'an http:// or https:// URL' });
     }
+    // API base URLs, and one origin per domain among the endpoints whose keys the studio registers
+    const values = e as unknown as Record<string, string | undefined>;
+    let parsed = true;
+    for (const ep of SETTING_ENDPOINTS) {
+      const problem = apiBaseProblem(values[ep.url]);
+      if (problem) {
+        parsed = false;
+        ctx.addIssue({ code: 'custom', path: [ep.url], message: problem });
+      }
+    }
+    if (!parsed) return;
+    const { conflicts } = desiredProxies(resolveEndpoints(values, { gateway: true }), (key) => key);
+    for (const c of conflicts)
+      ctx.addIssue({ code: 'custom', path: [settingEndpoint(c.id).url], message: c.message });
   });
 
 export type Env = z.infer<typeof EnvSchema>;
@@ -216,32 +246,36 @@ export type Env = z.infer<typeof EnvSchema>;
 /** Where projects live: `auto` until the server resolves it at start (resolveStorageMode). */
 export type StorageModeSetting = 'auto' | 'browser' | 'webdav' | 'embedded';
 
-export interface LlmEndpoint {
-  provider: 'openai' | 'gemini' | 'anthropic';
+/**
+ * An API behind the gateway proxy: `domain` is the proxy (`/proxy/{domain}/…`), `prefix` the path standing for the
+ * API version of the adapters' paths (docs/design/settings.md#api-base-url).
+ */
+export interface ProxyApi {
   domain: string;
+  prefix?: string | null;
+}
+
+export interface LlmEndpoint extends ProxyApi {
+  provider: 'openai' | 'gemini' | 'anthropic';
   model: string;
 }
 
 /** Text-to-speech through the gateway proxy (docs/design/dialogue.md#providers). */
-export interface TtsEndpoint {
+export interface TtsEndpoint extends ProxyApi {
   provider: 'elevenlabs' | 'openai';
-  domain: string;
   model: string;
 }
-
-const TTS_DEFAULTS = {
-  elevenlabs: { domain: 'api.elevenlabs.io', model: 'eleven_multilingual_v2' },
-  openai: { domain: 'api.openai.com', model: 'gpt-4o-mini-tts' },
-} as const;
 
 /** Sound effects through the gateway proxy (docs/design/post-audio.md#effects-from-action-lines). */
-export interface SfxEndpoint {
+export interface SfxEndpoint extends ProxyApi {
   provider: 'elevenlabs';
-  domain: string;
   model: string;
 }
 
-const VOICE_JUDGE_DEFAULT_MODELS = { openai: 'gpt-4o-audio-preview', gemini: 'gemini-2.5-flash' } as const;
+/** An endpoint as a proxy API with its provider and model. */
+function api<P extends string>(ep: ResolvedEndpoint): ProxyApi & { provider: P; model: string } {
+  return { provider: ep.provider as P, domain: ep.base.domain, prefix: ep.base.prefix, model: ep.model };
+}
 
 export interface Config {
   host: string;
@@ -295,6 +329,8 @@ export interface Config {
     url?: string;
     configured: boolean;
     apiKey?: string;
+    /** The management token that registers the API keys set in Settings (docs/design/settings.md). */
+    adminKey?: string;
     routingProfile?: string;
     models: {
       image: string;
@@ -310,15 +346,17 @@ export interface Config {
   };
   llm: LlmEndpoint;
   vision: LlmEndpoint;
-  stt?: { domain: string; model: string };
+  stt?: ProxyApi & { model: string };
   /** Caption embeddings for semantic search; unset: search ranks by words. */
-  embeddings?: { domain: string; model: string };
+  embeddings?: ProxyApi & { model: string };
   /** Dialogue voices; unset when RIDEO_TTS_PROVIDER=off. */
   tts?: TtsEndpoint;
   /** Generated sound effects; unset when RIDEO_SFX_PROVIDER=off. */
   sfx?: SfxEndpoint;
   /** The audio-capable LLM that checks speakers of native-audio takes (rule V4). */
-  voiceJudge?: { provider: 'openai' | 'gemini'; domain: string; model: string };
+  voiceJudge?: ProxyApi & { provider: 'openai' | 'gemini'; model: string };
+  /** Every AI endpoint with its base and API key (docs/design/settings.md#provider-endpoints-and-api-keys). */
+  endpoints: ResolvedEndpoints;
   consistency: { judge: 'vision-llm' | 'off'; threshold: number; maxAttempts: number };
   lanes: Record<string, number>;
   watermark: { key?: string; oldKeys: string[]; strength: number };
@@ -390,10 +428,10 @@ export function loadConfig(
         : e.RIDEO_EMBEDDED_DAV === 'true'
           ? 'embedded'
           : 'auto';
-  const llmProvider = e.RIDEO_LLM_PROVIDER;
-  const visionProvider = e.RIDEO_VISION_PROVIDER ?? llmProvider;
   // Optional AI endpoints exist only with a gateway to reach them (docs/design/settings.md#without-mm-gateway).
-  const ai = !!e.MM_GATEWAY_URL;
+  const endpoints = resolveEndpoints(e as unknown as Record<string, string | undefined>, {
+    gateway: !!e.MM_GATEWAY_URL,
+  });
   const cfg: Config = {
     host: e.RIDEO_HOST!,
     port,
@@ -453,6 +491,7 @@ export function loadConfig(
       url: e.MM_GATEWAY_URL?.replace(/\/+$/, ''),
       configured: !!e.MM_GATEWAY_URL,
       apiKey: e.MM_GATEWAY_API_KEY,
+      adminKey: e.MM_GATEWAY_ADMIN_KEY,
       routingProfile: e.MM_GATEWAY_ROUTING_PROFILE,
       models: {
         image: e.RIDEO_IMAGE_MODEL!,
@@ -470,55 +509,14 @@ export function loadConfig(
         music: e.RIDEO_GATEWAY_TIMEOUT_MUSIC_SEC,
       },
     },
-    llm: {
-      provider: llmProvider,
-      domain: e.RIDEO_LLM_PROXY_DOMAIN ?? LLM_DEFAULT_DOMAINS[llmProvider],
-      model: e.RIDEO_LLM_MODEL!,
-    },
-    vision: {
-      provider: visionProvider,
-      domain:
-        e.RIDEO_VISION_PROXY_DOMAIN ??
-        (visionProvider === llmProvider
-          ? (e.RIDEO_LLM_PROXY_DOMAIN ?? LLM_DEFAULT_DOMAINS[visionProvider])
-          : LLM_DEFAULT_DOMAINS[visionProvider]),
-      model: e.RIDEO_VISION_MODEL ?? e.RIDEO_LLM_MODEL!,
-    },
-    embeddings:
-      ai && e.RIDEO_EMBEDDINGS_PROXY_DOMAIN
-        ? { domain: e.RIDEO_EMBEDDINGS_PROXY_DOMAIN, model: e.RIDEO_EMBEDDINGS_MODEL! }
-        : undefined,
-    stt:
-      ai && e.RIDEO_STT_PROXY_DOMAIN
-        ? { domain: e.RIDEO_STT_PROXY_DOMAIN, model: e.RIDEO_STT_MODEL! }
-        : undefined,
-    tts:
-      !ai || e.RIDEO_TTS_PROVIDER === 'off'
-        ? undefined
-        : {
-            provider: e.RIDEO_TTS_PROVIDER,
-            domain: e.RIDEO_TTS_PROXY_DOMAIN ?? TTS_DEFAULTS[e.RIDEO_TTS_PROVIDER].domain,
-            model: e.RIDEO_TTS_MODEL ?? TTS_DEFAULTS[e.RIDEO_TTS_PROVIDER].model,
-          },
-    sfx:
-      !ai || e.RIDEO_SFX_PROVIDER === 'off'
-        ? undefined
-        : { provider: e.RIDEO_SFX_PROVIDER, domain: e.RIDEO_SFX_PROXY_DOMAIN!, model: e.RIDEO_SFX_MODEL! },
-    voiceJudge: (() => {
-      // Defaults to the vision provider when it accepts audio (Anthropic models do not).
-      const provider =
-        e.RIDEO_VOICE_JUDGE_PROVIDER ?? (visionProvider === 'anthropic' ? 'off' : visionProvider);
-      if (provider === 'off' || !ai) return undefined;
-      return {
-        provider,
-        domain:
-          e.RIDEO_VOICE_JUDGE_PROXY_DOMAIN ??
-          (provider === visionProvider && e.RIDEO_VISION_PROXY_DOMAIN
-            ? e.RIDEO_VISION_PROXY_DOMAIN
-            : LLM_DEFAULT_DOMAINS[provider]),
-        model: e.RIDEO_VOICE_JUDGE_MODEL ?? VOICE_JUDGE_DEFAULT_MODELS[provider],
-      };
-    })(),
+    llm: api(endpoints.llm!),
+    vision: api(endpoints.vision!),
+    stt: endpoints.stt ? api(endpoints.stt) : undefined,
+    embeddings: endpoints.embeddings ? api(endpoints.embeddings) : undefined,
+    tts: endpoints.tts ? api(endpoints.tts) : undefined,
+    sfx: endpoints.sfx ? api(endpoints.sfx) : undefined,
+    voiceJudge: endpoints.voiceJudge ? api(endpoints.voiceJudge) : undefined,
+    endpoints,
     consistency: {
       judge: e.RIDEO_CONSISTENCY_JUDGE,
       threshold: e.RIDEO_CONSISTENCY_THRESHOLD,

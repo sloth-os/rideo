@@ -177,7 +177,9 @@ export function answer(req: ChatRequest): string {
     req.system,
     ...req.parts.filter((p) => p.kind === 'text').map((p) => (p as { text: string }).text),
   ].join('\n');
-  const task = TASK_MARKER_PATTERN.exec(text)?.[1] as LlmTaskId | undefined;
+  const task = TASK_MARKER_PATTERN.exec(text)?.[1] as LlmTaskId | 'settings.test' | undefined;
+  // The Settings page's endpoint test (docs/design/settings.md#endpoint-status-and-tests)
+  if (task === 'settings.test') return 'OK';
   const inputText = req.parts.find((p) => p.kind === 'text' && p.text.startsWith(INPUT_PREFIX)) as
     | { text: string }
     | undefined;

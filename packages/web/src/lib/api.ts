@@ -44,6 +44,7 @@ import type {
   SearchResponse,
   SearchStatus,
   SettingsTestResult,
+  SettingsTestTarget,
   SettingsView,
   TagInfo,
   Theme,
@@ -259,7 +260,7 @@ export const api = {
   settings: () => request<SettingsView>('GET', '/settings'),
   updateSettings: (values: Record<string, string | null>) =>
     request<SettingsView & { applied: boolean; changed: string[] }>('PUT', '/settings', { values }),
-  testSettings: (target: 'webdav' | 'gateway', values: Record<string, string | null>) =>
+  testSettings: (target: SettingsTestTarget, values: Record<string, string | null> = {}) =>
     request<SettingsTestResult>('POST', '/settings/test', { target, values }),
   // Project files (docs/design/browser-storage.md#project-files-export-and-import)
   importProject: (file: Blob, mode: 'new' | 'replace' | 'copy' = 'new') =>

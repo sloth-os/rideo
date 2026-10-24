@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { ProxyClient } from '../gateway/proxy-client';
+import type { ProxyClient, ProxyTarget } from '../gateway/proxy-client';
 import { LlmError } from './llm';
 
 const EmbeddingsResponseSchema = z.object({
@@ -16,7 +16,7 @@ export const EMBEDDINGS_BATCH = 64;
 export class EmbeddingsClient {
   constructor(
     private readonly proxy: ProxyClient,
-    private readonly domain: string,
+    private readonly api: ProxyTarget,
     readonly model: string,
   ) {}
 
@@ -24,7 +24,7 @@ export class EmbeddingsClient {
     const out: number[][] = [];
     for (let i = 0; i < texts.length; i += EMBEDDINGS_BATCH) {
       const batch = texts.slice(i, i + EMBEDDINGS_BATCH);
-      const res = await this.proxy.fetch(this.domain, 'v1/embeddings', {
+      const res = await this.proxy.fetch(this.api, 'v1/embeddings', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ model: this.model, input: batch }),
@@ -37,6 +37,7 @@ export class EmbeddingsClient {
           `embeddings via mm-gateway proxy returned ${res.status}: ${body}`,
           res.status,
           res.status === 429 || res.status >= 500,
+          body,
         );
       }
       const parsed = EmbeddingsResponseSchema.safeParse(await res.json().catch(() => null));

@@ -4,6 +4,8 @@ const gw = await startMockGateway({
   port: Number(process.env.MOCK_GATEWAY_PORT ?? 8790),
   host: process.env.MOCK_GATEWAY_HOST ?? '127.0.0.1',
   apiKey: process.env.MOCK_GATEWAY_API_KEY || undefined,
+  managementKey: process.env.MOCK_GATEWAY_MANAGEMENT_KEY || undefined,
+  strictProxies: process.env.MOCK_GATEWAY_STRICT_PROXIES === '1',
   latencyMs: Number(process.env.MOCK_LATENCY_MS ?? 300),
   logger: process.env.MOCK_GATEWAY_LOG === '1',
 });

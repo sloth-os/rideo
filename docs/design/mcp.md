@@ -65,8 +65,8 @@ or keep going and `job_wait` until a tab picks the job up.
 | `project_sync` | `projectId`, `discardInvalid?` | WebDAV sync report |
 | `project_export` | `projectId` | `{url}` of the project file to download with the agent's token ([project files](browser-storage.md#project-files-export-and-import)) |
 | `project_import` | `url` (http(s), downloaded by the server), `mode?` (`new`, `replace`, `copy`) | `{id, title, kind, mode, files, skipped}` |
-| `settings_get` | – | the studio settings view (secrets masked); administrators only ([settings](settings.md#surfaces)) |
-| `settings_update` | `values` (`{<ENV_NAME>: string \| null}`) | the new view with `{applied, changed}`; reloads the studio's services; administrators only |
+| `settings_get` | – | the studio settings view (secrets, API keys among them, masked), with each AI endpoint's status; administrators only ([settings](settings.md#surfaces)) |
+| `settings_update` | `values` (`{<ENV_NAME>: string \| null}`) | the new view with `{applied, changed}`; reloads the studio's services and registers API keys in mm-gateway ([settings](settings.md#provider-endpoints-and-api-keys)); administrators only |
 | `doc_get` | `projectId`, `path`, `at?` (commit) | raw document |
 | `workflow_status` | `projectId` | stage, gates, unmet requirements |
 | `workflow_approve` | `projectId`, `gate` | new stage (or `gate_unmet` with details) |

@@ -122,7 +122,7 @@ uploads the outputs and completes it. See [editor](design/editor.md#editor-jobs)
 | WebDAV client | `webdav` (perry-mitchell) | Mature client with streaming and ranges. |
 | Embedded WebDAV | `webdav-server` v2 mounted at `/dav` via the HTTP server factory | Works with Finder, Explorer and davfs out of the box. |
 | AI generation | `@sloth-os/mm-gateway-ts` (OpenAPI `typescript-axios` SDK, pinned git dependency) | Required by the product constraints; its generated types check Rideo's requests at compile time. |
-| Other AI | `fetch` against `${MM_GATEWAY_URL}/proxy/{domain}/{path}` | Required by the product constraints. Supports streaming and abort. |
+| Other AI | `fetch` against `${MM_GATEWAY_URL}/proxy/{domain}/{path}`; API keys set in Settings registered as gateway proxies with the SDK's `ManagementApi` | Required by the product constraints. Supports streaming and abort. Upstream credentials stay in the gateway. |
 | MCP | `@modelcontextprotocol/sdk` Streamable HTTP transport | Supported by Claude Code, Codex, Cursor and others; stdio-only clients can use `mcp-remote`. |
 | Browser media processing | ffmpeg.wasm (`@ffmpeg/ffmpeg` 0.12, FFmpeg 5.1 single-threaded core, self-hosted) | Every filter the editor needs (analysis, xfade, drawtext, amix…), any input codec, x264/VP8/VP9/AAC/Opus encoders. |
 | Browser playback and fast encode | WebCodecs via mediabunny | Frame-accurate real-time decode and hardware-accelerated encode with a pure-TS demux/mux layer. |
@@ -143,7 +143,7 @@ uploads the outputs and completes it. See [editor](design/editor.md#editor-jobs)
 │   │   ├── prompt/         identity + shot prompt compiler
 │   │   ├── watermark/      dct, prng, crc, payload, embed/extract (luma + rgba)
 │   │   ├── provenance/     disclosure rule and label
-│   │   ├── settings/       the settings table (docs/design/settings.md)
+│   │   ├── settings/       the settings table and the AI endpoint table (docs/design/settings.md)
 │   │   ├── theme/          themes: schema, brand tokens, CSS properties (docs/design/embedding.md#themes)
 │   │   ├── bundle/         project files: manifest, tar, history rewrite of copies
 │   │   ├── media/          probe banner parser, analysis log parser, media commands, render chunk planner + filtergraphs
@@ -153,7 +153,7 @@ uploads the outputs and completes it. See [editor](design/editor.md#editor-jobs)
 │   │   ├── settings/       the settings file and service (docs/design/settings.md)
 │   │   ├── vcs/            object store, repository, work tree
 │   │   ├── media/          ffmpeg runner, probe, frames, posters, reference sheets (generation side)
-│   │   ├── gateway/        SDK wrapper (images/videos/music/models), proxy client
+│   │   ├── gateway/        SDK wrapper (images/videos/music/models), proxy client, proxy registration (management API)
 │   │   ├── ai/             LLM adapters (openai/gemini/anthropic via proxy), prompts, structured output
 │   │   ├── consistency/    judges + gate
 │   │   ├── watermark/      frame pipeline, registry, detection

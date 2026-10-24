@@ -194,6 +194,13 @@ export class Metrics {
   readonly settingsReloads = this.add(
     new Counter('rideo_settings_reloads_total', 'Studio reloads after a settings change, by result'),
   );
+  /** API keys set in Settings registered in mm-gateway (docs/design/settings.md#registration-in-mm-gateway). */
+  readonly gatewayProxySync = this.add(
+    new Counter(
+      'rideo_gateway_proxy_sync_total',
+      'Syncs of the gateway proxies of API keys set in Settings, by result',
+    ),
+  );
   /** Browser storage (docs/design/browser-storage.md): operations sent to workspaces, by op and outcome. */
   readonly workspaceOps = this.add(
     new Counter(

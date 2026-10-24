@@ -2,6 +2,7 @@ import { readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+import { type RunningMockGateway, startMockGateway } from '@rideo/mock-gateway';
 import type { Analysis, Job, Resource, SettingsView } from '@rideo/shared';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { type EditorWorker, startEditorWorker } from '../helpers/editor-worker';
@@ -241,4 +242,176 @@ describe('settings (docs/design/settings.md#surfaces)', () => {
       await client.close();
     }
   }, 60_000);
+});
+
+describe('API keys registered in mm-gateway (docs/design/settings.md#provider-endpoints-and-api-keys)', () => {
+  let gw: RunningMockGateway;
+  let keyed: Stack;
+  beforeAll(async () => {
+    // A gateway like the real one: management behind its own token, only registered proxies served
+    gw = await startMockGateway({
+      latencyMs: 20,
+      apiKey: 'gw-key',
+      managementKey: 'admin',
+      strictProxies: true,
+    });
+    keyed = await startStack({
+      gw,
+      env: {
+        MM_GATEWAY_URL: '',
+        RIDEO_STORAGE: '',
+        RIDEO_EMBEDDED_DAV: 'true',
+        RIDEO_TTS_PROVIDER: '',
+        RIDEO_SFX_PROVIDER: '',
+      },
+    });
+  });
+  afterAll(async () => {
+    await keyed?.stop();
+    await gw?.close();
+  });
+  type Saved = SettingsView & { applied: boolean; changed: string[] };
+  const settled = async () => {
+    for (let i = 0; i < 100; i++) {
+      const v = await keyed.api<SettingsView>('GET', '/settings');
+      if (v.proxySync.status !== 'pending') return v;
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    throw new Error('the proxy sync did not settle');
+  };
+
+  it('says how each endpoint is reached before any key is set', async () => {
+    const r = await keyed.api<Saved>('PUT', '/settings', {
+      values: { MM_GATEWAY_URL: gw.url, MM_GATEWAY_API_KEY: 'gw-key' },
+    });
+    // no admin token and no keys: nothing to register, nothing known about the gateway's proxies
+    expect(r.endpoints.llm).toMatchObject({
+      on: true,
+      proxy: 'unknown',
+      key: 'none',
+      url: 'https://api.openai.com/v1',
+    });
+    expect(r.endpoints.stt).toMatchObject({ on: false, proxy: 'off' });
+    expect(r.proxySync.status).toBe('idle');
+    const test = await keyed.api<any>('POST', '/settings/test', { target: 'llm' });
+    expect(test).toMatchObject({ ok: false, detail: expect.stringMatching(/no proxy for api.openai.com/) });
+    // with the admin token the studio can look: the gateway has no proxy for the text model
+    const looked = await keyed.api<Saved>('PUT', '/settings', { values: { MM_GATEWAY_ADMIN_KEY: 'admin' } });
+    expect(looked.proxySync.status).toBe('ok');
+    expect(looked.endpoints.llm).toMatchObject({
+      proxy: 'missing',
+      detail: expect.stringMatching(/set an API key/),
+    });
+  });
+
+  it('registers a key as the proxy’s account, used by the endpoints and jobs that share it', async () => {
+    const r = await keyed.api<Saved>('PUT', '/settings', {
+      values: {
+        RIDEO_LLM_PROXY_DOMAIN: 'https://ai.example.com/v1',
+        RIDEO_LLM_API_KEY: 'sk-text',
+        RIDEO_LLM_MODEL: 'mock-llm',
+        RIDEO_STT_PROXY_DOMAIN: 'https://ai.example.com/v1',
+      },
+    });
+    expect(r.applied).toBe(true);
+    expect(r.proxySync).toMatchObject({ status: 'ok', code: null });
+    expect(r.fields.RIDEO_LLM_API_KEY).toEqual({ value: null, source: 'settings', locked: false, set: true });
+    expect(r.endpoints.llm).toMatchObject({
+      on: true,
+      proxy: 'registered',
+      key: 'own',
+      domain: 'ai.example.com',
+      url: 'https://ai.example.com/v1',
+      model: 'mock-llm',
+    });
+    expect(r.endpoints.vision).toMatchObject({ proxy: 'registered', key: 'shared', keyFrom: 'llm' });
+    expect(r.endpoints.stt).toMatchObject({ on: true, proxy: 'registered', key: 'shared', keyFrom: 'llm' });
+    // in the gateway: one proxy at the origin, the key in the OpenAI header, the studio's own key to use it
+    const { instance } = JSON.parse(await readFile(join(keyed.dataDir, 'gateway.json'), 'utf8'));
+    expect(gw.management.proxies).toEqual([
+      expect.objectContaining({
+        base_url: 'https://ai.example.com',
+        tags: [`rideo-${instance}`],
+        accounts: [
+          { id: expect.stringMatching(`^rideo-${instance}-`), headers: { authorization: 'Bearer sk-text' } },
+        ],
+      }),
+    ]);
+    expect(gw.management.keys.map((k) => k.id)).toEqual(['default', `rideo-${instance}`]);
+
+    // the endpoint tests answer through it
+    expect(await keyed.api<any>('POST', '/settings/test', { target: 'llm' })).toMatchObject({
+      ok: true,
+      detail: expect.stringMatching(/mock-llm answered .*OK/),
+    });
+    expect(await keyed.api<any>('POST', '/settings/test', { target: 'stt' })).toMatchObject({ ok: true });
+    expect(gw.counters.proxyAccounts['ai.example.com']).toMatchObject({
+      key: `rideo-${instance}`,
+      headers: { authorization: 'Bearer sk-text' },
+    });
+
+    // and so does the studio's work: a screenplay written through the registered proxy
+    const story = await keyed.api<{ id: string }>('POST', '/projects', {
+      kind: 'story',
+      title: 'Keyed',
+      brief: { prompt: 'A lighthouse keeper' },
+      settings: { targetDurationSec: 30, pilotDurationSec: 10 },
+    });
+    const job = await keyed.api<Job>('POST', `/projects/${story.id}/screenplay/generate`, {});
+    expectSucceeded(await keyed.waitJob(story.id, job.id));
+
+    // the key is in the settings file only, never in the audit log
+    expect(JSON.parse(await readFile(join(keyed.dataDir, 'settings.json'), 'utf8')).values).toMatchObject({
+      RIDEO_LLM_API_KEY: 'sk-text',
+    });
+    expect(JSON.stringify(await keyed.api<any[]>('GET', '/audit?type=settings.update'))).not.toContain(
+      'sk-text',
+    );
+
+    // registered again at start, writing nothing new
+    const revision = gw.management.revision;
+    await keyed.restart();
+    expect((await settled()).endpoints.llm.proxy).toBe('registered');
+    expect(gw.management.revision).toBe(revision);
+  }, 120_000);
+
+  it('keeps the settings when the gateway refuses the admin token, and removes cleared keys', async () => {
+    const refused = await keyed.api<Saved>('PUT', '/settings', { values: { MM_GATEWAY_ADMIN_KEY: 'wrong' } });
+    expect(refused.applied).toBe(true);
+    expect(refused.proxySync).toMatchObject({ status: 'failed', code: 'gateway_admin_unauthorized' });
+    expect(refused.endpoints.llm).toMatchObject({
+      proxy: 'failed',
+      detail: expect.stringMatching(/admin token/),
+    });
+    expect(refused.fields.MM_GATEWAY_ADMIN_KEY?.set).toBe(true);
+
+    await keyed.api<Saved>('PUT', '/settings', { values: { MM_GATEWAY_ADMIN_KEY: 'admin' } });
+    const cleared = await keyed.api<Saved>('PUT', '/settings', {
+      values: { RIDEO_LLM_API_KEY: null, RIDEO_LLM_PROXY_DOMAIN: null, RIDEO_STT_PROXY_DOMAIN: null },
+    });
+    expect(cleared.proxySync.status).toBe('ok');
+    expect(cleared.endpoints.llm).toMatchObject({ key: 'none', proxy: 'missing' });
+    expect(gw.management.proxies).toEqual([]);
+    expect(gw.management.keys.map((k) => k.id)).toEqual(['default']);
+  }, 60_000);
+
+  it('refuses two keyed origins on one domain, naming the setting', async () => {
+    const twice = await problem(
+      keyed.api('PUT', '/settings', {
+        values: {
+          RIDEO_LLM_PROXY_DOMAIN: 'http://ai.example.com:8080/v1',
+          RIDEO_LLM_API_KEY: 'a',
+          RIDEO_EMBEDDINGS_PROXY_DOMAIN: 'https://ai.example.com/v1',
+          RIDEO_EMBEDDINGS_API_KEY: 'b',
+        },
+      }),
+    );
+    expect(twice.status).toBe(422);
+    expect(twice.body.errors).toEqual([
+      expect.objectContaining({
+        path: 'RIDEO_EMBEDDINGS_PROXY_DOMAIN',
+        message: expect.stringMatching(/one API per domain/),
+      }),
+    ]);
+  });
 });

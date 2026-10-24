@@ -1,7 +1,7 @@
 import { Loader2, X } from 'lucide-react';
 import {
   type ButtonHTMLAttributes,
-  type InputHTMLAttributes,
+  type ComponentProps,
   type ReactNode,
   type SelectHTMLAttributes,
   type TextareaHTMLAttributes,
@@ -135,7 +135,7 @@ export function SectionHeader({
 const field =
   'w-full rounded-[var(--radius-control)] border border-border bg-surface-2 px-3 text-sm text-text placeholder:text-muted/70 focus:border-accent focus:outline-none disabled:opacity-60';
 
-export function Input(props: InputHTMLAttributes<HTMLInputElement>) {
+export function Input(props: ComponentProps<'input'>) {
   return <input {...props} className={cx(field, 'h-9', props.className)} />;
 }
 

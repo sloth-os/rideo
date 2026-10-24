@@ -8,7 +8,7 @@ import { join, resolve } from 'node:path';
 import { startMockGateway, startMockIdp } from '@rideo/mock-gateway';
 import { buildServer, loadConfig, type RideoServer } from '@rideo/server';
 import { startHostPage } from './host-page';
-import { PORTS } from './ports';
+import { GATEWAY_ADMIN_KEY, PORTS } from './ports';
 import { startPrefixProxy } from './prefix-proxy';
 
 // Runs that were killed leave their data behind: remove what earlier stacks left more than an hour ago.
@@ -18,7 +18,12 @@ for (const name of await readdir(tmpdir())) {
   const info = await stat(path).catch(() => null);
   if (info && Date.now() - info.mtimeMs > 3_600_000) await rm(path, { recursive: true, force: true });
 }
-const gateway = await startMockGateway({ latencyMs: 30, port: PORTS.gateway });
+// Its management API lets the settings spec register API keys (docs/design/settings.md#registration-in-mm-gateway).
+const gateway = await startMockGateway({
+  latencyMs: 30,
+  port: PORTS.gateway,
+  managementKey: GATEWAY_ADMIN_KEY,
+});
 const dirs: string[] = [];
 const servers: RideoServer[] = [];
 const env = async (port: number, extra: Record<string, string> = {}) => {

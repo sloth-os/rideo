@@ -609,3 +609,133 @@ describe('performance (docs/design/performance.md#mock-gateway)', () => {
     expect(pixel[1]).toBeLessThan(70);
   });
 });
+
+describe('management (docs/design/ai-gateway.md#mock-gateway)', () => {
+  let mgw: RunningMockGateway;
+  beforeAll(async () => {
+    mgw = await startMockGateway({
+      latencyMs: 20,
+      apiKey: 'gw-key',
+      managementKey: 'admin',
+      strictProxies: true,
+    });
+  });
+  afterAll(async () => {
+    await mgw.close();
+  });
+  const call = async (method: string, path: string, body?: unknown, headers: Record<string, string> = {}) => {
+    const res = await fetch(`${mgw.url}${path}`, {
+      method,
+      headers: {
+        authorization: 'Bearer admin',
+        ...(body === undefined ? {} : { 'content-type': 'application/json' }),
+        ...headers,
+      },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+    return { res, json: (await res.json()) as any };
+  };
+
+  it('answers the redacted configuration with its revision, behind the management token', async () => {
+    const { res, json } = await call('GET', '/v1/management/config');
+    expect(res.status).toBe(200);
+    expect(res.headers.get('etag')).toBe(`"${json.revision}"`);
+    expectSchema('ManagementConfigResponse', json);
+    expect(json.config.keys).toEqual([expect.objectContaining({ id: 'default', key: '[redacted]' })]);
+    const anon = await fetch(`${mgw.url}/v1/management/config`, {
+      headers: { authorization: 'Bearer gw-key' },
+    });
+    expect(anon.status).toBe(401);
+  });
+
+  it('writes proxies and keys with If-Match, keeping redacted secrets', async () => {
+    const proxy = {
+      base_url: 'https://ai.example.com',
+      tags: ['studio'],
+      accounts: [{ id: 'main', headers: { authorization: 'Bearer sk-1' } }],
+    };
+    expect((await call('PUT', '/v1/management/proxies/ai.example.com', proxy)).res.status).toBe(428);
+    expect(
+      (await call('PUT', '/v1/management/proxies/ai.example.com', proxy, { 'if-match': '"stale"' })).res
+        .status,
+    ).toBe(412);
+    let rev = (await call('GET', '/v1/management/config')).json.revision;
+    const put = await call('PUT', '/v1/management/proxies/ai.example.com', proxy, { 'if-match': `"${rev}"` });
+    expect(put.res.status).toBe(200);
+    expectSchema('ManagementConfigResponse', put.json);
+    expect(put.json.config.proxies[0]).toMatchObject({
+      domain: 'ai.example.com',
+      accounts: [{ id: 'main', headers: { authorization: '[redacted]' } }],
+    });
+    // sent back redacted, the stored value stays; a redacted value with nothing stored is refused
+    rev = put.json.revision;
+    const again = await call(
+      'PUT',
+      '/v1/management/proxies/ai.example.com',
+      { ...put.json.config.proxies[0], tags: ['studio', 'more'] },
+      { 'if-match': rev },
+    );
+    expect(again.res.status).toBe(200);
+    expect(mgw.management.proxies[0]?.accounts[0]?.headers.authorization).toBe('Bearer sk-1');
+    const orphan = await call(
+      'PUT',
+      '/v1/management/proxies/new.example.com',
+      {
+        base_url: 'https://new.example.com',
+        accounts: [{ id: 'x', headers: { authorization: '[redacted]' } }],
+      },
+      { 'if-match': again.json.revision },
+    );
+    expect(orphan.res.status).toBe(422);
+    const key = await call(
+      'PUT',
+      '/v1/management/keys/studio',
+      { id: 'studio', key: 'studio-token', allow_tags: ['studio'] },
+      { 'if-match': again.json.revision },
+    );
+    expect(key.res.status).toBe(200);
+    expectSchema('ManagementConfigResponse', key.json);
+  });
+
+  it('serves a registered proxy to the keys its tags allow, with an account’s credential', async () => {
+    const chat = (domain: string, token: string) =>
+      fetch(`${mgw.url}/proxy/${domain}/v1/chat/completions`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+        body: JSON.stringify({
+          model: 'm',
+          messages: [{ role: 'system', content: 'rideo-task: settings.test' }],
+        }),
+      });
+    const ok = await chat('ai.example.com', 'studio-token');
+    expect(ok.status).toBe(200);
+    expect(ok.headers.get('x-mm-gateway-proxy-account')).toBe('main');
+    expect(((await ok.json()) as any).choices[0].message.content).toBe('OK');
+    expect(mgw.counters.proxyAccounts['ai.example.com']).toEqual({
+      account: 'main',
+      key: 'studio',
+      headers: { authorization: 'Bearer sk-1' },
+    });
+    // the open default key may use it too; an unregistered domain is not served in strict mode
+    expect((await chat('ai.example.com', 'gw-key')).status).toBe(200);
+    expect((await chat('unknown.example.com', 'gw-key')).status).toBe(404);
+    // a key whose tags do not match is refused
+    let rev = (await call('GET', '/v1/management/config')).json.revision;
+    rev = (
+      await call(
+        'PUT',
+        '/v1/management/keys/other',
+        { id: 'other', key: 'other-token', allow_tags: ['nope'] },
+        {
+          'if-match': rev,
+        },
+      )
+    ).json.revision;
+    const refused = await chat('ai.example.com', 'other-token');
+    expect(refused.status).toBe(403);
+    expect(((await refused.json()) as any).code).toBe('forbidden');
+    expect(
+      (await call('DELETE', '/v1/management/keys/other', undefined, { 'if-match': rev })).res.status,
+    ).toBe(200);
+  });
+});

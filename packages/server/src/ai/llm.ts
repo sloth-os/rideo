@@ -1,5 +1,6 @@
 import { attachWords, type TranscriptWord } from '@rideo/shared';
-import type { ProxyClient } from '../gateway/proxy-client';
+import type { ProxyApi } from '../config';
+import type { ProxyClient, ProxyTarget } from '../gateway/proxy-client';
 
 export type LlmPart =
   | { type: 'text'; text: string }
@@ -33,6 +34,8 @@ export class LlmError extends Error {
     message: string,
     readonly status: number | undefined,
     readonly retryable: boolean,
+    /** The answer's body (the gateway's problem or the provider's error). */
+    readonly body?: string,
   ) {
     super(message);
     this.name = 'LlmError';
@@ -45,6 +48,7 @@ async function failure(res: Response, provider: string): Promise<LlmError> {
     `${provider} via mm-gateway proxy returned ${res.status}: ${body}`,
     res.status,
     res.status === 429 || res.status >= 500,
+    body,
   );
 }
 
@@ -53,7 +57,7 @@ export class OpenAiAdapter implements LlmAdapter {
   readonly provider = 'openai';
   constructor(
     private readonly proxy: ProxyClient,
-    private readonly domain: string,
+    private readonly api: ProxyTarget,
     readonly model: string,
   ) {}
 
@@ -98,7 +102,7 @@ export class OpenAiAdapter implements LlmAdapter {
   }
 
   private post(body: unknown, signal?: AbortSignal): Promise<Response> {
-    return this.proxy.fetch(this.domain, 'v1/chat/completions', {
+    return this.proxy.fetch(this.api, 'v1/chat/completions', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(body),
@@ -112,7 +116,7 @@ export class GeminiAdapter implements LlmAdapter {
   readonly provider = 'gemini';
   constructor(
     private readonly proxy: ProxyClient,
-    private readonly domain: string,
+    private readonly api: ProxyTarget,
     readonly model: string,
   ) {}
 
@@ -128,7 +132,7 @@ export class GeminiAdapter implements LlmAdapter {
           },
     );
     const res = await this.proxy.fetch(
-      this.domain,
+      this.api,
       `v1beta/models/${encodeURIComponent(this.model)}:generateContent`,
       {
         method: 'POST',
@@ -165,7 +169,7 @@ export class AnthropicAdapter implements LlmAdapter {
   readonly provider = 'anthropic';
   constructor(
     private readonly proxy: ProxyClient,
-    private readonly domain: string,
+    private readonly api: ProxyTarget,
     readonly model: string,
   ) {}
 
@@ -184,7 +188,7 @@ export class AnthropicAdapter implements LlmAdapter {
             },
           },
     );
-    const res = await this.proxy.fetch(this.domain, 'v1/messages', {
+    const res = await this.proxy.fetch(this.api, 'v1/messages', {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'anthropic-version': '2023-06-01' },
       body: JSON.stringify({
@@ -214,18 +218,19 @@ export class AnthropicAdapter implements LlmAdapter {
 
 export function createAdapter(
   proxy: ProxyClient,
-  endpoint: { provider: 'openai' | 'gemini' | 'anthropic'; domain: string; model: string },
+  endpoint: ProxyApi & { provider: 'openai' | 'gemini' | 'anthropic'; model: string },
 ): LlmAdapter {
-  if (endpoint.provider === 'gemini') return new GeminiAdapter(proxy, endpoint.domain, endpoint.model);
-  if (endpoint.provider === 'anthropic') return new AnthropicAdapter(proxy, endpoint.domain, endpoint.model);
-  return new OpenAiAdapter(proxy, endpoint.domain, endpoint.model);
+  const api = { domain: endpoint.domain, prefix: endpoint.prefix };
+  if (endpoint.provider === 'gemini') return new GeminiAdapter(proxy, api, endpoint.model);
+  if (endpoint.provider === 'anthropic') return new AnthropicAdapter(proxy, api, endpoint.model);
+  return new OpenAiAdapter(proxy, api, endpoint.model);
 }
 
 /** OpenAI-style speech-to-text through the proxy (optional; footage analysis). */
 export class SttClient {
   constructor(
     private readonly proxy: ProxyClient,
-    private readonly domain: string,
+    private readonly api: ProxyTarget,
     private readonly model: string,
   ) {}
 
@@ -241,7 +246,7 @@ export class SttClient {
     // Word timings for transcript editing (docs/design/editor.md#transcript-editing)
     form.append('timestamp_granularities[]', 'word');
     form.append('timestamp_granularities[]', 'segment');
-    const res = await this.proxy.fetch(this.domain, 'v1/audio/transcriptions', {
+    const res = await this.proxy.fetch(this.api, 'v1/audio/transcriptions', {
       method: 'POST',
       body: form,
       signal,
