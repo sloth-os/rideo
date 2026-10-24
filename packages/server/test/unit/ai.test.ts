@@ -2,6 +2,7 @@ import { ClipPlanOutputSchema } from '@rideo/shared';
 import { describe, expect, it } from 'vitest';
 import {
   AnthropicAdapter,
+  createAdapter,
   GeminiAdapter,
   type LlmAdapter,
   type LlmRequest,
@@ -11,14 +12,15 @@ import { extractJson, LlmTasks, SYSTEM_PROMPTS } from '../../src/ai/tasks';
 import type { ProxyClient } from '../../src/gateway/proxy-client';
 
 class FakeProxy {
-  calls: { domain: string; path: string; body: any; headers: Headers }[] = [];
+  calls: { domain: string; path: string; body: any; headers: Headers; timeoutMs?: number }[] = [];
   constructor(private readonly reply: unknown) {}
-  async fetch(domain: string, path: string, init: RequestInit) {
+  async fetch(domain: string, path: string, init: RequestInit & { timeoutMs?: number }) {
     this.calls.push({
       domain,
       path,
       body: JSON.parse(String(init.body)),
       headers: new Headers(init.headers),
+      timeoutMs: init.timeoutMs,
     });
     return new Response(JSON.stringify(this.reply), {
       status: 200,
@@ -83,6 +85,24 @@ describe('LLM adapters speak each upstream through the gateway proxy', () => {
     expect(call.headers.get('anthropic-version')).toBe('2023-06-01');
     expect(call.body.messages.at(-1)).toEqual({ role: 'assistant', content: '{' });
     expect(call.body.messages[0].content[1].source.type).toBe('base64');
+  });
+
+  it('gives every call the configured timeout (RIDEO_LLM_TIMEOUT_SEC), else the proxy default', async () => {
+    const replies = {
+      openai: { choices: [{ message: { content: '{}' } }] },
+      gemini: { candidates: [{ content: { parts: [{ text: '{}' }] } }] },
+      anthropic: { content: [{ type: 'text', text: '}' }] },
+    } as const;
+    for (const provider of ['openai', 'gemini', 'anthropic'] as const) {
+      const proxy = new FakeProxy(replies[provider]);
+      const endpoint = { provider, domain: 'ai.example.com', model: 'm' };
+      await createAdapter(proxy as unknown as ProxyClient, endpoint, 600_000).complete(req);
+      await createAdapter(proxy as unknown as ProxyClient, endpoint).complete(req);
+      expect(
+        proxy.calls.map((c) => c.timeoutMs),
+        provider,
+      ).toEqual([600_000, undefined]);
+    }
   });
 });
 

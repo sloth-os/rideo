@@ -104,6 +104,7 @@ that is set in the environment wins and shows locked there; one that is not can 
 | `RIDEO_LLM_PROXY_DOMAIN` | provider default | the LLM's API base URL (`https://ai.example.com/v1`) or just its domain; the host is the gateway proxy ([API base URL](design/settings.md#api-base-url)) |
 | `RIDEO_LLM_API_KEY` | – | the LLM's API key: registered in mm-gateway as a proxy account; empty: the gateway's own account for the domain |
 | `RIDEO_LLM_MODEL` | `gpt-4.1-mini` | text model |
+| `RIDEO_LLM_TIMEOUT_SEC` | `600` | how long one text or vision model call may take; the screenplay of a long film takes minutes on slower models |
 | `RIDEO_VISION_PROVIDER` / `_PROXY_DOMAIN` / `_API_KEY` / `_MODEL` | LLM values (the key of an endpoint with the same origin) | vision model for the judge and descriptions |
 | `RIDEO_STT_PROXY_DOMAIN` / `_API_KEY` / `RIDEO_STT_MODEL` | – / – / `whisper-1` | optional speech-to-text (OpenAI-style) |
 | `RIDEO_EMBEDDINGS_PROXY_DOMAIN` / `_API_KEY` / `RIDEO_EMBEDDINGS_MODEL` | – / – / `text-embedding-3-small` | optional caption embeddings: media search by meaning ([search](design/search.md)); without them it ranks by words |

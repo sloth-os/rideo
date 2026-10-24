@@ -59,6 +59,8 @@ export class OpenAiAdapter implements LlmAdapter {
     private readonly proxy: ProxyClient,
     private readonly api: ProxyTarget,
     readonly model: string,
+    /** How long one call may take (`RIDEO_LLM_TIMEOUT_SEC`); else the proxy client's default. */
+    private readonly timeoutMs?: number,
   ) {}
 
   async complete(req: LlmRequest): Promise<LlmResponse> {
@@ -107,6 +109,7 @@ export class OpenAiAdapter implements LlmAdapter {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(body),
       signal,
+      timeoutMs: this.timeoutMs,
     });
   }
 }
@@ -118,6 +121,8 @@ export class GeminiAdapter implements LlmAdapter {
     private readonly proxy: ProxyClient,
     private readonly api: ProxyTarget,
     readonly model: string,
+    /** How long one call may take (`RIDEO_LLM_TIMEOUT_SEC`); else the proxy client's default. */
+    private readonly timeoutMs?: number,
   ) {}
 
   async complete(req: LlmRequest): Promise<LlmResponse> {
@@ -136,6 +141,7 @@ export class GeminiAdapter implements LlmAdapter {
       `v1beta/models/${encodeURIComponent(this.model)}:generateContent`,
       {
         method: 'POST',
+        timeoutMs: this.timeoutMs,
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           systemInstruction: { parts: [{ text: req.system }] },
@@ -171,6 +177,8 @@ export class AnthropicAdapter implements LlmAdapter {
     private readonly proxy: ProxyClient,
     private readonly api: ProxyTarget,
     readonly model: string,
+    /** How long one call may take (`RIDEO_LLM_TIMEOUT_SEC`); else the proxy client's default. */
+    private readonly timeoutMs?: number,
   ) {}
 
   async complete(req: LlmRequest): Promise<LlmResponse> {
@@ -190,6 +198,7 @@ export class AnthropicAdapter implements LlmAdapter {
     );
     const res = await this.proxy.fetch(this.api, 'v1/messages', {
       method: 'POST',
+      timeoutMs: this.timeoutMs,
       headers: { 'content-type': 'application/json', 'anthropic-version': '2023-06-01' },
       body: JSON.stringify({
         model: this.model,
@@ -219,11 +228,12 @@ export class AnthropicAdapter implements LlmAdapter {
 export function createAdapter(
   proxy: ProxyClient,
   endpoint: ProxyApi & { provider: 'openai' | 'gemini' | 'anthropic'; model: string },
+  timeoutMs?: number,
 ): LlmAdapter {
   const api = { domain: endpoint.domain, prefix: endpoint.prefix };
-  if (endpoint.provider === 'gemini') return new GeminiAdapter(proxy, api, endpoint.model);
-  if (endpoint.provider === 'anthropic') return new AnthropicAdapter(proxy, api, endpoint.model);
-  return new OpenAiAdapter(proxy, api, endpoint.model);
+  if (endpoint.provider === 'gemini') return new GeminiAdapter(proxy, api, endpoint.model, timeoutMs);
+  if (endpoint.provider === 'anthropic') return new AnthropicAdapter(proxy, api, endpoint.model, timeoutMs);
+  return new OpenAiAdapter(proxy, api, endpoint.model, timeoutMs);
 }
 
 /** OpenAI-style speech-to-text through the proxy (optional; footage analysis). */

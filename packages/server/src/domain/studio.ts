@@ -153,11 +153,15 @@ export function createStudio(
     apiKey: config.gateway.apiKey,
     routes: gatewayProxies,
   });
-  const llm = new LlmTasks(createAdapter(proxy, config.llm), createAdapter(proxy, config.vision), {
-    metrics,
-    log: log.child({ component: 'llm' }),
-    ...(config.voiceJudge ? { audio: createAdapter(proxy, config.voiceJudge) } : {}),
-  });
+  const llm = new LlmTasks(
+    createAdapter(proxy, config.llm, config.llmTimeoutMs),
+    createAdapter(proxy, config.vision, config.llmTimeoutMs),
+    {
+      metrics,
+      log: log.child({ component: 'llm' }),
+      ...(config.voiceJudge ? { audio: createAdapter(proxy, config.voiceJudge) } : {}),
+    },
+  );
   const gateway = new GatewayClient({
     url: config.gateway.url,
     apiKey: config.gateway.apiKey,

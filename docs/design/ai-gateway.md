@@ -94,6 +94,10 @@ loop: a failure is reported on the Settings page and retried at the next start, 
 | `gemini` | `generativelanguage.googleapis.com` | `v1beta/models/{model}:generateContent` | `generationConfig.responseMimeType: application/json` | `inline_data` |
 | `anthropic` | `api.anthropic.com` | `v1/messages` (`anthropic-version: 2023-06-01`) | instructions + prefill `{` | `image` base64 blocks |
 
+Each text or vision call may take `RIDEO_LLM_TIMEOUT_SEC` (default 600 s): writing the outline and opening scenes of a
+long film, or the next scenes of one, takes minutes on slower models, and the proxy client's 180 s default cut them off.
+Other proxied calls keep their own timeouts (speech-to-text 600 s, voices 120–300 s, embeddings 60 s).
+
 Speech-to-text (optional, used by footage analysis): OpenAI-style
 `POST /proxy/{RIDEO_STT_PROXY_DOMAIN}/v1/audio/transcriptions` (multipart, `response_format=verbose_json`,
 `timestamp_granularities[]` `word` and `segment`: the words' timings drive transcript editing,

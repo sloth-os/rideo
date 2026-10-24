@@ -138,6 +138,7 @@ export const EnvSchema = z
     RIDEO_LLM_PROXY_DOMAIN: str(),
     RIDEO_LLM_API_KEY: str(),
     RIDEO_LLM_MODEL: str(),
+    RIDEO_LLM_TIMEOUT_SEC: num(600),
     RIDEO_VISION_PROVIDER: z.enum(['openai', 'gemini', 'anthropic']).optional(),
     RIDEO_VISION_PROXY_DOMAIN: str(),
     RIDEO_VISION_API_KEY: str(),
@@ -346,6 +347,8 @@ export interface Config {
   };
   llm: LlmEndpoint;
   vision: LlmEndpoint;
+  /** How long one text or vision model call may take (`RIDEO_LLM_TIMEOUT_SEC`). */
+  llmTimeoutMs: number;
   stt?: ProxyApi & { model: string };
   /** Caption embeddings for semantic search; unset: search ranks by words. */
   embeddings?: ProxyApi & { model: string };
@@ -511,6 +514,7 @@ export function loadConfig(
     },
     llm: api(endpoints.llm!),
     vision: api(endpoints.vision!),
+    llmTimeoutMs: Math.max(10, e.RIDEO_LLM_TIMEOUT_SEC) * 1000,
     stt: endpoints.stt ? api(endpoints.stt) : undefined,
     embeddings: endpoints.embeddings ? api(endpoints.embeddings) : undefined,
     tts: endpoints.tts ? api(endpoints.tts) : undefined,

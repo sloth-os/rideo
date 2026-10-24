@@ -342,6 +342,15 @@ export const SETTING_FIELDS: readonly SettingField[] = [
     kind: 'secret',
     help: 'Empty: the key of another endpoint on the same API, else mm-gateway’s own account.',
   },
+  {
+    env: 'RIDEO_LLM_TIMEOUT_SEC',
+    group: 'ai',
+    label: 'Text and vision timeout (seconds)',
+    kind: 'number',
+    placeholder: '600',
+    help: 'How long one text or vision model call may take: the screenplay of a long film takes minutes on slower models.',
+    advanced: true,
+  },
   // Voices and sound (docs/design/dialogue.md, docs/design/post-audio.md)
   {
     env: 'RIDEO_TTS_PROVIDER',

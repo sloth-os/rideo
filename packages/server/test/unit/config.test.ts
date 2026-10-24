@@ -22,6 +22,10 @@ describe('config', () => {
       model: 'gpt-4.1-mini',
     });
     expect(c.vision.model).toBe('gpt-4.1-mini');
+    // a text or vision call may take ten minutes; RIDEO_LLM_TIMEOUT_SEC changes it (at least 10 s)
+    expect(c.llmTimeoutMs).toBe(600_000);
+    expect(loadConfig({ RIDEO_LLM_TIMEOUT_SEC: '900' }).llmTimeoutMs).toBe(900_000);
+    expect(loadConfig({ RIDEO_LLM_TIMEOUT_SEC: '1' }).llmTimeoutMs).toBe(10_000);
     expect(c.watermark.strength).toBe(16);
     expect(c.lanes).toMatchObject({ control: 16, video: 2, media: 1 });
     expect(c.gateway.models).toEqual({
