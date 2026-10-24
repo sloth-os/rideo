@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { startHeartbeat } from '../src/engine/heartbeat';
 import { keepAlive } from '../src/engine/keep-alive';
 import { HEAVY_PIXELS, proxyName, proxyPlan } from '../src/engine/proxy-plan';
-import { threadBudget, withThreads } from '../src/engine/threads';
+import { scalerCount, THREAD_POOL, threadBudget, withThreads } from '../src/engine/threads';
 import { startTicker } from '../src/engine/ticker';
 import { type EditorApi, EditorWorker } from '../src/engine/worker';
 import {
@@ -69,8 +69,65 @@ describe('ffmpeg.wasm threads (docs/design/engine-performance.md)', () => {
     ]);
     expect(withThreads(['-threads', '1', '-i', 'x', 'y'], 8)).toEqual(['-threads', '1', '-i', 'x', 'y']);
     expect(withThreads(['-f', 'lavfi', 'anullsrc', 'y'], 8)).toEqual(['-f', 'lavfi', 'anullsrc', 'y']);
-    expect(threadBudget(64, 7)).toEqual({ output: 8, decoder: 1 });
-    expect(threadBudget(0, 1)).toEqual({ output: 1, decoder: 2 });
+    expect(threadBudget(64, 7)).toEqual({ output: 8, decoder: 1, filters: 8 });
+    expect(threadBudget(0, 1)).toEqual({ output: 1, decoder: 2, filters: 1 });
+  });
+
+  it('counts the scalers, each with a pool of the graph’s threads, and keeps the whole command in the pool', () => {
+    // a cut with a freeze frame, a keyed and adjusted item and a slide: four inputs, scalers and conversions
+    const graph = [
+      '[0:v]trim=start=0:end=3,scale=320:180,format=yuv420p[s0]',
+      '[1:v]select=1,reverse,scale=320:180,format=yuv420p[s1]',
+      '[2:v]trim=start=0:end=3,scale=320:180,format=yuv420p[s2]',
+      '[3:v]scale=320:180,hflip,format=yuv420p[s3]',
+      '[s3]format=rgb24,lutrgb=r=val,format=rgba,colorkey=0x00FF00:0.3:0.1[c4]',
+      '[c4]format=rgba[t5]',
+      'color=c=black:s=320x180,format=yuv420p[bg6]',
+      '[bg6][t5]overlay=x=0:y=0:format=auto,format=yuv420p[v3]',
+      '[s0][s1]concat=n=2:v=1:a=0[x1]',
+      '[x1][s2]concat=n=2:v=1:a=0[x2]',
+      '[x2][v3]xfade=transition=slideleft:duration=0.5:offset=7.5[x3]',
+      '[x3]format=yuv420p[vout]',
+    ].join(';');
+    expect(scalerCount(graph)).toBe(4 + 11 + 2 + 1 + 1);
+    // audio filters are not scalers
+    expect(scalerCount('[0:a]aformat=sample_rates=48000[a]')).toBe(1);
+    const args = [
+      '-i',
+      'a',
+      '-i',
+      'b',
+      '-i',
+      'c',
+      '-i',
+      'd',
+      '-filter_complex',
+      graph,
+      '-map',
+      '[vout]',
+      'o.mp4',
+    ];
+    const threads = withThreads(args, 4);
+    expect(threads.slice(-5)).toEqual(['-threads', '4', '-filter_complex_threads', '1', 'o.mp4']);
+    const budget = (plan: ReturnType<typeof threadBudget>, inputs: number, scalers: number) =>
+      (inputs > 1 ? inputs : 0) +
+      inputs * plan.decoder +
+      (plan.filters - 1) * (1 + scalers) +
+      plan.output +
+      1;
+    // every plan fits 30 of the 32 threads, giving up filter threads, then decoders', then the encoder's
+    for (const [cores, inputs, scalers] of [
+      [4, 4, 19],
+      [8, 2, 4],
+      [8, 6, 12],
+      [8, 14, 30],
+      [2, 1, 0],
+    ] as const) {
+      const plan = threadBudget(cores, inputs, scalers);
+      expect(budget(plan, inputs, scalers)).toBeLessThanOrEqual(THREAD_POOL - 2);
+    }
+    expect(threadBudget(8, 2, 4)).toEqual({ output: 8, decoder: 2, filters: 4 });
+    expect(threadBudget(8, 14, 30)).toEqual({ output: 1, decoder: 1, filters: 1 });
   });
 });
 

@@ -5,10 +5,43 @@
 
 /** The core's pthread pool (`@ffmpeg/core-mt` 0.12). */
 export const THREAD_POOL = 32;
+/** What a command may plan to use: the pool, less a little for ffmpeg's own helpers. */
+const BUDGET = THREAD_POOL - 2;
 
-/** Threads for the encoders and filters, and for each input's decoder. */
-export function threadBudget(cores: number, inputs: number): { output: number; decoder: number } {
-  return { output: Math.max(1, Math.min(8, Math.floor(cores) || 1)), decoder: inputs > 6 ? 1 : 2 };
+/**
+ * Scalers in a filter graph: each `scale`, and the format conversions ffmpeg inserts, estimated generously from what
+ * asks for one (`format`, both inputs of an `xfade`, `overlay`, `alphamerge`) plus the output's. FFmpeg 5.1 gives every
+ * scaler its own pool of the graph's threads.
+ */
+export function scalerCount(graph: string): number {
+  const n = (re: RegExp) => (graph.match(re) ?? []).length;
+  return n(/\bscale=/g) + n(/\bformat=/g) + 2 * n(/\bxfade=/g) + n(/\boverlay=/g) + n(/\balphamerge\b/g) + 1;
+}
+
+export interface ThreadPlan {
+  /** The encoder's threads. */
+  output: number;
+  /** Each input decoder's threads. */
+  decoder: number;
+  /** The filter graph's threads (each scaler runs as many). */
+  filters: number;
+}
+
+/**
+ * Threads for a command that fit the pool: an input thread per input (when there are several), the decoders, the
+ * filter graph's workers and each scaler's, the encoder with its lookahead. The filter graph gives way first, then
+ * the decoders, then the encoder.
+ */
+export function threadBudget(cores: number, inputs: number, scalers = 0): ThreadPlan {
+  let output = Math.max(1, Math.min(8, Math.floor(cores) || 1));
+  let decoder = inputs > 6 ? 1 : 2;
+  let filters = output;
+  const used = () =>
+    (inputs > 1 ? inputs : 0) + inputs * decoder + (filters - 1) * (1 + scalers) + output + 1;
+  while (filters > 1 && used() > BUDGET) filters--;
+  if (used() > BUDGET) decoder = 1;
+  while (output > 1 && used() > BUDGET) output--;
+  return { output, decoder, filters };
 }
 
 /**
@@ -19,7 +52,12 @@ export function withThreads(args: string[], cores: number): string[] {
   if (args.includes('-threads')) return args;
   const inputs = args.filter((a) => a === '-i').length;
   if (!inputs) return args;
-  const { output, decoder } = threadBudget(cores, inputs);
+  const at = args.indexOf('-filter_complex');
+  const { output, decoder, filters } = threadBudget(
+    cores,
+    inputs,
+    at >= 0 ? scalerCount(args[at + 1] ?? '') : 0,
+  );
   const out: string[] = [];
   for (const a of args) {
     if (a === '-i') out.push('-threads', String(decoder));
@@ -27,6 +65,6 @@ export function withThreads(args: string[], cores: number): string[] {
   }
   // a probe has no output: its last argument is the input
   if (args[args.length - 2] !== '-i')
-    out.splice(out.length - 1, 0, '-threads', String(output), '-filter_complex_threads', String(output));
+    out.splice(out.length - 1, 0, '-threads', String(output), '-filter_complex_threads', String(filters));
   return out;
 }

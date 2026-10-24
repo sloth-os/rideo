@@ -24,8 +24,16 @@ is never exhausted (a command asking for more threads than the pool has would ha
 
 | | Threads |
 |---|---|
-| encoders and filters (`-threads`, `-filter_complex_threads` before the output) | `min(8, navigator.hardwareConcurrency)` |
+| the encoder (`-threads` before the output) | `min(8, navigator.hardwareConcurrency)` |
 | each input's decoder (`-threads` before its `-i`) | 2, or 1 when a command has more than 6 inputs |
+| the filter graph (`-filter_complex_threads` before the output) | as many as the encoder's, as far as the command fits the pool |
+
+A command uses an input thread per input (when it has several), its decoders' threads, the filter graph's workers and
+as many again for every scaler, and the encoder's threads with its lookahead. Every scaler means each `scale` and each
+format conversion ffmpeg inserts: FFmpeg 5.1 gives every scaler its own pool of the graph's threads (`vf_scale`), and a
+graph with ten of them at four threads already needs 30 more. `withThreads` estimates the scalers from the graph
+(`scale`, `format`, two per `xfade`, `overlay`, `alphamerge`, one for the output) and lowers the filter graph's threads
+first, then the decoders' and the encoder's, until the command fits 30 of the 32 threads.
 
 The engine status in the header (its tooltip) and the presence the tab sends say how many threads the core runs
 (`engine.threads`, 1 for the single-threaded core).

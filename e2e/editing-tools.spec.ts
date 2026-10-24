@@ -53,6 +53,11 @@ test('editing tools: markers, shortcuts, undo, freeze, detach, snapping, tracks,
   const timeline = () => api.call<Timeline>('GET', `/projects/${pid}/timeline`);
   const picture = async () => (await timeline()).tracks[0]!.items;
   const phone = (page.viewportSize()?.width ?? 1280) < 768;
+  // ffmpeg.wasm plans its threads for 8 cores (the most it uses), so the export meets the core's 32-thread pool the
+  // way it does on a big machine whatever runs the test (docs/design/engine-performance.md)
+  await page.addInitScript(() =>
+    Object.defineProperty(Navigator.prototype, 'hardwareConcurrency', { get: () => 8 }),
+  );
   await page.goto(`/p/${pid}/editor`);
 
   if (phone) {
