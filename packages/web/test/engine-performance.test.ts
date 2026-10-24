@@ -69,8 +69,8 @@ describe('ffmpeg.wasm threads (docs/design/engine-performance.md)', () => {
     ]);
     expect(withThreads(['-threads', '1', '-i', 'x', 'y'], 8)).toEqual(['-threads', '1', '-i', 'x', 'y']);
     expect(withThreads(['-f', 'lavfi', 'anullsrc', 'y'], 8)).toEqual(['-f', 'lavfi', 'anullsrc', 'y']);
-    expect(threadBudget(64, 7)).toEqual({ output: 8, decoder: 1, filters: 8 });
-    expect(threadBudget(0, 1)).toEqual({ output: 1, decoder: 2, filters: 1 });
+    expect(threadBudget(64, 7)).toEqual({ output: 8, decoder: 1, filters: 8, inputThreads: true });
+    expect(threadBudget(0, 1)).toEqual({ output: 1, decoder: 2, filters: 1, inputThreads: false });
   });
 
   it('counts the scalers, each with a pool of the graph’s threads, and keeps the whole command in the pool', () => {
@@ -109,13 +109,7 @@ describe('ffmpeg.wasm threads (docs/design/engine-performance.md)', () => {
     ];
     const threads = withThreads(args, 4);
     expect(threads.slice(-5)).toEqual(['-threads', '4', '-filter_complex_threads', '1', 'o.mp4']);
-    const budget = (plan: ReturnType<typeof threadBudget>, inputs: number, scalers: number) =>
-      (inputs > 1 ? inputs : 0) +
-      inputs * plan.decoder +
-      (plan.filters - 1) * (1 + scalers) +
-      plan.output +
-      1;
-    // every plan fits 30 of the 32 threads, giving up filter threads, then decoders', then the encoder's
+    // every plan fits 30 of the 32 threads, giving up filter threads, then input threads, decoders', the encoder's
     for (const [cores, inputs, scalers] of [
       [4, 4, 19],
       [8, 2, 4],
@@ -124,12 +118,75 @@ describe('ffmpeg.wasm threads (docs/design/engine-performance.md)', () => {
       [2, 1, 0],
     ] as const) {
       const plan = threadBudget(cores, inputs, scalers);
-      expect(budget(plan, inputs, scalers)).toBeLessThanOrEqual(THREAD_POOL - 2);
+      expect(threadsOf(plan, inputs, scalers)).toBeLessThanOrEqual(THREAD_POOL - 2);
     }
-    expect(threadBudget(8, 2, 4)).toEqual({ output: 8, decoder: 2, filters: 4 });
-    expect(threadBudget(8, 14, 30)).toEqual({ output: 1, decoder: 1, filters: 1 });
+    expect(threadBudget(8, 2, 4)).toEqual({ output: 8, decoder: 2, filters: 4, inputThreads: true });
+    // decoders at one thread decode on the main thread: the encoder keeps its threads
+    expect(threadBudget(8, 14, 30)).toEqual({ output: 8, decoder: 1, filters: 1, inputThreads: true });
+  });
+
+  it('reads the inputs on the main thread when a thread each would not fit, as for a long cut’s soundtrack', () => {
+    // a ten-minute film of five-second shots: the soundtrack opens each of its 118 audio segments as an input
+    const segments = Array.from({ length: 118 }, (_, k) => [
+      '-ss',
+      '0',
+      '-t',
+      '5.1',
+      '-i',
+      `/in/take${k}.mp4`,
+    ]);
+    const mix = `${segments.map((_, k) => `[a${k}]`).join('')}amix=inputs=118:normalize=0[aout]`;
+    const args = [
+      ...segments.flat(),
+      '-filter_complex',
+      mix,
+      '-map',
+      '[aout]',
+      '-c:a',
+      'flac',
+      '/out/s.flac',
+    ];
+    const threads = withThreads(args, 8);
+    // every input is read and decoded on the main thread; the output keeps its threads
+    expect(threads.slice(0, 10)).toEqual([
+      '-ss',
+      '0',
+      '-t',
+      '5.1',
+      '-thread_queue_size',
+      '0',
+      '-threads',
+      '1',
+      '-i',
+      '/in/take0.mp4',
+    ]);
+    expect(threads.filter((a) => a === '-thread_queue_size')).toHaveLength(118);
+    expect(threads.slice(-5)).toEqual(['-threads', '8', '-filter_complex_threads', '1', '/out/s.flac']);
+    expect(threadBudget(8, 118, 1)).toEqual({ output: 8, decoder: 1, filters: 1, inputThreads: false });
+    // at eight cores up to 21 inputs keep a thread each, as FFmpeg reads them by default
+    expect(threadBudget(8, 21, 1).inputThreads).toBe(true);
+    expect(threadBudget(8, 22, 1).inputThreads).toBe(false);
+    expect(withThreads(['-i', 'a', '-i', 'b', 'o.mp4'], 8)).not.toContain('-thread_queue_size');
+    // any number of inputs and scalers fits the pool
+    for (const cores of [1, 2, 4, 8, 16])
+      for (const inputs of [1, 2, 6, 7, 20, 26, 40, 118, 500])
+        for (const scalers of [0, 4, 30, 200]) {
+          const plan = threadBudget(cores, inputs, scalers);
+          expect(threadsOf(plan, inputs, scalers)).toBeLessThanOrEqual(THREAD_POOL - 2);
+        }
   });
 });
+
+/** The threads a command planned so asks of the pool (docs/design/engine-performance.md). */
+function threadsOf(plan: ReturnType<typeof threadBudget>, inputs: number, scalers: number): number {
+  return (
+    (plan.inputThreads ? inputs : 0) +
+    (plan.decoder > 1 ? inputs * plan.decoder : 0) +
+    (plan.filters - 1) * (1 + scalers) +
+    plan.output +
+    1
+  );
+}
 
 describe('WebGPU geometry (docs/design/engine-performance.md#webgpu-compositing)', () => {
   const out = { width: 1920, height: 1080 };

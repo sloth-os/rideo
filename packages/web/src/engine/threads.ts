@@ -25,42 +25,52 @@ export interface ThreadPlan {
   decoder: number;
   /** The filter graph's threads (each scaler runs as many). */
   filters: number;
+  /** Each input read on a thread of its own (FFmpeg's default when a command has several), or all on the main one. */
+  inputThreads: boolean;
 }
 
 /**
- * Threads for a command that fit the pool: an input thread per input (when there are several), the decoders, the
- * filter graph's workers and each scaler's, the encoder with its lookahead. The filter graph gives way first, then
- * the decoders, then the encoder.
+ * Threads for a command that fit the pool: an input thread per input (when there are several), the decoders (one
+ * at a single thread decodes on the main thread), the filter graph's workers and each scaler's, the encoder with its
+ * lookahead. The filter graph gives way first, then the input threads, then the decoders, then the encoder.
  */
 export function threadBudget(cores: number, inputs: number, scalers = 0): ThreadPlan {
   let output = Math.max(1, Math.min(8, Math.floor(cores) || 1));
   let decoder = inputs > 6 ? 1 : 2;
   let filters = output;
+  let inputThreads = inputs > 1;
   const used = () =>
-    (inputs > 1 ? inputs : 0) + inputs * decoder + (filters - 1) * (1 + scalers) + output + 1;
+    (inputThreads ? inputs : 0) +
+    (decoder > 1 ? inputs * decoder : 0) +
+    (filters - 1) * (1 + scalers) +
+    output +
+    1;
   while (filters > 1 && used() > BUDGET) filters--;
+  if (used() > BUDGET) inputThreads = false;
   if (used() > BUDGET) decoder = 1;
   while (output > 1 && used() > BUDGET) output--;
-  return { output, decoder, filters };
+  return { output, decoder, filters, inputThreads };
 }
 
 /**
- * The command with its threads: `-threads` before each `-i` (that input's decoder), and `-threads` with
- * `-filter_complex_threads` before the output. Probes (`-i` only) and commands that set threads keep theirs.
+ * The command with its threads: `-threads` before each `-i` (that input's decoder), with `-thread_queue_size 0` when
+ * the inputs are read on the main thread, and `-threads` with `-filter_complex_threads` before the output. Probes
+ * (`-i` only) and commands that set threads keep theirs.
  */
 export function withThreads(args: string[], cores: number): string[] {
   if (args.includes('-threads')) return args;
   const inputs = args.filter((a) => a === '-i').length;
   if (!inputs) return args;
   const at = args.indexOf('-filter_complex');
-  const { output, decoder, filters } = threadBudget(
+  const { output, decoder, filters, inputThreads } = threadBudget(
     cores,
     inputs,
     at >= 0 ? scalerCount(args[at + 1] ?? '') : 0,
   );
+  const reader = inputs > 1 && !inputThreads ? ['-thread_queue_size', '0'] : [];
   const out: string[] = [];
   for (const a of args) {
-    if (a === '-i') out.push('-threads', String(decoder));
+    if (a === '-i') out.push(...reader, '-threads', String(decoder));
     out.push(a);
   }
   // a probe has no output: its last argument is the input

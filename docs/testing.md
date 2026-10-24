@@ -155,7 +155,8 @@ RIDEO_TEST_WEBDAV_URL=http://rideo:rideo@localhost:8080/ npx vitest run --projec
   wipe's side, dips over white with xfade's weights from whole frames, slides, the circle's gradient, dips and circles
   handed to the canvas while WebGPU gets the rest; `engine-performance.test.ts`: scissors of wipes and slides,
   mirrored UVs and the uniforms of adjustments, key and vignette, and the thread budget counting every scaler so a
-  command stays in ffmpeg.wasm's pool). Resuming an interrupted render
+  command stays in ffmpeg.wasm's pool, reading the 118 inputs of a long cut's soundtrack on the main thread). Resuming
+  an interrupted render
   is covered by the editor-jobs integration test, local proxies by the story e2e spec.
 
 - **web, settings, workspace and library** (`settings.test.tsx`, `workspace.test.ts`, `runtime.test.ts`,
@@ -349,7 +350,7 @@ when a new stack starts. Specs:
 | `take-editing.spec.ts` | (desktop and mobile) relight a take and extend another by 2 s from the take tiles (lineage badges); generative extend of the first item in the editor (the lanes on desktop, the item list on phones) |
 | `accounts.spec.ts` | (desktop and mobile, on the stack's second server with accounts and a mock identity provider) sign-in; a director adds a reviewer by email in the Members card; an agent token created, used and revoked; people and the audit log; the reviewer's view (banner, no settings); sign-out |
 | `pwa.spec.ts` | (desktop and mobile) the manifest and the service worker; the Inbox from the header: an agent's commit, a failed recipe, a gate approved; notifications on this device turned on and off (a stand-in subscription: headless browsers have no push service); the shell starting offline |
-| `engine.spec.ts` | (desktop and mobile, WebGPU on SwiftShader through Vulkan) the studio cross-origin isolated; the same graded, overlaid frame from WebGPU and the canvas; an ffmpeg.wasm export on threads; a WebCodecs export composited by WebGPU in a hidden tab (worker heartbeats, the job's Web Lock); a 4K original previewed from a WebCodecs editing proxy in OPFS |
+| `engine.spec.ts` | (desktop and mobile, WebGPU on SwiftShader through Vulkan) the studio cross-origin isolated; the same graded, overlaid frame from WebGPU and the canvas; an ffmpeg.wasm export on threads; a WebCodecs export composited by WebGPU in a hidden tab (worker heartbeats, the job's Web Lock); a 4K original previewed from a WebCodecs editing proxy in OPFS. A cut of 40 quarter-second items exported with ffmpeg.wasm, its threads planned for 8 cores: the chunk and the soundtrack read their 40 inputs on the main thread and stay in the 32-thread pool |
 | `performance.spec.ts` | (desktop and mobile, a fake camera and microphone) a performance recorded on a shot: countdown, recording, stop, playback, used as the shot's performance; the model shown; the regenerated take acted by `mock-performance-v1` and verified |
 | `search.spec.ts` | (desktop and mobile) footage and a still indexed from the Search view, found by words at the matched frame, filtered by kind, *Show* in Resources; the editor's overlay picker finds the still and puts it at the playhead |
 | `brand.spec.ts` | (desktop and mobile) a brand kit made on the Brand kits page with a logo and the bug on; applied to a project from its overview; a lower third from the kit's template in the editor; the export with the bug (on by default) rendered in the tab |

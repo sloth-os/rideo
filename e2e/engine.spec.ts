@@ -208,3 +208,40 @@ test('the engine: threads under cross-origin isolation, WebGPU like the canvas, 
     )
     .toContainEqual(`${media.hash}-webcodecs-720-v2.webm`);
 });
+
+/** A cut of many short items: a chunk and the soundtrack open every item as an input (docs/design/engine-performance.md). */
+test('ffmpeg.wasm renders a cut of 40 short items within its 32-thread pool', async ({
+  page,
+  request,
+}, testInfo) => {
+  test.setTimeout(300_000);
+  const api = new Api(request);
+  const pid = await api.editProjectWithClip(
+    `Many inputs (${testInfo.project.name})`,
+    makeFootage(testInfo.outputPath('clip.mp4')),
+  );
+  // threads planned for 8 cores, as on a big machine, whatever runs the test
+  await page.addInitScript(() =>
+    Object.defineProperty(Navigator.prototype, 'hardwareConcurrency', { get: () => 8 }),
+  );
+  const cut = await api.call<any>('GET', `/projects/${pid}/timeline`);
+  const track = cut.tracks[0];
+  const clip = track.items[0];
+  // 40 quarter-second items: with a reader thread for each input, the chunk and the soundtrack would hang the pool
+  await api.call('POST', `/projects/${pid}/timeline/ops`, {
+    ops: [
+      { op: 'remove', itemId: clip.id },
+      ...Array.from({ length: 40 }, (_, k) => ({
+        op: 'insert',
+        trackId: track.id,
+        item: { kind: 'video', source: clip.source, in: (k % 24) * 0.25, out: (k % 24) * 0.25 + 0.25 },
+      })),
+    ],
+  });
+  await page.goto(`/p/${pid}/editor`);
+  await exportInThisTab(page, { engine: 'ffmpeg', quality: 'draft' });
+  await expect(page.getByTestId('engine-status')).toHaveAttribute('data-threads', '8');
+  const exports = Object.values<any>((await api.call<any>('GET', `/projects/${pid}/state`)).docs.exports);
+  expect(exports.map((e) => [e.engine, e.status])).toEqual([['ffmpeg', 'succeeded']]);
+  expect(exports[0].durationSec).toBeCloseTo(10, 0);
+});
