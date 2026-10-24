@@ -5,6 +5,7 @@ import {
   applySuggestions,
   assembleStoryTimeline,
   audioSegments,
+  dipWeights,
   type EditSuggestion,
   emptyTimeline,
   itemDuration,
@@ -230,18 +231,22 @@ describe('timeline queries', () => {
     expect(activeAt(t, 5.5).video).toHaveLength(1);
   });
 
-  it('dips to black through the midpoint', () => {
+  it('dips to black with the weights of xfade: the incoming frame under the outgoing one', () => {
     const t0 = withThree();
-    const b = primaryTrack(t0).items[1]!;
+    const [a, b] = primaryTrack(t0).items;
     const t = applyOps(t0, [
-      { op: 'set_transition', itemId: b.id, transition: { type: 'dip_to_black', duration: 2 } },
+      { op: 'set_transition', itemId: b!.id, transition: { type: 'dip_to_black', duration: 2 } },
     ]);
-    expect(activeAt(t, 3.5).video[0]!.dim).toBeCloseTo(0.5);
-    expect(activeAt(t, 4).video[0]!.dim).toBeCloseTo(0);
-    expect(activeAt(t, 4.5).video[0]!.dim).toBeCloseTo(0.5);
+    // transition runs 3..5: at 4 (q = 0.5) the outgoing frame is gone and the incoming one is at a third
+    const mid = activeAt(t, 4);
+    expect(mid.video.map((l) => l.item.id)).toEqual([b!.id, a!.id]);
+    expect(mid.video[1]!.opacity).toBeCloseTo(dipWeights(0.5).out);
+    expect(mid.video[0]!.opacity).toBeCloseTo(0.342, 3);
+    expect(mid.video.every((l) => l.dim === 1)).toBe(true);
+    expect(mid.fill).toBeUndefined();
   });
 
-  it('reveals wipes from the left and applies fades', () => {
+  it('wipes leftward (the incoming frame right of the edge) and applies fades', () => {
     const t0 = withThree();
     const [a, b] = primaryTrack(t0).items;
     const t = applyOps(t0, [

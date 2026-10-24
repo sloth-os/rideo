@@ -178,7 +178,10 @@ test('idea → screenplay → locked cast → pilot → production → edit → 
     .poll(async () => (await api.call('GET', `/projects/${pid}/timeline`)).tracks[0].items[0].out)
     .toBe(1.5);
 
-  // Drag the right edge of the second item 24 px left: at 40 px/s it gets 0.6 s shorter
+  // Drag the right edge of the second item 24 px left: at 40 px/s it gets 0.6 s shorter. Snapping off, so the edge
+  // goes exactly where it is dragged (docs/design/editing-tools.md#snapping).
+  await page.getByTestId('snap-toggle').click();
+  await expect(page.getByTestId('snap-toggle')).toHaveAttribute('aria-pressed', 'false');
   const secondOut = async () => (await api.call('GET', `/projects/${pid}/timeline`)).tracks[0].items[1].out;
   const outBefore = await secondOut();
   await videoItems.nth(1).scrollIntoViewIfNeeded();

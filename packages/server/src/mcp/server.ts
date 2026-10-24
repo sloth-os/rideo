@@ -934,7 +934,7 @@ function buildServer(studio: Studio): McpServer {
   );
   tool(
     'timeline_apply',
-    'Apply timeline operations atomically (insert, remove, move, trim, split, set_transition, set_speed, set_volume, set_fades, set_effects, add_text, update_text, add_track, remove_track, set_track (name, mute, volume, stem role), set_mix (ducking), set_caption_style (animate: none, build or pop for word-level captions), replace_source, set_output).',
+    'Apply timeline operations atomically (insert, remove, move (also to another track: trackId), trim, split, duplicate, set_transition (crossfade, wipe, dip_to_black, dip_to_white, slide_left/right/up/down, circle_open), set_speed, set_volume, set_fades, set_effects (brightness, contrast, saturation, exposure, temperature, tint, hue, shadows, highlights, vignette), freeze_frame, set_freeze, detach_audio, set_flip, set_key (chroma key), add_marker, update_marker, remove_marker, add_text, update_text, add_track, remove_track, set_track (name, mute, volume, stem role, locked, hidden), set_mix (ducking), set_caption_style (animate: none, build or pop for word-level captions), replace_source, set_output). A locked track refuses changes to its items.',
     { projectId: PROJECT, ops: z.array(TimelineOpSchema).min(1) },
     (a, actor) => studio.edit.applyOps(actor, a.projectId, a.ops),
   );

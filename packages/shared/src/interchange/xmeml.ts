@@ -23,11 +23,21 @@ import {
  * import as "XML". The picture on video track 1 with its sound linked on audio track 1, then the sound tracks.
  */
 
-const TRANSITIONS = {
+const PUSH = { name: 'Push', category: 'Slide' } as const;
+const TRANSITIONS: Record<
+  NonNullable<VideoItem['transitionIn']>['type'],
+  { readonly name: string; readonly category: string }
+> = {
   crossfade: { name: 'Cross Dissolve', category: 'Dissolve' },
   wipe: { name: 'Edge Wipe', category: 'Wipe' },
   dip_to_black: { name: 'Dip to Color Dissolve', category: 'Dissolve' },
-} as const;
+  dip_to_white: { name: 'Dip to Color Dissolve', category: 'Dissolve' },
+  slide_left: PUSH,
+  slide_right: PUSH,
+  slide_up: PUSH,
+  slide_down: PUSH,
+  circle_open: { name: 'Iris Round', category: 'Iris' },
+};
 
 export function toXmeml(t: Timeline, ctx: InterchangeContext): string {
   const fps = t.fps;

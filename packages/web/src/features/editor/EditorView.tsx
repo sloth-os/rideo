@@ -18,27 +18,35 @@ import {
   LOUDNESS_TARGETS,
   type LoudnessTarget,
   newId,
+  nextEditPoint,
   type ProjectBrand,
+  previousEditPoint,
   primaryTrack,
   type RenderEngineChoice,
   type TextItem,
   type Timeline,
   type TimelineOp,
-  type TransitionType,
+  TransitionTypeSchema,
   timelineDuration,
-  trackRole,
   type VideoItem,
   withBrand,
   withDisclosure,
 } from '@rideo/shared';
 import {
   Clapperboard,
+  CopyPlus,
   Cpu,
   Download,
+  Flag,
+  Keyboard,
   Layers,
+  LockOpen,
+  Magnet,
+  Maximize2,
   Pause,
   Play,
   Plus,
+  Redo2,
   Scissors,
   SkipBack,
   SkipForward,
@@ -46,9 +54,10 @@ import {
   Type,
   Undo2,
   Wand2,
+  ZoomIn,
+  ZoomOut,
 } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Entity } from '../../components/Entity';
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { JobRow } from '../../components/JobProgress';
 import {
   Badge,
@@ -59,6 +68,7 @@ import {
   EmptyState,
   Field,
   Input,
+  PRESSED,
   Progress,
   SectionHeader,
   Select,
@@ -68,25 +78,62 @@ import { api } from '../../lib/api';
 import { useProjectRole } from '../../lib/auth';
 import { useProject } from '../../store/project';
 import { reportError, useUi } from '../../store/ui';
+import { type Clip, findItem, nudgeOps, pasteOps, splitTarget } from './actions';
 import { BrandTools } from './BrandTools';
+import {
+  AdjustSection,
+  ClipActions,
+  ContextMenu,
+  FreezeSection,
+  KeySection,
+  MarkerInspector,
+  MarkersCard,
+  type MenuEntry,
+  ShortcutsDialog,
+} from './ClipTools';
 import { detectCaps, type EngineCaps } from './engine/capabilities';
 import { gpuRenderer } from './engine/gpu-choice';
 import { MediaPool } from './engine/media-pool';
 import { Player } from './engine/player';
 import { GenerativeExtend } from './GenerativeExtend';
+import { type EditHistory, recordEdit, redone, redoTarget, seedHistory, undone, undoTarget } from './history';
 import { LutSection, MaskSection, RampSection, StartField, TransformSection } from './ItemPanels';
-import { Filmstrip, Waveform } from './LaneMedia';
 import { LocalizationPanel } from './LocalizationPanel';
 import { MixPanel } from './MixPanel';
 import { OverlayPicker } from './OverlayPicker';
+import { actionFor, type EditorAction, typing } from './shortcuts';
+import { itemLabel, type LaneTarget, TimelineLanes } from './TimelineLanes';
 import { TranscriptPanel } from './TranscriptPanel';
-import { trimOps } from './trim';
 
-const TRACK_COLORS = {
-  video: 'bg-accent/25 border-accent/60',
-  audio: 'bg-success/20 border-success/50',
-  text: 'bg-info/20 border-info/50',
+/** Labels of the transition types, in the menu's order (docs/design/editing-tools.md#transitions). */
+const TRANSITION_LABELS: Record<NonNullable<VideoItem['transitionIn']>['type'], string> = {
+  crossfade: 'Crossfade',
+  wipe: 'Wipe',
+  dip_to_black: 'Dip to black',
+  dip_to_white: 'Dip to white',
+  slide_left: 'Slide left',
+  slide_right: 'Slide right',
+  slide_up: 'Slide up',
+  slide_down: 'Slide down',
+  circle_open: 'Circle open',
 };
+
+/** Snapping is kept in this browser (docs/design/editing-tools.md#snapping). */
+const SNAP_KEY = 'rideo.editor.snap';
+function readSnap(): boolean {
+  try {
+    return globalThis.localStorage?.getItem(SNAP_KEY) !== 'off';
+  } catch {
+    return true;
+  }
+}
+function writeSnap(on: boolean): void {
+  try {
+    globalThis.localStorage?.setItem(SNAP_KEY, on ? 'on' : 'off');
+  } catch {
+    // private windows: the choice lasts the session
+  }
+}
 
 function useTimeline(): Timeline | null {
   const docs = useProject((s) => s.docs);
@@ -99,87 +146,59 @@ function useTimeline(): Timeline | null {
   }, [docs]);
 }
 
-function itemLabel(item: Item): string {
-  if (item.kind === 'text') return item.text;
-  return (
-    item.label ??
-    (item.source.type === 'take' ? 'take' : (item.source.media.path.split('/').pop() ?? 'media'))
-  );
-}
-
-function TrimHandle({
-  side,
-  zoom,
-  onCommit,
-  active,
-}: {
-  side: 'start' | 'end';
-  zoom: number;
-  onCommit: (deltaSec: number) => void;
-  active: { current: boolean };
-}) {
-  const [drag, setDrag] = useState<{ x: number; dx: number } | null>(null);
-  return (
-    <span
-      aria-hidden
-      className={cx(
-        'absolute inset-y-0 z-10 w-1.5 cursor-ew-resize rounded-sm hover:bg-accent/70',
-        side === 'start' ? 'left-0' : 'right-0',
-        drag && 'bg-accent',
-      )}
-      style={drag ? { transform: `translateX(${drag.dx}px)` } : undefined}
-      onPointerDown={(e) => {
-        e.stopPropagation();
-        active.current = true;
-        e.currentTarget.setPointerCapture(e.pointerId);
-        setDrag({ x: e.clientX, dx: 0 });
-      }}
-      onPointerMove={(e) => {
-        if (drag) setDrag({ ...drag, dx: e.clientX - drag.x });
-      }}
-      onPointerUp={(e) => {
-        active.current = false;
-        if (!drag) return;
-        const dx = e.clientX - drag.x;
-        setDrag(null);
-        if (Math.abs(dx) > 2) onCommit(dx / zoom);
-      }}
-      onPointerCancel={() => {
-        active.current = false;
-        setDrag(null);
-      }}
-      onClick={(e) => e.stopPropagation()}
-      data-testid={`trim-handle-${side}`}
-    />
-  );
-}
-
 function Inspector({
   item,
   timeline,
   apply,
   time,
+  onDuplicate,
 }: {
   item: Item;
   timeline: Timeline;
   apply: (ops: TimelineOp[]) => void;
   time: number;
+  onDuplicate: () => void;
 }) {
   const primary = primaryTrack(timeline);
   const index = primary.items.findIndex((i) => i.id === item.id);
   const overlay = timeline.tracks.some(
     (t) => isOverlayTrack(timeline, t) && t.items.some((i) => i.id === item.id),
   );
+  const track = findItem(timeline, item.id)?.track;
+  // A freeze frame's `in` is its frame; it has no out or sound (docs/design/editing-tools.md#freeze-frame)
+  const frozen = item.kind === 'video' && !!item.freeze;
   const num = (v: string) => Number.parseFloat(v);
+  if (track?.locked)
+    return (
+      <div className="space-y-3" data-testid="inspector">
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge tone="accent">{item.kind}</Badge>
+          <span className="min-w-0 flex-1 truncate text-[13px]">{itemLabel(item)}</span>
+        </div>
+        <p className="text-[13px] text-muted" data-testid="inspector-locked">
+          {track.name} is locked: its items do not change.
+        </p>
+        <Button
+          size="sm"
+          icon={<LockOpen className="size-3.5" />}
+          onClick={() => apply([{ op: 'set_track', trackId: track.id, locked: false }])}
+          data-testid="inspector-unlock"
+        >
+          Unlock {track.name}
+        </Button>
+      </div>
+    );
   return (
     <div className="space-y-3" data-testid="inspector">
       <div className="flex flex-wrap items-center gap-2">
         <Badge tone="accent">{item.kind}</Badge>
+        {item.kind === 'video' && item.freeze ? <Badge tone="info">freeze</Badge> : null}
         <span className="min-w-0 flex-1 truncate text-[13px]">{itemLabel(item)}</span>
       </div>
+      {item.kind === 'video' ? <ClipActions item={item} apply={apply} time={time} /> : null}
       {item.kind !== 'text' ? (
         <div className="grid grid-cols-2 gap-2">
-          <Field label="In (s)">
+          <Field label={frozen ? 'Frame at (s)' : 'In (s)'}>
             <Input
               type="number"
               step={0.1}
@@ -193,40 +212,44 @@ function Inspector({
               data-testid="trim-in"
             />
           </Field>
-          <Field label="Out (s)">
-            <Input
-              type="number"
-              step={0.1}
-              min={0}
-              defaultValue={item.out}
-              key={`out${item.out}`}
-              onBlur={(e) =>
-                num(e.target.value) !== item.out &&
-                apply([{ op: 'trim', itemId: item.id, out: num(e.target.value) }])
-              }
-              data-testid="trim-out"
-            />
-          </Field>
-          <Field label="Volume">
-            <Input
-              type="range"
-              min={0}
-              max={2}
-              step={0.05}
-              defaultValue={item.volume}
-              key={`v${item.volume}`}
-              onMouseUp={(e) =>
-                apply([
-                  { op: 'set_volume', itemId: item.id, volume: num((e.target as HTMLInputElement).value) },
-                ])
-              }
-              onKeyUp={(e) =>
-                apply([
-                  { op: 'set_volume', itemId: item.id, volume: num((e.target as HTMLInputElement).value) },
-                ])
-              }
-            />
-          </Field>
+          {frozen ? null : (
+            <Field label="Out (s)">
+              <Input
+                type="number"
+                step={0.1}
+                min={0}
+                defaultValue={item.out}
+                key={`out${item.out}`}
+                onBlur={(e) =>
+                  num(e.target.value) !== item.out &&
+                  apply([{ op: 'trim', itemId: item.id, out: num(e.target.value) }])
+                }
+                data-testid="trim-out"
+              />
+            </Field>
+          )}
+          {frozen ? null : (
+            <Field label="Volume">
+              <Input
+                type="range"
+                min={0}
+                max={2}
+                step={0.05}
+                defaultValue={item.volume}
+                key={`v${item.volume}`}
+                onMouseUp={(e) =>
+                  apply([
+                    { op: 'set_volume', itemId: item.id, volume: num((e.target as HTMLInputElement).value) },
+                  ])
+                }
+                onKeyUp={(e) =>
+                  apply([
+                    { op: 'set_volume', itemId: item.id, volume: num((e.target as HTMLInputElement).value) },
+                  ])
+                }
+              />
+            </Field>
+          )}
           <Field label="Fade in / out">
             <div className="flex gap-1">
               <Input
@@ -251,13 +274,14 @@ function Inspector({
           </Field>
         </div>
       ) : null}
-      {item.kind === 'video' && index >= 0 ? <GenerativeExtend item={item} /> : null}
+      {item.kind === 'video' && index >= 0 && !frozen ? <GenerativeExtend item={item} /> : null}
       {item.kind === 'video' ? (
         <>
           <div className="grid grid-cols-2 gap-2">
             <Field label="Speed">
               <Select
                 value={item.speed}
+                disabled={!!item.freeze}
                 onChange={(e) => apply([{ op: 'set_speed', itemId: item.id, speed: num(e.target.value) }])}
               >
                 {[0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4].map((s) => (
@@ -278,7 +302,7 @@ function Inspector({
                         itemId: item.id,
                         transition: e.target.value
                           ? {
-                              type: e.target.value as TransitionType,
+                              type: TransitionTypeSchema.parse(e.target.value),
                               duration: item.transitionIn?.duration ?? 0.5,
                             }
                           : null,
@@ -288,9 +312,11 @@ function Inspector({
                   data-testid="transition-select"
                 >
                   <option value="">Cut</option>
-                  <option value="crossfade">Crossfade</option>
-                  <option value="wipe">Wipe</option>
-                  <option value="dip_to_black">Dip to black</option>
+                  {TransitionTypeSchema.options.map((t) => (
+                    <option key={t} value={t}>
+                      {TRANSITION_LABELS[t]}
+                    </option>
+                  ))}
                 </Select>
               </Field>
             ) : null}
@@ -311,10 +337,15 @@ function Inspector({
             ))}
           </div>
           {overlay ? <StartField item={item} apply={apply} /> : null}
+          <FreezeSection item={item} apply={apply} />
+          <AdjustSection item={item} apply={apply} />
           <TransformSection item={item} time={time} duration={itemDuration(item)} apply={apply} />
-          {isStillMedia(item.source.media) ? null : <RampSection item={item} apply={apply} />}
+          {isStillMedia(item.source.media) || item.freeze ? null : <RampSection item={item} apply={apply} />}
           <LutSection item={item} apply={apply} />
-          {isStillMedia(item.source.media) ? null : <MaskSection item={item} apply={apply} />}
+          <KeySection item={item} apply={apply} />
+          {isStillMedia(item.source.media) || item.key || item.freeze ? null : (
+            <MaskSection item={item} apply={apply} />
+          )}
         </>
       ) : null}
       {item.kind === 'text' ? (
@@ -390,6 +421,14 @@ function Inspector({
             Later →
           </Button>
         ) : null}
+        <Button
+          size="sm"
+          icon={<CopyPlus className="size-3.5" />}
+          onClick={onDuplicate}
+          data-testid="duplicate-item"
+        >
+          Duplicate
+        </Button>
         <Button
           size="sm"
           variant="danger"
@@ -769,6 +808,7 @@ function ExportDialog({
 
 export function EditorView() {
   const { docs, projectId, jobs, commits } = useProject();
+  const loading = useProject((s) => s.loading);
   const playerCommand = useProject((s) => s.playerCommand);
   const timeline = useTimeline();
   // The preview shows the export's disclosure label (docs/design/provenance.md#disclosure-label).
@@ -785,20 +825,41 @@ export function EditorView() {
   }, [timeline, docs]);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const playerRef = useRef<Player | null>(null);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
   const [time, setTime] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
+  const [selectedMarker, setSelectedMarker] = useState<string | null>(null);
   const [zoom, setZoom] = useState(40);
   const [exportOpen, setExportOpen] = useState(false);
   const [overlayOpen, setOverlayOpen] = useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [menu, setMenu] = useState<{ at: { x: number; y: number }; entries: MenuEntry[] } | null>(null);
+  // Snapping, kept in this browser (docs/design/editing-tools.md#snapping)
+  const [snapping, setSnappingState] = useState(readSnap);
+  const setSnapping = useCallback((on: boolean) => {
+    setSnappingState(on);
+    writeSnap(on);
+  }, []);
+  // The session's edit history and clipboard (docs/design/editing-tools.md#undo-and-redo). Undo and redo run one
+  // after the other, each reading the history the last one left, so quick presses all count.
+  const historyRef = useRef<EditHistory>({ undo: [], redo: [], current: null });
+  const [, rerender] = useReducer((n: number) => n + 1, 0);
+  const setHistory = useCallback((next: (h: EditHistory) => EditHistory) => {
+    historyRef.current = next(historyRef.current);
+    rerender();
+  }, []);
+  const steps = useRef<Promise<void>>(Promise.resolve());
+  const seededFor = useRef<string | null>(null);
+  const clipboard = useRef<Clip | null>(null);
+  const reverse = useRef<ReturnType<typeof setInterval> | null>(null);
   // Small frames and sound for the lanes' filmstrips and waveforms (docs/design/editor.md#waveforms-and-filmstrips)
   const [lanePool, setLanePool] = useState<MediaPool | null>(null);
-  const trimming = useRef(false);
   const [webcodecs] = useState(() => typeof globalThis.VideoDecoder !== 'undefined');
   // Optimistic: the shared reducer updates the timeline at once; the server's result is authoritative.
   const apply = useCallback(
     (ops: TimelineOp[]) => {
-      if (!projectId) return;
+      if (!projectId || ops.length === 0) return;
       let rollback: () => void;
       try {
         rollback = useProject.getState().applyLocalOps(ops);
@@ -808,13 +869,16 @@ export function EditorView() {
       }
       api
         .applyOps(projectId, ops)
-        .then((r) => useProject.getState().confirmTimeline(r.timeline))
+        .then((r) => {
+          useProject.getState().confirmTimeline(r.timeline);
+          setHistory((h) => recordEdit(h, r.commit));
+        })
         .catch((err) => {
           rollback();
           reportError(err);
         });
     },
-    [projectId],
+    [projectId, setHistory],
   );
   const previewSize = useMemo(() => {
     if (!timeline) return { width: 640, height: 360 };
@@ -869,36 +933,324 @@ export function EditorView() {
     else void p.seek(playerCommand.time ?? 0);
   }, [playerCommand]);
 
+  // At load the last timeline change can be undone (docs/design/editing-tools.md#undo-and-redo)
+  useEffect(() => {
+    if (!projectId || loading || seededFor.current === projectId) return;
+    seededFor.current = projectId;
+    setHistory(() => seedHistory(commits));
+  }, [projectId, loading, commits, setHistory]);
+
+  const stopReverse = useCallback(() => {
+    if (reverse.current) clearInterval(reverse.current);
+    reverse.current = null;
+  }, []);
+  useEffect(() => stopReverse, [stopReverse]);
+
   const selectedItem = timeline?.tracks.flatMap((t) => t.items).find((i) => i.id === selected) ?? null;
+  const marker = timeline?.markers?.find((m) => m.id === selectedMarker) ?? null;
   const access = useProjectRole(docs?.project);
+  const canEdit = access.can('project.edit');
+
+  const seek = useCallback((t: number) => {
+    const at = Math.max(0, t);
+    setTime(at);
+    void playerRef.current?.seek(at);
+  }, []);
+
+  /** Undo and redo restore the timeline from a commit (a new commit; docs/design/editing-tools.md#undo-and-redo). */
+  const step = useCallback(
+    (dir: 'undo' | 'redo') => {
+      steps.current = steps.current.then(async () => {
+        const h = historyRef.current;
+        const target = dir === 'undo' ? undoTarget(h) : redoTarget(h);
+        if (!projectId || !target) return;
+        try {
+          const restored = await api.restore(projectId, target, ['timeline.json']);
+          setHistory((x) =>
+            dir === 'undo' ? undone(x, restored?.id ?? null) : redone(x, restored?.id ?? null),
+          );
+          const next = await api.timeline(projectId).catch(() => null);
+          if (next) useProject.getState().confirmTimeline(next);
+        } catch (err) {
+          reportError(err);
+        }
+      });
+    },
+    [projectId, setHistory],
+  );
+  const history = historyRef.current;
+
+  /** Every editing action, from the keys, the context menu and the buttons (docs/design/editing-tools.md#shortcuts). */
+  const run = useCallback(
+    (action: EditorAction, at?: { time?: number; itemId?: string; trackId?: string }) => {
+      if (!timeline) return;
+      const p = playerRef.current;
+      const fps = timeline.fps;
+      const duration = timelineDuration(timeline);
+      const playhead = at?.time ?? time;
+      const itemId = at?.itemId ?? selected;
+      const found = itemId ? findItem(timeline, itemId) : null;
+      if (action !== 'reverse') stopReverse();
+      switch (action) {
+        case 'playPause':
+          if (p?.playing) p.pause();
+          else void p?.play();
+          return;
+        case 'pause':
+          p?.pause();
+          return;
+        case 'play':
+          void p?.play();
+          return;
+        case 'reverse':
+          // Backwards in tenths of a second until K, L or Space
+          p?.pause();
+          if (reverse.current) return;
+          reverse.current = setInterval(() => {
+            const now = playerRef.current?.time ?? 0;
+            if (now <= 0) stopReverse();
+            else seek(now - 0.1);
+          }, 100);
+          return;
+        case 'frameBack':
+        case 'frameForward':
+          seek(time + (action === 'frameForward' ? 1 : -1) / fps);
+          return;
+        case 'secondBack':
+        case 'secondForward':
+          seek(time + (action === 'secondForward' ? 1 : -1));
+          return;
+        case 'previousEdit': {
+          const t = previousEditPoint(timeline, time);
+          if (t !== null) seek(t);
+          return;
+        }
+        case 'nextEdit': {
+          const t = nextEditPoint(timeline, time);
+          if (t !== null) seek(t);
+          return;
+        }
+        case 'start':
+          seek(0);
+          return;
+        case 'end':
+          seek(duration);
+          return;
+        case 'split': {
+          const target = splitTarget(timeline, itemId, playhead);
+          if (target) apply([{ op: 'split', itemId: target.id, at: playhead }]);
+          return;
+        }
+        case 'delete':
+          if (found && !found.track.locked) {
+            apply([{ op: 'remove', itemId: found.item.id }]);
+            setSelected(null);
+          } else if (!found && selectedMarker) {
+            apply([{ op: 'remove_marker', markerId: selectedMarker }]);
+            setSelectedMarker(null);
+          }
+          return;
+        case 'copy':
+        case 'cut':
+          if (!found) return;
+          clipboard.current = { item: structuredClone(found.item), trackId: found.track.id };
+          if (action === 'cut' && !found.track.locked) {
+            apply([{ op: 'remove', itemId: found.item.id }]);
+            setSelected(null);
+          }
+          return;
+        case 'paste':
+          if (clipboard.current) apply(pasteOps(timeline, clipboard.current, playhead));
+          return;
+        case 'duplicate':
+          if (found && !found.track.locked) apply([{ op: 'duplicate', itemId: found.item.id }]);
+          return;
+        case 'undo':
+        case 'redo':
+          step(action);
+          return;
+        case 'addMarker': {
+          const id = newId('marker');
+          apply([{ op: 'add_marker', marker: { id, t: Math.round(playhead * 1000) / 1000 } }]);
+          setSelectedMarker(id);
+          setSelected(null);
+          return;
+        }
+        case 'nextMarker':
+        case 'previousMarker': {
+          const ms = timeline.markers ?? [];
+          const m =
+            action === 'nextMarker'
+              ? ms.find((x) => x.t > time + 0.01)
+              : [...ms].reverse().find((x) => x.t < time - 0.01);
+          if (m) {
+            seek(m.t);
+            setSelectedMarker(m.id);
+            setSelected(null);
+          }
+          return;
+        }
+        case 'snap':
+          setSnapping(!snapping);
+          return;
+        case 'zoomIn':
+          setZoom((z) => Math.min(320, Math.round(z * 1.25)));
+          return;
+        case 'zoomOut':
+          setZoom((z) => Math.max(4, Math.round(z / 1.25)));
+          return;
+        case 'zoomFit': {
+          const w = scrollRef.current?.clientWidth ?? 800;
+          setZoom(Math.max(4, Math.min(320, Math.floor((w - 8) / Math.max(duration, 1)))));
+          return;
+        }
+        case 'nudgeBack':
+        case 'nudgeForward':
+          if (found) apply(nudgeOps(timeline, found.item.id, action === 'nudgeForward' ? 1 : -1));
+          return;
+        case 'deselect':
+          setSelected(null);
+          setSelectedMarker(null);
+          setMenu(null);
+          return;
+        case 'help':
+          setShortcutsOpen(true);
+          return;
+      }
+    },
+    [timeline, time, selected, selectedMarker, snapping, apply, seek, step, stopReverse, setSnapping],
+  );
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      const tag = (e.target as HTMLElement).tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
-      const p = playerRef.current;
-      if (e.key === ' ') {
-        e.preventDefault();
-        if (p?.playing) p.pause();
-        else void p?.play();
-      } else if (
-        (e.key === 's' || e.key === 'S') &&
-        selectedItem &&
-        time > selectedItem.start &&
-        time < itemEnd(selectedItem)
-      ) {
-        apply([{ op: 'split', itemId: selectedItem.id, at: time }]);
-      } else if ((e.key === 'Delete' || e.key === 'Backspace') && selectedItem) {
-        apply([{ op: 'remove', itemId: selectedItem.id }]);
-        setSelected(null);
-      } else if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
-        const step = 1 / (timeline?.fps ?? 24);
-        void p?.seek(time + (e.key === 'ArrowRight' ? step : -step));
-      }
+      if (typing(e.target) || shortcutsOpen || exportOpen || overlayOpen) return;
+      const action = actionFor(e);
+      if (!action) return;
+      if (
+        !canEdit &&
+        [
+          'split',
+          'delete',
+          'cut',
+          'paste',
+          'duplicate',
+          'undo',
+          'redo',
+          'addMarker',
+          'nudgeBack',
+          'nudgeForward',
+        ].includes(action)
+      )
+        return;
+      e.preventDefault();
+      run(action);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [selectedItem, time, apply, timeline?.fps]);
+  }, [run, canEdit, shortcutsOpen, exportOpen, overlayOpen]);
+
+  /** The right-click menu of an item or of an empty part of a lane (docs/design/editing-tools.md#context-menu). */
+  const openMenu = useCallback(
+    (at: { x: number; y: number }, target: LaneTarget) => {
+      if (!timeline) return;
+      const found = target.itemId ? findItem(timeline, target.itemId) : null;
+      const go =
+        (action: EditorAction, extra: { time?: number } = {}) =>
+        () =>
+          run(action, { itemId: target.itemId, trackId: target.trackId, ...extra });
+      let entries: MenuEntry[];
+      if (found) {
+        const item = found.item;
+        const locked = !!found.track.locked || !canEdit;
+        const video = item.kind === 'video' ? item : null;
+        const inside = time > item.start + 0.05 && time < itemEnd(item) - 0.05;
+        entries = [
+          {
+            label: 'Split at playhead',
+            action: 'split',
+            onSelect: go('split'),
+            disabled: locked || !inside,
+            testid: 'menu-split',
+          },
+          {
+            label: 'Duplicate',
+            action: 'duplicate',
+            onSelect: go('duplicate'),
+            disabled: locked,
+            testid: 'menu-duplicate',
+          },
+          { label: 'Copy', action: 'copy', onSelect: go('copy'), testid: 'menu-copy' },
+          { label: 'Cut', action: 'cut', onSelect: go('cut'), disabled: locked, testid: 'menu-cut' },
+        ];
+        if (video)
+          entries.push(
+            {
+              label: 'Freeze frame',
+              onSelect: () =>
+                apply([
+                  {
+                    op: 'freeze_frame',
+                    itemId: video.id,
+                    at: Math.min(Math.max(time, video.start), itemEnd(video)),
+                  },
+                ]),
+              disabled: locked || !!video.freeze || isStillMedia(video.source.media),
+              testid: 'menu-freeze',
+            },
+            {
+              label: 'Detach audio',
+              onSelect: () => apply([{ op: 'detach_audio', itemId: video.id }]),
+              disabled:
+                locked ||
+                video.muted ||
+                !!video.freeze ||
+                !!video.ramp ||
+                video.speed !== 1 ||
+                video.source.media.hasAudio === false ||
+                isStillMedia(video.source.media),
+              testid: 'menu-detach',
+            },
+            {
+              label: video.flip?.x ? 'Unmirror' : 'Mirror',
+              onSelect: () =>
+                apply([{ op: 'set_flip', itemId: video.id, flip: { ...video.flip, x: !video.flip?.x } }]),
+              disabled: locked,
+              testid: 'menu-mirror',
+            },
+          );
+        entries.push({
+          label: 'Delete',
+          action: 'delete',
+          onSelect: go('delete'),
+          disabled: locked,
+          danger: true,
+          testid: 'menu-delete',
+        });
+      } else {
+        entries = [
+          {
+            label: 'Paste',
+            action: 'paste',
+            onSelect: () => {
+              seek(target.time);
+              run('paste', { time: target.time });
+            },
+            disabled: !clipboard.current || !canEdit,
+            testid: 'menu-paste',
+          },
+          {
+            label: 'Add marker',
+            action: 'addMarker',
+            onSelect: () => run('addMarker', { time: target.time }),
+            disabled: !canEdit,
+            testid: 'menu-marker',
+          },
+        ];
+      }
+      setMenu({ at, entries });
+    },
+    [timeline, time, canEdit, run, apply, seek],
+  );
 
   if (!docs || !projectId || !timeline) return null;
   const duration = timelineDuration(timeline);
@@ -911,14 +1263,6 @@ export function EditorView() {
         j.kind === 'edit.auto') &&
       !isTerminalJob(j),
   );
-  const lastTimelineCommits = commits.filter((c) => c.changes.some((ch) => ch.path === 'timeline.json'));
-  const undo = () => {
-    const prev =
-      lastTimelineCommits[1] ??
-      (lastTimelineCommits[0]?.parents[0] ? { id: lastTimelineCommits[0].parents[0] } : null);
-    if (!prev) return;
-    api.restore(projectId, prev.id, ['timeline.json']).catch(reportError);
-  };
   const addTitle = () =>
     apply([
       {
@@ -932,11 +1276,6 @@ export function EditorView() {
         },
       },
     ]);
-  const seek = (t: number) => {
-    setTime(t);
-    void playerRef.current?.seek(t);
-  };
-  const width = Math.max(duration, 10) * zoom;
   return (
     <div className="mx-auto max-w-6xl space-y-4">
       <SectionHeader
@@ -958,7 +1297,7 @@ export function EditorView() {
             </Button>
             <Button
               icon={<Layers className="size-4" />}
-              disabled={!access.can('project.edit')}
+              disabled={!canEdit}
               onClick={() => setOverlayOpen(true)}
               data-testid="overlay-open"
             >
@@ -967,16 +1306,26 @@ export function EditorView() {
             <BrandTools brand={docs.project.settings.brand} time={time} apply={apply} />
             <Button
               icon={<Undo2 className="size-4" />}
-              disabled={lastTimelineCommits.length === 0}
-              onClick={undo}
+              disabled={!undoTarget(history) || !canEdit}
+              onClick={() => step('undo')}
+              title="Undo (Ctrl/⌘+Z)"
               data-testid="undo"
             >
               Undo
             </Button>
             <Button
+              icon={<Redo2 className="size-4" />}
+              disabled={!redoTarget(history) || !canEdit}
+              onClick={() => step('redo')}
+              title="Redo (Ctrl/⌘+Shift+Z)"
+              data-testid="redo"
+            >
+              Redo
+            </Button>
+            <Button
               variant="primary"
               icon={<Download className="size-4" />}
-              disabled={primary.items.length === 0 || !access.can('project.edit')}
+              disabled={primary.items.length === 0 || !canEdit}
               onClick={() => setExportOpen(true)}
               data-testid="open-export"
             >
@@ -1049,13 +1398,13 @@ export function EditorView() {
       ) : (
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
           <Card className="min-w-0 p-3">
-            <div className="mb-2 flex flex-wrap items-center gap-2 text-[12px] text-muted">
+            <div className="mb-2 flex flex-wrap items-center gap-1.5 text-[12px] text-muted">
               <Button
                 size="sm"
                 variant="ghost"
                 className="h-7"
                 icon={<Plus className="size-3.5" />}
-                disabled={!access.can('project.edit')}
+                disabled={!canEdit}
                 onClick={() =>
                   apply([
                     {
@@ -1072,117 +1421,97 @@ export function EditorView() {
               >
                 Video track
               </Button>
-              Zoom
-              <input
-                type="range"
-                min={10}
-                max={160}
-                value={zoom}
-                onChange={(e) => setZoom(Number(e.target.value))}
-                aria-label="Zoom"
-                className="w-32 accent-[var(--color-accent)]"
-              />
-            </div>
-            <div className="hidden overflow-x-auto md:block" data-testid="timeline">
-              <div className="relative" style={{ width }}>
-                <div
-                  className="relative mb-1 h-5 cursor-pointer border-b border-border"
-                  onClick={(e) => {
-                    const r = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
-                    seek((e.clientX - r.left) / zoom);
-                  }}
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-7"
+                icon={<Flag className="size-3.5" />}
+                disabled={!canEdit}
+                onClick={() => run('addMarker')}
+                title="Add a marker at the playhead (M)"
+                data-testid="add-marker"
+              >
+                Marker
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                className={cx('hidden h-7 md:inline-flex', snapping && PRESSED)}
+                icon={<Magnet className="size-3.5" />}
+                aria-pressed={snapping}
+                onClick={() => setSnapping(!snapping)}
+                title="Snapping (N)"
+                data-testid="snap-toggle"
+              >
+                Snap
+              </Button>
+              <span className="ml-auto hidden items-center gap-1 md:flex">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-7"
+                  onClick={() => run('zoomOut')}
+                  aria-label="Zoom out"
                 >
-                  {Array.from({ length: Math.ceil(Math.max(duration, 10) / 5) + 1 }, (_, i) => (
-                    <span
-                      key={i}
-                      className="tabular absolute top-0 text-[10px] text-muted"
-                      style={{ left: i * 5 * zoom }}
-                    >
-                      {formatDuration(i * 5)}
-                    </span>
-                  ))}
-                </div>
-                {timeline.tracks.map((track) => (
-                  <div
-                    key={track.id}
-                    className="relative mb-1 h-12 rounded bg-surface-2"
-                    data-track={track.kind}
-                    data-track-name={track.name}
-                    data-track-role={trackRole(track) ?? undefined}
-                    title={track.kind === 'text' ? track.name : `${track.name} · ${trackRole(track)} stem`}
-                  >
-                    {track.items.map((item) => (
-                      <Entity
-                        key={item.id}
-                        kind="timeline-item"
-                        id={item.id}
-                        className="absolute top-1 bottom-1"
-                      >
-                        <button
-                          type="button"
-                          draggable={track.id === primary.id}
-                          onDragStart={(e) => {
-                            if (trimming.current) e.preventDefault();
-                            else e.dataTransfer.setData('text/plain', item.id);
-                          }}
-                          onDragOver={(e) => e.preventDefault()}
-                          onDrop={(e) => {
-                            e.preventDefault();
-                            const dragged = e.dataTransfer.getData('text/plain');
-                            const to = primary.items.findIndex((i) => i.id === item.id);
-                            if (dragged && dragged !== item.id && to >= 0)
-                              apply([{ op: 'move', itemId: dragged, index: to }]);
-                          }}
-                          onClick={() => setSelected(item.id)}
-                          className={cx(
-                            'absolute inset-y-0 overflow-hidden rounded border px-1.5 text-left text-[11px] whitespace-nowrap',
-                            TRACK_COLORS[track.kind],
-                            selected === item.id && 'ring-2 ring-accent',
-                          )}
-                          style={{ left: item.start * zoom, width: Math.max(8, itemDuration(item) * zoom) }}
-                          data-testid="timeline-item"
-                          title={itemLabel(item)}
-                        >
-                          {item.kind === 'video' ? (
-                            <Filmstrip pool={lanePool} item={item} zoom={zoom} height={40} />
-                          ) : null}
-                          {item.kind === 'audio' ||
-                          (item.kind === 'video' && track.id === primary.id && !item.muted) ? (
-                            <Waveform pool={lanePool} item={item} zoom={zoom} height={18} />
-                          ) : null}
-                          <span className="relative">
-                            {item.kind === 'video' && item.transitionIn ? (
-                              <span className="mr-1 text-accent">⤫</span>
-                            ) : null}
-                            {item.kind === 'video' &&
-                            (item.transform || item.mask || item.lut || item.ramp) ? (
-                              <span className="mr-1 text-info" data-testid="item-shaped">
-                                ◆
-                              </span>
-                            ) : null}
-                            {itemLabel(item)}
-                          </span>
-                          {(['start', 'end'] as const).map((side) => (
-                            <TrimHandle
-                              key={side}
-                              side={side}
-                              zoom={zoom}
-                              active={trimming}
-                              onCommit={(delta) => apply(trimOps(item, side, delta, track.id !== primary.id))}
-                            />
-                          ))}
-                        </button>
-                      </Entity>
-                    ))}
-                  </div>
-                ))}
-                <div
-                  className="pointer-events-none absolute top-0 bottom-0 w-0.5 bg-accent"
-                  style={{ left: Math.min(time, duration) * zoom }}
-                  data-testid="playhead"
+                  <ZoomOut className="size-3.5" />
+                </Button>
+                <input
+                  type="range"
+                  min={4}
+                  max={320}
+                  value={zoom}
+                  onChange={(e) => setZoom(Number(e.target.value))}
+                  aria-label="Zoom"
+                  className="w-28 accent-[var(--color-accent)]"
                 />
-              </div>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-7"
+                  onClick={() => run('zoomIn')}
+                  aria-label="Zoom in"
+                >
+                  <ZoomIn className="size-3.5" />
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-7"
+                  onClick={() => run('zoomFit')}
+                  aria-label="Zoom to fit"
+                  data-testid="zoom-fit"
+                >
+                  <Maximize2 className="size-3.5" />
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-7"
+                  onClick={() => setShortcutsOpen(true)}
+                  aria-label="Keyboard shortcuts"
+                  data-testid="shortcuts-open"
+                >
+                  <Keyboard className="size-3.5" />
+                </Button>
+              </span>
             </div>
+            <TimelineLanes
+              timeline={timeline}
+              zoom={zoom}
+              time={time}
+              duration={duration}
+              seek={seek}
+              selected={selected}
+              onSelect={setSelected}
+              selectedMarker={selectedMarker}
+              onSelectMarker={setSelectedMarker}
+              apply={apply}
+              snapping={snapping}
+              lanePool={lanePool}
+              canEdit={canEdit}
+              onContextMenu={openMenu}
+              scrollRef={scrollRef}
+            />
             <ul className="space-y-1.5 md:hidden" data-testid="timeline-list-overlays">
               {timeline.tracks
                 .filter((t) => isOverlayTrack(timeline, t))
@@ -1191,7 +1520,10 @@ export function EditorView() {
                   <li key={item.id}>
                     <button
                       type="button"
-                      onClick={() => setSelected(item.id)}
+                      onClick={() => {
+                        setSelected(item.id);
+                        setSelectedMarker(null);
+                      }}
                       className={cx(
                         'flex w-full items-center gap-2 rounded border border-dashed border-info/60 px-2 py-2 text-left text-[13px]',
                         selected === item.id && 'border-accent',
@@ -1210,13 +1542,17 @@ export function EditorView() {
                 <li key={item.id}>
                   <button
                     type="button"
-                    onClick={() => setSelected(item.id)}
+                    onClick={() => {
+                      setSelected(item.id);
+                      setSelectedMarker(null);
+                    }}
                     className={cx(
                       'flex w-full items-center gap-2 rounded border border-border px-2 py-2 text-left text-[13px]',
                       selected === item.id && 'border-accent',
                     )}
                   >
                     <span className="tabular text-muted">{i + 1}.</span>
+                    {item.kind === 'video' && item.freeze ? <span className="text-info">❄</span> : null}
                     <span className="min-w-0 flex-1 truncate">{itemLabel(item)}</span>
                     <span className="tabular text-[12px] text-muted">
                       {formatDuration(itemDuration(item))}
@@ -1229,7 +1565,20 @@ export function EditorView() {
           <div className="min-w-0 space-y-4">
             <Card className="p-3">
               {selectedItem ? (
-                <Inspector item={selectedItem} timeline={timeline} apply={apply} time={time} />
+                <Inspector
+                  item={selectedItem}
+                  timeline={timeline}
+                  apply={apply}
+                  time={time}
+                  onDuplicate={() => run('duplicate')}
+                />
+              ) : marker ? (
+                <MarkerInspector
+                  marker={marker}
+                  apply={apply}
+                  seek={seek}
+                  onDone={() => setSelectedMarker(null)}
+                />
               ) : (
                 <div className="text-[13px] text-muted">
                   Select an item to trim, split, reorder, change speed, fades, transitions or color.
@@ -1244,12 +1593,26 @@ export function EditorView() {
                 </div>
               )}
             </Card>
+            <Card className="p-3 md:hidden">
+              <MarkersCard
+                markers={timeline.markers ?? []}
+                selected={selectedMarker}
+                onSelect={(id) => {
+                  setSelectedMarker(id);
+                  setSelected(null);
+                }}
+                onAdd={() => run('addMarker')}
+                seek={seek}
+              />
+            </Card>
             <MixPanel timeline={timeline} apply={apply} />
             <LocalizationPanel timeline={timeline} apply={apply} />
             <TranscriptPanel timeline={timeline} apply={apply} />
           </div>
         </div>
       )}
+      {menu ? <ContextMenu at={menu.at} entries={menu.entries} onClose={() => setMenu(null)} /> : null}
+      <ShortcutsDialog open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
       <OverlayPicker
         open={overlayOpen}
         onClose={() => setOverlayOpen(false)}

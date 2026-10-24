@@ -1,8 +1,10 @@
 import { z } from 'zod';
 import { newId } from '../ids';
+import { TransitionTypeSchema } from '../schemas/analysis';
 import {
   type AudioItem,
   AudioItemSchema,
+  FREEZE_SPAN,
   type Source,
   type TextItem,
   TextItemSchema,
@@ -43,6 +45,12 @@ const OTIO_TRANSITION: Record<NonNullable<VideoItem['transitionIn']>['type'], st
   crossfade: 'SMPTE_Dissolve',
   wipe: 'Custom_Transition',
   dip_to_black: 'Custom_Transition',
+  dip_to_white: 'Custom_Transition',
+  slide_left: 'Custom_Transition',
+  slide_right: 'Custom_Transition',
+  slide_up: 'Custom_Transition',
+  slide_down: 'Custom_Transition',
+  circle_open: 'Custom_Transition',
 };
 
 function reference(item: VideoItem | AudioItem, ctx: InterchangeContext, fps: number): Json {
@@ -63,7 +71,8 @@ function clip(
   fps: number,
   extra: { markers?: Json[]; linked?: boolean } = {},
 ): Json {
-  const speed = item.kind === 'video' ? item.speed : 1;
+  // A freeze frame is a time warp of 0 (docs/design/editing-tools.md#freeze-frame)
+  const speed = item.kind === 'video' ? (item.freeze ? 0 : item.speed) : 1;
   return {
     OTIO_SCHEMA: 'Clip.1',
     effects:
@@ -303,11 +312,7 @@ const rideoMeta = (m: unknown): Json | null =>
   m && typeof m === 'object' && (m as Json).rideo && typeof (m as Json).rideo === 'object'
     ? ((m as Json).rideo as Json)
     : null;
-const TRANSITION_TYPES: NonNullable<VideoItem['transitionIn']>['type'][] = [
-  'crossfade',
-  'wipe',
-  'dip_to_black',
-];
+const TRANSITION_TYPES = TransitionTypeSchema.options;
 
 function transitionType(
   t: z.infer<typeof TransitionInSchema>,
@@ -316,6 +321,9 @@ function transitionType(
   if (typeof meta === 'string' && (TRANSITION_TYPES as string[]).includes(meta)) return meta as never;
   const name = `${t.name ?? ''} ${t.transition_type ?? ''}`.toLowerCase();
   if (name.includes('wipe')) return 'wipe';
+  if (name.includes('push') || name.includes('slide')) return 'slide_left';
+  if (name.includes('iris') || name.includes('circle')) return 'circle_open';
+  if (name.includes('white')) return 'dip_to_white';
   if (name.includes('dip') || name.includes('black') || name.includes('color')) return 'dip_to_black';
   return 'crossfade';
 }
@@ -391,19 +399,38 @@ export function fromOtio(
     for (const e of c.effects ?? []) {
       if (/^LinearTimeWarp\.\d+$/.test(e.OTIO_SCHEMA) && typeof e.time_scalar === 'number')
         speed *= e.time_scalar;
-      else if (/TimeWarp|FreezeFrame/.test(e.OTIO_SCHEMA)) note(`time effect ${e.OTIO_SCHEMA} on “${name}”`);
+      else if (/^FreezeFrame\.\d+$/.test(e.OTIO_SCHEMA)) speed = 0;
+      else if (/TimeWarp/.test(e.OTIO_SCHEMA)) note(`time effect ${e.OTIO_SCHEMA} on “${name}”`);
     }
     if (kind === 'audio' && speed !== 1) {
       note(`speed of the sound clip “${name}” (sound plays at normal speed)`);
       speed = 1;
     }
-    if (speed <= 0) {
-      note(`freeze or reverse on “${name}”`);
+    const metaItem = meta?.item;
+    if (speed === 0) {
+      // A freeze frame as long as the clip (docs/design/editing-tools.md#freeze-frame)
+      const frame = Math.max(0, secs(sr.start_time));
+      const mediaDur = source.media.durationSec;
+      const held = mediaDur !== undefined ? Math.min(frame, Math.max(0, mediaDur - FREEZE_SPAN)) : frame;
+      const duration = Math.min(60, Math.max(0.1, dur));
+      return {
+        skip: false as const,
+        dur,
+        source,
+        in: held,
+        out: held + FREEZE_SPAN,
+        speed: 1,
+        freeze: duration,
+        name,
+        metaItem,
+      };
+    }
+    if (speed < 0) {
+      note(`reverse on “${name}”`);
       return { skip: true as const, dur };
     }
     const clamped = Math.min(4, Math.max(0.25, speed));
     if (clamped !== speed) note(`speed ${speed}× on “${name}” (Rideo plays 0.25–4×)`);
-    const metaItem = meta?.item;
     const inSec = Math.max(0, secs(sr.start_time));
     let out = inSec + dur * clamped;
     const mediaDur = source.media.durationSec;
@@ -411,7 +438,17 @@ export function fromOtio(
       note(`“${name}” runs past the end of its media`);
       out = mediaDur;
     }
-    return { skip: false as const, dur, source, in: inSec, out, speed: clamped, name, metaItem };
+    return {
+      skip: false as const,
+      dur,
+      source,
+      in: inSec,
+      out,
+      speed: clamped,
+      freeze: null as number | null,
+      name,
+      metaItem,
+    };
   };
 
   // Picture
@@ -461,6 +498,8 @@ export function fromOtio(
             label: prior.data.label,
             speech: prior.data.speech,
             crop: prior.data.crop,
+            flip: prior.data.flip,
+            key: prior.data.key,
           }
         : { label: p.name && p.name !== mediaFileName(p.source.media) ? p.name.slice(0, 200) : undefined };
     const item: VideoItem = {
@@ -473,6 +512,7 @@ export function fromOtio(
       in: p.in,
       out: p.out,
       speed: p.speed,
+      ...(p.freeze ? { freeze: { duration: p.freeze } } : {}),
     } as VideoItem;
     const prev = pictureItems.at(-1);
     if (pending && prev) {

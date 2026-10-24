@@ -75,7 +75,12 @@ RIDEO_TEST_WEBDAV_URL=http://rideo:rideo@localhost:8080/ npx vitest run --projec
   interpolation and ffmpeg expressions, overlay opacity with fades, ramp time maps against the exact integral,
   transcript words with punctuation and standalone fillers, `.cube` parsing and the trilinear lookup, overlay tracks,
   ramps, splits and `remove_ranges` in the reducer, overlay layers and sound in the queries, the chunk graph with a
-  LUT, an inverted matte, keyframed position and fades as `sendcmd` commands, and ramps).
+  LUT, an inverted matte, keyframed position and fades as `sendcmd` commands, and ramps); editing tools
+  (`editing-tools.test.ts`: markers kept in order and moved by an intro, every op refused on a locked track and caption
+  styles skipping it, hidden tracks in the queries and the render plan, moves between tracks, duplicates, freeze frames
+  on the primary and free tracks with their graph, detached audio, mirror and key with their graph, the color tables,
+  hue matrix and vignette, xfade's dip weights, slides, the circle and its 16-stop gradient, the wipe's edge, snap
+  targets, spans and edit points, a freeze and the new transitions in EDL, XML, FCPXML and back from OTIO).
 - **shared, settings and project files** (`settings-theme.test.ts`, `settings-endpoints.test.ts`, `bundle.test.ts`):
   the settings table (each setting once, in a known group, environment-only configuration and key material kept out,
   secrets marked, `showIf` targets, option labels for every option); the endpoint table (every endpoint's settings
@@ -145,7 +150,11 @@ RIDEO_TEST_WEBDAV_URL=http://rideo:rideo@localhost:8080/ npx vitest run --projec
   lost leases not reported, claim retry when the claim overtakes the live subscription), timeline edge-drag
   ops, and rendering of the workflow stepper, consistency badge, job rows and take badges (lineage and
   multi-shot segments), and the preview's duck automation (`automateDuck`, the shared breakpoints from any
-  playback start). Resuming an interrupted render
+  playback start); editing tools (`editing-tools.test.ts`: the edit history's stacks, the keymap and its labels, paste,
+  split targets, nudges, drops and a freeze's edges; `compositor.test.ts`: mirror, adjustments and key per pixel, the
+  wipe's side, dips over white with xfade's weights from whole frames, slides, the circle's gradient, dips and circles
+  handed to the canvas while WebGPU gets the rest; `engine-performance.test.ts`: scissors of wipes and slides,
+  mirrored UVs and the uniforms of adjustments, key and vignette). Resuming an interrupted render
   is covered by the editor-jobs integration test, local proxies by the story e2e spec.
 
 - **web, settings, workspace and library** (`settings.test.tsx`, `workspace.test.ts`, `runtime.test.ts`,
@@ -184,7 +193,10 @@ RIDEO_TEST_WEBDAV_URL=http://rideo:rideo@localhost:8080/ npx vitest run --projec
 - **Render plan** (`render.test.ts`): the shared chunk graphs and soundtrack graph run through native ffmpeg
   (a cut followed by a crossfade; a split and trimmed clip before a wipe, with speed and fades; text) and
   every chunk must have exactly its planned frame count; the concatenated chunks must equal the planned
-  length.
+  length. The editing tools: a cut with a freeze frame, a dip to white, a slide, a circle, a mirrored and adjusted
+  item and a keyed overlay at exact frame counts; a freeze holding one frame and a mirror's pixels; a dip, a slide and
+  a circle at the colors the compositor's arithmetic gives; a hidden primary track black; the adjustment, vignette and
+  key filters against `color.ts`, value for value.
 - **Editor jobs** (`editor-jobs.test.ts`): the REST protocol with a Node **reference editor worker**
   (`test/helpers/editor-worker.ts`) that implements the browser's jobs with native ffmpeg and the same shared
   planners: claim/lease/heartbeat, staged uploads, resume after a lost lease, cancel, and the follow-up
@@ -323,7 +335,7 @@ RIDEO_TEST_WEBDAV_URL=http://rideo:rideo@localhost:8080/ npx vitest run --projec
 Projects: `desktop` (1440×900) runs every spec except `responsive`; `mobile` (412×915, touch) runs
 `responsive`, `mcp-sync`, `provenance`, `elements`, `dialogue`, `storyboard`, `directing`, `take-editing`,
 `multi-shot`, `post-audio`, `localization`, `finishing`, `accounts`, `review`, `interchange`, `editor-depth`,
-`recipes`, `brand`, `search`, `performance`, `engine`, `pwa`, `settings`, `browser-storage`, `subpath` and `embed`. The
+`editing-tools`, `recipes`, `brand`, `search`, `performance`, `engine`, `pwa`, `settings`, `browser-storage`, `subpath` and `embed`. The
 web server stops with SIGTERM so the stack removes its data; stale stack directories older than an hour are removed
 when a new stack starts. Specs:
 
@@ -342,6 +354,7 @@ when a new stack starts. Specs:
 | `brand.spec.ts` | (desktop and mobile) a brand kit made on the Brand kits page with a logo and the bug on; applied to a project from its overview; a lower third from the kit's template in the editor; the export with the bug (on by default) rendered in the tab |
 | `recipes.spec.ts` | (desktop and mobile) a studio recipe (a title per text) run from the overview's Recipes card with its parameter; the titles in the cut; the recipe deleted |
 | `editor-depth.spec.ts` | (desktop and mobile) footage added as an overlay at the playhead, the picture-in-picture preset, *Remove the background* (the mock's segmentation model); an ease-in ramp and a `.cube` LUT uploaded from the inspector on the primary item; filmstrips and waveforms in the lanes (desktop); the layered cut exported with ffmpeg.wasm; the analysis's transcript and *Remove filler words* splitting the picture track |
+| `editing-tools.spec.ts` | (desktop and mobile) desktop: a marker with `M`, named; `S` splits, `Ctrl+Z` and `Ctrl+Shift+Z`; `Ctrl+D`; a freeze frame from the context menu; detached audio dragged 0.93 s onto the marker (snapping, with its guide) and down onto the Music track; a locked track refusing `Delete`, a hidden one; mirror, exposure, chroma key and a slide on the last item; `?`; the cut exported with ffmpeg.wasm. Phones: a marker from the Markers card, a freeze frame, mirror, *Undo*, *Redo*, *Duplicate* and an adjustment from the inspector, *Unlock* of a locked track; no sideways scroll |
 | `interchange.spec.ts` | (desktop and mobile) the Exports view's hand-off card with a mounted media location: the OTIO download points into it (remembered after a reload), FCPXML, XML and EDL download; a re-edited OTIO (trimmed, plus a clip from elsewhere) imported: one clip placed, the stranger listed |
 | `review.spec.ts` | (desktop and mobile) a note at 0:01.0 with a box drawn on the take, a reply, resolved (the tile's open count); a review of the pilot with a share link deciding `pilot_approved`; the client, in a separate browser without an account, names themselves, draws an arrow, comments and asks for changes (no sideways scroll); the studio's bell leads to the note live; after the pilot clip is approved the client's approval approves the gate; the revoked link opens nothing |
 | `finishing.spec.ts` | (desktop and mobile) a vertical delivery from the export dialog: focus tracks prepared, reframed, cut down, upscaled by the enhancement model, three thumbnails on the card; a ProRes master listed with its download and stems |

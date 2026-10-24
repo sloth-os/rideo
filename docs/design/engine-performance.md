@@ -36,11 +36,14 @@ The compositor ([rendering](editor.md#engines)) has two backends with the same p
 
 - **WebGPU** (`features/editor/engine/gpu.ts`): every frame is a texture (`copyExternalImageToTexture`); each layer is
   one draw of a textured quad placed by its fitted rectangle, crop window and transform (computed on the CPU as an
-  affine map), with its colour effects in the shader (brightness, contrast and saturation, as the canvas filters),
-  its LUT as a 3D texture (`rgba16float`, trilinear, mixed by intensity), its matte's luma as alpha (inverted when
-  asked), its opacity, dim and wipe (a scissor rectangle), blended with premultiplied alpha over black. Titles are
-  drawn with the canvas path on a transparent layer, composited last.
-- **2D canvas**: the existing path; LUTs and mattes go through `getImageData` on the CPU.
+  affine map), mirrored by reversed texture coordinates, with its colour effects in the shader (brightness, contrast
+  and saturation, as the canvas filters), its LUT as a 3D texture (`rgba16float`, trilinear, mixed by intensity), the
+  RGB adjustments in the ffmpeg chain's integer steps and the chroma key
+  ([editing tools](editing-tools.md#color-adjustments)), its matte's luma as alpha (inverted when asked), its opacity,
+  dim, wipe and slide (scissor rectangles), blended with premultiplied alpha over black. Titles are drawn with the
+  canvas path on a transparent layer, composited last. Frames inside a dip or a circle transition are drawn by the
+  canvas, which mixes whole frames per pixel ([transitions](editing-tools.md#transitions)).
+- **2D canvas**: the existing path; LUTs, adjustments, keys and mattes go through `getImageData` on the CPU.
 
 `auto` takes WebGPU when the browser has a WebGPU adapter; a per-browser preference (`localStorage`
 `rideo.compositor`: `auto`, `webgpu`, `canvas`) can force either. The preview and the WebCodecs export use it, and the

@@ -16,6 +16,7 @@ import {
   videoSegments,
 } from '../timeline/query';
 import { sliceTimeMap, timeMapOf } from '../timeline/ramp';
+import { adjustmentFilters, keyColorOption, XFADE_TRANSITIONS } from './color';
 
 /**
  * The render plan (docs/design/editor.md#rendering): the film is cut into frame-aligned chunks that never split
@@ -38,12 +39,15 @@ export interface RenderSize {
 }
 
 const n = (v: number) => (Math.round(v * 1000) / 1000).toString();
+/** Microseconds: where a frame is chosen by its timestamp (a freeze frame). */
+const n6 = (v: number) => (Math.round(v * 1e6) / 1e6).toString();
 const even = (v: number) => Math.max(2, v - (v % 2));
 const EPS = 1e-6;
 /** Inputs are seeked this far before the first needed frame; the graph trims exactly. */
 const SEEK_MARGIN = 1;
 
-const XFADE: Record<string, string> = { crossfade: 'fade', wipe: 'wipeleft', dip_to_black: 'fadeblack' };
+/** Dips mix in RGB, where black and white are the compositor's (docs/design/editing-tools.md#transitions). */
+const RGB_XFADE = new Set(['dip_to_black', 'dip_to_white']);
 
 /** Output size: the project size (even), capped at 720p for drafts. */
 export function renderSize(t: Timeline, quality: ExportQuality): RenderSize {
@@ -205,10 +209,25 @@ interface ChainContext {
   label: (base: string) => string;
 }
 
+/** The flips of an item after its fit (docs/design/editing-tools.md#mirror). */
+function flipSteps(s: VideoSegment): string {
+  const f = s.item.flip;
+  return `${f?.x ? 'hflip,' : ''}${f?.y ? 'vflip,' : ''}`;
+}
+
+/**
+ * Whether a primary picture is composited over black at the output size instead of letterboxed: a transform, a mask
+ * or a key (docs/design/editing-tools.md#chroma-key).
+ */
+export function isShapedPicture(item: VideoSegment['item']): boolean {
+  return !isIdentity(item.transform) || !!item.mask || !!item.key;
+}
+
 /**
  * One segment's part as a stream (docs/design/editor.md#video-graph-per-chunk): input seeking, exact trim, its speed
- * or ramp, the fit (letterboxed, or fitted without padding when `fitted` for compositing), the LUT, color effects and
- * the mask. Returns the label of the stream and whether it carries alpha.
+ * or ramp (or its one frame, held), the fit (letterboxed, or fitted without padding when `fitted` for compositing),
+ * the mirror, the LUT, color effects, the RGB adjustments and the key or the mask. Returns the label of the stream
+ * and whether it carries alpha.
  */
 function segmentStream(
   c: ChainContext,
@@ -218,9 +237,22 @@ function segmentStream(
 ): { label: string; alpha: boolean } {
   const { fps, width, height } = c;
   const still = isStillMedia(s.media);
+  const freeze = s.item.freeze;
   const k = c.args.filter((a) => a === '-i').length;
   let head: string;
-  if (still) {
+  let hold = '';
+  if (freeze && !still) {
+    // One frame, cloned for the part (docs/design/editing-tools.md#freeze-frame): the last frame at or before `in`,
+    // as the preview's frame cursor finds it (else the first after it)
+    const seek = Math.max(0, Math.floor((s.in - SEEK_MARGIN) * 1000) / 1000);
+    const at = s.in - seek;
+    c.args.push('-ss', n(seek), '-t', n(at + 0.45), '-i', c.opts.inputPath(s.media));
+    head =
+      `[${k}:v]trim=start=${n6(Math.max(0, at - 0.1))}:end=${n6(at + 0.2)},` +
+      `select='lte(t\\,${n6(at + 1e-4)})+eq(n\\,0)',reverse,trim=end_frame=1,setpts=PTS-STARTPTS,`;
+    const frames = Math.max(1, Math.round(part.d * fps));
+    hold = `,tpad=stop_mode=clone:stop=${frames - 1},trim=end_frame=${frames}`;
+  } else if (still) {
     // A still (storyboard frame): loop the image for the segment's part of the chunk.
     c.args.push(
       '-loop',
@@ -240,14 +272,19 @@ function segmentStream(
     head = `[${k}:v]trim=start=${n(part.srcIn - seek)}:end=${n(part.srcOut - seek)},${timing(s, part)},`;
   }
   const fitted = fittedSize(s.media, !!s.crop, width, height);
+  // A freeze frame's crop window stays where its frame is
+  const cropAt = still ? 0 : freeze ? s.in : part.srcIn;
+  const cropSpeed = still ? 1 : freeze ? 0 : s.speed;
   const fit = s.crop
-    ? `${cropFilter(s.crop, width / height, still ? 0 : part.srcIn, still ? 1 : s.speed)},scale=${width}:${height},`
+    ? `${cropFilter(s.crop, width / height, cropAt, cropSpeed)},scale=${width}:${height},`
     : mode === 'letterbox'
       ? `scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:color=black,`
       : `scale=${fitted.w}:${fitted.h},`;
   // settb: concat outputs AV_TIME_BASE, and xfade needs both inputs on the same timebase
   let label = c.label('s');
-  c.filters.push(`${head}${fit}setsar=1,fps=${fps},format=yuv420p,settb=AVTB[${label}]`);
+  c.filters.push(
+    `${head}${fit}${flipSteps(s)}setsar=1,fps=${fps}${hold},format=yuv420p,settb=AVTB[${label}]`,
+  );
   // LUT, mixed with the original below full intensity (docs/design/editor.md#luts)
   const lut = s.item.lut;
   if (lut) {
@@ -272,6 +309,19 @@ function segmentStream(
     );
     label = out;
   }
+  // The RGB adjustments, then the key (docs/design/editing-tools.md#color-adjustments)
+  const adjust = adjustmentFilters(e);
+  const key = s.item.key;
+  if (adjust.length || key) {
+    const out = c.label('c');
+    const steps = adjust.length ? ['format=rgb24', ...adjust] : [];
+    steps.push(
+      key ? `format=rgba,colorkey=${keyColorOption(key)}:${key.similarity}:${key.blend}` : 'format=yuv420p',
+    );
+    c.filters.push(`[${label}]${steps.join(',')}[${out}]`);
+    label = out;
+    if (key) return { label, alpha: true };
+  }
   // The matte as alpha, seeked and timed like the picture, inside its own range
   const mask = s.item.mask;
   const matteEnd = mask ? mask.offset + (mask.media.durationSec ?? Number.POSITIVE_INFINITY) : 0;
@@ -288,7 +338,7 @@ function segmentStream(
         ? `scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:color=black,`
         : `scale=${fitted.w}:${fitted.h},`;
     c.filters.push(
-      `[${m}:v]trim=start=${n(mIn - seek)}:end=${n(mOut - seek)},${timing(s, part)},${mfit}setsar=1,fps=${fps},format=gray${mask.invert ? ',negate' : ''}[${matte}]`,
+      `[${m}:v]trim=start=${n(mIn - seek)}:end=${n(mOut - seek)},${timing(s, part)},${mfit}${flipSteps(s)}setsar=1,fps=${fps},format=gray${mask.invert ? ',negate' : ''}[${matte}]`,
       `[${label}][${matte}]alphamerge[${out}]`,
     );
     return { label: out, alpha: true };
@@ -395,11 +445,11 @@ export function chunkGraph(t: Timeline, chunk: RenderChunk, opts: ChunkGraphOpti
   };
   const local = inChunk.map(({ s, prev }, k) => {
     const part = partOf(s, Math.max(s.start, chunk.start), Math.min(s.end, chunk.end));
-    const shaped = !isIdentity(s.item.transform) || !!s.item.mask;
+    const shaped = isShapedPicture(s.item);
     const stream = segmentStream(c, s, part, shaped ? 'fitted' : 'letterbox');
     let chain = `[${stream.label}]`;
     if (shaped) {
-      // A transformed or masked primary picture, over black at the output size; `t` is the part's time here.
+      // A transformed, masked or keyed primary picture, over black at the output size; `t` is the part's time here.
       const shift = part.from - s.start;
       const tr = transformStream(c, s, stream.label, shift, false, part);
       const bg = c.label('bg');
@@ -429,9 +479,15 @@ export function chunkGraph(t: Timeline, chunk: RenderChunk, opts: ChunkGraphOpti
       const overlap = Math.max(0, local[k - 1]!.to - cur.from);
       const D = Math.min(overlap > EPS ? overlap : cur.transition.duration, accDur, cur.d);
       const offset = Math.max(0, accDur - D);
-      filters.push(
-        `[${acc}][v${k}]xfade=transition=${XFADE[cur.transition.type] ?? 'fade'}:duration=${n(D)}:offset=${n(offset)}[${out}]`,
-      );
+      const xfade = `xfade=transition=${XFADE_TRANSITIONS[cur.transition.type] ?? 'fade'}:duration=${n(D)}:offset=${n(offset)}`;
+      if (RGB_XFADE.has(cur.transition.type)) {
+        const [a, b] = [`ga${k}`, `gb${k}`];
+        filters.push(
+          `[${acc}]format=gbrp[${a}]`,
+          `[v${k}]format=gbrp[${b}]`,
+          `[${a}][${b}]${xfade},format=yuv420p[${out}]`,
+        );
+      } else filters.push(`[${acc}][v${k}]${xfade}[${out}]`);
       accDur = offset + cur.d;
     } else {
       filters.push(`[${acc}][v${k}]concat=n=2:v=1:a=0[${out}]`);

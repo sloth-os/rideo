@@ -1,10 +1,11 @@
 import type { CubeLut } from '@rideo/shared';
-import { type GpuDraw, LAYER_FLOATS, layerUniforms, lutTexels, wipeScissor } from './gpu-plan';
+import { type GpuDraw, LAYER_FLOATS, layerUniforms, lutTexels, scissorOf } from './gpu-plan';
 
 /**
  * WebGPU compositing (docs/design/engine-performance.md#webgpu-compositing): each draw is a textured quad placed by an
- * affine map, graded in the shader (effects, LUT), with its matte as alpha, blended with premultiplied alpha over
- * black; titles arrive as one transparent layer. The result is an ImageBitmap the caller draws where it needs it.
+ * affine map, graded in the shader (effects, LUT, the RGB adjustments), keyed or given its matte as alpha, blended
+ * with premultiplied alpha over black; titles arrive as one transparent layer. The result is an ImageBitmap the
+ * caller draws where it needs it.
  */
 
 const SHADER = /* wgsl */ `
@@ -17,6 +18,14 @@ struct Layer {
   lut: vec4f,
   lutMin: vec4f,
   lutMax: vec4f,
+  gains: vec4f,
+  tone: vec4f,
+  hue0: vec4f,
+  hue1: vec4f,
+  hue2: vec4f,
+  keyc: vec4f,
+  vig: vec4f,
+  spare: vec4f,
 };
 @group(0) @binding(0) var<uniform> L: Layer;
 @group(0) @binding(1) var samp: sampler;
@@ -28,6 +37,7 @@ struct VOut {
   @builtin(position) pos: vec4f,
   @location(0) uv: vec2f,
   @location(1) muv: vec2f,
+  @location(2) local: vec2f,
 };
 
 @vertex fn vs(@builtin(vertex_index) i: u32) -> VOut {
@@ -39,6 +49,7 @@ struct VOut {
   o.pos = vec4f(L.pos.x * c.x + L.pos.y * c.y + L.pos.z, L.pos2.x * c.x + L.pos2.y * c.y + L.pos2.z, 0.0, 1.0);
   o.uv = L.uv.xy + c * L.uv.zw;
   o.muv = L.muv.xy + c * L.muv.zw;
+  o.local = c;
   return o;
 }
 
@@ -68,7 +79,41 @@ fn saturate3(c: vec3f, s: f32) -> vec3f {
     let graded = textureSampleLevel(lut3, samp, (t * (n - 1.0) + vec3f(0.5)) / n, 0.0).rgb;
     rgb = mix(rgb, graded, L.lut.x);
   }
+  if (L.gains.w > 0.5) {
+    // The adjustments in the ffmpeg chain's integer steps: gain tables, the tone table, the hue mixer, the vignette
+    var c = round(rgb * 255.0);
+    c = min(floor(c * L.gains.rgb), vec3f(255.0));
+    let n = c / 255.0;
+    c = clamp(floor(c + 0.6 * c * (1.0 - n) * (L.tone.x * (1.0 - n) + L.tone.y * n)), vec3f(0.0), vec3f(255.0));
+    let r0 = round(L.hue0.xyz * c);
+    let r1 = round(L.hue1.xyz * c);
+    let r2 = round(L.hue2.xyz * c);
+    c = clamp(vec3f(r0.x + r0.y + r0.z, r1.x + r1.y + r1.z, r2.x + r2.y + r2.z), vec3f(0.0), vec3f(255.0));
+    if (L.tone.z > 0.0) {
+      var p = floor(v.pos.xy - L.vig.zw);
+      if (L.tone.w > 0.5) {
+        p = floor(v.local * L.vig.xy);
+      }
+      let d = length(trunc(p - L.vig.xy * 0.5)) / length(L.vig.xy * 0.5);
+      var f = 0.0;
+      if (d <= 1.0) {
+        let k = cos(L.tone.z * d);
+        f = (k * k) * (k * k);
+      }
+      c = floor(c * f);
+    }
+    rgb = c / 255.0;
+  }
   var a = s.a * L.fx.w;
+  if (L.hue0.w > 0.5) {
+    // The chroma key's alpha, as colorkey computes it
+    let diff = length(rgb - L.keyc.rgb) / sqrt(3.0);
+    var ka = select(0.0, 1.0, diff > L.hue1.w);
+    if (L.hue2.w > 0.0001) {
+      ka = clamp((diff - L.hue1.w) / L.hue2.w, 0.0, 1.0);
+    }
+    a = a * floor(ka * 255.0) / 255.0;
+  }
   if (L.lut.z > 0.5) {
     var luma = dot(mt.rgb, vec3f(0.299, 0.587, 0.114));
     if (L.lut.z > 1.5) {
@@ -258,7 +303,7 @@ export class GpuRenderer {
             { binding: 4, resource: lut.createView({ dimension: '3d' }) },
           ],
         }),
-        scissor: wipeScissor(d.wipe, w, h),
+        scissor: scissorOf(d, w, h),
       });
     }
     const encoder = this.device.createCommandEncoder();

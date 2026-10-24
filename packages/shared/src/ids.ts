@@ -23,6 +23,7 @@ export const ID_PREFIXES = {
   export: 'exp',
   track: 'trk',
   item: 'itm',
+  marker: 'mrk',
   session: 'ses',
   command: 'cmd',
   user: 'usr',

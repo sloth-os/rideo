@@ -10,12 +10,16 @@ import {
   clipOf,
   compositorChoice,
   containPlacement,
+  flipUv,
+  LAYER_FLOATS,
   layerUniforms,
   lutTexels,
   placementToClip,
+  scissorOf,
+  slideClip,
   toHalf,
   uvOf,
-  wipeScissor,
+  vignetteOf,
 } from '../src/features/editor/engine/gpu-plan';
 
 afterEach(() => {
@@ -109,8 +113,17 @@ describe('WebGPU geometry (docs/design/engine-performance.md#webgpu-compositing)
       rotation: 0,
     });
     expect(uvOf({ x: 240, y: 0, width: 1440, height: 1080 }, out)).toEqual([0.125, 0, 0.75, 1]);
-    expect(wipeScissor(0.25, 1920, 1080)).toEqual([0, 0, 480, 1080]);
-    expect(wipeScissor(undefined, 1920, 1080)).toEqual([0, 0, 1920, 1080]);
+    // a wipe shows the incoming frame right of its edge (xfade's wipeleft); a slide clips to its frame
+    expect(scissorOf({ wipe: 0.25 }, 1920, 1080)).toEqual([1441, 0, 479, 1080]);
+    expect(scissorOf({}, 1920, 1080)).toEqual([0, 0, 1920, 1080]);
+    expect(slideClip([-480, 0], 1920, 1080)).toEqual([0, 0, 1440, 1080]);
+    expect(slideClip([1440, 0], 1920, 1080)).toEqual([1440, 0, 480, 1080]);
+    expect(slideClip([0, 540], 1920, 1080)).toEqual([0, 540, 1920, 540]);
+    expect(scissorOf({ wipe: 0.5, clip: [0, 0, 1000, 1080] }, 1920, 1080)).toEqual([961, 0, 39, 1080]);
+    // mirrors reverse the texture coordinates
+    expect(flipUv([0.125, 0, 0.75, 1], { x: true })).toEqual([0.875, 0, -0.75, 1]);
+    expect(flipUv([0, 0.1, 1, 0.8], { y: true })).toEqual([0, expect.closeTo(0.9, 9), 1, -0.8]);
+    expect(flipUv([0, 0, 1, 1], undefined)).toEqual([0, 0, 1, 1]);
   });
 
   it('lays out a draw for the shader: placement, UVs, effects, LUT, matte', () => {
@@ -138,6 +151,49 @@ describe('WebGPU geometry (docs/design/engine-performance.md#webgpu-compositing)
     expect([...fill.slice(16, 24)].map((x) => Math.round(x * 1000) / 1000)).toEqual([
       1, 1, 1, 0.4, 0, 2, 0, 1,
     ]);
+    // no adjustment, no key: the integer steps are off
+    expect(u.length).toBe(LAYER_FLOATS);
+    expect(u[35]).toBe(0);
+    expect(u[43]).toBe(0);
+  });
+
+  it('lays out the adjustments, the key and the vignette (docs/design/editing-tools.md)', () => {
+    const source = { width: 1920, height: 1080 } as unknown as HTMLCanvasElement;
+    const effects = {
+      exposure: 1,
+      temperature: 0.5,
+      shadows: 0.25,
+      highlights: -0.5,
+      hue: 90,
+      vignette: 0.5,
+    };
+    const u = layerUniforms(
+      {
+        kind: 'picture',
+        source,
+        uv: [0, 0, 1, 1],
+        placement: { cx: 960, cy: 540, w: 1920, h: 1080, rotation: 0 },
+        effects,
+        opacity: 1,
+        key: { color: '#00ff00', similarity: 0.3, blend: 0.1 },
+        vignette: vignetteOf(effects, { frame: [1920, 1080], origin: [-480, 0] }),
+      },
+      out,
+    );
+    const r = (a: Float32Array) => [...a].map((x) => Math.round(x * 1000) / 1000);
+    // gains ×2 (warmer: red up, blue down), on
+    expect(r(u.slice(32, 36))).toEqual([2.3, 2, 1.7, 1]);
+    // tone, the vignette's angle (π/4) and its space (the frame)
+    expect(r(u.slice(36, 40))).toEqual([0.25, -0.5, 0.785, 0]);
+    // the hue matrix's rows, the key on with its similarity and blend
+    expect(r(u.slice(40, 52)).filter((_, i) => i % 4 === 3)).toEqual([1, 0.3, 0.1]);
+    expect(r(u.slice(52, 56))).toEqual([0, 1, 0, 0]);
+    expect(r(u.slice(56, 60))).toEqual([1920, 1080, -480, 0]);
+    expect(vignetteOf({}, { picture: [640, 360] })).toBeNull();
+    expect(vignetteOf({ vignette: 1 }, { picture: [640, 360] })).toMatchObject({
+      space: 'picture',
+      width: 640,
+    });
   });
 
   it('writes LUTs as half floats, red fastest', () => {

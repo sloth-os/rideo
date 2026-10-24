@@ -47,7 +47,8 @@ const footage = (name: string, over: Partial<MediaRef> = {}): MediaRef =>
 const lutMedia = f.media({ path: 'media/luts/warm-0123456789ab.cube', mime: 'application/x-cube' });
 const matte = f.media({ path: 'media/masks/matte-0123456789ab.mp4', durationSec: 8, hasAudio: false });
 let n = 0;
-const gen = (k: 'item' | 'track') => `${k === 'item' ? 'itm' : 'trk'}_${String(++n).padStart(12, '0')}`;
+const gen = (k: 'item' | 'track' | 'marker') =>
+  `${k === 'item' ? 'itm' : k === 'track' ? 'trk' : 'mrk'}_${String(++n).padStart(12, '0')}`;
 
 /** A cut: two primary items and nothing else. */
 function cut(): Timeline {

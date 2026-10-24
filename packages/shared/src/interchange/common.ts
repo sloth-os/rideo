@@ -92,13 +92,15 @@ export function framedPicture(t: Timeline): FramedClip<VideoItem>[] {
     const start = toFrames(item.start, fps);
     const end = Math.max(start + 1, toFrames(recordEnd, fps));
     const inF = toFrames(item.in, fps);
+    // A freeze frame is speed 0 (docs/design/editing-tools.md#freeze-frame), one frame of its source
+    const speed = item.freeze ? 0 : item.speed;
     return {
       item,
       start,
       end,
       in: inF,
-      out: inF + Math.round((end - start) * item.speed),
-      speed: item.speed,
+      out: inF + Math.max(item.freeze ? 1 : 0, Math.round((end - start) * speed)),
+      speed,
       transition:
         i > 0 && item.transitionIn
           ? { type: item.transitionIn.type, frames: Math.max(1, toFrames(item.transitionIn.duration, fps)) }

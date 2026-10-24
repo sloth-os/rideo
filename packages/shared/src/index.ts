@@ -52,6 +52,7 @@ export * from './timeline/keyframes';
 export * from './timeline/ops';
 export * from './timeline/query';
 export * from './timeline/ramp';
+export * from './timeline/snap';
 export * from './timeline/suggestions';
 export * from './timeline/transcript';
 export * from './util/canonical-json';

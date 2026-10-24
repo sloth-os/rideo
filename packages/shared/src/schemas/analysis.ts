@@ -2,7 +2,18 @@ import { z } from 'zod';
 import { TranscriptWordSchema } from '../timeline/transcript';
 import { IdSchema, IsoDateSchema, MediaRefSchema, TimeRangeSchema } from './common';
 
-export const TransitionTypeSchema = z.enum(['crossfade', 'wipe', 'dip_to_black']);
+/** Transitions between primary items (docs/design/editing-tools.md#transitions). */
+export const TransitionTypeSchema = z.enum([
+  'crossfade',
+  'wipe',
+  'dip_to_black',
+  'dip_to_white',
+  'slide_left',
+  'slide_right',
+  'slide_up',
+  'slide_down',
+  'circle_open',
+]);
 export type TransitionType = z.infer<typeof TransitionTypeSchema>;
 
 const Range = z.object({ start: z.number().nonnegative(), end: z.number().nonnegative() });

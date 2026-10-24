@@ -133,7 +133,7 @@ or keep going and `job_wait` until a tab picks the job up.
 | Tool | Arguments |
 |---|---|
 | `timeline_get` | `projectId` |
-| `timeline_apply` | `projectId`, `ops[]` (the [timeline op](editor.md#operations) union: overlay tracks with `add_track` `kind: "video"`, `set_transform`, `set_ramp`, `set_lut`, `set_mask`, `remove_ranges` for transcript cuts) |
+| `timeline_apply` | `projectId`, `ops[]` (the [timeline op](editor.md#operations) union: overlay tracks with `add_track` `kind: "video"`, `set_transform`, `set_ramp`, `set_lut`, `set_mask`, `remove_ranges` for transcript cuts, and the [editing tools](editing-tools.md): markers, `duplicate`, `move` between tracks, track locks, `freeze_frame`, `detach_audio`, `set_flip`, `set_key`, color adjustments) |
 | `timeline_assemble` | `projectId`, `captions?`, `musicResourceId?` |
 | `localize` | `projectId`, `language` (BCP 47), `dub?`, `lipSync?` → job ([localization](localization.md)) |
 | `localization_get` | `projectId` → every language with its lines, dubs and progress for the cut |

@@ -8,7 +8,8 @@ type Timeline = {
   fps: number; width: number; height: number;
   tracks: Track[];            // the first video track is the primary (magnetic) one; more video tracks are overlays
 };
-type Track = { id: string; kind: 'video' | 'audio' | 'text'; name: string; muted?: boolean; volume?: number; items: Item[] };
+type Track = { id: string; kind: 'video' | 'audio' | 'text'; name: string; muted?: boolean; volume?: number;
+                locked?: boolean; hidden?: boolean; items: Item[] };   // [track controls](editing-tools.md#track-controls)
 
 type Source =
   | { type: 'take'; clipId: string; shotId: string; takeId: string; media: MediaRef }
@@ -21,14 +22,19 @@ type VideoItem = {
   speed: number;              // 0.25–4
   volume: number; muted?: boolean;             // embedded audio
   fadeIn?: number; fadeOut?: number;           // from/to black, seconds
-  transitionIn?: { type: 'crossfade' | 'wipe' | 'dip_to_black'; duration: number } | null;
-  effects?: { brightness?: number; contrast?: number; saturation?: number };
+  transitionIn?: { type: TransitionType; duration: number } | null;   // crossfade, wipe, dip_to_black, dip_to_white,
+                                               // slide_left/right/up/down, circle_open ([transitions](editing-tools.md#transitions))
+  effects?: { brightness?: number; contrast?: number; saturation?: number;
+              exposure?, temperature?, tint?, hue?, shadows?, highlights?, vignette? };  // [adjustments](editing-tools.md#color-adjustments)
   label?: string;
   speech?: [number, number][];                 // speech spans in source seconds (ducking keys)
   transform?: { keyframes: Keyframe[] };       // position, scale, rotation, opacity over the item's time
   ramp?: { points: { at: number; speed: number }[] };  // a speed ramp over source seconds (replaces `speed`)
   lut?: { media: MediaRef; resourceId?: string; intensity: number };   // a .cube 3D LUT, 0–1 mixed in
   mask?: { media: MediaRef; offset: number; subject: string; invert: boolean; model: string | null };
+  freeze?: { duration: number };               // a held frame ([freeze frame](editing-tools.md#freeze-frame))
+  flip?: { x?: boolean; y?: boolean };         // [mirror](editing-tools.md#mirror)
+  key?: { color: string; similarity: number; blend: number };   // [chroma key](editing-tools.md#chroma-key)
 };
 type Keyframe = { t: number;                   // seconds from the item's start
                   x?: number; y?: number;      // centre of the picture, fractions of the frame (0.5, 0.5)
@@ -39,7 +45,8 @@ type AudioItem = { id: string; kind: 'audio'; source: Source; start: number; in:
                    volume: number; fadeIn?: number; fadeOut?: number; speech?: [number, number][] };
 // VideoItem.crop?: { focus: { t, x, y }[] }   reframed around the subject (docs/design/finishing.md)
 // Tracks: { id, kind, name, muted?, volume?, role?: 'dialogue' | 'music' | 'effects', items }
-// Timeline: { version, fps, width, height, tracks, mix?: { ducking: { enabled, depthDb, attackSec, releaseSec } } }
+// Timeline: { version, fps, width, height, tracks, mix?: { ducking: { enabled, depthDb, attackSec, releaseSec } },
+//             markers?: { id, t, label, color }[] }   // [markers](editing-tools.md#markers)
 type TextItem  = { id: string; kind: 'text'; start: number; duration: number; text: string;
                    style: { preset: 'title' | 'lower_third' | 'caption' | 'label';
                             position?: 'top' | 'center' | 'bottom'; align?: 'left' | 'center' | 'right';
@@ -92,11 +99,19 @@ committed.
 | `set_lut` | `itemId`, `lut \| null` | a LUT resource ([color](#luts)) |
 | `set_mask` | `itemId`, `mask \| null` | the matte of [Remove the background](#segmentation-masks-remove-the-background) |
 | `remove_ranges` | `media` (a media path), `ranges[[a, b]]` (source seconds) | cuts those parts out of every primary item playing that media and ripples ([transcript editing](#transcript-editing)) |
-| `add_bumper` | `position` (`intro`, `outro`), `source`, `durationSec` | a bumper at the start or end of the picture track; an intro moves every item of the other tracks later by its length ([brand kits](brand-kits.md)) |
+| `add_bumper` | `position` (`intro`, `outro`), `source`, `durationSec` | a bumper at the start or end of the picture track; an intro moves every item of the other tracks (and the markers) later by its length ([brand kits](brand-kits.md)) |
+| `move` with `trackId` | `itemId`, `trackId`, `start?` or `index?` | to another track of the same kind, the primary track included ([moving items](editing-tools.md#moving-items)) |
+| `duplicate` | `itemId` | a copy right after it ([copy, paste, duplicate](editing-tools.md#copy-paste-and-duplicate)) |
+| `add_marker` / `update_marker` / `remove_marker` | marker fields | [markers](editing-tools.md#markers) |
+| `set_track` with `locked`, `hidden` | | [track controls](editing-tools.md#track-controls): a locked track's items cannot change |
+| `freeze_frame` / `set_freeze` | `itemId`, `at`, `duration` | [freeze frame](editing-tools.md#freeze-frame) |
+| `detach_audio` | `itemId`, `trackId?` | [detach audio](editing-tools.md#detach-audio) |
+| `set_flip` | `itemId`, `flip \| null` | [mirror](editing-tools.md#mirror) |
+| `set_key` | `itemId`, `key \| null` | [chroma key](editing-tools.md#chroma-key) |
 
 A committed `timeline.json` change carries `meta.ops` (the op list), so history shows what was done. The
-editor's undo restores `timeline.json` from the previous timeline commit
-(`history_restore {paths: ["timeline.json"]}`).
+editor's undo and redo move between the session's timeline states by restoring `timeline.json` from their commits
+(`history_restore {paths: ["timeline.json"]}`, [undo and redo](editing-tools.md#undo-and-redo)).
 
 The browser applies its own edits **optimistically**: the same reducer runs locally on the current
 timeline, the UI updates at once, and the ops are sent to `POST /timeline/ops`. The server's result (or
@@ -107,7 +122,8 @@ round trip.
 ### Queries (shared, used by preview and render)
 
 `timelineDuration(t)` and `activeAt(t, time)` return the video layers at a time (the primary track's one, or two
-during a transition, with `alpha`/`wipe` progress, then the overlay items in track order, each with its transform
+during a transition, with its opacity, wipe and transition (type, progress, outgoing or incoming), then the overlay
+items in track order, each with its transform
 evaluated at that time), the audio segments, and the text overlays. `sourceTimeAt(item, time)` maps timeline
 time to source time through the item's speed or ramp. The WebCodecs compositor and the ffmpeg render planner
 both consume this output, so they agree on every frame.
@@ -336,9 +352,11 @@ cropped around its subject instead of letterboxed: `crop=w='min(iw,ih*A)':h='min
 focus as a piecewise-linear expression of the source time, then `scale=W:H`; the compositor and the preview draw the
 same window (`cropWindow`).
 
-Segments are chained left to right: `xfade` (`fade`, `wipeleft`, `fadeblack`) at `offset = accumulated − d`
-for transitions, `concat` for cuts. A transformed, masked or LUT-graded item adds its steps to its chain (a
-transformed or masked primary item is overlaid on black at the output size); overlay tracks are then composited on
+Segments are chained left to right: `xfade` (`fade`, `wipeleft`, `fadeblack`, `fadewhite`, `slideleft`, `slideright`,
+`slideup`, `slidedown`, `circleopen`; dips in `gbrp`, [editing tools](editing-tools.md#transitions)) at
+`offset = accumulated − d` for transitions, `concat` for cuts. A transformed, masked, keyed, mirrored, adjusted or
+LUT-graded item adds its steps to its chain (a transformed, masked or keyed primary item is overlaid on black at the
+output size; a freeze frame is one frame cloned, [editing tools](editing-tools.md)); overlay tracks are then composited on
 the result ([multitrack](#multitrack-transforms-and-keyframes)); text comes last, on top. Every stream is on `AV_TIME_BASE` (`settb=AVTB`) because `concat`
 outputs that timebase and `xfade` rejects inputs whose timebases differ. Text items overlapping the chunk
 become `drawtext` (bundled DejaVu Sans, emitted with the app's assets and written to `/fonts/DejaVuSans.ttf` in
@@ -422,17 +440,19 @@ before it is closed. Without an open tab, editor jobs wait in `queued`; MCP resu
 ## Editor UI
 
 - Preview canvas with transport (play/pause, frame step, timecode) and a WebCodecs capability badge.
-- Timeline with zoom, a ruler (click to seek), a playhead, and labelled item blocks (a ⤫ marks a
-  transition) with waveforms and filmstrips. Drag to reorder the primary track, drag item edges to trim, `S` to
-  split at the playhead, `Delete` to remove, arrow keys to step frames, `Space` to play; overlay video lanes above
-  the primary one (*Add video track*), audio and text lanes. Edits apply locally at once (optimistic) and are
-  confirmed by the server. Footage and takes go onto an overlay lane at the playhead with *Add as overlay*.
+- Timeline with zoom, a ruler (drag to scrub, markers), a playhead, lane headers (eye, speaker, lock) and labelled
+  item blocks (a ⤫ marks a transition) with waveforms and filmstrips. Drag items in time and between tracks with
+  snapping, drag item edges to trim, right-click for the context menu, and the keyboard shortcuts of
+  [editing tools](editing-tools.md#shortcuts) (`?` lists them); overlay video lanes above the primary one (*Add video
+  track*), audio and text lanes. Edits apply locally at once (optimistic) and are confirmed by the server. Footage and
+  takes go onto an overlay lane at the playhead with *Add as overlay*.
 - Inspector for the selected item (in/out, speed, volume, fades, effects, transition, text and timing), with
   **Transform** (x, y, scale, rotation, opacity at the playhead: *Set keyframe*, *Remove keyframe*, the keyframe
-  list, presets), **Speed ramp** (presets, off), **LUT** (a LUT resource, intensity) and **Remove the background**
-  (subject, invert, remove).
+  list, presets), **Speed ramp** (presets, off), **LUT** (a LUT resource, intensity), **Remove the background**
+  (subject, invert, remove), **Adjust**, **Chroma key** and the clip tools ([editing tools](editing-tools.md)); for a
+  selected marker, its label, color and time.
 - **Transcript** panel in footage projects ([transcript editing](#transcript-editing)).
-- Undo restores `timeline.json` from the previous timeline commit (a new commit; history is never rewritten).
+- Undo and redo move through the session's edits (each a new commit; history is never rewritten).
 - Mix card ([post audio](post-audio.md#surfaces)): ducking on/off and depth, every audio track's stem,
   *Score the cut* (with an optional direction) and *Add sound effects*. Lanes carry `data-track-role`.
 - Captions & languages card ([localization](localization.md#surfaces)): the caption style, SRT/VTT downloads,
@@ -444,4 +464,5 @@ before it is closed. Without an open tab, editor jobs wait in `queued`; MCP resu
   captions, chunk progress (or the subject being found for a reframe), and failures that stay visible in the dialog. The render runs in this tab; the export
   appears in Exports once the server has watermarked it.
 - An engine indicator in the header shows whether ffmpeg.wasm is loaded and what this tab is working on.
-- On phones the timeline collapses into a vertical list; the inspector and the Mix card sit under it.
+- On phones the timeline collapses into a vertical list; the inspector (with the clip tools as buttons), a Markers
+  card and the Mix card sit under it.

@@ -43,12 +43,13 @@ stay adjacent). Record timecode starts at `01:00:00:00`; source timecode is the 
 | a video item | `Clip` with `ExternalReference(target_url)` and `source_range` | `asset-clip` (`ref` to an `asset` with `media-rep src`) | `clipitem` with `file/pathurl` | event, `* FROM CLIP NAME:`, `* SOURCE FILE:` |
 | the video items' own sound | `Track` (Audio) "Production sound" with the same clips (metadata `rideo.linked`) | carried by the `asset-clip` | `audio/track` 1 linked to the video clipitems | `B` events |
 | audio tracks (Dialogue, Music, Effects, …) | `Track` (Audio) per track, `Gap`s between items | connected `asset-clip`s (`lane` −1, −2, …) | `audio/track` 2… | – |
-| `transitionIn` (crossfade, wipe, dip to black) | `Transition` (`SMPTE_Dissolve`, or `Custom_Transition` named `wipe`/`dip_to_black`), `in_offset` 0, `out_offset` = duration | `transition` "Cross Dissolve" (name keeps the type) | `transitionitem` "Cross Dissolve", "Edge Wipe" or "Dip to Color Dissolve", alignment `start` | `D` (dissolve, dip) or `W001` (wipe) with the duration in frames |
-| `speed` | `LinearTimeWarp(time_scalar)` | `timeMap` (two points) | `Time Remap` filter (`speed` %) | `M2` line |
+| `transitionIn` (crossfade, wipe, dips to black and white, slides, circle; [transitions](editing-tools.md#transitions)) | `Transition` (`SMPTE_Dissolve`, or `Custom_Transition` named after the type), `in_offset` 0, `out_offset` = duration | `transition` "Cross Dissolve" (name keeps the type) | `transitionitem` "Cross Dissolve", "Edge Wipe", "Dip to Color Dissolve", "Push" (category Slide) or "Iris Round", alignment `start` | `D` (dissolve, dips, circle) or `W001` (wipe, slides) with the duration in frames |
+| `speed`; a freeze frame ([freeze frame](editing-tools.md#freeze-frame)) is speed 0 | `LinearTimeWarp(time_scalar)` | `timeMap` (two points; a freeze holds its frame) | `Time Remap` filter (`speed` %) | `M2` line (000.0 for a freeze) |
 | `volume`, `muted` | metadata `rideo.volume`, `rideo.muted` | `adjust-volume` (dB) | `Audio Levels` filter | – |
 | text items (titles, captions, the disclosure label) | `Marker`s on the stack with metadata `rideo.text` | `title` (Basic Title) on lane 1 | sequence `marker`s | `* TITLE:` comments |
 | open review comments on a take or the export ([review](review.md)) | `Marker`s on the clip (source time) | `marker` in the `asset-clip` | `marker` in the `clipitem` | `* COMMENT:` lines |
-| fades, color effects, reframing (`crop`) | metadata `rideo.item` (restored on import) | – | – | – |
+| fades, color effects and adjustments, reframing (`crop`), mirror, chroma key | metadata `rideo.item` (restored on import) | – | – | – |
+| markers ([markers](editing-tools.md#markers)) | not exported yet | – | – | – |
 
 The transition overlap of the magnetic track (an item with `transitionIn` starts `d` before the previous one ends)
 becomes a cut at the incoming item's start with the outgoing clip's last `d` seconds as its handle, which is how
@@ -68,7 +69,8 @@ OTIO, FCPXML and XML describe transitions.
    gaps), on audio tracks their time stays empty; the result lists them.
 3. The first video track becomes the picture track (more video tracks are listed as skipped until the editor has
    several, [roadmap item 15](../roadmap.md)); `Transition`s become `transitionIn` (`in_offset + out_offset`, the
-   handles moved back into the clips); `LinearTimeWarp` becomes `speed` (0.25–4×; other warps are listed);
+   handles moved back into the clips); `LinearTimeWarp` becomes `speed` (0.25–4×), a `time_scalar` of 0 (and
+   `FreezeFrame`) a freeze frame as long as the clip, other warps are listed;
    audio tracks marked `rideo.linked` are skipped (the picture's own sound), other audio tracks map by name to the
    cut's tracks (else new audio tracks); stack markers with `rideo.text` become the text items (without them the
    cut's text tracks stay as they are).

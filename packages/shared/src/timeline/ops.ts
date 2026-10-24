@@ -3,8 +3,10 @@ import {
   type AudioItem,
   type AudioRole,
   DuckingSchema,
+  FREEZE_SPAN,
   type Item,
   ItemSchema,
+  MarkerSchema,
   MixSchema,
   type TextItem,
   type Timeline,
@@ -30,7 +32,7 @@ export class TimelineOpError extends Error {
 }
 
 export interface OpContext {
-  newId?: (kind: 'item' | 'track') => string;
+  newId?: (kind: 'item' | 'track' | 'marker') => string;
 }
 
 /** Stable ids of the default tracks, so every client addresses the same tracks of a not-yet-saved timeline. */
@@ -79,6 +81,8 @@ export function primaryTrack(t: Timeline): Track {
 
 export function itemDuration(item: Item): number {
   if (item.kind === 'text') return item.duration;
+  // A freeze frame holds its frame for its duration (docs/design/editing-tools.md#freeze-frame)
+  if (item.kind === 'video' && item.freeze) return item.freeze.duration;
   if (item.kind === 'video' && item.ramp) return timeMapOf(item).duration;
   const speed = item.kind === 'video' ? item.speed : 1;
   return (item.out - item.in) / speed;
@@ -86,6 +90,7 @@ export function itemDuration(item: Item): number {
 
 /** Source seconds shown `local` seconds into a video or audio item (through its speed or ramp). */
 export function sourceAtItemTime(item: VideoItem | AudioItem, local: number): number {
+  if (item.kind === 'video' && item.freeze) return item.in;
   if (item.kind === 'video' && item.ramp) return sourceAtLocal(timeMapOf(item), local);
   return item.in + local * (item.kind === 'video' ? item.speed : 1);
 }
@@ -183,6 +188,66 @@ function isPrimary(t: Timeline, track: Track): boolean {
   return primaryTrack(t).id === track.id;
 }
 
+/** A locked track's items cannot change (docs/design/editing-tools.md#track-controls). */
+function guard(track: Track, opIndex: number): void {
+  if (track.locked) throw new TimelineOpError(`track "${track.name}" is locked`, opIndex);
+}
+
+const isStill = (item: VideoItem | AudioItem) => item.source.media.mime.startsWith('image/');
+
+/**
+ * Splits an item at `at` (timeline seconds) into two; the second gets a fresh id and is placed after the first.
+ * Returns the second item.
+ */
+function splitAt(t: Timeline, found: Found, at: number, i: number, gen: (k: 'item') => string): Item {
+  const item = found.item;
+  const start = item.start;
+  const end = itemEnd(item);
+  if (!(at > start + 0.05 && at < end - 0.05)) {
+    throw new TimelineOpError(`split point ${at} is outside item (${start.toFixed(2)}–${end.toFixed(2)})`, i);
+  }
+  let second: Item;
+  if (item.kind === 'text') {
+    const firstDur = at - start;
+    second = { ...item, id: gen('item'), start: at, duration: item.duration - firstDur };
+    item.duration = firstDur;
+  } else if (item.kind === 'video' && item.freeze) {
+    // Two holds of the same frame
+    if (at - start < 0.1 || end - at < 0.1)
+      throw new TimelineOpError('each part of a freeze frame lasts at least 0.1 s', i);
+    second = { ...deepClone(item), id: gen('item'), start: at, freeze: { duration: end - at } };
+    item.freeze = { duration: at - start };
+    (second as VideoItem).transitionIn = null;
+    delete item.fadeOut;
+    delete (second as VideoItem).fadeIn;
+  } else {
+    // A ramp is in source time, so both halves keep it (docs/design/editor.md#speed-ramps).
+    const cut = sourceAtItemTime(item, at - start);
+    second = { ...deepClone(item), id: gen('item'), in: cut } as Item;
+    item.out = cut;
+    if (item.kind === 'video') {
+      delete item.fadeOut;
+      const v2 = second as VideoItem;
+      v2.transitionIn = null;
+      delete v2.fadeIn;
+    } else {
+      delete item.fadeOut;
+      delete (second as AudioItem).fadeIn;
+    }
+    if (second.kind !== 'text') (second as VideoItem | AudioItem).start = at;
+  }
+  found.track.items.splice(found.index + 1, 0, second);
+  if (isPrimary(t, found.track)) layoutPrimary(found.track);
+  else sortFree(found.track);
+  return second;
+}
+
+/** Checks the transitions around position `pos` of the primary track after it changed. */
+function checkAround(track: Track, pos: number, opIndex: number): void {
+  if (pos >= 0 && pos < track.items.length) checkTransition(track, pos, opIndex);
+  if (pos + 1 < track.items.length) checkTransition(track, pos + 1, opIndex);
+}
+
 /** Applies timeline operations atomically; throws TimelineOpError and leaves the input untouched on failure. */
 export function applyOps(timeline: Timeline, ops: TimelineOp[], ctx: OpContext = {}): Timeline {
   const gen = ctx.newId ?? ((k) => newId(k));
@@ -192,6 +257,10 @@ export function applyOps(timeline: Timeline, ops: TimelineOp[], ctx: OpContext =
   });
   layoutPrimary(primaryTrack(t));
   for (const track of t.tracks) if (!isPrimary(t, track)) sortFree(track);
+  if (t.markers) {
+    if (t.markers.length) t.markers.sort((a, b) => a.t - b.t || a.id.localeCompare(b.id));
+    else delete t.markers;
+  }
   const checked = TimelineSchema.safeParse(t);
   if (!checked.success) {
     throw new TimelineOpError(
@@ -202,10 +271,16 @@ export function applyOps(timeline: Timeline, ops: TimelineOp[], ctx: OpContext =
   return checked.data;
 }
 
-function applyOne(t: Timeline, op: TimelineOp, i: number, gen: (k: 'item' | 'track') => string): void {
+function applyOne(
+  t: Timeline,
+  op: TimelineOp,
+  i: number,
+  gen: (k: 'item' | 'track' | 'marker') => string,
+): void {
   switch (op.op) {
     case 'insert': {
       const track = findTrack(t, op.trackId, i);
+      guard(track, i);
       if (op.item.kind !== track.kind) {
         throw new TimelineOpError(`cannot insert a ${op.item.kind} item into a ${track.kind} track`, i);
       }
@@ -236,12 +311,40 @@ function applyOne(t: Timeline, op: TimelineOp, i: number, gen: (k: 'item' | 'tra
     }
     case 'remove': {
       const found = findItem(t, op.itemId, i);
+      guard(found.track, i);
       found.track.items.splice(found.index, 1);
       if (isPrimary(t, found.track)) layoutPrimary(found.track);
       return;
     }
     case 'move': {
       const found = findItem(t, op.itemId, i);
+      guard(found.track, i);
+      const target = op.trackId ? findTrack(t, op.trackId, i) : found.track;
+      if (target !== found.track) {
+        // To another track of the same kind (docs/design/editing-tools.md#moving-items)
+        guard(target, i);
+        if (target.kind !== found.track.kind)
+          throw new TimelineOpError(`a ${found.item.kind} item cannot move to a ${target.kind} track`, i);
+        const item = found.item;
+        // Leaving a track is a remove from it; joining one, an insert into it
+        found.track.items.splice(found.index, 1);
+        if (isPrimary(t, found.track)) layoutPrimary(found.track);
+        if (item.kind === 'video') item.transitionIn = null;
+        if (isPrimary(t, target)) {
+          if (op.index === undefined)
+            throw new TimelineOpError('a move onto the primary track needs index', i);
+          const index = Math.min(op.index, target.items.length);
+          target.items.splice(index, 0, item);
+          layoutPrimary(target);
+          checkAround(target, index, i);
+        } else {
+          if (op.start === undefined) throw new TimelineOpError('a move to a free track needs start', i);
+          item.start = op.start;
+          target.items.push(item);
+          sortFree(target);
+        }
+        return;
+      }
       if (isPrimary(t, found.track)) {
         if (op.index === undefined) throw new TimelineOpError('move on the primary track needs index', i);
         found.track.items.splice(found.index, 1);
@@ -260,8 +363,21 @@ function applyOne(t: Timeline, op: TimelineOp, i: number, gen: (k: 'item' | 'tra
     }
     case 'trim': {
       const found = findItem(t, op.itemId, i);
+      guard(found.track, i);
       const item = found.item;
       if (item.kind === 'text') throw new TimelineOpError('use update_text to change text timing', i);
+      if (item.kind === 'video' && item.freeze) {
+        // `in` chooses the held frame; its length is its duration (set_freeze)
+        if (op.out !== undefined)
+          throw new TimelineOpError('a freeze frame lasts its duration: use set_freeze', i);
+        if (op.in !== undefined) {
+          const dur = mediaDuration(item);
+          item.in = Math.max(0, dur !== undefined ? Math.min(op.in, dur - FREEZE_SPAN) : op.in);
+          item.out = item.in + FREEZE_SPAN;
+        }
+        checkRange(item, i);
+        return;
+      }
       if (op.in !== undefined) item.in = op.in;
       if (op.out !== undefined) item.out = op.out;
       checkRange(item, i);
@@ -274,43 +390,13 @@ function applyOne(t: Timeline, op: TimelineOp, i: number, gen: (k: 'item' | 'tra
     }
     case 'split': {
       const found = findItem(t, op.itemId, i);
-      const item = found.item;
-      const start = item.start;
-      const end = itemEnd(item);
-      if (!(op.at > start + 0.05 && op.at < end - 0.05)) {
-        throw new TimelineOpError(
-          `split point ${op.at} is outside item (${start.toFixed(2)}–${end.toFixed(2)})`,
-          i,
-        );
-      }
-      let second: Item;
-      if (item.kind === 'text') {
-        const firstDur = op.at - start;
-        second = { ...item, id: gen('item'), start: op.at, duration: item.duration - firstDur };
-        item.duration = firstDur;
-      } else {
-        // A ramp is in source time, so both halves keep it (docs/design/editor.md#speed-ramps).
-        const cut = sourceAtItemTime(item, op.at - start);
-        second = { ...deepClone(item), id: gen('item'), in: cut } as Item;
-        item.out = cut;
-        if (item.kind === 'video') {
-          delete item.fadeOut;
-          const v2 = second as VideoItem;
-          v2.transitionIn = null;
-          delete v2.fadeIn;
-        } else {
-          delete item.fadeOut;
-          delete (second as AudioItem).fadeIn;
-        }
-        if (second.kind !== 'text') (second as VideoItem | AudioItem).start = op.at;
-      }
-      found.track.items.splice(found.index + 1, 0, second);
-      if (isPrimary(t, found.track)) layoutPrimary(found.track);
-      else sortFree(found.track);
+      guard(found.track, i);
+      splitAt(t, found, op.at, i, gen);
       return;
     }
     case 'set_transition': {
       const found = findItem(t, op.itemId, i);
+      guard(found.track, i);
       if (found.item.kind !== 'video' || !isPrimary(t, found.track)) {
         throw new TimelineOpError('transitions apply to items of the primary video track', i);
       }
@@ -321,7 +407,9 @@ function applyOne(t: Timeline, op: TimelineOp, i: number, gen: (k: 'item' | 'tra
     }
     case 'set_speed': {
       const found = findItem(t, op.itemId, i);
+      guard(found.track, i);
       if (found.item.kind !== 'video') throw new TimelineOpError('speed applies to video items', i);
+      if (found.item.freeze) throw new TimelineOpError('a freeze frame has no speed', i);
       found.item.speed = op.speed;
       // A constant speed replaces a ramp.
       delete found.item.ramp;
@@ -331,6 +419,7 @@ function applyOne(t: Timeline, op: TimelineOp, i: number, gen: (k: 'item' | 'tra
     }
     case 'set_volume': {
       const found = findItem(t, op.itemId, i);
+      guard(found.track, i);
       if (found.item.kind === 'text') throw new TimelineOpError('volume applies to video and audio items', i);
       found.item.volume = op.volume;
       if (found.item.kind === 'video' && op.muted !== undefined) found.item.muted = op.muted;
@@ -338,6 +427,7 @@ function applyOne(t: Timeline, op: TimelineOp, i: number, gen: (k: 'item' | 'tra
     }
     case 'set_fades': {
       const found = findItem(t, op.itemId, i);
+      guard(found.track, i);
       if (found.item.kind === 'text') throw new TimelineOpError('fades apply to video and audio items', i);
       const dur = itemDuration(found.item);
       if ((op.fadeIn ?? 0) + (op.fadeOut ?? 0) > dur + EPS) {
@@ -349,6 +439,7 @@ function applyOne(t: Timeline, op: TimelineOp, i: number, gen: (k: 'item' | 'tra
     }
     case 'set_effects': {
       const found = findItem(t, op.itemId, i);
+      guard(found.track, i);
       if (found.item.kind !== 'video') throw new TimelineOpError('effects apply to video items', i);
       found.item.effects = { ...found.item.effects, ...op.effects };
       return;
@@ -360,6 +451,7 @@ function applyOne(t: Timeline, op: TimelineOp, i: number, gen: (k: 'item' | 'tra
         t.tracks.push(track);
       }
       if (track.kind !== 'text') throw new TimelineOpError('add_text needs a text track', i);
+      guard(track, i);
       const item = parseItem({ ...op.item, kind: 'text', id: op.item.id ?? gen('item') }, i) as TextItem;
       track.items.push(item);
       sortFree(track);
@@ -367,6 +459,7 @@ function applyOne(t: Timeline, op: TimelineOp, i: number, gen: (k: 'item' | 'tra
     }
     case 'update_text': {
       const found = findItem(t, op.itemId, i);
+      guard(found.track, i);
       if (found.item.kind !== 'text') throw new TimelineOpError('update_text applies to text items', i);
       if (op.text !== undefined && op.text !== found.item.text) {
         found.item.text = op.text;
@@ -399,6 +492,7 @@ function applyOne(t: Timeline, op: TimelineOp, i: number, gen: (k: 'item' | 'tra
     case 'remove_track': {
       const track = findTrack(t, op.trackId, i);
       if (isPrimary(t, track)) throw new TimelineOpError('the primary video track cannot be removed', i);
+      guard(track, i);
       t.tracks = t.tracks.filter((tr) => tr.id !== track.id);
       return;
     }
@@ -411,17 +505,28 @@ function applyOne(t: Timeline, op: TimelineOp, i: number, gen: (k: 'item' | 'tra
         if (track.kind === 'text') throw new TimelineOpError('text tracks have no sound', i);
         track.role = op.role;
       }
+      // Track controls (docs/design/editing-tools.md#track-controls)
+      if (op.locked !== undefined) {
+        if (op.locked) track.locked = true;
+        else delete track.locked;
+      }
+      if (op.hidden !== undefined) {
+        if (track.kind !== 'video') throw new TimelineOpError('only video tracks hide', i);
+        if (op.hidden) track.hidden = true;
+        else delete track.hidden;
+      }
       return;
     }
     case 'set_caption_style': {
       for (const track of t.tracks)
-        for (const item of track.items)
-          if (item.kind === 'text' && item.style.preset === 'caption') {
-            const style = { ...item.style };
-            for (const [k, v] of Object.entries(op.style))
-              if (v !== undefined) (style as Record<string, unknown>)[k] = v;
-            item.style = style;
-          }
+        if (!track.locked)
+          for (const item of track.items)
+            if (item.kind === 'text' && item.style.preset === 'caption') {
+              const style = { ...item.style };
+              for (const [k, v] of Object.entries(op.style))
+                if (v !== undefined) (style as Record<string, unknown>)[k] = v;
+              item.style = style;
+            }
       return;
     }
     case 'set_mix': {
@@ -431,6 +536,7 @@ function applyOne(t: Timeline, op: TimelineOp, i: number, gen: (k: 'item' | 'tra
     }
     case 'replace_source': {
       const found = findItem(t, op.itemId, i);
+      guard(found.track, i);
       if (found.item.kind === 'text') throw new TimelineOpError('text items have no source', i);
       const item = found.item;
       item.source = op.source;
@@ -447,6 +553,7 @@ function applyOne(t: Timeline, op: TimelineOp, i: number, gen: (k: 'item' | 'tra
     case 'add_bumper': {
       // An intro or outro on the picture track; an intro moves every other track later (docs/design/brand-kits.md)
       const track = primaryTrack(t);
+      guard(track, i);
       const still = op.source.media.mime.startsWith('image/');
       const dur = op.source.media.durationSec;
       const len = !still && dur !== undefined ? Math.min(op.durationSec, dur) : op.durationSec;
@@ -471,12 +578,14 @@ function applyOne(t: Timeline, op: TimelineOp, i: number, gen: (k: 'item' | 'tra
         for (const other of t.tracks)
           if (other.id !== track.id)
             for (const x of other.items) x.start = Math.round((x.start + len) * 1e6) / 1e6;
+        for (const m of t.markers ?? []) m.t = Math.round((m.t + len) * 1e6) / 1e6;
       } else track.items.push(item);
       layoutPrimary(track);
       return;
     }
     case 'set_transform': {
       const found = findItem(t, op.itemId, i);
+      guard(found.track, i);
       if (found.item.kind !== 'video') throw new TimelineOpError('transforms apply to video items', i);
       if (op.transform)
         found.item.transform = { keyframes: [...op.transform.keyframes].sort((a, b) => a.t - b.t) };
@@ -485,7 +594,9 @@ function applyOne(t: Timeline, op: TimelineOp, i: number, gen: (k: 'item' | 'tra
     }
     case 'set_ramp': {
       const found = findItem(t, op.itemId, i);
+      guard(found.track, i);
       if (found.item.kind !== 'video') throw new TimelineOpError('speed ramps apply to video items', i);
+      if (op.ramp && found.item.freeze) throw new TimelineOpError('a freeze frame has no speed', i);
       if (op.ramp) {
         const pts = [...op.ramp.points].sort((a, b) => a.at - b.at);
         const v = found.item;
@@ -502,6 +613,7 @@ function applyOne(t: Timeline, op: TimelineOp, i: number, gen: (k: 'item' | 'tra
     }
     case 'set_lut': {
       const found = findItem(t, op.itemId, i);
+      guard(found.track, i);
       if (found.item.kind !== 'video') throw new TimelineOpError('LUTs apply to video items', i);
       if (op.lut) found.item.lut = op.lut;
       else delete found.item.lut;
@@ -509,7 +621,12 @@ function applyOne(t: Timeline, op: TimelineOp, i: number, gen: (k: 'item' | 'tra
     }
     case 'set_mask': {
       const found = findItem(t, op.itemId, i);
+      guard(found.track, i);
       if (found.item.kind !== 'video') throw new TimelineOpError('masks apply to video items', i);
+      if (op.mask && found.item.key)
+        throw new TimelineOpError('an item is keyed or has its background removed, not both', i);
+      // A matte plays; a freeze frame holds still (docs/design/editing-tools.md#freeze-frame)
+      if (op.mask && found.item.freeze) throw new TimelineOpError('a freeze frame has no mask', i);
       if (op.mask) found.item.mask = op.mask;
       else delete found.item.mask;
       return;
@@ -520,7 +637,8 @@ function applyOne(t: Timeline, op: TimelineOp, i: number, gen: (k: 'item' | 'tra
       const next: Item[] = [];
       for (const raw of track.items) {
         const item = raw as VideoItem;
-        if (item.source.media.path !== op.media) {
+        // A freeze frame holds a frame; it does not play the media
+        if (item.source.media.path !== op.media || item.freeze) {
           next.push(item);
           continue;
         }
@@ -548,6 +666,7 @@ function applyOne(t: Timeline, op: TimelineOp, i: number, gen: (k: 'item' | 'tra
           next.push(piece);
         });
       }
+      if (next.length !== track.items.length || next.some((x, k) => x !== track.items[k])) guard(track, i);
       track.items = next;
       layoutPrimary(track);
       // Shorter neighbours: transitions shrink to half the shorter one (or go).
@@ -566,6 +685,180 @@ function applyOne(t: Timeline, op: TimelineOp, i: number, gen: (k: 'item' | 'tra
       if (op.fps !== undefined) t.fps = op.fps;
       if (op.width !== undefined) t.width = op.width;
       if (op.height !== undefined) t.height = op.height;
+      return;
+    }
+    // Editing tools (docs/design/editing-tools.md)
+    case 'duplicate': {
+      const found = findItem(t, op.itemId, i);
+      guard(found.track, i);
+      const copy = { ...deepClone(found.item), id: gen('item') } as Item;
+      if (isPrimary(t, found.track)) {
+        (copy as VideoItem).transitionIn = null;
+        found.track.items.splice(found.index + 1, 0, copy);
+        layoutPrimary(found.track);
+        checkAround(found.track, found.index + 1, i);
+      } else {
+        copy.start = round6(itemEnd(found.item));
+        found.track.items.push(copy);
+        sortFree(found.track);
+      }
+      return;
+    }
+    case 'add_marker': {
+      const markers = t.markers ?? [];
+      if (markers.length >= 1000) throw new TimelineOpError('a cut holds at most 1000 markers', i);
+      const id = op.marker.id ?? gen('marker');
+      if (markers.some((m) => m.id === id)) throw new TimelineOpError(`duplicate marker id ${id}`, i);
+      const parsed = MarkerSchema.safeParse({ ...op.marker, id });
+      if (!parsed.success) throw new TimelineOpError(`invalid marker: ${parsed.error.message}`, i);
+      t.markers = [...markers, parsed.data];
+      return;
+    }
+    case 'update_marker': {
+      const m = (t.markers ?? []).find((x) => x.id === op.markerId);
+      if (!m) throw new TimelineOpError(`marker ${op.markerId} not found`, i);
+      if (op.t !== undefined) m.t = op.t;
+      if (op.label !== undefined) m.label = op.label;
+      if (op.color !== undefined) m.color = op.color;
+      return;
+    }
+    case 'remove_marker': {
+      if (!(t.markers ?? []).some((x) => x.id === op.markerId))
+        throw new TimelineOpError(`marker ${op.markerId} not found`, i);
+      t.markers = t.markers!.filter((x) => x.id !== op.markerId);
+      return;
+    }
+    case 'freeze_frame': {
+      const found = findItem(t, op.itemId, i);
+      guard(found.track, i);
+      const item = found.item;
+      if (item.kind !== 'video') throw new TimelineOpError('freeze frames hold a frame of a video item', i);
+      if (isStill(item)) throw new TimelineOpError('a still is already a single frame', i);
+      if (item.freeze)
+        throw new TimelineOpError('the item is a freeze frame already: set_freeze changes it', i);
+      const start = item.start;
+      const end = itemEnd(item);
+      if (op.at < start - EPS || op.at > end + EPS)
+        throw new TimelineOpError(`${op.at} is outside the item (${start.toFixed(2)}–${end.toFixed(2)})`, i);
+      const duration = op.duration ?? 2;
+      // The frame shown at `at` (the last one at the item's end)
+      const local = Math.min(Math.max(op.at - start, 0), itemDuration(item));
+      const shown = Math.min(
+        Math.max(sourceAtItemTime(item, local), item.in),
+        Math.max(item.in, item.out - 1e-3),
+      );
+      const dur = mediaDuration(item);
+      const frame = Math.max(0, dur !== undefined ? Math.min(shown, dur - FREEZE_SPAN) : shown);
+      const hold: VideoItem = {
+        ...deepClone(item),
+        id: gen('item'),
+        in: frame,
+        out: frame + FREEZE_SPAN,
+        speed: 1,
+        freeze: { duration },
+        transitionIn: null,
+      };
+      for (const k of ['ramp', 'mask', 'fadeIn', 'fadeOut', 'speech'] as const) delete hold[k];
+      const inside = op.at > start + 0.05 && op.at < end - 0.05;
+      const atStart = !inside && op.at <= start + 0.05;
+      if (isPrimary(t, found.track)) {
+        if (inside) splitAt(t, found, op.at, i, gen);
+        if (atStart && item.transitionIn) {
+          // Before the item, the hold takes the transition into it
+          hold.transitionIn = item.transitionIn;
+          item.transitionIn = null;
+        }
+        const index = atStart ? found.index : found.index + 1;
+        found.track.items.splice(index, 0, hold);
+        layoutPrimary(found.track);
+        checkAround(found.track, index, i);
+      } else {
+        // A free track does not ripple: what follows the frame moves later by its length
+        if (inside) {
+          const second = splitAt(t, found, op.at, i, gen);
+          second.start = round6(op.at + duration);
+          hold.start = op.at;
+        } else if (atStart) {
+          hold.start = start;
+          item.start = round6(start + duration);
+        } else hold.start = round6(end);
+        found.track.items.push(hold);
+        sortFree(found.track);
+      }
+      return;
+    }
+    case 'set_freeze': {
+      const found = findItem(t, op.itemId, i);
+      guard(found.track, i);
+      if (found.item.kind !== 'video' || !found.item.freeze)
+        throw new TimelineOpError('set_freeze applies to freeze frames', i);
+      found.item.freeze = { duration: op.duration };
+      if (isPrimary(t, found.track)) {
+        layoutPrimary(found.track);
+        checkAround(found.track, found.index, i);
+      }
+      return;
+    }
+    case 'detach_audio': {
+      const found = findItem(t, op.itemId, i);
+      guard(found.track, i);
+      const item = found.item;
+      if (item.kind !== 'video') throw new TimelineOpError('detach_audio applies to video items', i);
+      if (isStill(item) || item.source.media.hasAudio === false)
+        throw new TimelineOpError('the item has no sound to detach', i);
+      if (item.freeze || item.ramp || Math.abs(item.speed - 1) > EPS)
+        throw new TimelineOpError('sound detaches at 1× (no ramp, not a freeze frame)', i);
+      if (item.muted) throw new TimelineOpError('the item’s sound is muted', i);
+      let track: Track;
+      if (op.trackId) {
+        track = findTrack(t, op.trackId, i);
+        if (track.kind !== 'audio') throw new TimelineOpError('detached sound goes onto an audio track', i);
+        guard(track, i);
+      } else {
+        track = {
+          id: gen('track'),
+          kind: 'audio',
+          name: 'Sound',
+          role: trackRole(found.track) ?? 'dialogue',
+          items: [],
+        };
+        t.tracks.push(track);
+      }
+      const sound: AudioItem = {
+        id: gen('item'),
+        kind: 'audio',
+        source: deepClone(item.source),
+        start: item.start,
+        in: item.in,
+        out: item.out,
+        volume: item.volume,
+        ...(item.fadeIn ? { fadeIn: item.fadeIn } : {}),
+        ...(item.fadeOut ? { fadeOut: item.fadeOut } : {}),
+        ...(item.label ? { label: item.label } : {}),
+        ...(item.speech ? { speech: deepClone(item.speech) } : {}),
+      };
+      track.items.push(parseItem(sound, i));
+      sortFree(track);
+      item.muted = true;
+      return;
+    }
+    case 'set_flip': {
+      const found = findItem(t, op.itemId, i);
+      guard(found.track, i);
+      if (found.item.kind !== 'video') throw new TimelineOpError('mirroring applies to video items', i);
+      if (op.flip && (op.flip.x || op.flip.y))
+        found.item.flip = { ...(op.flip.x ? { x: true } : {}), ...(op.flip.y ? { y: true } : {}) };
+      else delete found.item.flip;
+      return;
+    }
+    case 'set_key': {
+      const found = findItem(t, op.itemId, i);
+      guard(found.track, i);
+      if (found.item.kind !== 'video') throw new TimelineOpError('chroma keys apply to video items', i);
+      if (op.key && found.item.mask)
+        throw new TimelineOpError('an item is keyed or has its background removed, not both', i);
+      if (op.key) found.item.key = op.key;
+      else delete found.item.key;
       return;
     }
   }

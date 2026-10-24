@@ -1,5 +1,7 @@
 import type { z } from 'zod';
 import { textAt } from '../captions';
+import { dipWeights } from '../media/color';
+import type { TransitionType } from '../schemas/analysis';
 import type { MediaRef } from '../schemas/common';
 import type {
   AudioItem,
@@ -39,6 +41,12 @@ export interface VideoLayer {
   transform?: TransformState;
   /** On an overlay track (composited over the tracks below; docs/design/editor.md#timeline-model). */
   overlay?: boolean;
+  /**
+   * The transition this layer is part of (docs/design/editing-tools.md#transitions): its type, its progress q (0 → 1)
+   * and whether the layer is the outgoing or the incoming frame. Slides and the circle are drawn from it; the other
+   * types are already in `opacity`, `wipe` and the state's `fill`.
+   */
+  transition?: { type: TransitionType; progress: number; role: 'out' | 'in' };
 }
 
 export interface ActiveAudio {
@@ -51,6 +59,8 @@ export interface ActiveState {
   video: VideoLayer[];
   audio: ActiveAudio[];
   text: TextItem[];
+  /** The color under the primary pictures when it is not black (a dip to white). */
+  fill?: string;
 }
 
 /** Source seconds an item shows at a timeline time (through its speed or ramp). */
@@ -62,6 +72,11 @@ export function sourceTimeAt(item: VideoItem | AudioItem, time: number): number 
 /** The transform of a primary item at a time, when it has one. */
 function primaryTransform(item: VideoItem, time: number): TransformState | undefined {
   return isIdentity(item.transform) ? undefined : transformAt(item.transform, time - item.start);
+}
+
+/** Whether an item's own sound plays (a ramp mutes it, a freeze frame has none). */
+function sounds(item: VideoItem): boolean {
+  return !item.muted && !item.ramp && !item.freeze && item.volume > 0 && item.source.media.hasAudio !== false;
 }
 
 function fadeFactor(item: VideoItem | AudioItem, time: number): number {
@@ -79,6 +94,9 @@ export function activeAt(t: Timeline, time: number): ActiveState {
   const items = primary.items as VideoItem[];
   const video: VideoLayer[] = [];
   const audio: ActiveAudio[] = [];
+  // A hidden track draws nothing; its sound plays (docs/design/editing-tools.md#track-controls)
+  const drawn: VideoLayer[] = primary.hidden ? [] : video;
+  let fill: string | undefined;
 
   for (let i = 0; i < items.length; i++) {
     const item = items[i]!;
@@ -109,35 +127,39 @@ export function activeAt(t: Timeline, time: number): ActiveState {
         effects: prev.effects,
         transform: primaryTransform(prev, time),
       };
+      out.transition = { type: tr.type, progress: p, role: 'out' };
+      layer.transition = { type: tr.type, progress: p, role: 'in' };
       if (tr.type === 'crossfade') {
         layer.opacity = p;
-        video.push(out, layer);
+        drawn.push(out, layer);
       } else if (tr.type === 'wipe') {
         layer.wipe = p;
-        video.push(out, layer);
+        drawn.push(out, layer);
+      } else if (tr.type === 'dip_to_black' || tr.type === 'dip_to_white') {
+        // The weights of xfade's fadeblack / fadewhite: the color, the incoming frame at its share of what the
+        // outgoing one leaves, then the outgoing frame at its weight.
+        const w = dipWeights(p);
+        layer.opacity = w.out < 1 ? w.in / (1 - w.out) : 0;
+        out.opacity = w.out;
+        if (tr.type === 'dip_to_white' && !primary.hidden) fill = '#ffffff';
+        drawn.push(layer, out);
       } else {
-        // dip_to_black: first half fades the outgoing item down, second half fades the incoming one up.
-        if (p < 0.5) {
-          out.dim *= 1 - p * 2;
-          video.push(out);
-        } else {
-          layer.dim *= (p - 0.5) * 2;
-          video.push(layer);
-        }
+        // Slides and the circle: both frames whole, placed or masked by the compositor
+        drawn.push(out, layer);
       }
-      if (!prev.muted && !prev.ramp && prev.volume > 0 && prev.source.media.hasAudio !== false) {
+      if (sounds(prev)) {
         audio.push({
           item: prev,
           sourceTime: sourceTimeAt(prev, time),
           gain: prev.volume * (1 - p) * fadeFactor(prev, time),
         });
       }
-      if (!item.muted && !item.ramp && item.volume > 0 && item.source.media.hasAudio !== false) {
+      if (sounds(item)) {
         audio.push({ item, sourceTime: layer.sourceTime, gain: item.volume * p * fadeFactor(item, time) });
       }
     } else {
-      video.push(layer);
-      if (!item.muted && !item.ramp && item.volume > 0 && item.source.media.hasAudio !== false) {
+      drawn.push(layer);
+      if (sounds(item)) {
         audio.push({ item, sourceTime: layer.sourceTime, gain: item.volume * fadeFactor(item, time) });
       }
     }
@@ -152,16 +174,17 @@ export function activeAt(t: Timeline, time: number): ActiveState {
       const local = time - item.start;
       const transform = transformAt(item.transform, local);
       transform.opacity = opacityAt(item.transform, item, itemDuration(item), local);
-      video.push({
-        item,
-        sourceTime: sourceTimeAt(item, time),
-        opacity: transform.opacity,
-        dim: 1,
-        effects: item.effects,
-        transform,
-        overlay: true,
-      });
-      if (tv > 0 && !item.muted && !item.ramp && item.volume > 0 && item.source.media.hasAudio !== false)
+      if (!track.hidden)
+        video.push({
+          item,
+          sourceTime: sourceTimeAt(item, time),
+          opacity: transform.opacity,
+          dim: 1,
+          effects: item.effects,
+          transform,
+          overlay: true,
+        });
+      if (tv > 0 && sounds(item))
         audio.push({
           item,
           sourceTime: sourceTimeAt(item, time),
@@ -193,7 +216,7 @@ export function activeAt(t: Timeline, time: number): ActiveState {
       }
     }
   }
-  return { video, audio, text };
+  return fill ? { video, audio, text, fill } : { video, audio, text };
 }
 
 export interface VideoSegment {
@@ -214,9 +237,11 @@ export interface VideoSegment {
   item: VideoItem;
 }
 
-/** Primary-track segments in order (server render input). */
+/** Primary-track segments in order (server render input); none when the track is hidden (black). */
 export function videoSegments(t: Timeline): VideoSegment[] {
-  return (primaryTrack(t).items as VideoItem[]).map((item, i) => ({
+  const primary = primaryTrack(t);
+  if (primary.hidden) return [];
+  return (primary.items as VideoItem[]).map((item, i) => ({
     item,
     itemId: item.id,
     media: item.source.media,
@@ -236,7 +261,7 @@ export function videoSegments(t: Timeline): VideoSegment[] {
 /** Items of the overlay tracks, bottom track first, each in time order. */
 export function overlaySegments(t: Timeline): { trackIndex: number; segments: VideoSegment[] }[] {
   return t.tracks
-    .filter((tr) => isOverlayTrack(t, tr))
+    .filter((tr) => isOverlayTrack(t, tr) && !tr.hidden)
     .map((tr, k) => ({
       trackIndex: k,
       segments: (tr.items as VideoItem[])
@@ -295,8 +320,8 @@ export function audioSegments(t: Timeline): AudioSegment[] {
   const items = primary.items as VideoItem[];
   items.forEach((item, i) => {
     if (item.muted || item.volume <= 0 || item.source.media.hasAudio === false) return;
-    // A ramped item's sound is muted (docs/design/editor.md#speed-ramps).
-    if (isStillMedia(item.source.media) || item.ramp) return;
+    // A ramped item's sound is muted (docs/design/editor.md#speed-ramps); a freeze frame has none.
+    if (isStillMedia(item.source.media) || item.ramp || item.freeze) return;
     const next = items[i + 1];
     const tin = i > 0 && item.transitionIn ? item.transitionIn.duration : 0;
     const tout = next?.transitionIn ? next.transitionIn.duration : 0;
@@ -321,7 +346,8 @@ export function audioSegments(t: Timeline): AudioSegment[] {
     if (!isOverlayTrack(t, track) || track.muted) continue;
     const tv = track.volume ?? 1;
     for (const item of track.items as VideoItem[]) {
-      if (item.muted || item.ramp || item.volume <= 0 || item.source.media.hasAudio === false) continue;
+      if (item.muted || item.ramp || item.freeze || item.volume <= 0 || item.source.media.hasAudio === false)
+        continue;
       if (isStillMedia(item.source.media)) continue;
       out.push({
         itemId: item.id,

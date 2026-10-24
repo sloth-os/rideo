@@ -61,7 +61,7 @@ export function toEdl(t: Timeline, ctx: InterchangeContext): string {
         event(
           n,
           track,
-          c.transition.type === 'wipe' ? 'W001' : 'D',
+          c.transition.type === 'wipe' || c.transition.type.startsWith('slide_') ? 'W001' : 'D',
           c.transition.frames,
           tc(c.in),
           tc(c.out),

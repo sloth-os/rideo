@@ -12,6 +12,16 @@ export function trimOps(item: Item, side: 'start' | 'end', delta: number, free: 
       { op: 'update_text', itemId: item.id, start: ms(item.start + d), duration: ms(item.duration - d) },
     ];
   }
+  if (item.kind === 'video' && item.freeze) {
+    // A freeze frame's edges change how long it holds (docs/design/editing-tools.md#freeze-frame)
+    const d = item.freeze.duration;
+    if (side === 'end')
+      return [{ op: 'set_freeze', itemId: item.id, duration: ms(Math.min(60, Math.max(0.1, d + delta))) }];
+    const next = ms(Math.min(60, Math.max(0.1, d - Math.max(delta, free ? -item.start : -60))));
+    const ops: TimelineOp[] = [{ op: 'set_freeze', itemId: item.id, duration: next }];
+    if (free) ops.push({ op: 'move', itemId: item.id, start: ms(Math.max(0, item.start + d - next)) });
+    return ops;
+  }
   const speed = item.kind === 'video' ? item.speed : 1;
   const minLen = 0.1 * speed;
   if (side === 'end') {

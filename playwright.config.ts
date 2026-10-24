@@ -31,7 +31,7 @@ export default defineConfig({
       name: 'mobile',
       testIgnore: /[\\/]real[\\/]/,
       testMatch:
-        /(responsive|mcp-sync|provenance|elements|dialogue|storyboard|directing|take-editing|multi-shot|post-audio|localization|finishing|accounts|review|interchange|editor-depth|recipes|brand|search|performance|engine|pwa|settings|browser-storage|subpath|embed)\.spec\.ts/,
+        /(responsive|mcp-sync|provenance|elements|dialogue|storyboard|directing|take-editing|multi-shot|post-audio|localization|finishing|accounts|review|interchange|editor-depth|editing-tools|recipes|brand|search|performance|engine|pwa|settings|browser-storage|subpath|embed)\.spec\.ts/,
       use: {
         browserName: 'chromium',
         viewport: { width: 412, height: 915 },

@@ -57,6 +57,19 @@ export const EffectsSchema = z.object({
   brightness: z.number().min(-1).max(1).optional(),
   contrast: z.number().min(0).max(2).optional(),
   saturation: z.number().min(0).max(3).optional(),
+  // Color adjustments, after the LUT and the above, in RGB (docs/design/editing-tools.md#color-adjustments)
+  /** Stops: every channel × 2^exposure. */
+  exposure: z.number().min(-2).max(2).optional(),
+  /** Warmer (+) or cooler (−). */
+  temperature: z.number().min(-1).max(1).optional(),
+  /** Magenta (+) or green (−). */
+  tint: z.number().min(-1).max(1).optional(),
+  /** Degrees around the color wheel. */
+  hue: z.number().min(-180).max(180).optional(),
+  shadows: z.number().min(-1).max(1).optional(),
+  highlights: z.number().min(-1).max(1).optional(),
+  /** 0: none, 1: the corners black. */
+  vignette: z.number().min(0).max(1).optional(),
 });
 export type Effects = z.infer<typeof EffectsSchema>;
 
@@ -79,6 +92,26 @@ export const ItemMaskSchema = z.object({
   model: z.string().max(200).nullable().default(null),
 });
 export type ItemMask = z.infer<typeof ItemMaskSchema>;
+
+/** A held frame: the frame at `in`, shown for `duration` seconds (docs/design/editing-tools.md#freeze-frame). */
+export const FreezeSchema = z.object({ duration: z.number().min(0.1).max(60) });
+export type Freeze = z.infer<typeof FreezeSchema>;
+/** The source length a freeze item claims (`out` = `in` + this): long enough to be a range, short enough to fit. */
+export const FREEZE_SPAN = 0.04;
+
+/** Mirrored left–right (`x`) or upside down (`y`) (docs/design/editing-tools.md#mirror). */
+export const FlipSchema = z.object({ x: z.boolean().optional(), y: z.boolean().optional() });
+export type Flip = z.infer<typeof FlipSchema>;
+
+const HexColor = z.string().regex(/^#[0-9a-fA-F]{6}$/);
+
+/** Transparent where the picture is close to a color (docs/design/editing-tools.md#chroma-key). */
+export const ChromaKeySchema = z.object({
+  color: HexColor,
+  similarity: z.number().min(0.01).max(1).default(0.3),
+  blend: z.number().min(0).max(1).default(0.1),
+});
+export type ChromaKey = z.infer<typeof ChromaKeySchema>;
 
 export const VideoItemSchema = z.object({
   id: IdSchema,
@@ -104,6 +137,9 @@ export const VideoItemSchema = z.object({
   ramp: RampSchema.optional(),
   lut: ItemLutSchema.optional(),
   mask: ItemMaskSchema.optional(),
+  freeze: FreezeSchema.optional(),
+  flip: FlipSchema.optional(),
+  key: ChromaKeySchema.optional(),
 });
 export type VideoItem = z.infer<typeof VideoItemSchema>;
 
@@ -177,9 +213,27 @@ export const TrackSchema = z.object({
   volume: z.number().min(0).max(2).optional(),
   /** The stem of the track's sound (audio tracks, and the primary video track's own sound). */
   role: AudioRoleSchema.optional(),
+  /** Its items cannot change (docs/design/editing-tools.md#track-controls). */
+  locked: z.boolean().optional(),
+  /** Video tracks: not drawn; their sound still plays. */
+  hidden: z.boolean().optional(),
   items: z.array(ItemSchema).default([]),
 });
 export type Track = z.infer<typeof TrackSchema>;
+
+export const MARKER_COLORS = ['red', 'orange', 'yellow', 'green', 'cyan', 'blue', 'purple'] as const;
+export const MarkerColorSchema = z.enum(MARKER_COLORS);
+export type MarkerColor = z.infer<typeof MarkerColorSchema>;
+
+/** A named point on the cut's time (docs/design/editing-tools.md#markers). */
+export const MarkerSchema = z.object({
+  id: IdSchema,
+  /** Timeline seconds. */
+  t: z.number().nonnegative().max(36_000),
+  label: z.string().max(200).default(''),
+  color: MarkerColorSchema.default('orange'),
+});
+export type Marker = z.infer<typeof MarkerSchema>;
 
 export const TimelineSchema = z.object({
   version: z.literal(1),
@@ -189,6 +243,8 @@ export const TimelineSchema = z.object({
   tracks: z.array(TrackSchema).min(1),
   /** How the soundtrack is mixed; absent on older cuts (no ducking). */
   mix: MixSchema.optional(),
+  /** In time order. */
+  markers: z.array(MarkerSchema).max(1000).optional(),
 });
 export type Timeline = z.infer<typeof TimelineSchema>;
 
@@ -209,6 +265,8 @@ export const TimelineOpSchema = z.discriminatedUnion('op', [
     itemId: IdSchema,
     index: z.number().int().nonnegative().optional(),
     start: z.number().nonnegative().optional(),
+    /** Another track of the same kind (docs/design/editing-tools.md#moving-items). */
+    trackId: IdSchema.optional(),
   }),
   z.object({
     op: z.literal('trim'),
@@ -259,6 +317,8 @@ export const TimelineOpSchema = z.discriminatedUnion('op', [
     muted: z.boolean().optional(),
     volume: z.number().min(0).max(2).optional(),
     role: AudioRoleSchema.optional(),
+    locked: z.boolean().optional(),
+    hidden: z.boolean().optional(),
   }),
   z.object({ op: z.literal('set_mix'), ducking: DuckingSchema.partial() }),
   z.object({
@@ -292,5 +352,30 @@ export const TimelineOpSchema = z.discriminatedUnion('op', [
     width: z.number().int().min(64).max(4096).optional(),
     height: z.number().int().min(64).max(4096).optional(),
   }),
+  // Editing tools (docs/design/editing-tools.md)
+  z.object({ op: z.literal('duplicate'), itemId: IdSchema }),
+  z.object({
+    op: z.literal('add_marker'),
+    marker: MarkerSchema.partial({ id: true, label: true, color: true }),
+  }),
+  z.object({
+    op: z.literal('update_marker'),
+    markerId: IdSchema,
+    t: z.number().nonnegative().max(36_000).optional(),
+    label: z.string().max(200).optional(),
+    color: MarkerColorSchema.optional(),
+  }),
+  z.object({ op: z.literal('remove_marker'), markerId: IdSchema }),
+  z.object({
+    op: z.literal('freeze_frame'),
+    itemId: IdSchema,
+    /** Timeline seconds: the frame shown there. */
+    at: z.number().nonnegative(),
+    duration: z.number().min(0.1).max(60).optional(),
+  }),
+  z.object({ op: z.literal('set_freeze'), itemId: IdSchema, duration: z.number().min(0.1).max(60) }),
+  z.object({ op: z.literal('detach_audio'), itemId: IdSchema, trackId: IdSchema.optional() }),
+  z.object({ op: z.literal('set_flip'), itemId: IdSchema, flip: FlipSchema.nullable() }),
+  z.object({ op: z.literal('set_key'), itemId: IdSchema, key: ChromaKeySchema.nullable() }),
 ]);
 export type TimelineOp = z.infer<typeof TimelineOpSchema>;

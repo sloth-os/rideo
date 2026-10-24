@@ -1,21 +1,41 @@
 import {
+  type ActiveState,
   activeAt,
+  applyAdjustments,
   applyCube,
+  applyKey,
+  circleStops,
   cropWindow,
   type Effects,
+  hasAdjustments,
+  isShapedPicture,
   isStillMedia,
   type MediaRef,
+  SLIDE_TYPES,
+  type SlideType,
+  slideOffsets,
   type TextItem,
   type Timeline,
+  type TransitionType,
   textPad,
   textSize,
   type VideoItem,
   type VideoLayer,
+  wipeEdge,
 } from '@rideo/shared';
 import type { CanvasSink, WrappedCanvas } from 'mediabunny';
 import { VIDEO_FONT } from '../../../engine/fonts';
 import type { GpuRenderer } from './gpu';
-import { type CompositorKind, containPlacement, type GpuDraw, uvOf } from './gpu-plan';
+import {
+  type CompositorKind,
+  containPlacement,
+  flipUv,
+  type GpuDraw,
+  type GpuPicture,
+  slideClip,
+  uvOf,
+  vignetteOf,
+} from './gpu-plan';
 import type { MediaPool } from './media-pool';
 
 type Ctx2D = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
@@ -140,9 +160,55 @@ function fittedRect(media: MediaRef, crop: boolean, w: number, h: number) {
   return { x: (w - fw) / 2, y: (h - fh) / 2, w: fw, h: fh };
 }
 
-/** Whether a layer needs the shaped path: a transform, an overlay, a LUT or a mask. */
+/**
+ * Whether a layer needs the shaped path: a transform, an overlay, a LUT, a mask, a key, a mirror or RGB adjustments
+ * (the fitted picture in a scratch, worked on per pixel, then placed).
+ */
 function shaped(layer: VideoLayer): boolean {
-  return !!layer.transform || !!layer.overlay || !!layer.item.lut || !!layer.item.mask;
+  const item = layer.item;
+  return (
+    !!layer.transform ||
+    !!layer.overlay ||
+    !!item.lut ||
+    !!item.mask ||
+    !!item.key ||
+    !!item.flip ||
+    hasAdjustments(layer.effects)
+  );
+}
+
+/**
+ * Transitions drawn from whole frames, their letterbox included, as xfade mixes them
+ * (docs/design/editing-tools.md#transitions): the dips and the circle (by the canvas, also when WebGPU draws the rest)
+ * and the slides.
+ */
+const WHOLE_FRAME = new Set<TransitionType>(['dip_to_black', 'dip_to_white', 'circle_open', ...SLIDE_TYPES]);
+const CANVAS_ONLY = new Set<TransitionType>(['dip_to_black', 'dip_to_white', 'circle_open']);
+
+/** Whether the canvas draws this frame: a dip or a circle is mixed per pixel from whole frames. */
+export function needsCanvas(state: ActiveState): boolean {
+  return state.video.some((l) => !!l.transition && CANVAS_ONLY.has(l.transition.type));
+}
+
+/** Mirrors what is drawn next inside a w × h box at the origin. */
+function mirror(ctx: Ctx2D, flip: VideoItem['flip'], w: number, h: number): void {
+  if (flip?.x) {
+    ctx.translate(w, 0);
+    ctx.scale(-1, 1);
+  }
+  if (flip?.y) {
+    ctx.translate(0, h);
+    ctx.scale(1, -1);
+  }
+}
+
+/** Clips to the incoming part of a wipe (right of the edge, as xfade's wipeleft). */
+function clipWipe(ctx: Ctx2D, wipe: number | undefined, w: number, h: number): void {
+  if (wipe === undefined) return;
+  const edge = wipeEdge(wipe, w);
+  ctx.beginPath();
+  ctx.rect(edge, 0, Math.max(0, w - edge), h);
+  ctx.clip();
 }
 
 /**
@@ -151,10 +217,18 @@ function shaped(layer: VideoLayer): boolean {
  */
 export class Compositor {
   private readonly cursors = new Map<string, FrameCursor>();
-  private readonly scratch: { picture: Scratch | null; matte: Scratch | null; titles: Scratch | null } = {
+  private readonly scratch: {
+    picture: Scratch | null;
+    matte: Scratch | null;
+    titles: Scratch | null;
+    frame: Scratch | null;
+    circle: Scratch | null;
+  } = {
     picture: null,
     matte: null,
     titles: null,
+    frame: null,
+    circle: null,
   };
   private gpu: GpuRenderer | null = null;
 
@@ -211,7 +285,11 @@ export class Compositor {
     return this.frame(layer.item, Math.max(0, t), sequential, mask.media, `${layer.item.id}#mask`);
   }
 
-  private canvas(which: 'picture' | 'matte', w: number, h: number): OffscreenCanvasRenderingContext2D {
+  private canvas(
+    which: 'picture' | 'matte' | 'frame' | 'circle',
+    w: number,
+    h: number,
+  ): OffscreenCanvasRenderingContext2D {
     let c = this.scratch[which];
     if (!c || c.width !== w || c.height !== h) {
       c = new OffscreenCanvas(w, h);
@@ -223,8 +301,9 @@ export class Compositor {
   }
 
   /**
-   * A transformed, overlaid, graded or masked picture: fitted, graded with its LUT, its color effects, the matte's
-   * luma as alpha, then placed with its transform (the ffmpeg graph's order).
+   * A transformed, overlaid, graded, keyed or masked picture: fitted (and mirrored), graded with its LUT, its color
+   * effects and adjustments, keyed or given the matte's luma as alpha, then placed with its transform (the ffmpeg
+   * graph's order).
    */
   private async drawShaped(
     ctx: Ctx2D,
@@ -238,21 +317,40 @@ export class Compositor {
     const crop = !!item.crop;
     const r = fittedRect(item.source.media, crop, w, h);
     const pic = this.canvas('picture', r.w, r.h);
+    pic.save();
+    mirror(pic, item.flip, r.w, r.h);
     pic.filter = cssFilter(layer.effects);
     if (crop && item.crop) {
       const win = cropWindow(img, w / h, item.crop.focus, layer.sourceTime);
       pic.drawImage(img, win.x, win.y, win.width, win.height, 0, 0, r.w, r.h);
     } else if (isStillMedia(item.source.media)) pic.drawImage(img, 0, 0, r.w, r.h);
     else pic.drawImage(img, r.x, r.y, r.w, r.h, 0, 0, r.w, r.h);
+    pic.restore();
     pic.filter = 'none';
     const lut = item.lut ? await this.pool.lut(item.lut.media).catch(() => null) : null;
     const matte = await this.matte(layer, sequential);
-    if (lut || matte) {
+    const adjust = hasAdjustments(layer.effects);
+    if (lut || matte || adjust || item.key) {
       const data = pic.getImageData(0, 0, r.w, r.h);
       if (lut && item.lut) applyCube(lut, data.data, item.lut.intensity);
+      if (adjust) {
+        // The vignette's centre: the frame for a letterboxed primary picture, as ffmpeg sees it; else the picture
+        const fitted = layer.overlay || isShapedPicture(item);
+        applyAdjustments(
+          data.data,
+          r.w,
+          r.h,
+          layer.effects!,
+          fitted ? undefined : { x: r.x, y: r.y, width: w, height: h },
+        );
+      }
+      if (item.key) applyKey(data.data, item.key);
       if (matte) {
         const m = this.canvas('matte', r.w, r.h);
+        m.save();
+        mirror(m, item.flip, r.w, r.h);
         m.drawImage(matte as Frame, r.x, r.y, r.w, r.h, 0, 0, r.w, r.h);
+        m.restore();
         const md = m.getImageData(0, 0, r.w, r.h).data;
         const px = data.data;
         for (let i = 0; i < px.length; i += 4) {
@@ -264,6 +362,7 @@ export class Compositor {
     }
     const tr = layer.transform ?? { x: 0.5, y: 0.5, scale: 1, rotation: 0, opacity: 1 };
     ctx.save();
+    if (!layer.overlay) clipWipe(ctx, layer.wipe, w, h);
     ctx.globalAlpha = layer.overlay ? tr.opacity : tr.opacity * layer.opacity;
     ctx.translate(tr.x * w, tr.y * h);
     if (tr.rotation) ctx.rotate((tr.rotation * Math.PI) / 180);
@@ -274,6 +373,87 @@ export class Compositor {
       r.w * tr.scale,
       r.h * tr.scale,
     );
+    ctx.restore();
+  }
+
+  /** A layer as the canvas draws it over what is below: shaped or letterboxed, then its fade's black. */
+  private async drawLayer(
+    ctx: Ctx2D,
+    layer: VideoLayer,
+    img: Frame,
+    sequential: boolean,
+    w: number,
+    h: number,
+  ): Promise<void> {
+    if (shaped(layer)) {
+      // Over black (a primary picture) or over the tracks below (an overlay), as the ffmpeg graph composites them
+      await this.drawShaped(ctx, layer, img, sequential, w, h);
+      if (!layer.overlay && layer.dim < 1) {
+        ctx.save();
+        clipWipe(ctx, layer.wipe, w, h);
+        ctx.globalAlpha = layer.opacity * (1 - layer.dim);
+        ctx.fillStyle = '#000';
+        ctx.fillRect(0, 0, w, h);
+        ctx.restore();
+      }
+      return;
+    }
+    ctx.save();
+    ctx.globalAlpha = layer.opacity;
+    ctx.filter = cssFilter(layer.effects);
+    clipWipe(ctx, layer.wipe, w, h);
+    if (layer.item.crop) {
+      // Reframed around the subject, the same window as the ffmpeg crop (docs/design/finishing.md).
+      const r = cropWindow(img, w / h, layer.item.crop.focus, layer.sourceTime);
+      ctx.drawImage(img, r.x, r.y, r.width, r.height, 0, 0, w, h);
+    } else drawContain(ctx, img, w, h);
+    ctx.filter = 'none';
+    if (layer.dim < 1) {
+      ctx.globalAlpha = layer.opacity * (1 - layer.dim);
+      ctx.fillStyle = '#000';
+      ctx.fillRect(0, 0, w, h);
+    }
+    ctx.restore();
+  }
+
+  /**
+   * A primary layer of a dip, a slide or the circle: its whole frame (letterbox included) in a scratch, then mixed
+   * as xfade mixes the two frames (docs/design/editing-tools.md#transitions).
+   */
+  private async drawWholeFrame(
+    ctx: Ctx2D,
+    layer: VideoLayer,
+    img: Frame,
+    sequential: boolean,
+    w: number,
+    h: number,
+  ): Promise<void> {
+    const tr = layer.transition!;
+    const frame = this.canvas('frame', w, h);
+    frame.fillStyle = '#000';
+    frame.fillRect(0, 0, w, h);
+    await this.drawLayer(frame, { ...layer, opacity: 1, transition: undefined }, img, sequential, w, h);
+    const whole = this.scratch.frame!;
+    ctx.save();
+    if (tr.type === 'dip_to_black' || tr.type === 'dip_to_white') {
+      ctx.globalAlpha = layer.opacity;
+      ctx.drawImage(whole, 0, 0, w, h);
+    } else if (tr.type === 'circle_open' && tr.role === 'in') {
+      // The incoming frame inside the soft circle: its alpha from the gradient (destination-in)
+      const circle = this.canvas('circle', w, h);
+      circle.drawImage(whole, 0, 0, w, h);
+      const g = circleStops(w, h, tr.progress);
+      const gradient = circle.createRadialGradient(g.cx, g.cy, 0, g.cx, g.cy, g.radius);
+      for (const s of g.stops) gradient.addColorStop(s.offset, `rgba(0,0,0,${s.weight})`);
+      circle.globalCompositeOperation = 'destination-in';
+      circle.fillStyle = gradient;
+      circle.fillRect(0, 0, w, h);
+      circle.globalCompositeOperation = 'source-over';
+      ctx.drawImage(this.scratch.circle!, 0, 0, w, h);
+    } else if ((SLIDE_TYPES as readonly string[]).includes(tr.type)) {
+      const at = slideOffsets(tr.type as SlideType, tr.progress, w, h)[tr.role];
+      ctx.drawImage(whole, at[0], at[1], w, h);
+    } else ctx.drawImage(whole, 0, 0, w, h);
     ctx.restore();
   }
 
@@ -299,9 +479,11 @@ export class Compositor {
 
   /** Renders one frame. `sequential` = playback/export (iterators); otherwise random access (scrubbing). */
   async render(ctx: Ctx2D, time: number, w: number, h: number, sequential: boolean): Promise<void> {
-    if (this.gpu && !this.gpu.lost) {
+    const state = activeAt(this.timeline, time);
+    // Dips and the circle are mixed per pixel by the canvas, also when WebGPU draws the other frames
+    if (this.gpu && !this.gpu.lost && !needsCanvas(state)) {
       try {
-        await this.renderGpu(ctx, time, w, h, sequential);
+        await this.renderGpu(ctx, state, w, h, sequential);
         return;
       } catch (err) {
         // The canvas draws the rest of the session
@@ -309,49 +491,19 @@ export class Compositor {
         this.gpu = null;
       }
     }
-    const state = activeAt(this.timeline, time);
     const frames = await Promise.all(state.video.map((l) => this.frame(l.item, l.sourceTime, sequential)));
     if (sequential) this.dropCursors(state);
     ctx.save();
     ctx.globalAlpha = 1;
-    ctx.fillStyle = '#000';
+    // Under the primary pictures: black, or white in a dip to white
+    ctx.fillStyle = state.fill ?? '#000';
     ctx.fillRect(0, 0, w, h);
     for (const [i, layer] of state.video.entries()) {
-      const img = frames[i];
+      const img = frames[i] as Frame | null | undefined;
       if (!img) continue;
-      if (shaped(layer)) {
-        // Over black (a primary picture) or over the tracks below (an overlay), as the ffmpeg graph composites them
-        await this.drawShaped(ctx, layer, img as Frame, sequential, w, h);
-        if (!layer.overlay && layer.dim < 1) {
-          ctx.save();
-          ctx.globalAlpha = layer.opacity * (1 - layer.dim);
-          ctx.fillStyle = '#000';
-          ctx.fillRect(0, 0, w, h);
-          ctx.restore();
-        }
-        continue;
-      }
-      ctx.save();
-      ctx.globalAlpha = layer.opacity;
-      ctx.filter = cssFilter(layer.effects);
-      if (layer.wipe !== undefined) {
-        ctx.beginPath();
-        ctx.rect(0, 0, w * layer.wipe, h);
-        ctx.clip();
-      }
-      const frame = img as CanvasImageSource & { width: number; height: number };
-      if (layer.item.crop) {
-        // Reframed around the subject, the same window as the ffmpeg crop (docs/design/finishing.md).
-        const r = cropWindow(frame, w / h, layer.item.crop.focus, layer.sourceTime);
-        ctx.drawImage(frame, r.x, r.y, r.width, r.height, 0, 0, w, h);
-      } else drawContain(ctx, frame, w, h);
-      ctx.filter = 'none';
-      if (layer.dim < 1) {
-        ctx.globalAlpha = layer.opacity * (1 - layer.dim);
-        ctx.fillStyle = '#000';
-        ctx.fillRect(0, 0, w, h);
-      }
-      ctx.restore();
+      if (!layer.overlay && layer.transition && WHOLE_FRAME.has(layer.transition.type))
+        await this.drawWholeFrame(ctx, layer, img, sequential, w, h);
+      else await this.drawLayer(ctx, layer, img, sequential, w, h);
     }
     await this.fonts(state);
     for (const t of state.text) drawText(ctx, t, w, h);
@@ -360,17 +512,17 @@ export class Compositor {
 
   /**
    * The same frame on the GPU: each layer a draw with the canvas path's geometry (fitted rectangle, crop window,
-   * transform), effects, LUT, matte, opacity, dim and wipe; titles drawn by the canvas onto one transparent layer.
+   * transform, mirror, slide), effects, LUT, adjustments, key, matte, opacity, dim and wipe; titles drawn by the canvas
+   * onto one transparent layer.
    */
   private async renderGpu(
     ctx: Ctx2D,
-    time: number,
+    state: ActiveState,
     w: number,
     h: number,
     sequential: boolean,
   ): Promise<void> {
     const gpu = this.gpu!;
-    const state = activeAt(this.timeline, time);
     const frames = await Promise.all(state.video.map((l) => this.frame(l.item, l.sourceTime, sequential)));
     if (sequential) this.dropCursors(state);
     const draws: GpuDraw[] = [];
@@ -378,6 +530,15 @@ export class Compositor {
       const img = frames[i] as Frame | null;
       if (!img) continue;
       const item = layer.item;
+      // A slide moves the whole frame by whole pixels and clips what it draws to it
+      const tr = layer.transition;
+      const slide =
+        !layer.overlay && tr && (SLIDE_TYPES as readonly string[]).includes(tr.type)
+          ? slideOffsets(tr.type as SlideType, tr.progress, w, h)[tr.role]
+          : null;
+      const clip = slide ? slideClip(slide, w, h) : undefined;
+      const [dx, dy] = slide ?? [0, 0];
+      const wipe = layer.overlay ? undefined : layer.wipe;
       if (shaped(layer)) {
         const crop = !!item.crop;
         const r = fittedRect(item.source.media, crop, w, h);
@@ -389,46 +550,56 @@ export class Compositor {
               : { x: r.x, y: r.y, width: r.w, height: r.h };
         const cube = item.lut ? await this.pool.lut(item.lut.media).catch(() => null) : null;
         const matte = (await this.matte(layer, sequential)) as Frame | null;
-        const tr = layer.transform ?? { x: 0.5, y: 0.5, scale: 1, rotation: 0, opacity: 1 };
-        draws.push({
+        const t = layer.transform ?? { x: 0.5, y: 0.5, scale: 1, rotation: 0, opacity: 1 };
+        const fitted = layer.overlay || isShapedPicture(item);
+        const picture: GpuPicture = {
           kind: 'picture',
           source: img,
-          uv: uvOf(src, img),
+          uv: flipUv(uvOf(src, img), item.flip),
           placement: {
-            cx: tr.x * w,
-            cy: tr.y * h,
-            w: r.w * tr.scale,
-            h: r.h * tr.scale,
-            rotation: tr.rotation,
+            cx: t.x * w + dx,
+            cy: t.y * h + dy,
+            w: r.w * t.scale,
+            h: r.h * t.scale,
+            rotation: t.rotation,
           },
           effects: layer.effects,
-          opacity: layer.overlay ? tr.opacity : tr.opacity * layer.opacity,
+          opacity: layer.overlay ? t.opacity : t.opacity * layer.opacity,
           lut: cube && item.lut ? { cube, intensity: item.lut.intensity } : null,
           matte: matte
             ? {
                 source: matte,
-                uv: uvOf({ x: r.x, y: r.y, width: r.w, height: r.h }, matte),
+                uv: flipUv(uvOf({ x: r.x, y: r.y, width: r.w, height: r.h }, matte), item.flip),
                 invert: !!item.mask?.invert,
               }
             : null,
-        });
+          key: item.key ?? null,
+          vignette: vignetteOf(
+            layer.effects,
+            fitted ? { picture: [r.w, r.h] } : { frame: [w, h], origin: [dx, dy] },
+          ),
+          wipe,
+          clip,
+        };
+        draws.push(picture);
         if (!layer.overlay && layer.dim < 1)
-          draws.push({ kind: 'fill', opacity: layer.opacity * (1 - layer.dim) });
+          draws.push({ kind: 'fill', opacity: layer.opacity * (1 - layer.dim), wipe, clip });
         continue;
       }
       // Reframed around the subject (the ffmpeg crop's window), else fitted inside the frame
       const win = item.crop ? cropWindow(img, w / h, item.crop.focus, layer.sourceTime) : null;
+      const place = win ? { cx: w / 2, cy: h / 2, w, h, rotation: 0 } : containPlacement(img, w, h);
       draws.push({
         kind: 'picture',
         source: img,
         uv: win ? uvOf(win, img) : [0, 0, 1, 1],
-        placement: win ? { cx: w / 2, cy: h / 2, w, h, rotation: 0 } : containPlacement(img, w, h),
+        placement: { ...place, cx: place.cx + dx, cy: place.cy + dy },
         effects: layer.effects,
         opacity: layer.opacity,
-        wipe: layer.wipe,
+        wipe,
+        clip,
       });
-      if (layer.dim < 1)
-        draws.push({ kind: 'fill', opacity: layer.opacity * (1 - layer.dim), wipe: layer.wipe });
+      if (layer.dim < 1) draws.push({ kind: 'fill', opacity: layer.opacity * (1 - layer.dim), wipe, clip });
     }
     await this.fonts(state);
     let titles: Scratch | null = null;

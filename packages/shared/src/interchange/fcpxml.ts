@@ -1,5 +1,5 @@
 import type { MediaRef } from '../schemas/common';
-import type { Timeline } from '../schemas/timeline';
+import type { Timeline, VideoItem } from '../schemas/timeline';
 import { trackRole } from '../timeline/ops';
 import {
   clipLabel,
@@ -22,7 +22,17 @@ import {
 
 const CROSS_DISSOLVE_UID = 'FxPlug:4731E73A-8DAC-4113-9A30-AE85B1761265';
 const BASIC_TITLE_UID = '.../Titles.localized/Bumper:Opener.localized/Basic Title.localized/Basic Title.moti';
-const TRANSITION_NAME = { crossfade: 'Cross Dissolve', wipe: 'Wipe', dip_to_black: 'Dip to Black' } as const;
+const TRANSITION_NAME: Record<NonNullable<VideoItem['transitionIn']>['type'], string> = {
+  crossfade: 'Cross Dissolve',
+  wipe: 'Wipe',
+  dip_to_black: 'Dip to Black',
+  dip_to_white: 'Dip to White',
+  slide_left: 'Slide Left',
+  slide_right: 'Slide Right',
+  slide_up: 'Slide Up',
+  slide_down: 'Slide Down',
+  circle_open: 'Circle Open',
+};
 
 export function toFcpxml(t: Timeline, ctx: InterchangeContext): string {
   const fps = t.fps;

@@ -36,6 +36,7 @@
 | [design/watermark.md](design/watermark.md) | Invisible watermark algorithm, payload, registry, detection, robustness |
 | [design/provenance.md](design/provenance.md) | C2PA Content Credentials, the public detection tool, the disclosure label, consent records (EU AI Act Article 50) |
 | [design/editor.md](design/editor.md) | Timeline model and ops, the browser media engine (ffmpeg.wasm + WebCodecs), local proxies, analysis, chunked rendering, editor jobs |
+| [design/editing-tools.md](design/editing-tools.md) | Premiere Pro and CapCut tools: undo and redo, markers, snapping, moving items between tracks, copy and paste, shortcuts, track controls, the context menu, freeze frames, detached audio, mirror, slide/circle/dip-to-white transitions, color adjustments, chroma key |
 | [api/rest.md](api/rest.md) | REST API reference |
 | [testing.md](testing.md) | Test pyramid, suites, fixtures, the real-model suite, CI jobs |
 | [deployment.md](deployment.md) | Configuration, Docker, connecting mm-gateway and an external WebDAV server |
@@ -59,3 +60,4 @@
 | Workspace | A browser's project store (IndexedDB) when projects are kept in browsers. |
 | Project file | A project as one `.rideo` file (documents, history, media) to export and import. |
 | Setting | A value the studio reads from the environment or, when the environment leaves it unset, from Settings. |
+| Marker | A named, colored point on the cut's time, a snap target ([editing tools](design/editing-tools.md#markers)). |

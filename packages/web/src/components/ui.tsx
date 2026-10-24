@@ -21,6 +21,9 @@ const VARIANTS: Record<Variant, string> = {
   danger: 'bg-danger/15 text-danger border border-danger/40 hover:bg-danger/25 disabled:opacity-50',
 };
 
+/** A toggle button that is on: tinted with the accent rather than filled (the fill is for primary actions). */
+export const PRESSED = 'border-accent/50! bg-accent/15! text-accent!';
+
 /** Button styling for links (downloads) that must stay `<a>` elements. */
 export function buttonClass(variant: Variant = 'secondary', size: 'sm' | 'md' = 'md'): string {
   return cx(

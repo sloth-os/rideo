@@ -1,4 +1,14 @@
-import type { CubeLut, Effects } from '@rideo/shared';
+import {
+  type ChromaKey,
+  type CubeLut,
+  channelGains,
+  type Effects,
+  hasAdjustments,
+  hexRgb,
+  hueMatrix,
+  vignetteAngle,
+  wipeEdge,
+} from '@rideo/shared';
 
 /**
  * The CPU half of WebGPU compositing (docs/design/engine-performance.md#webgpu-compositing): where each quad goes,
@@ -56,34 +66,83 @@ export function uvOf(
   return [rect.x / size.width, rect.y / size.height, rect.width / size.width, rect.height / size.height];
 }
 
+/** A UV rectangle mirrored left–right and/or upside down (docs/design/editing-tools.md#mirror). */
+export function flipUv(uv: UvRect, flip: { x?: boolean; y?: boolean } | undefined): UvRect {
+  let [u, v, w, h] = uv;
+  if (flip?.x) [u, w] = [u + w, -w];
+  if (flip?.y) [v, h] = [v + h, -h];
+  return [u, v, w, h];
+}
+
+/** The part of the output a sliding frame covers: the frame moved by whole pixels, inside the output. */
+export function slideClip(
+  offset: readonly [number, number],
+  w: number,
+  h: number,
+): [number, number, number, number] {
+  const x0 = Math.max(0, offset[0]);
+  const y0 = Math.max(0, offset[1]);
+  return [x0, y0, Math.max(0, Math.min(w, w + offset[0]) - x0), Math.max(0, Math.min(h, h + offset[1]) - y0)];
+}
+
+/**
+ * Where a vignette is computed (docs/design/editing-tools.md#color-adjustments): over the frame for a letterboxed
+ * primary picture (output pixels less the frame's origin), over the picture's own pixels otherwise.
+ */
+export interface GpuVignette {
+  angle: number;
+  space: 'frame' | 'picture';
+  width: number;
+  height: number;
+  origin: [number, number];
+}
+
+export function vignetteOf(
+  effects: Effects | undefined,
+  at: { picture: [number, number] } | { frame: [number, number]; origin: [number, number] },
+): GpuVignette | null {
+  const angle = vignetteAngle(effects);
+  if (angle <= 0) return null;
+  return 'picture' in at
+    ? { angle, space: 'picture', width: at.picture[0], height: at.picture[1], origin: [0, 0] }
+    : { angle, space: 'frame', width: at.frame[0], height: at.frame[1], origin: at.origin };
+}
+
 /** The picture fitted inside the frame, centred (the canvas path's `drawContain`). */
 export function containPlacement(img: { width: number; height: number }, w: number, h: number): Placement {
   const k = Math.min(w / img.width, h / img.height);
   return { cx: w / 2, cy: h / 2, w: img.width * k, h: img.height * k, rotation: 0 };
 }
 
-/** A draw of the WebGPU compositor. */
-export type GpuDraw =
-  | {
-      kind: 'picture';
-      source: CanvasImageSource & { width: number; height: number };
-      uv: UvRect;
-      placement: Placement;
-      effects?: Effects;
-      opacity: number;
-      lut?: { cube: CubeLut; intensity: number } | null;
-      matte?: {
-        source: CanvasImageSource & { width: number; height: number };
-        uv: UvRect;
-        invert: boolean;
-      } | null;
-      /** The share of the frame's width left of the wipe (the canvas path's clip). */
-      wipe?: number;
-    }
-  | { kind: 'fill'; opacity: number; wipe?: number };
+/** A picture drawn by the WebGPU compositor. */
+export interface GpuPicture {
+  kind: 'picture';
+  source: CanvasImageSource & { width: number; height: number };
+  uv: UvRect;
+  placement: Placement;
+  effects?: Effects;
+  opacity: number;
+  lut?: { cube: CubeLut; intensity: number } | null;
+  matte?: {
+    source: CanvasImageSource & { width: number; height: number };
+    uv: UvRect;
+    invert: boolean;
+  } | null;
+  key?: ChromaKey | null;
+  vignette?: GpuVignette | null;
+  /** The wipe's progress: the draw shows right of its edge (the canvas path's clip). */
+  wipe?: number;
+  /** Output pixels the draw is limited to (a sliding frame). */
+  clip?: [number, number, number, number];
+}
 
-/** Floats per draw in the uniform buffer: eight vec4s (see gpu.ts's `Layer`). */
-export const LAYER_FLOATS = 32;
+/** A draw of the WebGPU compositor: a picture, or black over the frame (a fade). */
+export type GpuDraw =
+  | GpuPicture
+  | { kind: 'fill'; opacity: number; wipe?: number; clip?: [number, number, number, number] };
+
+/** Floats per draw in the uniform buffer: sixteen vec4s (see gpu.ts's `Layer`). */
+export const LAYER_FLOATS = 64;
 
 /** The shader's numbers of a draw, laid out as the WGSL `Layer` struct. */
 export function layerUniforms(draw: GpuDraw, out: { width: number; height: number }): Float32Array {
@@ -115,17 +174,44 @@ export function layerUniforms(draw: GpuDraw, out: { width: number; height: numbe
   );
   u.set([...(lut?.cube.domainMin ?? [0, 0, 0]), 0], 24);
   u.set([...(lut?.cube.domainMax ?? [1, 1, 1]), 0], 28);
+  // The RGB adjustments in the ffmpeg chain's integer steps: gains, tone, hue, vignette
+  // (docs/design/editing-tools.md#color-adjustments)
+  const adjust = hasAdjustments(e);
+  const gains = channelGains(e) ?? [1, 1, 1];
+  const hue = hueMatrix(e?.hue ?? 0) ?? [1, 0, 0, 0, 1, 0, 0, 0, 1];
+  const vig = draw.vignette;
+  const key = draw.key;
+  u.set([...gains, adjust ? 1 : 0], 32);
+  u.set([e?.shadows ?? 0, e?.highlights ?? 0, vig?.angle ?? 0, vig?.space === 'picture' ? 1 : 0], 36);
+  u.set([hue[0]!, hue[1]!, hue[2]!, key ? 1 : 0], 40);
+  u.set([hue[3]!, hue[4]!, hue[5]!, key?.similarity ?? 0], 44);
+  u.set([hue[6]!, hue[7]!, hue[8]!, key?.blend ?? 0], 48);
+  u.set([...(key ? hexRgb(key.color).map((c) => c / 255) : [0, 0, 0]), 0], 52);
+  u.set([vig?.width ?? 1, vig?.height ?? 1, vig?.origin[0] ?? 0, vig?.origin[1] ?? 0], 56);
   return u;
 }
 
-/** The scissor of a wiped draw (the canvas path clips to the left part of the frame). */
-export function wipeScissor(
-  wipe: number | undefined,
+/**
+ * The scissor of a draw: the part right of a wipe's edge (xfade's wipeleft), inside a sliding frame's clip, else the
+ * whole output.
+ */
+export function scissorOf(
+  draw: Pick<GpuPicture, 'wipe' | 'clip'>,
   w: number,
   h: number,
 ): [number, number, number, number] {
-  if (wipe === undefined) return [0, 0, w, h];
-  return [0, 0, Math.max(0, Math.min(w, Math.round(w * wipe))), h];
+  let x0 = 0;
+  let y0 = 0;
+  let x1 = w;
+  let y1 = h;
+  if (draw.wipe !== undefined) x0 = Math.min(w, wipeEdge(draw.wipe, w));
+  if (draw.clip) {
+    x0 = Math.max(x0, draw.clip[0]);
+    y0 = Math.max(y0, draw.clip[1]);
+    x1 = Math.min(x1, draw.clip[0] + draw.clip[2]);
+    y1 = Math.min(y1, draw.clip[1] + draw.clip[3]);
+  }
+  return [x0, y0, Math.max(0, x1 - x0), Math.max(0, y1 - y0)];
 }
 
 /** IEEE half floats (the LUT texture's `rgba16float`), rounded to nearest. */
