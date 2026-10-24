@@ -86,7 +86,8 @@ RIDEO_TEST_WEBDAV_URL=http://rideo:rideo@localhost:8080/ npx vitest run --projec
   for any accent, the brand tokens' WCAG contrast, merging); ustar headers (long names in the prefix, base-256 sizes,
   checksums), the entries a project file carries and the unsafe ones it refuses, the manifest, and the history
   rewrite of a copy (every commit names the new id, other documents and subtrees shared, merges kept).
-- **server**: repository commit, log, diff, restore, branches, tags, coalescing and GC on `MemoryBackend`;
+- **server**: repository commit, log, diff, restore, branches, tags, coalescing and GC on `MemoryBackend`; the work
+  tree's external edits (a listing that leaves out a file deletes nothing, a confirmed deletion does);
   job queue (lanes, priorities, dedupe, retry classification, cancel propagation, restart recovery; the
   `client` lane: claim order, leases, heartbeats, expiry and session release, cancel, staged files);
   consistency gate scoring, preconditions R1/R2, stale detection R6, override rules R8, fail-closed R9; LLM

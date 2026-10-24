@@ -173,8 +173,11 @@ Assets are meant to be managed over WebDAV, so the work tree is a real editing c
    - valid → committed with actor `{kind: "webdav"}` and message `External edit via WebDAV: <paths>`;
    - invalid → not committed; a `syncIssue` `{path, error}` is published and shown in the UI; the file stays
      untouched until it is fixed or `sync {discardInvalid: true}` re-materializes HEAD;
-   - deleted document → committed as a deletion (restorable from history). `project.json` cannot be deleted
-     and is re-materialized.
+   - deleted document → committed as a deletion (restorable from history), but only once a direct `stat` of the
+     file confirms it is gone. A listing can lag a write (OpenList caches directory listings): a document the
+     listing leaves out but `stat` finds is compared like any other file, and the miss is logged
+     (`work-tree listing missed a file`, with the project and path). `project.json` cannot be deleted and is
+     re-materialized.
 3. **Inbox**: files dropped into `inbox/` are imported on sync. Images, video and audio become resources
    (`role` inferred: `source` for videos in edit projects, `reference` for images, `music` for audio) and
    their bytes move to `media/uploads/`.

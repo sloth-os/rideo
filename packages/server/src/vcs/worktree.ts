@@ -147,6 +147,15 @@ export class Worktree implements Materializer {
         if (!e.isDir && docSpecForPath(`${dir}/${e.name}`)) found.set(`${dir}/${e.name}`, e);
       }
     }
+    // A listing can lag a write (OpenList caches directory listings): a file it leaves out is gone only when a
+    // direct stat says so; one that is there is compared like the others (docs/design/storage-webdav.md#external-edits).
+    for (const path of Object.keys(index)) {
+      if (found.has(path)) continue;
+      const st = await this.storage.stat(this.layout.doc(this.projectId, path));
+      if (!st || st.isDir) continue;
+      this.log?.warn({ projectId: this.projectId, path }, 'work-tree listing missed a file');
+      found.set(path, st);
+    }
     const changes: Record<string, unknown | null> = {};
     const issues: { path: string; error: string }[] = [];
     for (const [path, st] of found) {

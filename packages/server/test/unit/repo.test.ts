@@ -1,6 +1,13 @@
-import { type Actor, docPath, type Project, type Screenplay, type Timeline } from '@rideo/shared';
+import {
+  type Actor,
+  type Character,
+  docPath,
+  type Project,
+  type Screenplay,
+  type Timeline,
+} from '@rideo/shared';
 import * as f from '@rideo/shared/testing';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppError } from '../../src/errors';
 import { Layout } from '../../src/storage/layout';
 import { MemoryBackend } from '../../src/storage/memory';
@@ -273,5 +280,33 @@ describe('work tree', () => {
     await storage.delete(layout.doc(project.id, docPath.character(c.id)));
     const afterDelete = await wt.scan(snap.docs);
     expect(afterDelete.changes[docPath.character(c.id)]).toBeNull();
+  });
+
+  it('deletes nothing a lagging listing leaves out, and still sees edits of it', async () => {
+    const c = f.character();
+    await repo.transact((tx) => tx.set(docPath.character(c.id), c), { actor: user, message: 'Add' });
+    const file = layout.doc(project.id, docPath.character(c.id));
+    // The server's listing has not caught up with the write (OpenList caches directory listings)
+    const lagging = new Proxy(storage, {
+      get: (target, prop) =>
+        prop === 'list'
+          ? async (dir: string) => (await target.list(dir)).filter((e) => e.name !== `${c.id}.json`)
+          : Reflect.get(target, prop, target),
+    });
+    const warn = vi.fn();
+    const wt = new Worktree(lagging, layout, project.id, { warn });
+    const snap = await repo.snapshot();
+    expect((await wt.scan(snap.docs)).changes).toEqual({});
+    expect(warn).toHaveBeenCalledWith(
+      { projectId: project.id, path: docPath.character(c.id) },
+      'work-tree listing missed a file',
+    );
+    await storage.write(file, JSON.stringify({ ...c, name: 'Mira Keeper' }));
+    expect(((await wt.scan(snap.docs)).changes[docPath.character(c.id)] as Character).name).toBe(
+      'Mira Keeper',
+    );
+    // a file that is really gone is still a deletion
+    await storage.delete(file);
+    expect((await wt.scan(snap.docs)).changes[docPath.character(c.id)]).toBeNull();
   });
 });
