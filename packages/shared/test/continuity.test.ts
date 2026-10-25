@@ -16,6 +16,7 @@ import {
   dialogueDirection,
   fitDialogue,
   heardShares,
+  inFrameLine,
   LINE_HEARD_RATIO,
   NEGATIVE_PROMPT_MAX,
   negativePromptFor,
@@ -231,6 +232,42 @@ describe('prompt version 2 (docs/design/continuity.md#prompts-version-2)', () =>
     // Version 1 projects keep their contexts (and their board hashes).
     const old = shotContextOf(b, { ...docs, project: f.project({ settings: v1 }) });
     expect(old.scene).toBeUndefined();
+  });
+
+  it('says who is in frame when a shot shows only part of its clip’s cast, without it in the board hash', () => {
+    const rosie = f.character({ name: 'Rosie' });
+    const sammy = f.character({ name: 'Sammy' });
+    const both = f.shot({ index: 0, characterIds: [sammy.id, rosie.id] });
+    const single = f.shot({ index: 1, characterIds: [rosie.id], description: 'Rosie points at the chart' });
+    const insert = f.shot({ index: 2, characterIds: [], description: 'The size chart' });
+    const clip = f.clip({ shots: [both, single, insert] });
+    const docs = f.docs({
+      project: f.project({ settings: v2 }),
+      characters: { [rosie.id]: rosie, [sammy.id]: sammy },
+      clips: { [clip.id]: clip },
+    });
+    const ctx = shotContextOf(single, docs);
+    expect(ctx.offscreen).toEqual(['Sammy']);
+    expect(inFrameLine(ctx)).toBe('In frame: only Rosie; Sammy is out of frame.');
+    expect(compileShotPrompt(ctx, 'keyframe')).toContain('In frame: only Rosie; Sammy is out of frame.');
+    expect(compileShotPrompt(ctx, 'video')).toContain('In frame: only Rosie; Sammy is out of frame.');
+    expect(inFrameLine(shotContextOf(insert, docs))).toBe('No characters in frame.');
+    expect(inFrameLine(shotContextOf(both, docs))).toBeNull();
+    expect(compileShotPrompt(shotContextOf(both, docs), 'keyframe')).not.toContain('In frame');
+    expect(inFrameLine({ characters: [rosie], offscreen: ['Sammy', 'Mei', 'Bao'] })).toBe(
+      'In frame: only Rosie; Sammy, Mei and Bao are out of frame.',
+    );
+    // A neighbour that changes its cast does not make this board outdated
+    expect(boardPromptHash({ ...ctx, offscreen: [] })).toBe(boardPromptHash(ctx));
+    // Multi-shot segments say it too
+    const req = compileMultiShotRequest([shotContextOf(both, docs), ctx], {
+      referenceUris: [],
+      attempt: 0,
+    });
+    expect((req.input[0] as { text: string }).text).toContain(
+      'Shot 2 (5 s): Rosie points at the chart. Action:',
+    );
+    expect((req.input[0] as { text: string }).text).toContain('In frame: only Rosie; Sammy is out of frame.');
   });
 
   it('keeps multi-shot segments free of the no-cut line', () => {

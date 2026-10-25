@@ -99,6 +99,12 @@ them.
 **Continuing the previous shot.** A cut inside a scene whose previous shot has an end state adds `Continues from the
 previous shot: <end state>.`; a continuous shot starts from the previous last frame as before (R5).
 
+**Who is in frame.** A shot that shows only part of its clip's cast says so after its characters: `In frame: only
+Rosie; Sammy is out of frame.` (or `No characters in frame.` for a shot of none). The scene reference frame shows the
+whole cast, and a single often names the one it looks at ("her eyeline is toward Sammy"): in the panda demo the image
+model put Sammy into Rosie's close-up twice before the line was added. Like the scene reference, the line comes from
+the shot's neighbours, so the board's prompt hash leaves it out.
+
 **Video prompt blocks.** Following the prompt guides of current video models (Wan 3.0, Veo, Kling), the video prompt
 is a sequence of short blocks; a model given a first frame needs motion, story and sound more than a description of
 what it already sees:
@@ -107,7 +113,7 @@ what it already sees:
 <style header> <scene line>
 One continuous shot, no cuts. <description>. Action: <action>. <continues from …>
 Camera: <framing>, <move>; <lens>.
-Characters: <compact identity: name, who they are, what they wear> …
+Characters: <compact identity: name, who they are, what they wear> …  In frame: only <names>; <others> out of frame.
 Dialogue: Sammy says, in a warm, bright young male voice: "We did it!" Lip sync.      | No dialogue.
 Sound: natural ambient sound of the place and the action; no background music.
 Physics: real weight, gravity and momentum; bodies, feet and equipment keep contact with the ground; objects keep their shape and number.

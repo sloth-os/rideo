@@ -7,6 +7,7 @@ import {
   dialogueBlockV2,
   elementLines,
   identityFragment,
+  inFrameLine,
   negativePromptFor,
   PHYSICS_LINE,
   promptVersionOf,
@@ -78,7 +79,13 @@ function shotLine(ctx: ShotContext, k: number): string {
   const label = `Shot ${k + 1} (${Number(ctx.shot.durationSec.toFixed(1))} s):`;
   if (promptVersionOf(ctx.settings) >= 2) {
     const dialogue = dialogueBlockV2(ctx);
-    return [label, ...shotBodyV2(ctx, 'video'), ...(dialogue ? [dialogue] : [])].join(' ');
+    const inFrame = inFrameLine(ctx);
+    return [
+      label,
+      ...shotBodyV2(ctx, 'video'),
+      ...(inFrame ? [inFrame] : []),
+      ...(dialogue ? [dialogue] : []),
+    ].join(' ');
   }
   // The shot's own prompt without the style header, the cast and the elements (those are said once).
   const full = compileShotPrompt({ ...ctx, characters: [], elements: [] }, 'video');

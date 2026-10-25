@@ -37,8 +37,15 @@ export function shotContextOf(shot: Shot, docs: BoardDocs, clip?: Clip): ShotCon
   const owner = clip ?? Object.values(docs.clips ?? {}).find((c) => c.shots.some((s) => s.id === shot.id));
   const scene = owner?.sceneId ? docs.screenplay?.scenes.find((x) => x.id === owner.sceneId) : undefined;
   const previous = owner?.shots.find((s) => s.index === shot.index - 1);
+  // The clip's cast who are not in this shot: the scene reference frame shows them all
+  const here = new Set(shot.characterIds);
+  const offscreen = [...new Set((owner?.shots ?? []).flatMap((s) => s.characterIds))]
+    .filter((id) => !here.has(id))
+    .map((id) => docs.characters[id]?.name)
+    .filter((n): n is string => !!n);
   return {
     ...ctx,
+    offscreen,
     scene: scene
       ? {
           heading: scene.heading,
@@ -53,12 +60,13 @@ export function shotContextOf(shot: Shot, docs: BoardDocs, clip?: Clip): ShotCon
 
 /**
  * Hash of what a frame is generated from: the keyframe prompt and the negative prompt. What the shot's neighbours lend
- * it is left out: the scene reference image (whether one was at hand depends on the order of generation) and the
- * previous shot's end state (moving a frame on the board must not make the frames around it outdated).
+ * it is left out: the scene reference image (whether one was at hand depends on the order of generation), the
+ * previous shot's end state and who is out of frame (moving or editing a frame on the board must not make the frames
+ * around it outdated).
  */
 export function boardPromptHash(ctx: ShotContext): string {
   return fnv1a32(
-    `${compileShotPrompt({ ...ctx, sceneReference: false, previousEndState: null }, 'keyframe')}\n${ctx.shot.negativePrompt ?? ''}`,
+    `${compileShotPrompt({ ...ctx, sceneReference: false, previousEndState: null, offscreen: [] }, 'keyframe')}\n${ctx.shot.negativePrompt ?? ''}`,
   ).toString(16);
 }
 

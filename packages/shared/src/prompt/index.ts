@@ -169,6 +169,18 @@ export interface ShotContext {
   previousEndState?: string | null;
   /** Version 2: the keyframe request ends with the scene reference frame. */
   sceneReference?: boolean;
+  /** Version 2: the clip's cast who are not in this shot, by name (docs/design/continuity.md#prompts-version-2). */
+  offscreen?: string[];
+}
+
+/** Version 2: who is in frame, when the shot shows only part of its clip's cast; null otherwise. */
+export function inFrameLine(ctx: Pick<ShotContext, 'characters' | 'offscreen'>): string | null {
+  const away = ctx.offscreen ?? [];
+  if (!away.length) return null;
+  if (!ctx.characters.length) return 'No characters in frame.';
+  const list = (names: string[]) =>
+    names.length < 3 ? names.join(' and ') : `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`;
+  return `In frame: only ${list(ctx.characters.map((c) => c.name))}; ${list(away)} ${away.length === 1 ? 'is' : 'are'} out of frame.`;
 }
 
 export function promptVersionOf(settings: Pick<ProjectSettings, 'generation'>): PromptVersion {
@@ -320,6 +332,8 @@ function compileShotPromptV2(
         : `Characters (keep identities exactly as in the first frame and the reference images): ${ctx.characters.map((c) => compactIdentity(c, shot)).join(' ')}`,
     );
   }
+  const inFrame = inFrameLine(ctx);
+  if (inFrame) lines.push(inFrame);
   lines.push(...elementLines(ctx.elements ?? []));
   if (mode === 'keyframe') {
     if (ctx.sceneReference) lines.push(SCENE_REFERENCE_PHRASE);
