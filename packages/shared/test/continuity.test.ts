@@ -400,6 +400,20 @@ describe('the sound check (docs/design/continuity.md#quality-checks-in-the-gate)
     expect(heardShares(['...'], '')).toEqual([1]);
   });
 
+  it('reads an answer given as a list: the whole answer as its only item, or just the utterances', () => {
+    expect(SoundCheckOutputSchema.parse([{ speech: [{ text: 'Hi' }], music: true }])).toMatchObject({
+      speech: [{ text: 'Hi' }],
+      music: true,
+    });
+    expect(
+      SoundCheckOutputSchema.parse([
+        { text: 'Look at the mountain', speaker: 'Rosie' },
+        { text: 'So big', speaker: 'Sammy' },
+      ]),
+    ).toMatchObject({ speech: [{ speaker: 'Rosie' }, { speaker: 'Sammy' }], music: false, issues: [] });
+    expect(SoundCheckOutputSchema.parse([])).toMatchObject({ speech: [] });
+  });
+
   it('passes when every line is heard and says who spoke it', () => {
     const v = soundVerdict({
       lines,

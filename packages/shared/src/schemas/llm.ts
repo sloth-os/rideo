@@ -513,10 +513,22 @@ const flag = z
   .catch(false);
 
 /**
+ * A sound check answered as a list (omni models do not always keep to JSON mode): the whole answer as its only item,
+ * or just the utterances.
+ */
+function soundAnswer(v: unknown): unknown {
+  if (!Array.isArray(v)) return v;
+  const first = v[0] as Record<string, unknown> | undefined;
+  if (v.length === 1 && first && typeof first === 'object' && ('speech' in first || 'music' in first))
+    return first;
+  return { speech: v };
+}
+
+/**
  * What the audio-visual model heard in a take (`sound.check`, docs/design/continuity.md#quality-checks-in-the-gate):
  * lenient, `soundVerdict` judges it.
  */
-export const SoundCheckOutputSchema = z.object({
+const SoundCheckObjectSchema = z.object({
   speech: z
     .array(
       z.object({
@@ -535,7 +547,8 @@ export const SoundCheckOutputSchema = z.object({
   score: z.coerce.number().min(0).max(1).optional().catch(undefined),
   issues: z.array(z.string().max(300)).max(10).catch([]).default([]),
 });
-export type SoundCheckOutput = z.infer<typeof SoundCheckOutputSchema>;
+export const SoundCheckOutputSchema = z.preprocess(soundAnswer, SoundCheckObjectSchema);
+export type SoundCheckOutput = z.infer<typeof SoundCheckObjectSchema>;
 
 export interface SoundCheckInput {
   shot: { description: string; action: string; place: string; durationSec: number };
