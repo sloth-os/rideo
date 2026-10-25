@@ -241,8 +241,22 @@ export class ProjectService extends Service {
 
   async remove(actor: Actor, projectId: string): Promise<void> {
     await this.deps.projects.existing(projectId);
-    const target = `${this.deps.layout.trashDir()}/${projectId}-${Date.now()}`;
-    await this.deps.storage.move(this.deps.layout.project(projectId), target);
+    const at = Date.now();
+    const folder = this.deps.layout.project(projectId);
+    let target = `${this.deps.layout.trashDir()}/${projectId}-${at}`;
+    try {
+      await this.deps.storage.move(folder, target);
+    } catch (err) {
+      // Some WebDAV servers rename within a folder but cannot move to another (OpenList on cloud drives answers 500):
+      // the folder is renamed where it is, to a name Rideo does not list (docs/design/storage-webdav.md)
+      if ((err as { code?: string }).code !== 'storage_error') throw err;
+      target = `${folder}.trashed-${at}`;
+      await this.deps.storage.move(folder, target);
+      this.deps.log.warn(
+        { projectId, target, err: (err as Error).message },
+        'project renamed in place: the storage cannot move it to the trash',
+      );
+    }
     this.deps.projects.forget(projectId);
     this.deps.log.info({ projectId, actor, target }, 'project moved to trash');
   }

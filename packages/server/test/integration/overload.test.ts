@@ -80,6 +80,25 @@ describe('a busy storage server', () => {
   });
 });
 
+describe('a server that cannot move a folder to another folder', () => {
+  it('deletes a project by renaming its folder where it is', async () => {
+    const p = await stack.api<{ id: string }>('POST', '/projects', {
+      kind: 'story',
+      title: 'Doomed',
+      brief: { prompt: 'a short one' },
+    });
+    // OpenList on a cloud drive: a rename in the folder works, a move into trash/ answers 500
+    dav.fail('MOVE', new RegExp(`/projects/${p.id}/?$`), { status: 500 }, 1);
+    await stack.api('DELETE', `/projects/${p.id}`);
+    await expect(stack.api('GET', `/projects/${p.id}/state`)).rejects.toMatchObject({ status: 404 });
+    expect((await stack.api<{ id: string }[]>('GET', '/projects')).some((x) => x.id === p.id)).toBe(false);
+    const listing = await (
+      await fetch(`${dav.url}/studio/projects/`, { method: 'PROPFIND', headers: { Depth: '1' } })
+    ).text();
+    expect(listing).toMatch(new RegExp(`${p.id}\\.trashed-\\d+`));
+  });
+});
+
 describe('an overloaded model provider', () => {
   it('writes the screenplay once the provider takes calls again', async () => {
     const p = await stack.api<{ id: string }>('POST', '/projects', {

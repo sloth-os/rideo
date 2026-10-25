@@ -204,7 +204,7 @@ review does not show is `403 forbidden`.
 | POST | `/api/projects` | `{kind, title, brief?: {prompt}, settings?}` | `201 Project` |
 | GET | `/api/projects/:id/state` | – | `{seq, head, docs, jobs, workflow, syncIssues}` |
 | PATCH | `/api/projects/:id` | `{title?, brief?, settings?}` (deep merge) | `Project` |
-| DELETE | `/api/projects/:id` | – | `204` (moved to `/rideo/trash/`; in a browser, to its trash, emptied after 7 days) |
+| DELETE | `/api/projects/:id` | – | `204` (moved to `/rideo/trash/`; in a browser, to its trash, emptied after 7 days; on a WebDAV server that cannot move a folder to another folder, as OpenList on some cloud drives, renamed where it is to `projects/<id>.trashed-<time>`, which Rideo does not list) |
 | GET | `/api/projects/:id/export` | – | the project file (`application/x-tar`, `<title>.rideo`, streamed) ([project files](../design/browser-storage.md#project-files-export-and-import)) |
 | POST | `/api/projects/import` | the project file (`application/octet-stream`), `?mode=new\|replace\|copy` | `201 {id, title, kind, mode, files, skipped}`; `409 conflict` when the project is already here and no mode says what to do |
 | POST | `/api/projects/:id/sync` | `{discardInvalid?}` | WebDAV sync report |

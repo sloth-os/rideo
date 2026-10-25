@@ -57,6 +57,7 @@ paths people wait for small, and does not let one bad answer become an error:
 | Commits | The objects of a commit are written concurrently (up to 8), then the ref: two round trips ([commit protocol](version-control.md#commit-protocol)). |
 | Work tree | Written behind the commits ([external edits](#external-edits)). |
 | Job records | One write at a time per job; a newer state waits for the write in flight instead of racing it (which OpenList answers with `423 Locked`). |
+| Deleted projects | Moved to `trash/`. OpenList on some cloud drives renames within a folder but answers `500` to a move into another: then the project folder is renamed where it is, to `projects/<id>.trashed-<time>`, which Rideo does not list (logged as `project renamed in place: the storage cannot move it to the trash`). |
 
 `rideo_storage_retries_total{op,reason}` counts the retries (`reason`: the status, the connection error code, or
 `missing` for a false `404`); a request that still fails is logged (`WebDAV request kept failing`, with the op, path,

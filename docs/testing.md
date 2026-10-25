@@ -226,7 +226,9 @@ RIDEO_TEST_WEBDAV_URL=http://rideo:rideo@localhost:8080/ npx vitest run --projec
   stop.
 - **Busy storage and an overloaded provider** (`overload.test.ts`): a studio on the scripted flaky WebDAV server: a
   loaded project's reads ask the storage nothing; a save goes through `423`s, a `503` and a dropped connection (the
-  retries in `/metrics`); after a restart a false 404 for the project is looked at again; the work tree catches up.
+  retries in `/metrics`); after a restart a false 404 for the project is looked at again; the work tree catches up; a
+  project deleted while the server refuses to move it into `trash/` (OpenList on a cloud drive) is renamed where it
+  is and no longer listed.
   The mock gateway turns two chat calls away (`overloadChat`): the screenplay is written anyway, with
   `rideo_llm_retries_total` counting them.
 - **Provenance** (`provenance.test.ts`): the development signer's certificate chain verifies with
