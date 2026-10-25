@@ -134,6 +134,18 @@ test('the text model’s API base URL and key are set in Settings and registered
   await expect(llm.getByTestId('settings-endpoint-llm-result')).toHaveAttribute('data-ok', 'true');
   await expect(llm.getByTestId('settings-endpoint-llm-result')).toContainText('OK');
 
+  // the audio-visual model is off until a model is named; then it follows vision, with the same key
+  const omni = page.getByTestId('settings-endpoint-omni');
+  await expect(omni).toHaveAttribute('data-status', 'off');
+  await omni.locator('input[name="RIDEO_OMNI_MODEL"]').fill('mock-omni');
+  await page.getByTestId('settings-save').click();
+  await expect(page.getByTestId('settings-savebar')).toHaveCount(0, { timeout: 30_000 });
+  await expect(omni).toHaveAttribute('data-status', 'registered');
+  await expect(omni.getByTestId('settings-endpoint-omni-shared')).toContainText('text model’s key');
+  await omni.getByTestId('settings-endpoint-omni-test').click();
+  await expect(omni.getByTestId('settings-endpoint-omni-result')).toHaveAttribute('data-ok', 'true');
+  await noHorizontalScroll(page);
+
   // a new key replaces the old one in the gateway
   await llm.getByTestId('setting-RIDEO_LLM_API_KEY').getByTestId('setting-secret-replace').click();
   await llm.locator('input[name="RIDEO_LLM_API_KEY"]').fill('sk-e2e-second');
@@ -164,6 +176,7 @@ test('the text model’s API base URL and key are set in Settings and registered
         MM_GATEWAY_ADMIN_KEY: null,
         RIDEO_LLM_PROXY_DOMAIN: null,
         RIDEO_LLM_MODEL: null,
+        RIDEO_OMNI_MODEL: null,
       },
     },
   });

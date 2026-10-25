@@ -89,7 +89,10 @@ RIDEO_TEST_WEBDAV_URL=http://rideo:rideo@localhost:8080/ npx vitest run --projec
   mean continuity, temporal jumps, candidates ranked); feedback assembly (issue times from the render timeline and the
   position in the shot, stable ids, recommendations ordered, scores falling back to the duration-weighted scenes,
   `sound` from the signals, the overall weights), unexpected cuts from scene changes against the cut points, framing
-  runs and rushed lines, the Markdown report.
+  runs and rushed lines, the Markdown report; listening: `dialogueDelivery` (each utterance counted for the shot whose
+  lines it matches best), issues placed by their time in the scene, the `dialogue` and heard `sound` scores, a
+  regenerate recommendation for a shot whose line was not heard; the sound check (`soundVerdict`: words not spelling,
+  a heard word for one line only, the wrong voice, stray speech, music, lips out of sync, merged into the verdict).
 - **shared, settings and project files** (`settings-theme.test.ts`, `settings-endpoints.test.ts`, `bundle.test.ts`):
   the settings table (each setting once, in a known group, environment-only configuration and key material kept out,
   secrets marked, `showIf` targets, option labels for every option); the endpoint table (every endpoint's settings
@@ -116,10 +119,13 @@ RIDEO_TEST_WEBDAV_URL=http://rideo:rideo@localhost:8080/ npx vitest run --projec
   job queue (lanes, priorities, dedupe, retry classification, cancel propagation, restart recovery; the
   `client` lane: claim order, leases, heartbeats, expiry and session release, cancel, staged files);
   consistency gate scoring, preconditions R1/R2, stale detection R6, override rules R8, fail-closed R9; LLM
-  adapters' request shapes and JSON repair (and audio parts for the speaker check); LLM calls made again while the
-  provider turns them away for load (`503`, `429` with its `Retry-After`, a dropped connection), giving up after the
-  retries, never for `400`, `504`, a timeout or mm-gateway's `provider_not_configured`, and a cancelled job not
-  waiting; live hub sequencing, replay and resync, and job heartbeats on the live channel (leased, lost, cancelled); config parsing (TTS and speaker-check endpoints); the ElevenLabs and OpenAI TTS clients
+  adapters' request shapes and JSON repair (and audio parts for the speaker check, video parts for the audio-visual
+  model); streamed chat completions (deltas joined, the usage of the last event, a refused `stream` asked again
+  without it but an "upstream" error not, a stream gone quiet ended by the timeout, a streamed error retryable); the
+  proxy client waiting for slow headers only as long as the call's timeout and still sending multipart uploads; LLM
+  calls made again while the provider turns them away for load (`503`, `429` with its `Retry-After`, a dropped
+  connection), giving up after the retries, never for `400`, `504` or mm-gateway's `provider_not_configured`, a
+  timeout or failed connection made a retryable `llm_error` for the job, and a cancelled job not waiting; live hub sequencing, replay and resync, and job heartbeats on the live channel (leased, lost, cancelled); config parsing (TTS, speaker-check and audio-visual endpoints); the ElevenLabs and OpenAI TTS clients
   against a fake proxy (design, save, clone, speech with timings and seeds, retryable failures, metrics); the
   speaker-check merge (V4: same, different, missing and silent voices, no judge, judge outage); sound effects
   through a fake proxy (request shape, length clamp, retryable failures, `rideo_post_audio_total`) and the
@@ -343,12 +349,15 @@ RIDEO_TEST_WEBDAV_URL=http://rideo:rideo@localhost:8080/ npx vitest run --projec
   (an unexpected cut planted in a take with `metadata.mock_jump`), a vision call per scene with strips, the film call,
   scores, issues at the right export times, the retrospective and the report on WebDAV; applying a `regenerate_shot`
   recommendation updates the shot and makes a new passing take; dismissing; on request over REST and MCP; a studio
-  without a gateway writes signals and the retrospective only.
+  without a gateway writes signals and the retrospective only. With an audio-visual model (`RIDEO_OMNI_MODEL`), each
+  scene is heard as a video: a shot whose speaker mumbles is kept after three attempts with its line not heard, and
+  its feedback has the `dialogue` score, the missing line, a regenerate recommendation and `undelivered_lines`.
 - **Continuity** (`continuity.test.ts`): a version 2 project's writing and planning inputs (the brief, the level, the
   previous shot) and outputs (lens, end state, dialogue fitted to 5 s shots), the first shot of a clip generated before
   the others with its keyframe as the scene reference of the rest, a take that jumps (`MOCK_JUMP_EVERY`) retried by
   the temporal check and a physics failure by the judge, the kept take marked when all attempts fail; version 1
-  projects unchanged.
+  projects unchanged; the sound check (an audio-visual model): every take records what was heard, and a take whose
+  line is not heard (`muffleSpeech`) is generated again.
 - **Re-check** (in `continuity.test.ts`): takes made with the judge off are `unverified`; with the judge back,
   `consistency.recheck` turns them `passed` from their evidence frames without a new generation.
 - **Observability** (`observability.test.ts`): a clip generated on the mock fills `job.usage`, the project's

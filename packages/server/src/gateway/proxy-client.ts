@@ -1,5 +1,12 @@
 import { withPrefix } from '@rideo/shared';
+import { Agent, fetch as undiciFetch } from 'undici';
 import { AppError } from '../errors';
+
+/**
+ * Connections without a header or body timeout of their own: undici's defaults (300 s, the global fetch's) end a slow
+ * answer before the call's own timeout (`RIDEO_LLM_TIMEOUT_SEC`) does (docs/design/ai-gateway.md#proxy-usage-llm-vision-stt-embeddings).
+ */
+const LONG_CALLS = new Agent({ headersTimeout: 0, bodyTimeout: 0, connectTimeout: 30_000 });
 
 /** The error of every AI call while the studio has no gateway (docs/design/settings.md#without-mm-gateway). */
 export function gatewayNotConfigured(): AppError {
@@ -54,6 +61,14 @@ export class ProxyClient {
     if (key) headers.set('authorization', `Bearer ${key}`);
     const timeout = AbortSignal.timeout(init.timeoutMs ?? this.cfg.timeoutMs ?? 180_000);
     const signal = init.signal ? AbortSignal.any([init.signal, timeout]) : timeout;
-    return fetch(url, { ...init, headers, signal });
+    // Multipart uploads (speech-to-text) keep the global fetch: undici's own does not encode the global FormData.
+    if (typeof FormData !== 'undefined' && init.body instanceof FormData)
+      return fetch(url, { ...init, headers, signal });
+    return undiciFetch(url, {
+      ...(init as Parameters<typeof undiciFetch>[1]),
+      headers: Object.fromEntries(headers),
+      signal,
+      dispatcher: LONG_CALLS,
+    }) as unknown as Promise<Response>;
   }
 }

@@ -59,6 +59,7 @@ export function credentialHeaders(provider: ProviderApiId, key: string): Record<
 export const SETTING_ENDPOINT_IDS = [
   'llm',
   'vision',
+  'omni',
   'stt',
   'embeddings',
   'tts',
@@ -85,6 +86,8 @@ export interface SettingEndpoint {
   inherits?: SettingEndpointId;
   /** Off while the base URL is empty (optional endpoints). */
   needsUrl?: boolean;
+  /** Off while the model is empty: no provider has a default, and the parent's model may not take its input. */
+  needsModel?: boolean;
   /** What a call looks like, per provider (the card shows it). */
   paths: Partial<Record<ProviderApiId, string>>;
   /** The model when none is set, per provider. */
@@ -121,6 +124,20 @@ export const SETTING_ENDPOINTS: readonly SettingEndpoint[] = [
     model: 'RIDEO_VISION_MODEL',
     inherits: 'llm',
     paths: CHAT_PATHS,
+    models: {},
+  },
+  {
+    id: 'omni',
+    group: 'ai',
+    label: 'Audio-visual model',
+    help: 'Watches video with its sound: checks that every take speaks its lines, and listens to the finished film for feedback.',
+    provider: 'RIDEO_OMNI_PROVIDER',
+    url: 'RIDEO_OMNI_PROXY_DOMAIN',
+    key: 'RIDEO_OMNI_API_KEY',
+    model: 'RIDEO_OMNI_MODEL',
+    inherits: 'vision',
+    needsModel: true,
+    paths: { openai: CHAT_PATHS.openai, gemini: CHAT_PATHS.gemini },
     models: {},
   },
   {
@@ -282,10 +299,9 @@ export function resolveEndpoints(values: Values, opts: { gateway: boolean }): Re
     else if (isProvider(chosen)) provider = chosen;
     else if (e.id === 'llm') provider = 'openai';
     else if (e.id === 'vision') provider = parent?.provider;
-    // The speaker check needs audio input, which Anthropic models do not take.
-    else if (e.id === 'voiceJudge')
-      provider = parent && parent.provider !== 'anthropic' ? parent.provider : undefined;
-    if (!provider || !e.paths[provider]) {
+    // The speaker check and the audio-visual model need audio input, which Anthropic models do not take (no path).
+    else if (e.id === 'voiceJudge' || e.id === 'omni') provider = parent?.provider;
+    if (!provider || !e.paths[provider] || (e.needsModel && !v(e.model))) {
       out[e.id] = null;
       continue;
     }

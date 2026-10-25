@@ -148,22 +148,35 @@ attempt fails them, the best take that passed identity is kept, marked with what
 | **Temporal** (inside the shot) | ffmpeg scene scores of the raw take (`select='gt(scene,0.25)'` + `metadata=print`), 320 px wide | a frame changes with a scene score of at least `TEMPORAL_JUMP_SCORE` (0.45): a single shot that jumps has a stray cut, a pop or a morph |
 | **Physics** | the judge call already made for identity also scores each frame for physical plausibility (0–1: anatomy, contact with the ground, gravity, objects keeping shape and number) with issues | the lowest frame score is below `consistency.qualityThreshold` (0.5) |
 | **Continuity** | the same call compares the frames with the scene reference frame (place, light, weather, palette) | never (advisory: shown on the take, read by feedback) |
+| **Sound** (takes with a sound track, when an [audio-visual model](settings.md) is set) | the `sound.check` task watches the take with its sound (360p, mono) and writes down what is said (the words, which character, the voice, lip sync), whether music plays and what else is heard; `soundVerdict` (shared) compares the words with the shot's lines | a line of the shot is not heard: fewer than `LINE_HEARD_RATIO` (0.6) of its words. Advisory: a line in another character's voice, speech in a shot without lines, music in a take (the film's score comes later), lips out of sync, a sound score below 0.5 |
+
+The sound check runs at the same time as the judge, so it adds no time to an attempt. A shot's lines count when the
+take carries the voices: dialogue mode `off` with `generation.includeAudio` (the video model voices the lines from the
+prompt) and `native`. TTS takes get their lines from the mix, so only music and stray speech are checked there. Without
+an audio-visual model, or when its call fails, the take is not held back (`sound: null`).
 
 The take's consistency report records them:
 
 ```ts
 report.quality = {
-  passed: boolean;                         // temporal and physics
+  passed: boolean;                         // temporal, physics and sound
   temporal: { jumps: number[]; maxScore: number } | null;   // seconds of the take; null when not measured
   physics: number | null;                  // lowest frame score
   continuity: number | null;               // mean frame score against the scene reference
+  sound: {
+    lines: { character: string; line: string; heard: number; speaker: string | null }[];  // heard: share of words
+    transcript: string;                    // everything said, as heard
+    music: boolean;
+    unexpectedSpeech: boolean;             // speech in a shot without lines
+    score: number | null;                  // the model's 0–1 for the sound as a whole
+  } | null;                                // null: not checked
   issues: string[];
 } | null;                                  // null: checks off, or a take from before them
 ```
 
 Candidates are ranked: identity passed, then quality passed, then score. Metrics:
-`rideo_quality_checks_total{check, result}`; a quality retry is logged (`video failed the quality checks`, with the
-check and the score).
+`rideo_quality_checks_total{check, result}` (`check`: `temporal`, `physics`, `sound`); a quality retry is logged
+(`video failed the quality checks`, with the check and the score).
 
 ## The panda demo
 

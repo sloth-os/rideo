@@ -3,7 +3,8 @@
 The consistency gate judges takes one at a time. Nobody judges the film until a person watches it, and by then what
 is wrong (a sun that jumps between cuts, a scene that tells nothing, skis through a leg, the same medium shot eight
 times) is spread over hours of footage. **Feedback** watches every export of a story project with the vision model,
-with the whole project in hand (screenplay, cast, shots, takes and their reports), and writes:
+or watches and listens with the [audio-visual model](settings.md) when one is set, with the whole project in hand
+(screenplay, cast, shots, takes and their reports), and writes:
 
 - **scores** for the dimensions of a good film, for each scene and for the film;
 - **issues**, each pinned to a time in the export and to the shot that made it;
@@ -14,7 +15,8 @@ with the whole project in hand (screenplay, cast, shots, takes and their reports
 
 ## Dimensions
 
-`FEEDBACK_DIMENSIONS` (shared) is the table; the model scores each 0–10, and the overall score is the weighted mean.
+`FEEDBACK_DIMENSIONS` (shared) is the table; the model scores each 0–10, and the overall score is the weighted mean of
+the dimensions that have a score.
 
 | Id | Weight | What is judged |
 |---|---|---|
@@ -26,7 +28,8 @@ with the whole project in hand (screenplay, cast, shots, takes and their reports
 | `realism` | 1 | believable light, materials, scale and depth, a camera that behaves like a camera, no AI artefacts |
 | `cinematography` | 1 | framing, composition, coverage, lens choice, camera movement |
 | `editing` | 1 | shot lengths, rhythm, cut points, transitions, no repetition |
-| `sound` | 0.5 | from measurements, not the vision model: loudness on target, no long silences or clipping, lines that fit their shots |
+| `dialogue` | 1 | heard, so only with an audio-visual model: every line spoken as written, clear for the film's dialogue level, in its character's voice, lips in sync, nothing said that the script does not say |
+| `sound` | 0.5 | measured (loudness on target, no long silences or clipping, lines that fit their shots) and, with an audio-visual model, heard (ambience that fits the place, no stray music or noise, a clean mix): the mean of both |
 
 ## How a film is watched
 
@@ -38,14 +41,19 @@ with the whole project in hand (screenplay, cast, shots, takes and their reports
    numbers from the project: shot lengths, runs of the same framing, takes in the cut by consistency state (passed,
    unverified, overridden), quality-check failures, lines faster than `WORDS_PER_SECOND`, loudness against its target,
    the length against the target. Signals become issues on their own (`source: signal`).
-2. **Frames.** For every video item of the render timeline, frames at 15%, 50% and 85% of the item, 384 px wide, side
-   by side in one labelled strip (`Shot C3·S2, 41.0–46.0 s`). Consecutive strips show each cut from both sides.
+2. **Frames, or the scene with its sound.** For every video item of the render timeline, frames at 15%, 50% and 85%
+   of the item, 384 px wide, side by side in one labelled strip (`Shot C3·S2, 41.0–46.0 s`). Consecutive strips show
+   each cut from both sides. With an audio-visual model, each scene is cut from the export instead, as a video with
+   its sound: 480p (360p past 90 s), H.264 CRF 32, mono AAC at 48 kb/s, at most 7 MB (a longer scene is encoded at the
+   bitrate that fits; one that still does not fit is watched as strips).
 3. **Scenes** (`feedback.scene`, one vision call per clip): the film (title, logline, genre, tone, style, dialogue
    level), the scene (heading, location, time of day, continuity, summary, action, dialogue), the scenes before and
    after it, the cast (compact identities), every shot (time range, description, action, camera, dialogue, who is in
-   it, its take's consistency and quality), the signals inside the scene, and the strips. The answer: scores, a
-   summary, strengths, issues (shot, dimension, severity, title, detail, where in the shot) and recommendations
-   (shot, dimension, priority, title, detail, action).
+   it, its take's consistency and quality), the signals inside the scene, and the strips or the scene's video. The
+   answer: scores, a summary, strengths, issues (shot, dimension, severity, title, detail, where in the shot) and
+   recommendations (shot, dimension, priority, title, detail, action). Watching the video, the model also scores
+   `dialogue` and `sound`, may place an issue by its time in the scene, and writes the **transcript**: every line
+   heard, with its time and speaker.
 4. **The film** (`feedback.film`, one text call): the project (logline, synopsis, outline with purposes), every
    scene's scores, summary and main issues, the signals and the run's numbers. The answer: the film's scores (the
    arc and pacing are only visible here), the summary, strengths, recommendations across scenes, and production
@@ -53,11 +61,16 @@ with the whole project in hand (screenplay, cast, shots, takes and their reports
 5. **Assembly** (deterministic): scene issues get their export time from the render timeline (the shot's item plus
    where in the shot) and keep their clip and shot; recommendations are ordered by priority, then the score of their
    dimension; ids are stable (`i1…`, `r1…`); the film's scores fall back to the duration-weighted mean of the scenes'
-   scores; `sound` is computed from the signals. The Markdown report is written and stored.
+   scores; `sound` is computed from the signals (and averaged with the heard score). The transcript is compared with
+   the lines of each shot (`dialogueDelivery`, shared): each utterance counts for one shot, the one within ±1 s whose
+   lines it matches best, and a line with fewer than `LINE_HEARD_RATIO` (0.6) of its words heard is an issue (`dialogue`, major, `source: signal`) with a `regenerate_shot`
+   recommendation unless one already names that shot; the counts are kept as `signals.dialogue`. The Markdown report
+   is written and stored.
 
 A scene call that fails after its retries leaves that scene without scores (`scenes[].error`), and the run still
 succeeds with the others; without a gateway only signals, `sound` and the retrospective are written (`model: null`).
-Cost: one vision call per clip plus one text call (a 118-shot film: 21 calls, 118 strips).
+Cost: one vision call per clip plus one text call (a 118-shot film: 21 calls, 118 strips). Listening, the scene
+calls go to the audio-visual model instead: a ten-minute film at 480p is about 250,000 input tokens.
 
 ## The document
 
@@ -69,7 +82,8 @@ type Feedback = {
   id: string; exportId: string; jobId?: string;
   status: 'running' | 'succeeded' | 'failed'; error?: string;
   createdAt: string; updatedAt: string;
-  model: string | null;                       // the vision model; null without a gateway
+  model: string | null;                       // the vision or audio-visual model; null without a gateway
+  listened: boolean;                          // the scenes were watched with their sound
   timelineCommit: string | null; durationSec: number;
   overall: number | null;                     // 0–10
   scores: Record<FeedbackDimension, number | null>;
@@ -129,6 +143,7 @@ better. Rules are data (`RETROSPECTIVE_RULES`, server), each a predicate over th
 | `unexpected_cuts` | quality | the signals found jumps inside shots |
 | `framing_runs` | quality | runs of more than three shots with the same framing |
 | `rushed_lines` | quality | lines faster than `WORDS_PER_SECOND` for their shot |
+| `undelivered_lines` | quality | lines of the script were not heard in the film (listening feedback) |
 | `target_missed` | quality | the film is more than 10% off its target length |
 
 The film call adds lessons the rules cannot see (`source: vision`). The retrospective is part of the document and of
@@ -174,5 +189,8 @@ outcome}` (applied, dismissed, stale), and the language and vision calls under `
 
 `feedback.scene` answers from the input: scores lower for shots whose quality check failed or whose take is not
 `passed`, an issue for every signal inside the scene, and a `regenerate_shot` recommendation (with a revised
-description) for the lowest shot; `feedback.film` averages the scenes and adds one lesson. Tests drive a full
+description) for the lowest shot; given a video, it scores `dialogue` and `sound` too and hears every line except
+those of shots whose description says the speaker mumbles. `feedback.film` averages the scenes and adds one lesson.
+`sound.check` hears the shot's lines the same way, music when the description asks for it, and nothing in a shot
+without lines. Tests drive a full
 export → feedback → apply → regenerate loop on it.

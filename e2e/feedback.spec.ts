@@ -48,6 +48,8 @@ test('a story export is watched by itself: scores, issues, recommendations appli
   const feedback = card.getByTestId('export-feedback');
   await expect(feedback.getByTestId('feedback-overall')).toHaveText(/\/10$/, { timeout: 120_000 });
   await expect(feedback.getByTestId('feedback-score-storytelling')).toContainText('7.0');
+  // Without an audio-visual model the film is watched, not heard
+  await expect(feedback.getByTestId('feedback-heard')).toHaveText(/^Watched by /);
   await feedback.getByTestId('show-feedback').click();
   const dialog = page.getByTestId('feedback-dialog');
   await expect(dialog.getByTestId('feedback-video')).toBeVisible();

@@ -13,6 +13,7 @@ import {
 import {
   AudioWaveform,
   Captions,
+  Clapperboard,
   MessageSquareText,
   Mic,
   PlugZap,
@@ -30,6 +31,7 @@ import { type Draft, endpointDirty } from './model';
 const ICONS: Record<SettingEndpointId, ReactNode> = {
   llm: <MessageSquareText className="size-4" />,
   vision: <ScanEye className="size-4" />,
+  omni: <Clapperboard className="size-4" />,
   stt: <Captions className="size-4" />,
   embeddings: <Search className="size-4" />,
   tts: <Mic className="size-4" />,

@@ -15,18 +15,24 @@ import {
   DIALOGUE_LEVELS,
   dialogueDirection,
   fitDialogue,
+  heardShares,
+  LINE_HEARD_RATIO,
   NEGATIVE_PROMPT_MAX,
   negativePromptFor,
   ProjectSettingsSchema,
   parseSceneScores,
   type ShotContext,
+  SoundCheckOutputSchema,
   sceneLine,
   shotContextOf,
+  soundVerdict,
   TEMPORAL_JUMP_SCORE,
   temporalVerdict,
   voicePhrase,
   WORDS_PER_SECOND,
+  withSound,
   wordsCapacity,
+  wordsOf,
 } from '../src';
 import * as f from '../src/testing/fixtures';
 
@@ -339,5 +345,109 @@ describe('quality checks (docs/design/continuity.md#quality-checks-in-the-gate)'
     expect(attemptDone(passedBad)).toBe(false);
     expect(attemptDone({ status: 'unverified', quality: null })).toBe(true);
     expect(attemptDone(failed)).toBe(false);
+  });
+});
+
+describe('the sound check (docs/design/continuity.md#quality-checks-in-the-gate)', () => {
+  const heard = (over: object) => SoundCheckOutputSchema.parse({ speech: [], ...over });
+  const lines = [
+    { character: 'Rosie', line: 'Look at the mountain, Sammy!' },
+    { character: 'Sammy', line: 'It’s so big and white.' },
+  ];
+
+  it('compares words, not spelling, and counts a heard word for one line only', () => {
+    expect(wordsOf('It’s so BIG, and white!')).toEqual(["it's", 'so', 'big', 'and', 'white']);
+    expect(heardShares(['so big', 'so big'], 'so big')).toEqual([1, 0]);
+    expect(heardShares(['so big', 'so big'], 'so big so big')).toEqual([1, 1]);
+    expect(heardShares(['Look at the mountain, Sammy!'], 'look at the mountains sammy')).toEqual([0.8]);
+    expect(heardShares(['...'], '')).toEqual([1]);
+  });
+
+  it('passes when every line is heard and says who spoke it', () => {
+    const v = soundVerdict({
+      lines,
+      heard: heard({
+        speech: [
+          { text: 'Look at the mountain, Sammy!', speaker: 'Rosie', lipSync: 0.9 },
+          { text: "It's so big and white", speaker: 'sammy', lipSync: 0.8 },
+        ],
+        score: 0.85,
+      }),
+      musicAllowed: false,
+      cast: ['Rosie', 'Sammy'],
+    });
+    expect(v.passed).toBe(true);
+    expect(v.issues).toEqual([]);
+    expect(v.sound).toMatchObject({
+      lines: [
+        { character: 'Rosie', heard: 1, speaker: 'Rosie' },
+        { character: 'Sammy', heard: 1, speaker: 'Sammy' },
+      ],
+      transcript: "Rosie: Look at the mountain, Sammy! sammy: It's so big and white",
+      music: false,
+      unexpectedSpeech: false,
+      score: 0.85,
+    });
+  });
+
+  it('fails on a line that is not heard and reports what else is wrong', () => {
+    const v = soundVerdict({
+      lines,
+      heard: heard({
+        speech: [{ text: 'Look at the mountain, Sammy!', speaker: 'Sammy', lipSync: 0.2 }],
+        music: 'true',
+        score: 0.3,
+        issues: ['an echo'],
+      }),
+      musicAllowed: false,
+      cast: ['Rosie', 'Sammy'],
+    });
+    expect(v.passed).toBe(false);
+    expect(v.sound.lines.map((l) => l.heard)).toEqual([1, 0]);
+    expect(v.issues).toEqual([
+      'Rosie’s line is spoken in Sammy’s voice',
+      'Sammy’s line is not heard (0% of its words): “It’s so big and white.”',
+      'music plays in the take (the film’s score is added later)',
+      'the lips are out of sync with the voices',
+      'poor sound (0.30)',
+      'sound: an echo',
+    ]);
+    expect(LINE_HEARD_RATIO).toBe(0.6);
+  });
+
+  it('reports speech in a shot without lines and allows music when the film wants it', () => {
+    const v = soundVerdict({
+      lines: [],
+      heard: heard({ speech: [{ text: 'hello there friend' }], music: true }),
+      musicAllowed: true,
+      cast: [],
+    });
+    expect(v.passed).toBe(true);
+    expect(v.sound.unexpectedSpeech).toBe(true);
+    expect(v.issues).toEqual(['speech in a shot without lines: “hello there friend”']);
+  });
+
+  it('merges into the quality verdict: the take passes only when the sound check passes', () => {
+    const quality = aggregateQuality({
+      frames: [{ physics: { score: 0.9 } }],
+      temporal: null,
+      threshold: 0.5,
+    });
+    const failed = soundVerdict({ lines, heard: heard({}), musicAllowed: false, cast: [] });
+    const merged = withSound(quality, failed);
+    expect(merged).toMatchObject({
+      passed: false,
+      physics: 0.9,
+      sound: { lines: [{ heard: 0 }, { heard: 0 }] },
+    });
+    expect(merged.issues).toHaveLength(2);
+    expect(
+      withSound(null, soundVerdict({ lines: [], heard: heard({}), musicAllowed: false, cast: [] })),
+    ).toMatchObject({
+      passed: true,
+      temporal: null,
+      physics: null,
+      sound: { lines: [], unexpectedSpeech: false },
+    });
   });
 });

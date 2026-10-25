@@ -23,6 +23,7 @@
     "fastify": "5.12.5",
     "mime-types": "3.0.2",
     "pdfjs-dist": "^5.7.284",
+    "undici": "8.11.2",
     "webdav": "5.11.0",
     "webdav-server": "2.6.3",
     "zod": "4.6.5"

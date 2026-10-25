@@ -136,7 +136,8 @@ Scoring:
 type ConsistencyReport = {
   status: 'passed' | 'failed' | 'unverified';
   judge: string;                 // e.g. "vision-llm:gemini-2.5-flash", "none"
-  threshold: number; score: number; attempts: number; checkedAt: string;
+  threshold: number; score: number; checkedAt: string;
+  attempts: number;              // video attempts made for the take, also when an earlier one was kept
   characters: { characterId: string; present: boolean; score: number; issues: string[] }[];
   frames: MediaRef[];            // evidence frames that were judged
 };

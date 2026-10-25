@@ -1,5 +1,5 @@
-import type { ConsistencyReport, QualityVerdict } from '../schemas/clip';
-import type { DialogueDirection } from '../schemas/llm';
+import type { ConsistencyReport, QualityVerdict, SoundReport } from '../schemas/clip';
+import type { DialogueDirection, SoundCheckOutput } from '../schemas/llm';
 import type { DialogueLevel } from '../schemas/project';
 
 /**
@@ -13,6 +13,10 @@ export const WORDS_PER_SECOND = 2.2;
 export const TEMPORAL_JUMP_SCORE = 0.45;
 /** The `select` threshold of the measurement (lower, so the highest score is known even without a jump). */
 export const TEMPORAL_SCAN_SCORE = 0.25;
+/** A line is heard when at least this share of its words is heard (docs/design/continuity.md#quality-checks-in-the-gate). */
+export const LINE_HEARD_RATIO = 0.6;
+/** A sound score (0–1) below this is reported. */
+const SOUND_SCORE_LOW = 0.5;
 
 /** What each CEFR level means for a writer (docs/design/continuity.md#storytelling). */
 export const DIALOGUE_LEVELS: Record<
@@ -184,7 +188,127 @@ export function aggregateQuality(input: {
     if (f.continuity && f.continuity.score < 0.5)
       for (const i of f.continuity.issues ?? []) issues.add(`continuity: ${i}`.slice(0, 500));
   const passed = (physics === null || physics >= input.threshold) && !input.temporal?.jumps.length;
-  return { passed, temporal: input.temporal, physics, continuity, issues: [...issues].slice(0, 20) };
+  return {
+    passed,
+    temporal: input.temporal,
+    physics,
+    continuity,
+    sound: null,
+    issues: [...issues].slice(0, 20),
+  };
+}
+
+/** Words to compare what was said with the script: lower case, letters and digits, inner apostrophes kept. */
+export function wordsOf(text: string): string[] {
+  return (
+    text
+      .normalize('NFKC')
+      .toLowerCase()
+      .match(/[\p{L}\p{N}]+(?:['’][\p{L}\p{N}]+)*/gu) ?? []
+  ).map((w) => w.replace(/’/g, "'"));
+}
+
+/**
+ * The share of each line's words found in what was heard, lines in order: a heard word counts for one line only, so
+ * two lines with the same words need to be said twice.
+ */
+export function heardShares(lines: string[], heard: string): number[] {
+  const pool = new Map<string, number>();
+  for (const w of wordsOf(heard)) pool.set(w, (pool.get(w) ?? 0) + 1);
+  return lines.map((line) => {
+    const want = wordsOf(line);
+    if (!want.length) return 1;
+    let found = 0;
+    for (const w of want) {
+      const n = pool.get(w) ?? 0;
+      if (n > 0) {
+        found++;
+        pool.set(w, n - 1);
+      }
+    }
+    return Math.round((found / want.length) * 1000) / 1000;
+  });
+}
+
+/**
+ * The sound check of a take (docs/design/continuity.md#quality-checks-in-the-gate): what the audio-visual model heard
+ * against the shot's lines. Fails when a line is not heard; a line in another character's voice, speech in a shot
+ * without lines, music where the film adds its own score, lips out of sync and poor sound are reported.
+ */
+export function soundVerdict(input: {
+  lines: { character: string; line: string }[];
+  heard: SoundCheckOutput;
+  /** Takes may carry music. */
+  musicAllowed: boolean;
+  /** Everyone in the shot, to tell another character's voice from an unclear one. */
+  cast: string[];
+}): { passed: boolean; sound: SoundReport; issues: string[] } {
+  const speech = input.heard.speech.filter((s) => wordsOf(s.text).length > 0);
+  const transcript = speech
+    .map((s) => (s.speaker ? `${s.speaker}: ${s.text.trim()}` : s.text.trim()))
+    .join(' ')
+    .slice(0, 4000);
+  const shares = heardShares(
+    input.lines.map((l) => l.line),
+    speech.map((s) => s.text).join(' '),
+  );
+  const castNames = new Map(input.cast.map((n) => [n.toLowerCase(), n]));
+  const lines = input.lines.map((l, i) => {
+    // Who said it: the speaker of the utterance that shares the most words with the line.
+    const best = speech
+      .map((s) => ({ s, share: heardShares([l.line], s.text)[0]! }))
+      .sort((a, b) => b.share - a.share)[0];
+    const speaker =
+      best && best.share > 0 && best.s.speaker ? (castNames.get(best.s.speaker.toLowerCase()) ?? null) : null;
+    return { character: l.character, line: l.line, heard: shares[i]!, speaker };
+  });
+  const issues: string[] = [];
+  for (const l of lines) {
+    if (l.heard < LINE_HEARD_RATIO)
+      issues.push(
+        `${l.character}’s line is not heard (${Math.round(l.heard * 100)}% of its words): “${l.line.slice(0, 200)}”`,
+      );
+    else if (l.speaker && l.speaker.toLowerCase() !== l.character.toLowerCase())
+      issues.push(`${l.character}’s line is spoken in ${l.speaker}’s voice`);
+  }
+  const unexpectedSpeech = !input.lines.length && speech.some((s) => wordsOf(s.text).length >= 2);
+  if (unexpectedSpeech) issues.push(`speech in a shot without lines: “${transcript.slice(0, 200)}”`);
+  const music = input.heard.music === true;
+  if (music && !input.musicAllowed) issues.push('music plays in the take (the film’s score is added later)');
+  const sync = speech.flatMap((s) => (typeof s.lipSync === 'number' ? [s.lipSync] : []));
+  if (input.lines.length && sync.length && sync.reduce((a, b) => a + b, 0) / sync.length < SOUND_SCORE_LOW)
+    issues.push('the lips are out of sync with the voices');
+  const score = typeof input.heard.score === 'number' ? Math.round(input.heard.score * 1000) / 1000 : null;
+  if (score !== null && score < SOUND_SCORE_LOW) {
+    issues.push(`poor sound (${score.toFixed(2)})`);
+    for (const i of input.heard.issues.slice(0, 3)) issues.push(`sound: ${i}`.slice(0, 500));
+  }
+  return {
+    passed: lines.every((l) => l.heard >= LINE_HEARD_RATIO),
+    sound: { lines, transcript, music, unexpectedSpeech, score },
+    issues,
+  };
+}
+
+/** A quality verdict with the sound check merged in: it passes only when the sound check passes too. */
+export function withSound(
+  quality: QualityVerdict | null,
+  verdict: { passed: boolean; sound: SoundReport; issues: string[] },
+): QualityVerdict {
+  const base: QualityVerdict = quality ?? {
+    passed: true,
+    temporal: null,
+    physics: null,
+    continuity: null,
+    sound: null,
+    issues: [],
+  };
+  return {
+    ...base,
+    passed: base.passed && verdict.passed,
+    sound: verdict.sound,
+    issues: [...new Set([...base.issues, ...verdict.issues.map((i) => i.slice(0, 500))])].slice(0, 20),
+  };
 }
 
 /** Is attempt `a` better than `b`? Identity first, then quality, then the score. */

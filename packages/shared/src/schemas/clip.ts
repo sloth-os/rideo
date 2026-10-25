@@ -33,8 +33,32 @@ export const VoiceVerdictSchema = z.object({
 export type VoiceVerdict = z.infer<typeof VoiceVerdictSchema>;
 
 /** The temporal and physics checks of a take (docs/design/continuity.md#quality-checks-in-the-gate). */
+/** What the sound check heard in a take (docs/design/continuity.md#quality-checks-in-the-gate). */
+export const SoundReportSchema = z.object({
+  /** The shot's lines: the share of each line's words heard, and who the model heard say it. */
+  lines: z
+    .array(
+      z.object({
+        character: z.string().max(200),
+        line: z.string().max(2000),
+        heard: z.number().min(0).max(1),
+        speaker: z.string().max(200).nullable().default(null),
+      }),
+    )
+    .max(30)
+    .default([]),
+  /** Everything said, as heard. */
+  transcript: z.string().max(4000).default(''),
+  music: z.boolean().default(false),
+  /** Speech in a shot without lines. */
+  unexpectedSpeech: z.boolean().default(false),
+  /** The model's 0–1 for the sound as a whole. */
+  score: z.number().min(0).max(1).nullable().default(null),
+});
+export type SoundReport = z.infer<typeof SoundReportSchema>;
+
 export const QualityVerdictSchema = z.object({
-  /** Temporal and physics passed (continuity is advisory). */
+  /** Temporal, physics and sound passed (continuity is advisory). */
   passed: z.boolean(),
   /** Scene changes inside the take: when (seconds of the take) and the highest score; null when not measured. */
   temporal: z
@@ -45,6 +69,8 @@ export const QualityVerdictSchema = z.object({
   physics: z.number().min(0).max(1).nullable().default(null),
   /** The mean frame score against the scene reference frame (0–1). */
   continuity: z.number().min(0).max(1).nullable().default(null),
+  /** What the audio-visual model heard; null when the take was not listened to. */
+  sound: SoundReportSchema.nullable().default(null),
   issues: z.array(z.string().max(500)).max(20).default([]),
 });
 export type QualityVerdict = z.infer<typeof QualityVerdictSchema>;

@@ -146,3 +146,68 @@ describe('GatewayClient (SDK)', () => {
     );
   });
 });
+
+describe('ProxyClient connections', () => {
+  /** Answers after `delayMs` with what it received: the content type and the body's length. */
+  async function slowServer(delayMs: number) {
+    const server = createServer((req, res) => {
+      const chunks: Buffer[] = [];
+      req.on('data', (d: Buffer) => chunks.push(d));
+      req.on('end', () =>
+        setTimeout(() => {
+          res.writeHead(200, { 'content-type': 'application/json' });
+          res.end(
+            JSON.stringify({
+              type: req.headers['content-type'] ?? null,
+              length: Buffer.concat(chunks).length,
+              auth: req.headers.authorization ?? null,
+            }),
+          );
+        }, delayMs),
+      );
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    return {
+      url: `http://127.0.0.1:${(server.address() as AddressInfo).port}`,
+      close: () => new Promise<void>((resolve) => server.close(() => resolve())),
+    };
+  }
+
+  it('waits for slow headers as long as the call’s own timeout allows, and no longer', async () => {
+    const upstream = await slowServer(300);
+    try {
+      const proxy = new ProxyClient({ baseUrl: upstream.url, apiKey: 'k' });
+      const res = await proxy.fetch('api.openai.com', 'v1/chat/completions', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: '{"stream":true}',
+        timeoutMs: 5_000,
+      });
+      expect(await res.json()).toEqual({ type: 'application/json', length: 15, auth: 'Bearer k' });
+      await expect(
+        proxy.fetch('api.openai.com', 'v1/chat/completions', { method: 'POST', body: '{}', timeoutMs: 100 }),
+      ).rejects.toMatchObject({ name: 'TimeoutError' });
+    } finally {
+      await upstream.close();
+    }
+  });
+
+  it('sends uploads as multipart', async () => {
+    const upstream = await slowServer(0);
+    try {
+      const form = new FormData();
+      form.set('file', new Blob([new Uint8Array(100)]), 'a.wav');
+      form.set('model', 'whisper-1');
+      const res = await new ProxyClient({ baseUrl: upstream.url }).fetch(
+        'api.openai.com',
+        'v1/audio/transcriptions',
+        { method: 'POST', body: form },
+      );
+      const seen = (await res.json()) as { type: string; length: number };
+      expect(seen.type).toMatch(/^multipart\/form-data; boundary=/);
+      expect(seen.length).toBeGreaterThan(100);
+    } finally {
+      await upstream.close();
+    }
+  });
+});

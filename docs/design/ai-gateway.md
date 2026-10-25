@@ -92,15 +92,29 @@ loop: a failure is reported on the Settings page and retried at the next start, 
 
 `LlmClient` adapters speak the upstream's native API through the proxy:
 
-| `RIDEO_LLM_PROVIDER` | Default proxy domain | Endpoint | JSON mode | Images |
-|---|---|---|---|---|
-| `openai` (and any OpenAI-compatible API) | `api.openai.com` | `v1/chat/completions` | `response_format: {type: "json_object"}` | `image_url` data URIs |
-| `gemini` | `generativelanguage.googleapis.com` | `v1beta/models/{model}:generateContent` | `generationConfig.responseMimeType: application/json` | `inline_data` |
-| `anthropic` | `api.anthropic.com` | `v1/messages` (`anthropic-version: 2023-06-01`) | instructions + prefill `{` | `image` base64 blocks |
+| `RIDEO_LLM_PROVIDER` | Default proxy domain | Endpoint | JSON mode | Images | Video with sound (`omni`) |
+|---|---|---|---|---|---|
+| `openai` (and any OpenAI-compatible API) | `api.openai.com` | `v1/chat/completions` | `response_format: {type: "json_object"}` | `image_url` data URIs | `video_url` data URIs (`data:video/mp4;base64,…`) with `modalities: ["text"]`, as Qwen-Omni takes them |
+| `gemini` | `generativelanguage.googleapis.com` | `v1beta/models/{model}:generateContent` | `generationConfig.responseMimeType: application/json` | `inline_data` | `inline_data` (`video/mp4`) |
+| `anthropic` | `api.anthropic.com` | `v1/messages` (`anthropic-version: 2023-06-01`) | instructions + prefill `{` | `image` base64 blocks | – |
 
-Each text or vision call may take `RIDEO_LLM_TIMEOUT_SEC` (default 600 s): writing the outline and opening scenes of a
-long film, or the next scenes of one, takes minutes on slower models, and the proxy client's 180 s default cut them off.
-Other proxied calls keep their own timeouts (speech-to-text 600 s, voices 120–300 s, embeddings 60 s).
+The **audio-visual model** (`omni`, [settings](settings.md)) is a model that watches a video and hears its sound in
+one call (`qwen3.8-omni-flash` through an OpenAI-compatible API, Gemini). Videos go inline, encoded small: H.264 with
+mono AAC, at most 7 MB (Qwen-Omni takes base64 under 10 MB). A five-second take at 360p is about 1,300 input tokens.
+Calls with video are metered as `vision`.
+
+**Long calls.** OpenAI-compatible calls are streamed (`stream: true`, `stream_options: {include_usage: true}`; the
+answer is the concatenated `delta.content` of the events, the usage comes with the last one). The upstream sends its
+headers at once and tokens as they come, so no timeout that waits for headers ends a long answer: neither
+mm-gateway's (600 s per read, including the wait for the headers) nor the HTTP client's (undici's 300 s). Writing the
+outline and opening scenes of a ten-minute film took more than ten minutes through an overloaded proxy (October 2026
+demo), and both cut it off. `RIDEO_LLM_TIMEOUT_SEC` (default 600 s) is how long a call may go without receiving
+anything (the first byte, then between events); a streamed answer may take four times that in all. An upstream that
+refuses `stream` (a 400 naming it) is asked again without it, and an answer that is not an event stream is read as
+JSON. Gemini and Anthropic calls are not streamed and take at most `RIDEO_LLM_TIMEOUT_SEC`. The proxy client opens
+its connections without header or body timeouts of their own, so a call's timeout is the only one. A connection that
+fails or a call that times out is a retryable `llm_error`: the job runs again (up to its `maxAttempts`). Other
+proxied calls keep their own timeouts (speech-to-text 600 s, voices 120–300 s, embeddings 60 s).
 
 Speech-to-text (optional, used by footage analysis): OpenAI-style
 `POST /proxy/{RIDEO_STT_PROXY_DOMAIN}/v1/audio/transcriptions` (multipart, `response_format=verbose_json`,
@@ -160,7 +174,8 @@ Every LLM use is a **task** with an id, a zod output schema, a system prompt and
 | `dialogue.translate` | the target language, the film (title, logline, tone), the cast names, the scene and its lines | `{lines[{key, text}]}` ([localization](localization.md#translation)) |
 | `sfx.plan` | the takes of the cut (length, description, action, location), `maxPerShot` | `{effects[{shot, description, at, durationSec, kind}]}` |
 | `frame.caption` | one frame (512 px wide), what it is from, who and what its source shows (with how they look), the cast | `{caption}` (≤ 300 characters, [search](search.md#the-index)) |
-| `feedback.scene` | the film, one scene with its neighbours, the cast, every shot with its take's reports, the signals inside the scene, a strip of three frames per shot | `{scores{dimension: 0–10}, summary, strengths[], issues[{shot, dimension, severity, title, detail, at}], recommendations[{shot?, dimension, priority, title, detail, action?}]}` ([feedback](feedback.md#how-a-film-is-watched)) |
+| `sound.check` | the shot (description, action, its lines with each speaker's voice), the cast's voices, whether takes may carry music, and the take as a video with its sound (360p) | `{speech[{text, speaker, voice, lipSync?}], music, sounds[], score, issues[]}` ([quality checks](continuity.md#quality-checks-in-the-gate)) |
+| `feedback.scene` | the film, one scene with its neighbours, the cast, every shot with its take's reports, the signals inside the scene, a strip of three frames per shot, or the scene as a video with its sound when an audio-visual model is set | `{scores{dimension: 0–10}, summary, strengths[], issues[{shot, dimension, severity, title, detail, at, time?}], recommendations[{shot?, dimension, priority, title, detail, action?}], transcript[{time, speaker, text}]}` ([feedback](feedback.md#how-a-film-is-watched)) |
 | `feedback.film` | the project (logline, synopsis, outline), every scene's scores, summary and issues, the signals, the run's numbers | `{scores, summary, strengths[], recommendations[{dimension, priority, title, detail, scenes[], action?}], lessons[{area, title, detail}]}` |
 
 `runTask()`:
@@ -170,7 +185,8 @@ Every LLM use is a **task** with an id, a zod output schema, a system prompt and
    waiting 2 s, 4 s, then 8 s, with jitter, or longer when the answer's `Retry-After` asks (up to 60 s). Timeouts,
    `504`, other answers, and mm-gateway's own problems that are not about load (`provider_not_configured`,
    `forbidden`, …; its `rate_limited`, `provider_unavailable`, `upstream_error` and `internal_error` are) are not
-   repeated here. Each retry is logged (`LLM call turned away; retrying`, with the
+   repeated here; a timeout or a connection that failed otherwise becomes a retryable `llm_error`, so the job runs
+   again. Each retry is logged (`LLM call turned away; retrying`, with the
    task, status and wait) and counted in `rideo_llm_retries_total{task,status}`; a judge that still fails leaves the
    take unverified (R9).
 2. Extract JSON: strip code fences, then take the outermost object.

@@ -35,6 +35,18 @@ function dimensionLabel(id: string): string {
   return FEEDBACK_DIMENSIONS.find((d) => d.id === id)?.label ?? id;
 }
 
+/** Who watched the film, whether it was heard, and how many of the script's lines were (docs/design/feedback.md). */
+function Heard({ fb }: { fb: Feedback }) {
+  if (!fb.model) return null;
+  const d = fb.signals.dialogue;
+  return (
+    <p className="text-[12px] text-muted" data-testid="feedback-heard">
+      {fb.listened ? 'Watched and heard' : 'Watched'} by {fb.model}
+      {d?.lines ? ` · ${d.heard} of ${d.lines} lines heard` : ''}
+    </p>
+  );
+}
+
 function ScoreBars({ fb }: { fb: Feedback }) {
   return (
     <ul className="grid grid-cols-1 gap-x-4 gap-y-1 sm:grid-cols-2" aria-label="Scores">
@@ -145,6 +157,7 @@ export function FeedbackSummary({ e, projectId }: { e: Export; projectId: string
       {fb.status === 'succeeded' ? (
         <>
           <ScoreBars fb={fb} />
+          <Heard fb={fb} />
           {fb.summary ? <p className="line-clamp-3 text-[12px] text-muted">{fb.summary}</p> : null}
           <div className="flex flex-wrap gap-2">
             <Button
@@ -316,6 +329,7 @@ export function FeedbackDialog({
             data-testid="feedback-video"
           />
         ) : null}
+        <Heard fb={live} />
         {live.summary ? <p className="text-[13px] break-words">{live.summary}</p> : null}
         {live.strengths.length ? (
           <ul className="list-inside list-disc text-[12px] text-muted">

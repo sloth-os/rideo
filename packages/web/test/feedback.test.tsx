@@ -139,6 +139,7 @@ describe('feedback on the export card (docs/design/feedback.md#surfaces)', () =>
     render(<FeedbackSummary e={exportDoc} projectId={projectId} />);
     expect(screen.getByTestId('feedback-overall').textContent).toBe('6.4/10');
     expect(screen.getByTestId('feedback-score-temporal').textContent).toContain('4.0');
+    expect(screen.getByTestId('feedback-heard').textContent).toBe('Watched by gemini-3.7-flash');
     expect(screen.getByText(/1 issues · 2 open recommendations/)).toBeTruthy();
     fireEvent.click(screen.getByTestId('show-feedback'));
     const dialog = screen.getByTestId('feedback-dialog');
@@ -160,6 +161,22 @@ describe('feedback on the export card (docs/design/feedback.md#surfaces)', () =>
     expect((screen.getByTestId('download-feedback-report') as HTMLAnchorElement).href).toContain(
       'media/reports/',
     );
+  });
+
+  it('says when the film was heard and how many lines were', () => {
+    const heard = FeedbackSchema.parse({
+      ...feedback,
+      model: 'qwen3.8-omni-flash',
+      listened: true,
+      scores: { ...feedback.scores, dialogue: 5 },
+      signals: { ...feedback.signals, dialogue: { lines: 12, heard: 10, missing: [] } },
+    });
+    useProject.setState({ docs: { ...useProject.getState().docs!, feedback: { [heard.id]: heard } } });
+    render(<FeedbackSummary e={exportDoc} projectId={useProject.getState().projectId!} />);
+    expect(screen.getByTestId('feedback-heard').textContent).toBe(
+      'Watched and heard by qwen3.8-omni-flash · 10 of 12 lines heard',
+    );
+    expect(screen.getByTestId('feedback-score-dialogue').textContent).toContain('5.0');
   });
 
   it('offers feedback on an export without any', async () => {

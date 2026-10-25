@@ -1,5 +1,5 @@
 import { isAcceptable, takeState } from '../consistency';
-import { countWords, WORDS_PER_SECOND } from '../continuity';
+import { countWords, heardShares, LINE_HEARD_RATIO, WORDS_PER_SECOND } from '../continuity';
 import type { Character } from '../schemas/character';
 import type { Clip, Shot, Take } from '../schemas/clip';
 import type { Element } from '../schemas/element';
@@ -12,6 +12,7 @@ import {
   type FeedbackRecommendation,
   type FeedbackScores,
   type FeedbackSignals,
+  HEARD_DIMENSION_IDS,
   type RetrospectiveItem,
   type SceneFeedback,
   VISION_DIMENSION_IDS,
@@ -278,7 +279,82 @@ export function signalIssues(signals: FeedbackSignals, spans: FeedbackShotSpan[]
       shot: null,
       source: 'signal',
     });
+  for (const m of signals.dialogue?.missing ?? [])
+    out.push({
+      dimension: 'dialogue',
+      severity: 'major',
+      title: `${m.character}’s line is not heard`,
+      detail: `“${m.line.slice(0, 300)}”: ${Math.round(m.heard * 100)}% of its words were heard during ${m.shot}.`,
+      start: m.start,
+      end: m.end,
+      clipId: m.clipId,
+      shotId: m.shotId,
+      shot: m.shot,
+      source: 'signal',
+    });
   return out;
+}
+
+/** Seconds around a shot in which its lines may be heard (the model's times are approximate). */
+const LINE_WINDOW_SEC = 1;
+
+/**
+ * The script's lines against what the audio-visual model heard (docs/design/feedback.md#how-a-film-is-watched, step 5):
+ * each utterance of the transcript counts for one shot, the one within ±1 s whose lines it matches best (on a tie, the
+ * shot it falls in), and each shot's voiced lines are compared with what counts for it; null when no scene was heard.
+ */
+export function dialogueDelivery(
+  scenes: SceneReview[],
+  clips: Record<string, Clip>,
+  characters: Record<string, Character>,
+): FeedbackSignals['dialogue'] {
+  const listened = scenes.filter((s) => s.listened && s.output);
+  if (!listened.length) return null;
+  let lines = 0;
+  let heard = 0;
+  const missing: NonNullable<FeedbackSignals['dialogue']>['missing'] = [];
+  for (const scene of listened) {
+    const shots = scene.spans.flatMap((span) => {
+      const shot = clips[span.clipId]?.shots.find((s) => s.id === span.shotId);
+      const voiced = (shot?.dialogue ?? []).flatMap((d) =>
+        d.characterId && d.line.trim()
+          ? [{ character: characters[d.characterId]?.name ?? 'Someone', line: d.line }]
+          : [],
+      );
+      return voiced.length ? [{ span, voiced, heard: [] as string[] }] : [];
+    });
+    for (const t of scene.output!.transcript) {
+      const at = scene.start + t.time;
+      const near = shots.filter(
+        (s) => at >= s.span.start - LINE_WINDOW_SEC && at <= s.span.end + LINE_WINDOW_SEC,
+      );
+      const fit = (s: (typeof shots)[number]) =>
+        Math.max(0, ...s.voiced.map((v) => heardShares([v.line], t.text)[0]!));
+      const inside = (s: (typeof shots)[number]) => (at >= s.span.start && at < s.span.end ? 1 : 0);
+      near.sort((a, b) => fit(b) - fit(a) || inside(b) - inside(a))[0]?.heard.push(t.text);
+    }
+    for (const { span, voiced, heard: said } of shots) {
+      heardShares(
+        voiced.map((v) => v.line),
+        said.join(' '),
+      ).forEach((share, i) => {
+        lines++;
+        if (share >= LINE_HEARD_RATIO) heard++;
+        else
+          missing.push({
+            clipId: span.clipId,
+            shotId: span.shotId,
+            shot: span.label,
+            character: voiced[i]!.character.slice(0, 200),
+            line: voiced[i]!.line.slice(0, 2000),
+            heard: share,
+            start: span.start,
+            end: span.end,
+          });
+      });
+    }
+  }
+  return { lines, heard, missing: missing.slice(0, 500) };
 }
 
 /** One scene's review as the server got it (or its error). */
@@ -290,14 +366,17 @@ export interface SceneReview {
   end: number;
   spans: FeedbackShotSpan[];
   output: FeedbackSceneOutput | null;
+  /** Watched as a video with its sound (an audio-visual model). */
+  listened?: boolean;
   error?: string;
 }
 
 const SEVERITY_RANK: Record<FeedbackIssue['severity'], number> = { critical: 0, major: 1, minor: 2 };
 
-function visionScores(v: VisionScores): Partial<FeedbackScores> {
+/** The scores a review may give: the picture's, and what was heard when the model listened. */
+function visionScores(v: VisionScores, listened = false): Partial<FeedbackScores> {
   const out: Partial<FeedbackScores> = {};
-  for (const d of VISION_DIMENSION_IDS) {
+  for (const d of listened ? HEARD_DIMENSION_IDS : VISION_DIMENSION_IDS) {
     const x = (v as Record<string, number | undefined>)[d];
     if (typeof x === 'number' && Number.isFinite(x))
       out[d] = Math.round(Math.min(10, Math.max(0, x)) * 10) / 10;
@@ -369,7 +448,7 @@ export function assembleFeedback(input: {
     title: s.title,
     start: s.start,
     end: s.end,
-    scores: s.output ? visionScores(s.output.scores) : {},
+    scores: s.output ? visionScores(s.output.scores, s.listened) : {},
     summary: s.output?.summary ?? '',
     ...(s.error ? { error: s.error.slice(0, 1000) } : {}),
   }));
@@ -379,10 +458,28 @@ export function assembleFeedback(input: {
   const drafts: Draft[] = [];
   for (const scene of input.scenes) {
     for (const issue of scene.output?.issues ?? []) {
-      const span = issue.shot !== undefined ? scene.spans[issue.shot] : undefined;
+      // A time in the scene's video places the issue when no shot does, or within its shot when no `at` does.
+      const t = issue.time !== undefined ? Math.min(scene.end, scene.start + issue.time) : undefined;
+      const span =
+        issue.shot !== undefined
+          ? scene.spans[issue.shot]
+          : t !== undefined
+            ? scene.spans.find((s) => t >= s.start && t < s.end)
+            : undefined;
       const len = span ? span.end - span.start : 0;
-      const start = span ? (issue.at === undefined ? span.start : span.start + issue.at * len) : scene.start;
-      const end = span ? (issue.at === undefined ? span.end : Math.min(span.end, start + 1)) : scene.end;
+      const within = t !== undefined && span && t >= span.start && t < span.end ? t : undefined;
+      const start = span
+        ? issue.at !== undefined
+          ? span.start + issue.at * len
+          : (within ?? span.start)
+        : (t ?? scene.start);
+      const end = span
+        ? issue.at !== undefined || within !== undefined
+          ? Math.min(span.end, start + 1)
+          : span.end
+        : t !== undefined
+          ? Math.min(scene.end, t + 1)
+          : scene.end;
       drafts.push({
         dimension: issue.dimension,
         severity: issue.severity,
@@ -406,12 +503,21 @@ export function assembleFeedback(input: {
   drafts.sort((a, b) => a.start - b.start || SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity]);
   const issues: FeedbackIssue[] = drafts.map((d, k) => ({ ...d, id: `i${k + 1}` }));
 
-  // Scores: the film call's, else the scenes' duration-weighted mean; sound from the signals.
+  // Scores: the film call's, else the scenes' duration-weighted mean. What was heard comes from the scenes only (the
+  // film call reads text); `sound` is the mean of the measured and the heard score.
   const filmScores = input.film ? visionScores(input.film.scores) : {};
   const scores = {} as FeedbackScores;
-  for (const d of FEEDBACK_DIMENSIONS)
-    scores[d.id] =
-      d.id === 'sound' ? soundScore(input.signals) : (filmScores[d.id] ?? sceneMean(sceneDocs, d.id));
+  for (const d of FEEDBACK_DIMENSIONS) {
+    if (d.id === 'sound') {
+      const parts = [soundScore(input.signals), sceneMean(sceneDocs, 'sound')].filter(
+        (v): v is number => v !== null,
+      );
+      scores.sound = parts.length
+        ? Math.round((parts.reduce((a, b) => a + b, 0) / parts.length) * 10) / 10
+        : null;
+    } else if (d.id === 'dialogue') scores.dialogue = sceneMean(sceneDocs, 'dialogue');
+    else scores[d.id] = filmScores[d.id] ?? sceneMean(sceneDocs, d.id);
+  }
   const overall = weightedOverall(scores);
 
   // Recommendations: the scenes' (with their shot's issues) and the film's.
@@ -448,6 +554,25 @@ export function assembleFeedback(input: {
         .slice(0, 20),
       action: mapAction(r.action, { clipId: clipIds[0] ?? null, shotId: null }, sceneClip),
       order: -1,
+    });
+  }
+  // Lines that were not heard: generate their shot again, unless a recommendation already does.
+  const missingByShot = new Map<string, NonNullable<FeedbackSignals['dialogue']>['missing']>();
+  for (const m of input.signals.dialogue?.missing ?? [])
+    missingByShot.set(m.shotId, [...(missingByShot.get(m.shotId) ?? []), m]);
+  for (const [shotId, missing] of missingByShot) {
+    if (recs.some((r) => r.action?.kind === 'regenerate_shot' && r.action.shotId === shotId)) continue;
+    const m = missing[0]!;
+    recs.push({
+      priority: 1,
+      dimension: 'dialogue',
+      title: `Generate ${m.shot} again: ${missing.length === 1 ? 'a line is' : `${missing.length} lines are`} not heard`,
+      detail: `${missing.map((x) => `${x.character}: “${x.line.slice(0, 200)}”`).join(' ')} The video model did not voice ${missing.length === 1 ? 'it' : 'them'} clearly; a new take with the same prompt usually does.`,
+      issueIds: issues
+        .filter((i) => i.source === 'signal' && i.dimension === 'dialogue' && i.shotId === shotId)
+        .map((i) => i.id),
+      action: { kind: 'regenerate_shot', clipId: m.clipId, shotId },
+      order: m.start,
     });
   }
   const weakness = (d: FeedbackDimension) => scores[d] ?? 10;
@@ -520,9 +645,11 @@ export function feedbackMarkdown(
   const score = (v: number | null | undefined) => (typeof v === 'number' ? `${v.toFixed(1)}/10` : '–');
   lines.push(`# Feedback: ${ctx.title}`, '');
   lines.push(
-    `Export \`${fb.exportId}\` · ${feedbackTime(fb.durationSec)} · ${fb.model ? `watched by ${fb.model}` : 'measured only (no vision model)'} · ${fb.updatedAt.slice(0, 16).replace('T', ' ')}`,
+    `Export \`${fb.exportId}\` · ${feedbackTime(fb.durationSec)} · ${fb.model ? `${fb.listened ? 'watched and heard' : 'watched'} by ${fb.model}` : 'measured only (no vision model)'} · ${fb.updatedAt.slice(0, 16).replace('T', ' ')}`,
     '',
   );
+  const d = fb.signals.dialogue;
+  if (d?.lines) lines.push(`Lines heard: ${d.heard} of ${d.lines}.`, '');
   lines.push(`**Overall: ${score(fb.overall)}**`, '', '| Dimension | Score |', '|---|---|');
   for (const d of FEEDBACK_DIMENSIONS) lines.push(`| ${d.label} | ${score(fb.scores[d.id])} |`);
   lines.push('');

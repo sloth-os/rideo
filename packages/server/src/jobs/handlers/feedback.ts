@@ -4,6 +4,7 @@ import {
   assembleFeedback,
   compactIdentity,
   cutPoints,
+  dialogueDelivery,
   docPath,
   type Export,
   FEEDBACK_DIMENSIONS,
@@ -37,6 +38,9 @@ const STRIP_AT = [0.15, 0.5, 0.85];
 const STRIP_WIDTH = 384;
 /** Scene calls made at once. */
 const SCENE_CONCURRENCY = 3;
+/** The largest scene video sent inline (Qwen-Omni takes base64 under 10 MB, docs/design/ai-gateway.md). */
+const SCENE_VIDEO_MAX_BYTES = 7 * 1024 * 1024;
+const SCENE_AUDIO_KBPS = 48;
 
 /** The timeline the export rendered: its own render timeline when it has one, else the cut at its commit. */
 async function exportTimeline(deps: HandlerDeps, projectId: string, exp: Export): Promise<Timeline> {
@@ -79,12 +83,66 @@ async function strip(
   return readFile(out);
 }
 
+/**
+ * The scene as a small video with its sound (docs/design/feedback.md#how-a-film-is-watched, step 2): 480p (360p past
+ * 90 s) at CRF 32, else at the bitrate that fits; null when even that does not fit.
+ */
+async function sceneVideo(
+  deps: HandlerDeps,
+  file: string,
+  range: { start: number; end: number },
+  out: string,
+  signal: AbortSignal,
+): Promise<Buffer | null> {
+  const duration = Math.max(0.5, range.end - range.start);
+  const height = duration > 90 ? 360 : 480;
+  const encode = async (rate: string[]) => {
+    await deps.ff.run(
+      [
+        '-ss',
+        range.start.toFixed(3),
+        '-t',
+        duration.toFixed(3),
+        '-i',
+        file,
+        '-vf',
+        `scale=-2:${height}`,
+        '-c:v',
+        'libx264',
+        '-preset',
+        'veryfast',
+        ...rate,
+        '-pix_fmt',
+        'yuv420p',
+        '-c:a',
+        'aac',
+        '-b:a',
+        `${SCENE_AUDIO_KBPS}k`,
+        '-ac',
+        '1',
+        '-movflags',
+        '+faststart',
+        out,
+      ],
+      { signal },
+    );
+    return readFile(out);
+  };
+  const first = await encode(['-crf', '32']);
+  if (first.length <= SCENE_VIDEO_MAX_BYTES) return first;
+  const kbps = Math.floor((SCENE_VIDEO_MAX_BYTES * 8 * 0.9) / duration / 1000) - SCENE_AUDIO_KBPS;
+  if (kbps < 100) return null;
+  const fitted = await encode(['-b:v', `${kbps}k`, '-maxrate', `${kbps}k`, '-bufsize', `${kbps * 2}k`]);
+  return fitted.length <= SCENE_VIDEO_MAX_BYTES ? fitted : null;
+}
+
 function sceneInput(
   docs: ProjectDocs,
   clipId: string,
   spans: FeedbackShotSpan[],
   neighbours: { previous: string | null; next: string | null },
   signals: FeedbackSignals,
+  listening = false,
 ): FeedbackSceneInput {
   const clip = docs.clips[clipId]!;
   const sp = docs.screenplay;
@@ -145,6 +203,7 @@ function sceneInput(
           line: d.line,
         })),
         characters: shot.characterIds.map((id) => names.get(id) ?? id),
+        ...(listening ? { video: { from: round2(span.start - start), to: round2(span.end - start) } } : {}),
         take: take
           ? {
               consistency: takeState(take, shot, docs.characters, docs.elements),
@@ -166,8 +225,13 @@ function sceneInput(
       frozen: signals.frozen.filter((r) => r.end > start && r.start < end),
       black: signals.black.filter((r) => r.end > start && r.start < end),
     },
-    stripCount: spans.length,
+    stripCount: listening ? 0 : spans.length,
+    listening,
   };
+}
+
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
 }
 
 /** Runs `fn` over `items` with at most `n` at once, keeping the order of the results. */
@@ -237,6 +301,7 @@ export async function exportFeedback(deps: HandlerDeps, ctx: JobContext) {
         framingRuns: framingRuns(spans, docs.clips),
         rushedLines: rushedLines(spans, docs.clips),
         takes: takeSignals(spans, docs.clips, docs.characters, docs.elements),
+        dialogue: null,
       };
       throwIfAborted(ctx.signal);
 
@@ -248,6 +313,8 @@ export async function exportFeedback(deps: HandlerDeps, ctx: JobContext) {
         else groups.push({ clipId: span.clipId, spans: [span] });
       }
       const watching = deps.config.gateway.configured;
+      // With an audio-visual model, each scene is watched with its sound (docs/design/feedback.md#how-a-film-is-watched).
+      const listening = watching && !!deps.llm.omni && probe.hasAudio;
       let done = 0;
       const scenes: SceneReview[] = await pool(groups, watching ? SCENE_CONCURRENCY : 1, async (g, k) => {
         const clip = docs.clips[g.clipId]!;
@@ -261,6 +328,30 @@ export async function exportFeedback(deps: HandlerDeps, ctx: JobContext) {
           output: null,
         };
         if (!watching) return review;
+        const neighbours = { previous: groups[k - 1]?.clipId ?? null, next: groups[k + 1]?.clipId ?? null };
+        if (listening) {
+          try {
+            throwIfAborted(ctx.signal);
+            const video = await sceneVideo(deps, file, review, join(dir, `scene-${k}.mp4`), ctx.signal);
+            if (video) {
+              const input = sceneInput(docs, g.clipId, g.spans, neighbours, signals, true);
+              review.output = await deps.llm.feedbackScene(input, [], ctx.signal, video);
+              review.listened = true;
+            }
+          } catch (err) {
+            if (ctx.signal.aborted) throw err;
+            // Watched again as strips by the vision model
+            log.warn(
+              { clipId: g.clipId, err: (err as Error).message.slice(0, 500), exportId, feedbackId },
+              'listening to the scene failed; watching strips',
+            );
+          }
+          if (review.output) {
+            done++;
+            ctx.progress(0.2 + (0.65 * done) / groups.length, 1, `watched ${done}/${groups.length} scenes`);
+            return review;
+          }
+        }
         try {
           throwIfAborted(ctx.signal);
           const strips: { label: string; data: Buffer }[] = [];
@@ -269,13 +360,7 @@ export async function exportFeedback(deps: HandlerDeps, ctx: JobContext) {
               label: `${i}: ${span.label} (${span.start.toFixed(1)}–${span.end.toFixed(1)} s)`,
               data: await strip(deps, file, span, join(dir, `strip-${k}-${i}.jpg`), ctx.signal),
             });
-          const input = sceneInput(
-            docs,
-            g.clipId,
-            g.spans,
-            { previous: groups[k - 1]?.clipId ?? null, next: groups[k + 1]?.clipId ?? null },
-            signals,
-          );
+          const input = sceneInput(docs, g.clipId, g.spans, neighbours, signals);
           review.output = await deps.llm.feedbackScene(input, strips, ctx.signal);
         } catch (err) {
           if (ctx.signal.aborted) throw err;
@@ -287,6 +372,9 @@ export async function exportFeedback(deps: HandlerDeps, ctx: JobContext) {
         return review;
       });
       throwIfAborted(ctx.signal);
+      // The script's lines against what was heard (step 5)
+      signals.dialogue = dialogueDelivery(scenes, docs.clips, docs.characters);
+      const listened = scenes.some((s) => s.listened && s.output);
 
       // 4. The film (text only).
       const usage = await deps.usage.ledger.get(projectId);
@@ -332,6 +420,9 @@ export async function exportFeedback(deps: HandlerDeps, ctx: JobContext) {
             silences: signals.silences.length,
             rushedLines: signals.rushedLines.length,
             framingRuns: signals.framingRuns.length,
+            dialogue: signals.dialogue
+              ? { lines: signals.dialogue.lines, heard: signals.dialogue.heard }
+              : null,
             loudness: signals.loudness
               ? { target: signals.loudness.target, integratedLufs: signals.loudness.integratedLufs }
               : null,
@@ -381,7 +472,8 @@ export async function exportFeedback(deps: HandlerDeps, ctx: JobContext) {
         error: undefined,
         createdAt: current?.createdAt ?? now,
         updatedAt: now,
-        model: watching ? deps.llm.vision.model : null,
+        model: watching ? (listened ? deps.llm.omni!.model : deps.llm.vision.model) : null,
+        listened,
         timelineCommit: exp.timelineCommit,
         durationSec,
         ...assembled,

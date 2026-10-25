@@ -6,7 +6,11 @@ import { expectSucceeded, readyStoryProject, type Stack, startStack } from '../h
 /** Continuity, storytelling and realism (docs/design/continuity.md) on the mock gateway. */
 let stack: Stack;
 beforeAll(async () => {
-  stack = await startStack({ gw: await startMockGateway({ latencyMs: 20 }) });
+  // With an audio-visual model, so every take with a sound track is heard (the sound check).
+  stack = await startStack({
+    gw: await startMockGateway({ latencyMs: 20 }),
+    env: { RIDEO_OMNI_MODEL: 'mock-omni' },
+  });
 }, 60_000);
 afterAll(async () => {
   await stack?.stop();
@@ -42,6 +46,41 @@ async function generate(pid: string, clipId: string) {
 }
 
 describe('continuity-aware generation (prompt version 2)', () => {
+  it('hears every take: a take whose line is not heard is generated again, and records what was heard', async () => {
+    expect((await stack.api<any>('GET', '/config')).features.omni).toBe('mock-omni');
+    const { pid, clip } = await plannedClip();
+    const generated = await generate(pid, clip.id);
+    const spoken = generated.shots.find((s) => s.dialogue.some((d) => d.characterId))!;
+    expect(spoken).toBeTruthy();
+    const first = spoken.takes.find((t) => t.id === spoken.selectedTakeId)!;
+    expect(first.consistency.quality).toMatchObject({
+      passed: true,
+      sound: { lines: [{ heard: 1 }], music: false, unexpectedSpeech: false, score: 0.85 },
+    });
+    expect(first.consistency.quality?.sound?.transcript).toContain(spoken.dialogue[0]!.line);
+    for (const s of generated.shots.filter((x) => !x.dialogue.length))
+      expect(s.takes.find((t) => t.id === s.selectedTakeId)!.consistency.quality?.sound).toMatchObject({
+        lines: [],
+        unexpectedSpeech: false,
+      });
+
+    // The video model does not voice the line once: nothing is heard, and the shot is generated again.
+    stack.gw.muffleSpeech(1);
+    const job = await stack.api<Job>(
+      'POST',
+      `/projects/${pid}/clips/${clip.id}/shots/${spoken.id}/regenerate`,
+    );
+    expectSucceeded(await stack.waitJob(pid, job.id, 180_000));
+    await stack.waitIdle(pid);
+    const after = ((await stateOf(pid)).docs.clips[clip.id] as Clip).shots.find((s) => s.id === spoken.id)!;
+    const take = after.takes.at(-1)!;
+    expect(take.id).not.toBe(first.id);
+    expect(take.consistency.attempts).toBe(2);
+    expect(take.consistency.quality).toMatchObject({ passed: true, sound: { lines: [{ heard: 1 }] } });
+    const metrics = await (await fetch(`${stack.url}/metrics`)).text();
+    expect(metrics).toMatch(/rideo_quality_checks_total\{check="sound",result="failed"\} 1/);
+  });
+
   it('creates projects with version 2 prompts and quality checks, and plans with the brief, the level and lenses', async () => {
     const { pid, clip, state } = await plannedClip();
     const settings = state.docs.project.settings;

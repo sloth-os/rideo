@@ -50,6 +50,42 @@ describe('config', () => {
     expect(c.endpoints.llm).toMatchObject({ url: 'https://api.openai.com/v1', apiKey: undefined });
   });
 
+  it('configures the audio-visual model only when a model is named, on the vision base URL and key', () => {
+    expect(loadConfig(GW).omni).toBeUndefined();
+    const c = loadConfig({
+      ...GW,
+      RIDEO_LLM_PROXY_DOMAIN: 'https://newapi.example.com/v1',
+      RIDEO_LLM_API_KEY: 'sk-llm',
+      RIDEO_LLM_MODEL: 'qwen3.8-max',
+      RIDEO_OMNI_MODEL: 'qwen3.8-omni-flash',
+    });
+    expect(c.omni).toEqual({
+      provider: 'openai',
+      domain: 'newapi.example.com',
+      prefix: 'v1',
+      model: 'qwen3.8-omni-flash',
+    });
+    expect(c.endpoints.omni).toMatchObject({ apiKey: 'sk-llm', keyFrom: 'llm' });
+    // Anthropic models take no audio or video: off unless another provider is named.
+    expect(
+      loadConfig({ ...GW, RIDEO_VISION_PROVIDER: 'anthropic', RIDEO_OMNI_MODEL: 'claude-x' }).omni,
+    ).toBeUndefined();
+    expect(
+      loadConfig({
+        ...GW,
+        RIDEO_VISION_PROVIDER: 'anthropic',
+        RIDEO_OMNI_PROVIDER: 'gemini',
+        RIDEO_OMNI_MODEL: 'gemini-2.5-flash',
+      }).omni,
+    ).toEqual({
+      provider: 'gemini',
+      domain: 'generativelanguage.googleapis.com',
+      prefix: null,
+      model: 'gemini-2.5-flash',
+    });
+    expect(loadConfig({ ...GW, RIDEO_OMNI_PROVIDER: 'off', RIDEO_OMNI_MODEL: 'm' }).omni).toBeUndefined();
+  });
+
   it('configures TTS and the speaker check through the gateway proxy', () => {
     expect(loadConfig({ ...GW, RIDEO_TTS_PROVIDER: 'elevenlabs' }).tts).toEqual({
       provider: 'elevenlabs',

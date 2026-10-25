@@ -3,8 +3,8 @@ import {
   FeedbackFramingSchema,
   FeedbackMovementSchema,
   FeedbackSettingsPatchSchema,
+  HEARD_DIMENSION_IDS,
   RetrospectiveAreaSchema,
-  VISION_DIMENSION_IDS,
 } from './feedback';
 
 /**
@@ -314,6 +314,7 @@ export const LLM_TASKS = [
   'character.describe',
   'consistency.judge',
   'voice.judge',
+  'sound.check',
   'footage.analyze',
   'score.plan',
   'sfx.plan',
@@ -499,9 +500,51 @@ export const JUDGE_SCENE_REFERENCE_LABEL = 'Scene reference frame';
 export const FEEDBACK_STRIP_LABEL = 'Shot strip';
 export const VOICE_REFERENCE_LABEL = 'Reference voice for character';
 export const TAKE_AUDIO_LABEL = 'Take audio';
+/** The take or the scene as a video with its sound, for the audio-visual model. */
+export const TAKE_VIDEO_LABEL = 'Take video with sound';
+export const SCENE_VIDEO_LABEL = 'Scene video with sound';
 export const JUDGE_REFERENCE_LABEL = 'Reference images for character';
 export const JUDGE_ELEMENT_REFERENCE_LABEL = 'Reference images for element';
 export const JUDGE_FRAME_LABEL = 'Candidate frame';
+
+/** A yes or no from a model, which may write it as a string. */
+const flag = z
+  .preprocess((v) => (typeof v === 'string' ? /^\s*(true|yes|1)\s*$/i.test(v) : Boolean(v)), z.boolean())
+  .catch(false);
+
+/**
+ * What the audio-visual model heard in a take (`sound.check`, docs/design/continuity.md#quality-checks-in-the-gate):
+ * lenient, `soundVerdict` judges it.
+ */
+export const SoundCheckOutputSchema = z.object({
+  speech: z
+    .array(
+      z.object({
+        text: z.string().max(1000).catch(''),
+        /** The cast name of who speaks, null when it is unclear. */
+        speaker: z.string().max(80).nullable().optional().catch(null),
+        voice: z.string().max(120).optional().catch(undefined),
+        lipSync: z.coerce.number().min(0).max(1).optional().catch(undefined),
+      }),
+    )
+    .max(30)
+    .catch([])
+    .default([]),
+  music: flag.default(false),
+  sounds: z.array(z.string().max(120)).max(12).catch([]).default([]),
+  score: z.coerce.number().min(0).max(1).optional().catch(undefined),
+  issues: z.array(z.string().max(300)).max(10).catch([]).default([]),
+});
+export type SoundCheckOutput = z.infer<typeof SoundCheckOutputSchema>;
+
+export interface SoundCheckInput {
+  shot: { description: string; action: string; place: string; durationSec: number };
+  /** The shot's lines, each with its speaker's voice; empty for a shot without lines. */
+  lines: { character: string; voice: string; line: string }[];
+  cast: { name: string; voice: string }[];
+  /** Takes may carry music (otherwise the film's score comes later). */
+  music: boolean;
+}
 
 /** Feedback tasks (docs/design/feedback.md#how-a-film-is-watched): lenient, the server assembles the document. */
 const score10 = z.coerce.number().min(0).max(10).optional().catch(undefined);
@@ -515,11 +558,14 @@ export const VisionScoresSchema = z
     realism: score10,
     cinematography: score10,
     editing: score10,
+    /** Scored only by the audio-visual model, which hears the scene. */
+    dialogue: score10,
+    sound: score10,
   })
   .catch({})
   .default({});
 export type VisionScores = z.infer<typeof VisionScoresSchema>;
-const visionDimension = z.enum(VISION_DIMENSION_IDS).catch('cinematography');
+const visionDimension = z.enum(HEARD_DIMENSION_IDS).catch('cinematography');
 const optionalText = (max: number) => z.string().max(max).optional().catch(undefined);
 
 export const LlmFeedbackActionSchema = z
@@ -551,6 +597,8 @@ export const FeedbackSceneOutputSchema = z.object({
         title: z.string().min(1).max(200),
         detail: str(1500),
         at: z.coerce.number().min(0).max(1).optional().catch(undefined),
+        /** Seconds from the start of the scene's video, when the model watched one. */
+        time: z.coerce.number().min(0).optional().catch(undefined),
       }),
     )
     .max(40)
@@ -568,6 +616,18 @@ export const FeedbackSceneOutputSchema = z.object({
       }),
     )
     .max(30)
+    .catch([])
+    .default([]),
+  /** Every line heard in the scene's video: seconds from its start, the speaker, the words. */
+  transcript: z
+    .array(
+      z.object({
+        time: z.coerce.number().min(0).catch(0),
+        speaker: z.string().max(80).catch(''),
+        text: z.string().max(1000).catch(''),
+      }),
+    )
+    .max(200)
     .catch([])
     .default([]),
 });
@@ -641,6 +701,8 @@ export interface FeedbackSceneInput {
     camera: string;
     dialogue: { character: string; line: string }[];
     characters: string[];
+    /** Where the shot is in the scene's video (seconds from its start), when the model watches one. */
+    video?: { from: number; to: number };
     take: {
       consistency: string;
       score: number | null;
@@ -654,6 +716,8 @@ export interface FeedbackSceneInput {
     black: { start: number; end: number }[];
   };
   stripCount: number;
+  /** The model gets the scene as a video with its sound instead of strips. */
+  listening: boolean;
 }
 
 export interface FeedbackFilmInput {
@@ -675,6 +739,8 @@ export interface FeedbackFilmInput {
     silences: number;
     rushedLines: number;
     framingRuns: number;
+    /** Lines heard against the script's (listening feedback); null when the film was not heard. */
+    dialogue: { lines: number; heard: number } | null;
     loudness: { target: string; integratedLufs: number | null } | null;
   };
   run: {

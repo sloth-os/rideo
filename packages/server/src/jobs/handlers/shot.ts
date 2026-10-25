@@ -25,6 +25,7 @@ import {
   temporalVerdict,
 } from '@rideo/shared';
 import { verifyFrames } from '../../consistency/gate';
+import { checkSound, silentTakeVerdict, spokenLines, withSoundVerdict } from '../../consistency/sound';
 import { verifyVoices } from '../../consistency/voice';
 import {
   assertCastReady,
@@ -406,6 +407,12 @@ export async function shotGenerate(deps: HandlerDeps, ctx: JobContext) {
           : {}),
       });
       const judgeVoices = dialogue?.mode === 'native' && settings.consistency.judgeVoices;
+      // The sound check (docs/design/continuity.md#quality-checks-in-the-gate): takes that carry their own voices.
+      const dialogueMode = settings.dialogue?.mode ?? 'off';
+      const voiced =
+        dialogueMode === 'native' || (dialogueMode === 'off' && settings.generation.includeAudio === true);
+      const listen = qualityChecks && !!deps.llm.omni && !performed && voiced;
+      const place = docs.screenplay?.scenes.find((s) => s.id === clip.sceneId)?.location ?? '';
 
       let best: Candidate | null = null;
       const videoTaskIds: string[] = [];
@@ -431,6 +438,24 @@ export async function shotGenerate(deps: HandlerDeps, ctx: JobContext) {
         const temporal = qualityChecks
           ? temporalVerdict(await sceneChanges(deps.ff, raw, { signal: ctx.signal }))
           : null;
+        // Heard while the judge looks at the frames; a check that fails holds nothing back.
+        const sound =
+          listen && probe.hasAudio
+            ? checkSound({
+                llm: deps.llm,
+                ff: deps.ff,
+                video: raw,
+                clip: join(dir, `sound-${attempt}.mp4`),
+                shot,
+                characters: docs.characters,
+                place,
+                voiced,
+                musicAllowed: settings.generation.modelMusic === true,
+                metrics: deps.metrics,
+                log: ctx.log,
+                signal: ctx.signal,
+              }).catch(() => null)
+            : null;
         ctx.progress(0.8, 1, 'verifying identity');
         const framePaths = await sampleFrames(
           deps.ff,
@@ -465,6 +490,9 @@ export async function shotGenerate(deps: HandlerDeps, ctx: JobContext) {
               }
             : {}),
         });
+        if (sound) report = withSoundVerdict(report, await sound);
+        else if (listen && !probe.hasAudio && spokenLines(shot, docs.characters).length)
+          report = withSoundVerdict(report, silentTakeVerdict(spokenLines(shot, docs.characters)));
         if (judgeVoices && dialogue) {
           // Rule V4: the speakers must sound like their locked voices.
           ctx.progress(0.82, 1, 'checking the voices');
@@ -500,12 +528,14 @@ export async function shotGenerate(deps: HandlerDeps, ctx: JobContext) {
               attempt,
               physics: report.quality?.physics,
               jumps: report.quality?.temporal?.jumps,
+              heard: report.quality?.sound?.lines.map((l) => l.heard),
               issues: report.quality?.issues.slice(0, 3),
             },
             'video failed the quality checks',
           );
       }
-      let final = best!;
+      // The report counts every attempt made, also when an earlier one is the best (docs/design/character-consistency.md).
+      let final: Candidate = { ...best!, report: { ...best!.report, attempts: videoTaskIds.length } };
       deps.metrics.takeAttempts.observe({ stage: 'video' }, final.report.attempts);
       // Attempts the gate threw away are waste (docs/design/observability.md#usage-ledger).
       deps.usage?.meter.discard(videoTaskIds.filter((id) => id !== final.taskId));

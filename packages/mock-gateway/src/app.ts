@@ -70,6 +70,8 @@ export interface MockGatewayApp {
   overloadChat(times: number): void;
   /** The next `times` video generations jump inside the shot (a flash cut), like MOCK_JUMP_EVERY. */
   jumpVideos(times: number): void;
+  /** The next `times` sound checks hear no speech, as when the video model does not voice its lines. */
+  muffleSpeech(times: number): void;
   close(): Promise<void>;
 }
 
@@ -88,6 +90,7 @@ export async function buildMockGateway(opts: MockGatewayOptions = {}): Promise<M
   };
   let overloads = 0;
   let jumpsLeft = 0;
+  let mufflesLeft = 0;
   const management = new MockManagement({ apiKey: opts.apiKey, managementKey: opts.managementKey });
   const keyOf = new WeakMap<FastifyRequest, MockKey>();
   const flakyEvery = opts.flakyEvery ?? Number(process.env.MOCK_FLAKY_EVERY ?? 0);
@@ -432,7 +435,13 @@ export async function buildMockGateway(opts: MockGatewayOptions = {}): Promise<M
       counters.overloaded++;
       return reply.code(503).type('text/plain').send('system cpu overloaded');
     }
-    const res = handleChat(path, body);
+    const res = handleChat(path, body, {
+      muffled: () => {
+        if (mufflesLeft <= 0) return false;
+        mufflesLeft--;
+        return true;
+      },
+    });
     return reply.code(res.status).headers(res.headers).send(res.body);
   });
 
@@ -447,6 +456,9 @@ export async function buildMockGateway(opts: MockGatewayOptions = {}): Promise<M
     },
     jumpVideos(times) {
       jumpsLeft = times;
+    },
+    muffleSpeech(times) {
+      mufflesLeft = times;
     },
     async close() {
       await app.close();

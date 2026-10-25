@@ -3,6 +3,7 @@ import {
   addUsage,
   assembleFeedback,
   cutPoints,
+  dialogueDelivery,
   emptyUsage,
   type FeedbackSceneOutput,
   FeedbackSchema,
@@ -116,6 +117,7 @@ describe('feedback signals (docs/design/feedback.md#how-a-film-is-watched)', () 
       temporal: null,
       physics: 0.2,
       continuity: null,
+      sound: null,
       issues: [],
     };
     c.shots[1]!.takes[0]!.consistency.status = 'unverified';
@@ -223,6 +225,7 @@ describe('feedback assembly (docs/design/feedback.md#how-a-film-is-watched, step
       },
       { dimension: 'editing', priority: 3, title: 'Trim', detail: '', action: { kind: 'note' } },
     ],
+    transcript: [],
     ...over,
   });
 
@@ -424,5 +427,141 @@ describe('usage and telemetry schemas (docs/design/observability.md)', () => {
         events: Array.from({ length: 51 }, () => ({ kind: 'error', name: 'api', value: 1 })),
       }).success,
     ).toBe(false);
+  });
+});
+
+describe('listening feedback (docs/design/feedback.md#how-a-film-is-watched)', () => {
+  const output = (over: Partial<FeedbackSceneOutput>): FeedbackSceneOutput => ({
+    scores: { storytelling: 7, physics: 7, dialogue: 5, sound: 8 },
+    summary: 'Watched and heard.',
+    strengths: [],
+    issues: [],
+    recommendations: [],
+    transcript: [],
+    ...over,
+  });
+
+  it('compares what was heard with each shot’s lines, places issues by time, and scores dialogue and sound', () => {
+    const { c1, clips, timeline } = fixture();
+    const rosie = f.character({ name: 'Rosie' });
+    const sammy = f.character({ name: 'Sammy' });
+    c1.shots[1]!.dialogue = [{ characterId: rosie.id, line: 'Look at the mountain, Sammy!' }];
+    c1.shots[2]!.dialogue = [{ characterId: sammy.id, line: 'It is so big and white.' }];
+    const characters = { [rosie.id]: rosie, [sammy.id]: sammy };
+    const spans = shotSpans(timeline, clips);
+    const scenes: SceneReview[] = [
+      {
+        clipId: c1.id,
+        index: 0,
+        title: c1.title,
+        start: 0,
+        end: 20,
+        spans: spans.slice(0, 4),
+        listened: true,
+        output: output({
+          transcript: [
+            { time: 5.4, speaker: 'Rosie', text: 'Look at the mountain, Sammy!' },
+            { time: 11, speaker: '', text: 'mm hmm' },
+          ],
+          issues: [
+            { time: 12.5, dimension: 'dialogue', severity: 'major', title: 'Mumbled line', detail: '' },
+          ],
+        }),
+      },
+    ];
+    const dialogue = dialogueDelivery(scenes, clips, characters);
+    expect(dialogue).toMatchObject({
+      lines: 2,
+      heard: 1,
+      missing: [{ shot: 'C1·S3', character: 'Sammy', heard: 0, start: 10, end: 15 }],
+    });
+    expect(dialogueDelivery([{ ...scenes[0]!, listened: false }], clips, characters)).toBeNull();
+
+    const signals = FeedbackSignalsSchema.parse({
+      durationSec: 25,
+      dialogue,
+      silences: [{ start: 21, end: 24.5 }],
+    });
+    const out = assembleFeedback({ scenes, film: null, signals, retrospective: [] });
+    expect(out.issues.find((i) => i.title === 'Mumbled line')).toMatchObject({
+      start: 12.5,
+      end: 13.5,
+      shot: 'C1·S3',
+      source: 'vision',
+    });
+    const notHeard = out.issues.find((i) => i.source === 'signal' && i.dimension === 'dialogue')!;
+    expect(notHeard).toMatchObject({ shot: 'C1·S3', severity: 'major', title: 'Sammy’s line is not heard' });
+    expect(out.recommendations[0]).toMatchObject({
+      priority: 1,
+      dimension: 'dialogue',
+      issueIds: [notHeard.id],
+      action: { kind: 'regenerate_shot', clipId: c1.id, shotId: spans[2]!.shotId },
+    });
+    expect(out.scores.dialogue).toBe(5);
+    // The mean of the measured sound (one silence: 9.5) and the heard (8)
+    expect(out.scores.sound).toBe(8.8);
+    const fb = FeedbackSchema.parse({
+      id: feedbackIdFor('exp_01m5qvveq6y41x74'),
+      exportId: 'exp_01m5qvveq6y41x74',
+      status: 'succeeded',
+      createdAt: '2026-10-25T00:00:00.000Z',
+      updatedAt: '2026-10-25T00:00:00.000Z',
+      model: 'omni-x',
+      listened: true,
+      ...out,
+      signals,
+    });
+    const md = feedbackMarkdown(fb, { title: 'T' });
+    expect(md).toContain('watched and heard by omni-x');
+    expect(md).toContain('Lines heard: 1 of 2.');
+  });
+
+  it('keeps a recommendation that already regenerates the shot, and ignores heard scores of strips', () => {
+    const { c1, clips, timeline } = fixture();
+    const sammy = f.character({ name: 'Sammy' });
+    c1.shots[2]!.dialogue = [{ characterId: sammy.id, line: 'It is so big and white.' }];
+    const spans = shotSpans(timeline, clips);
+    const scene = (listened: boolean): SceneReview => ({
+      clipId: c1.id,
+      index: 0,
+      title: c1.title,
+      start: 0,
+      end: 20,
+      spans: spans.slice(0, 4),
+      listened,
+      output: output({
+        recommendations: [
+          {
+            shot: 2,
+            dimension: 'dialogue',
+            priority: 1,
+            title: 'Sammy needs his line',
+            detail: '',
+            action: { kind: 'regenerate_shot', action: 'Sammy speaks clearly' },
+          },
+        ],
+      }),
+    });
+    const dialogue = dialogueDelivery([scene(true)], clips, { [sammy.id]: sammy });
+    const listenedOut = assembleFeedback({
+      scenes: [scene(true)],
+      film: null,
+      signals: FeedbackSignalsSchema.parse({ durationSec: 25, dialogue }),
+      retrospective: [],
+    });
+    expect(
+      listenedOut.recommendations.filter(
+        (r) => r.action?.kind === 'regenerate_shot' && r.action.shotId === spans[2]!.shotId,
+      ),
+    ).toHaveLength(1);
+    const seen = assembleFeedback({
+      scenes: [scene(false)],
+      film: null,
+      signals: FeedbackSignalsSchema.parse({ durationSec: 25 }),
+      retrospective: [],
+    });
+    expect(seen.scores.dialogue).toBeNull();
+    expect(seen.scores.sound).toBeNull();
+    expect(seen.scenes[0]!.scores).not.toHaveProperty('dialogue');
   });
 });

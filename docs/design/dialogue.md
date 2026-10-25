@@ -54,7 +54,7 @@ projects created before voices behave as before); a server with a TTS provider c
 |---|---|---|
 | `tts` | the lines in the prompt (so the speakers' lips move) and, when the model accepts reference audio (`supports_reference_audio: true`), **the shot's dialogue mix as `reference_audio`** with `include_audio: true`. Otherwise no sound is requested: the model's own voices would double the TTS. | the TTS mix: exactly the locked voices, on the timeline's *Dialogue* track |
 | `native` | the lines in the prompt, `include_audio: true`, and **the speakers' voice samples as `reference_audio`** (in speaking order) when the model accepts reference audio | the take's own sound, checked against the voice locks (V4) |
-| `off` | the lines only when `generation.includeAudio` is on | the take's own sound when `generation.includeAudio` is on: models that voice the lines themselves from the prompt (Wan 2.5 and later, Veo, Kling) speak them without voice locks |
+| `off` | the lines only when `generation.includeAudio` is on | the take's own sound when `generation.includeAudio` is on: models that voice the lines themselves from the prompt (Wan 2.5 and later, Veo, Kling) speak them without voice locks; with an audio-visual model the [sound check](continuity.md#quality-checks-in-the-gate) makes sure each line is heard |
 
 With prompt version 2 every line in a video prompt names its speaker's voice (`voice.description`, else the
 identity's age and gender) in the same words each time, and a shot without lines says `No dialogue.`, so a model that

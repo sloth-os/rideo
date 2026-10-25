@@ -366,6 +366,8 @@ export async function buildServer(
           ? { provider: config.tts.provider, clone: config.tts.provider === 'elevenlabs' }
           : null,
         voiceJudge: !!config.voiceJudge,
+        /** The audio-visual model: the sound check of takes and feedback that listens. */
+        omni: config.omni?.model ?? null,
         /** Telemetry from the studio (docs/design/observability.md#telemetry-from-the-studio). */
         telemetry: config.telemetry,
         /** Generated sound effects (docs/design/post-audio.md#effects-from-action-lines). */

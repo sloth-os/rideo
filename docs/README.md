@@ -66,6 +66,7 @@
 | Setting | A value the studio reads from the environment or, when the environment leaves it unset, from Settings. |
 | Marker | A named, colored point on the cut's time, a snap target ([editing tools](design/editing-tools.md#markers)). |
 | Feedback | The vision model's review of an export: scores, issues pinned to shots, recommendations with actions ([feedback](design/feedback.md)). |
+| Audio-visual model | A model that watches video with its sound (`omni`): the sound check of takes and feedback that listens ([continuity](design/continuity.md#quality-checks-in-the-gate)). |
 | Retrospective | What to improve in how a project was made, written with its feedback from the run's own numbers. |
 | Usage | Generations and model calls a job made, with their estimated cost, summed per project ([observability](design/observability.md#usage-ledger)). |
 | Prompt version | `1` (projects from before) or `2` (continuity-aware prompts, [continuity](design/continuity.md#prompt-version)). |

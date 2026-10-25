@@ -123,6 +123,8 @@ export interface PublicConfig {
     auth: boolean;
     tts: { provider: string; clone: boolean } | null;
     voiceJudge: boolean;
+    /** The audio-visual model (docs/design/continuity.md#quality-checks-in-the-gate), null when none is set. */
+    omni?: string | null;
     /** Generated sound effects (docs/design/post-audio.md). */
     sfx?: { provider: string } | null;
     /** NLE hand-off: the WebDAV root as clients reach it (docs/design/interchange.md). */

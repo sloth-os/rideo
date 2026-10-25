@@ -175,6 +175,8 @@ export function createStudio(
       meter,
       log: log.child({ component: 'llm' }),
       ...(config.voiceJudge ? { audio: createAdapter(proxy, config.voiceJudge) } : {}),
+      // The audio-visual model (docs/design/continuity.md#quality-checks-in-the-gate)
+      ...(config.omni ? { omni: createAdapter(proxy, config.omni, config.llmTimeoutMs) } : {}),
     },
   );
   const gateway = new GatewayClient({

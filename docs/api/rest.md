@@ -60,7 +60,7 @@ media URLs); see [browser storage](../design/browser-storage.md#routing-on-the-s
 |---|---|---|
 | GET | `/api/health` | `{status: "ok", version, instanceId}` |
 | GET | `/api/ready` | `{status, checks: {storage, gateway, ffmpeg, llm}}` |
-| GET | `/api/config` | public config: brand, `basePath`, `theme`, features (`mcp`, `gateway`, `ai`, `storage`, `embeddedDav`, `judge`, `stt`, …), defaults, model catalogue from the gateway (empty without one), `llm` (null without a gateway) |
+| GET | `/api/config` | public config: brand, `basePath`, `theme`, features (`mcp`, `gateway`, `ai`, `storage`, `embeddedDav`, `judge`, `stt`, `omni`, …), defaults, model catalogue from the gateway (empty without one), `llm` (null without a gateway) |
 | GET | `/metrics` | Prometheus text |
 
 ## Settings
@@ -73,7 +73,7 @@ Administrators only: the studio principal (no accounts, or the studio token) and
 | GET | `/api/settings` | – | `SettingsView`: `{fields: {<ENV_NAME>: {value, source, locked, set}}, storage, gateway, endpoints: {<endpoint>: {on, provider, url, domain, model, key, keyFrom, proxy, detail}}, proxySync: {status, at, code, detail}, updatedAt, updatedBy, error, runningJobs}`; secrets (gateway keys and every API key among them) have `value: null` |
 | PUT | `/api/settings` | `{values: {<ENV_NAME>: string \| null}}` | the new view with `{applied, changed}`; applied at once (the studio's services reload, then the API keys are registered in mm-gateway, waited for up to 20 s); `409 setting_locked`, `422 validation_error` with `errors[{path: <ENV_NAME>, message}]`, or 422 when the studio could not start with them (rolled back) |
 | POST | `/api/settings/test` | `{target: "webdav" \| "gateway", values}` | `{ok, detail, models?}`; nothing is saved |
-| POST | `/api/settings/test` | `{target: "llm" \| "vision" \| "stt" \| "embeddings" \| "tts" \| "sfx" \| "voiceJudge"}` | `{ok, detail, latencyMs}`: the smallest real call to that endpoint through the gateway proxy, with the saved settings ([endpoint tests](../design/settings.md#endpoint-status-and-tests)) |
+| POST | `/api/settings/test` | `{target: "llm" \| "vision" \| "omni" \| "stt" \| "embeddings" \| "tts" \| "sfx" \| "voiceJudge"}` | `{ok, detail, latencyMs}`: the smallest real call to that endpoint through the gateway proxy, with the saved settings ([endpoint tests](../design/settings.md#endpoint-status-and-tests)) |
 
 ## Browser storage
 

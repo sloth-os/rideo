@@ -9,7 +9,7 @@ import {
   TASK_MARKER_PATTERN,
   VOICE_REFERENCE_LABEL,
 } from '@rideo/shared';
-import { feedbackFilm, feedbackScene } from './feedback';
+import { feedbackFilm, feedbackScene, soundCheck } from './feedback';
 import {
   characterDescribe,
   clipPlan,
@@ -32,7 +32,21 @@ import { voiceJudge } from './speech';
 type Part =
   | { kind: 'text'; text: string }
   | { kind: 'image'; data: Buffer; mime: string }
-  | { kind: 'audio'; data: Buffer; format: string };
+  | { kind: 'audio'; data: Buffer; format: string }
+  /** A video with its sound (the audio-visual model). */
+  | { kind: 'video'; data: Buffer; mime: string };
+
+/** What a chat call may depend on besides its body: the gateway's switches. */
+export interface ChatOptions {
+  /** True when this sound check hears no speech (muffleSpeech). */
+  muffled?: () => boolean;
+}
+
+/** A video data URI, typed (`data:video/mp4;base64,…`) or not (`data:;base64,…`, as Qwen-Omni documents it). */
+function videoFromUrl(url: unknown): Part | null {
+  const m = typeof url === 'string' ? /^data:([^;,]*);base64,(.*)$/s.exec(url) : null;
+  return m ? { kind: 'video', data: Buffer.from(m[2]!, 'base64'), mime: m[1] || 'video/mp4' } : null;
+}
 
 export interface ProxyResponse {
   status: number;
@@ -71,6 +85,9 @@ export function parseOpenAi(body: any): ChatRequest {
       else if (c.type === 'image_url') {
         const img = imageFromUrl(typeof c.image_url === 'string' ? c.image_url : c.image_url?.url);
         if (img) parts.push(img);
+      } else if (c.type === 'video_url') {
+        const video = videoFromUrl(typeof c.video_url === 'string' ? c.video_url : c.video_url?.url);
+        if (video) parts.push(video);
       }
     }
   }
@@ -89,6 +106,8 @@ export function parseGemini(body: any): ChatRequest {
       const mime = String(inline?.mime_type ?? inline?.mimeType ?? '');
       if (inline?.data && mime.startsWith('audio/'))
         parts.push({ kind: 'audio', data: Buffer.from(inline.data, 'base64'), format: mime.split('/')[1]! });
+      else if (inline?.data && mime.startsWith('video/'))
+        parts.push({ kind: 'video', data: Buffer.from(inline.data, 'base64'), mime });
       else if (inline?.data) parts.push({ kind: 'image', data: Buffer.from(inline.data, 'base64'), mime });
     }
   }
@@ -178,7 +197,7 @@ const imagesOf = (parts: Part[]) =>
   parts.filter((p): p is Extract<Part, { kind: 'image' }> => p.kind === 'image').map((p) => p.data);
 
 /** Routes a chat request to the fixture for its `rideo-task:` marker; unknown tasks get a small echo. */
-export function answer(req: ChatRequest): string {
+export function answer(req: ChatRequest, opts: ChatOptions = {}): string {
   const text = [
     req.system,
     ...req.parts.filter((p) => p.kind === 'text').map((p) => (p as { text: string }).text),
@@ -191,6 +210,7 @@ export function answer(req: ChatRequest): string {
     | undefined;
   const input = inputText ? JSON.parse(inputText.text.slice(INPUT_PREFIX.length)) : {};
   const imageCount = req.parts.filter((p) => p.kind === 'image').length;
+  const videoCount = req.parts.filter((p) => p.kind === 'video').length;
   let out: unknown;
   switch (task) {
     case 'screenplay.generate':
@@ -236,7 +256,10 @@ export function answer(req: ChatRequest): string {
       out = frameCaption(input, imagesOf(req.parts));
       break;
     case 'feedback.scene':
-      out = feedbackScene(input, imagesOf(req.parts).length);
+      out = feedbackScene(input, imagesOf(req.parts).length, videoCount > 0);
+      break;
+    case 'sound.check':
+      out = soundCheck(input, { watched: videoCount > 0, muffled: opts.muffled?.() ?? false });
       break;
     case 'feedback.film':
       out = feedbackFilm(input);
@@ -250,11 +273,40 @@ export function answer(req: ChatRequest): string {
 function usage(req: ChatRequest, out: string) {
   const inTokens =
     Math.ceil(JSON.stringify(req.parts.filter((p) => p.kind === 'text')).length / 4) +
-    req.parts.filter((p) => p.kind === 'image').length * 258;
+    req.parts.filter((p) => p.kind === 'image').length * 258 +
+    req.parts.filter((p) => p.kind === 'video').length * 1300;
   return { input: inTokens, output: Math.ceil(out.length / 4) };
 }
 
-export function handleChat(path: string, body: any): ProxyResponse {
+/**
+ * A streamed chat completion as OpenAI sends it (docs/design/ai-gateway.md#proxy-usage-llm-vision-stt-embeddings): the
+ * content in three deltas, the usage in a last event when `stream_options.include_usage` asks for it, then `[DONE]`.
+ */
+function chatStream(body: any, content: string, u: { input: number; output: number }): ProxyResponse {
+  const id = `chatcmpl-mock-${Date.now()}`;
+  const event = (payload: object) =>
+    `data: ${JSON.stringify({ id, object: 'chat.completion.chunk', model: body.model ?? 'mock-llm', ...payload })}\n\n`;
+  const third = Math.ceil(content.length / 3);
+  const pieces = [content.slice(0, third), content.slice(third, 2 * third), content.slice(2 * third)];
+  let out = event({
+    choices: [{ index: 0, delta: { role: 'assistant', content: '' }, finish_reason: null }],
+  });
+  for (const piece of pieces)
+    out += event({ choices: [{ index: 0, delta: { content: piece }, finish_reason: null }] });
+  out += event({ choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] });
+  if (body.stream_options?.include_usage)
+    out += event({
+      choices: [],
+      usage: { prompt_tokens: u.input, completion_tokens: u.output, total_tokens: u.input + u.output },
+    });
+  return {
+    status: 200,
+    headers: { 'content-type': 'text/event-stream; charset=utf-8', 'cache-control': 'no-cache' },
+    body: `${out}data: [DONE]\n\n`,
+  };
+}
+
+export function handleChat(path: string, body: any, opts: ChatOptions = {}): ProxyResponse {
   const json = (payload: unknown): ProxyResponse => ({
     status: 200,
     headers: { 'content-type': 'application/json' },
@@ -262,8 +314,9 @@ export function handleChat(path: string, body: any): ProxyResponse {
   });
   if (/chat\/completions$/.test(path)) {
     const req = parseOpenAi(body);
-    const content = answer(req);
+    const content = answer(req, opts);
     const u = usage(req, content);
+    if (body.stream === true) return chatStream(body, content, u);
     return json({
       id: `chatcmpl-mock-${Date.now()}`,
       object: 'chat.completion',
@@ -275,7 +328,7 @@ export function handleChat(path: string, body: any): ProxyResponse {
   }
   if (/:generateContent$/.test(path)) {
     const req = parseGemini(body);
-    const text = answer(req);
+    const text = answer(req, opts);
     const u = usage(req, text);
     return json({
       candidates: [{ content: { role: 'model', parts: [{ text }] }, finishReason: 'STOP', index: 0 }],
@@ -289,7 +342,7 @@ export function handleChat(path: string, body: any): ProxyResponse {
   }
   if (/\/messages$/.test(path)) {
     const req = parseAnthropic(body);
-    let text = answer(req);
+    let text = answer(req, opts);
     if (req.prefill && text.startsWith(req.prefill)) text = text.slice(req.prefill.length);
     const u = usage(req, text);
     return json({

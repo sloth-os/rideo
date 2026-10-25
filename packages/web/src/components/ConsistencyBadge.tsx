@@ -1,4 +1,4 @@
-import { type Character, type Shot, type Take, takeState } from '@rideo/shared';
+import { type Character, LINE_HEARD_RATIO, type Shot, type Take, takeState } from '@rideo/shared';
 import { ShieldAlert, ShieldCheck, ShieldQuestion, ShieldX, UserCheck } from 'lucide-react';
 import { NO_ELEMENTS, useProject } from '../store/project';
 import { Badge } from './ui';
@@ -59,16 +59,19 @@ export function ConsistencyBadge({
   }
 }
 
-/** The temporal and physics checks of a take (docs/design/continuity.md#quality-checks-in-the-gate). */
+/** The temporal, physics and sound checks of a take (docs/design/continuity.md#quality-checks-in-the-gate). */
 export function QualityBadge({ take }: { take: Take }) {
   const q = take.consistency.quality;
   if (!q) return null;
+  const unheard = q.sound?.lines.filter((l) => l.heard < LINE_HEARD_RATIO).length ?? 0;
   const parts = [
     q.temporal?.jumps.length
       ? `jumps at ${q.temporal.jumps.map((t) => `${t.toFixed(1)} s`).join(', ')}`
       : null,
     q.physics !== null ? `physics ${q.physics.toFixed(2)}` : null,
     q.continuity !== null ? `continuity ${q.continuity.toFixed(2)}` : null,
+    q.sound?.lines.length ? `${q.sound.lines.length - unheard}/${q.sound.lines.length} lines heard` : null,
+    q.sound?.transcript ? `heard: “${q.sound.transcript}”` : null,
   ].filter(Boolean);
   return (
     <Badge
@@ -76,7 +79,7 @@ export function QualityBadge({ take }: { take: Take }) {
       title={[...parts, ...q.issues].join('; ')}
       testid="quality-badge"
     >
-      {q.passed ? 'quality ok' : q.temporal?.jumps.length ? 'jumps' : 'physics'}
+      {q.passed ? 'quality ok' : q.temporal?.jumps.length ? 'jumps' : unheard ? 'line not heard' : 'physics'}
     </Badge>
   );
 }

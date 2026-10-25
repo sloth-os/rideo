@@ -34,6 +34,7 @@ import {
   type MediaDescribeInput,
   type MediaDescribeOutput,
   MediaDescribeOutputSchema,
+  SCENE_VIDEO_LABEL,
   type ScorePlanInput,
   type ScorePlanOutput,
   ScorePlanOutputSchema,
@@ -46,7 +47,11 @@ import {
   type SfxPlanInput,
   type SfxPlanOutput,
   SfxPlanOutputSchema,
+  type SoundCheckInput,
+  type SoundCheckOutput,
+  SoundCheckOutputSchema,
   TAKE_AUDIO_LABEL,
+  TAKE_VIDEO_LABEL,
   type ThumbnailPickInput,
   type ThumbnailPickOutput,
   ThumbnailPickOutputSchema,
@@ -201,6 +206,17 @@ Write a summary (what the film is, what works, what holds it back), strengths, a
 "lessons": what the makers should do differently in the production of their next film ("area": quality, cost, performance, reliability or ux), from the numbers and the recurring issues.
 Return only JSON: {"scores":{"storytelling":7,"continuity":6,"character":8,"temporal":7,"physics":6,"realism":7,"cinematography":7,"editing":6},"summary":"...","strengths":["..."],"recommendations":[{"dimension":"storytelling","priority":1,"title":"...","detail":"...","scenes":[3],"action":{"kind":"note"}}],"lessons":[{"area":"cost","title":"...","detail":"..."}]}`,
 
+  'sound.check': `rideo-task: sound.check
+You check the sound of one shot of an AI-generated film. You get the shot as planned ("shot"), the lines it should speak with each speaker's voice ("lines": empty when nobody should speak), the cast's voices, whether the shot may carry music ("music"), and the take as a video with its sound.
+Listen carefully and write down exactly what you hear, not what the script says:
+- "speech": every utterance in order: "text" (the exact words you hear; garbled or unclear speech as you hear it), "speaker" (the cast name whose voice and lips it is, or null when you cannot tell), "voice" (for example "young male, cheerful"), "lipSync" (0–1: do the speaker's lips move with the words?).
+- "music": true when music plays (a melody or a beat), false for voices, ambience and effects only.
+- "sounds": what else you hear (wind, skis on snow, footsteps...).
+- "score" (0–1): the sound as a whole: clear voices, natural ambience that fits the place, no glitches, garbling, echoes or clipping.
+- "issues": what is wrong with the sound, short.
+Never invent words you do not hear.
+Return only JSON: {"speech":[{"text":"...","speaker":"Name","voice":"young female","lipSync":0.8}],"music":false,"sounds":["wind"],"score":0.8,"issues":[]}`,
+
   'frame.caption': `rideo-task: frame.caption
 You describe one frame of a film project so people can find it later by searching in words. Write one sentence of at most 300 characters: who is in it, where it is, what is happening, the shot size (extreme close-up, close-up, medium, wide or extreme wide) and the light (daylight, night, dusk, dawn, interior...), with notable colours and objects.
 - "known" lists who and what this frame's source shows, with how they look: use their names when you see them.
@@ -257,7 +273,38 @@ Rules:
 Return only JSON: {"shots":[{"description":"...","action":"...","endState":"...","camera":{"framing":"wide","movement":"static"},"lensMm":24,"characters":["Name"],"props":["prop name"],"durationSec":5,"continuity":"cut","dialogue":[{"character":"Name","line":"..."}]}]}`,
 };
 
+/**
+ * Tasks that watch a video with its sound (the audio-visual model, docs/design/feedback.md#how-a-film-is-watched): the
+ * same task marker, a prompt for what can now be heard.
+ */
+export const LISTENING_PROMPTS: Partial<Record<LlmTaskId, string>> = {
+  'feedback.scene': `rideo-task: feedback.scene
+You are a demanding film critic, script supervisor and sound editor reviewing one scene of an AI-generated film, to help its makers improve it. You get the film's details, the scene as written, its neighbours, the cast, every shot of the scene as planned ("video": where the shot is in the scene's video, in seconds) and the scene itself as a video with its sound.
+Watch and listen to all of it. Score the scene 0–10 on each dimension (10 = a professional feature film, 5 = clearly visible or audible problems, below 3 = broken):
+- storytelling: does the scene show its goal, obstacle and turn; does it follow from the previous scene; does the dialogue move it on?
+- continuity: across cuts, do time of day, light direction, weather, wardrobe, props, positions and screen direction match?
+- character: are the characters the same faces, bodies and outfits as the cast describes, in every shot?
+- temporal: inside shots, is the motion smooth with no morphing, flicker, popping or stray cuts?
+- physics: weight, gravity, momentum, contact with the ground, anatomy, objects keeping their shape and number?
+- realism: believable light, materials, scale and depth, a camera that behaves like a real camera, no AI artefacts?
+- cinematography: framing, composition, coverage, lens choice, camera movement?
+- editing: shot lengths, rhythm, cut points, no repetition?
+- dialogue: is every line spoken as written, clearly, at the film's dialogue level, in its character's voice, with the lips in sync? Is anything said that the script does not say?
+- sound: ambience and effects that fit the place and the action, no stray music or noise, voices at a clear level, no glitches?
+Write the "transcript": every line you hear, in order: "time" (seconds from the start of the video), "speaker" (the cast name, or "" when you cannot tell), "text" (the exact words you hear, not the script's).
+Then list concrete issues, as many as matter, most severe first: "shot" (the shot's index), "time" (seconds from the start of the video), "dimension", "severity" (critical: breaks the film; major: clearly visible or audible; minor: polish), "title" (short), "detail" (what is wrong, where in the frame or what is heard).
+Then recommendations, most important first, to fix the issues or make the scene better. When a shot should be generated again, give "action": {"kind":"regenerate_shot","description":"the revised first-frame description","action":"the revised motion","negativePrompt":"what to avoid","framing":"...","movement":"..."} for that "shot" (only the fields that change); when the scene's shots should be planned again, {"kind":"replan_scene","direction":"what the new plan must do"}; otherwise {"kind":"note"}. "priority": 1 = do first, 3 = nice to have.
+Be specific and honest; praise only what deserves it ("strengths").
+Return only JSON: {"scores":{"storytelling":7,"continuity":6,"character":8,"temporal":7,"physics":6,"realism":7,"cinematography":7,"editing":6,"dialogue":7,"sound":6},"summary":"...","strengths":["..."],"transcript":[{"time":1.2,"speaker":"Name","text":"..."}],"issues":[{"shot":0,"time":3.5,"dimension":"dialogue","severity":"major","title":"...","detail":"..."}],"recommendations":[{"shot":0,"dimension":"dialogue","priority":1,"title":"...","detail":"...","action":{"kind":"regenerate_shot","action":"..."}}]}`,
+};
+
 export interface LabelledImage {
+  label?: string;
+  data: Buffer;
+  mime: string;
+}
+
+export interface LabelledVideo {
   label?: string;
   data: Buffer;
   mime: string;
@@ -368,14 +415,41 @@ export class LlmTasks {
       log?: { info: (o: unknown, m?: string) => void };
       /** An audio-capable model for the speaker check (rule V4); absent when none is configured. */
       audio?: LlmAdapter;
+      /** The audio-visual model, which watches video with its sound; absent when none is configured. */
+      omni?: LlmAdapter;
       retry?: LlmRetryPolicy;
       /** Tokens, time and cost of every call (docs/design/observability.md#usage-ledger). */
       meter?: UsageMeter;
     } = {},
   ) {}
 
-  /** One adapter call, made again while the provider turns it away for load. */
+  /**
+   * One adapter call, made again while the provider turns it away for load. A connection that drops or a call that
+   * times out after those retries is a retryable `llm_error`: the job tries again later.
+   */
   private async complete(
+    task: LlmTaskId,
+    adapter: LlmAdapter,
+    req: LlmRequest,
+    counts: { retries: number } = { retries: 0 },
+  ): Promise<LlmResponse> {
+    try {
+      return await this.completeOnce(task, adapter, req, counts);
+    } catch (err) {
+      if (req.signal?.aborted || err instanceof AppError || err instanceof LlmError) throw err;
+      const e = err as { name?: string; message?: string; cause?: { code?: string; message?: string } };
+      if (e?.name === 'TimeoutError' || e?.message === 'fetch failed' || e?.cause?.code)
+        throw new AppError(
+          'llm_error',
+          `${task}: ${e.name === 'TimeoutError' ? 'the model did not answer in time' : `the connection failed (${e.cause?.code ?? e.cause?.message ?? e.message})`}`,
+          [],
+          true,
+        );
+      throw err;
+    }
+  }
+
+  private async completeOnce(
     task: LlmTaskId,
     adapter: LlmAdapter,
     req: LlmRequest,
@@ -406,6 +480,10 @@ export class LlmTasks {
     return this.deps.audio;
   }
 
+  get omni(): LlmAdapter | undefined {
+    return this.deps.omni;
+  }
+
   async run<T>(
     task: LlmTaskId,
     schema: z.ZodType<T>,
@@ -413,6 +491,8 @@ export class LlmTasks {
     opts: {
       images?: LabelledImage[];
       audio?: LabelledAudio[];
+      /** Videos with their sound, for the audio-visual model. */
+      video?: LabelledVideo[];
       temperature?: number;
       signal?: AbortSignal;
       maxTokens?: number;
@@ -420,12 +500,20 @@ export class LlmTasks {
       version?: 1 | 2;
     } = {},
   ): Promise<T> {
-    const system = (opts.version === 2 ? SYSTEM_PROMPTS_V2[task] : undefined) ?? SYSTEM_PROMPTS[task];
+    const watching = !!opts.video?.length;
+    const system =
+      (watching ? LISTENING_PROMPTS[task] : undefined) ??
+      (opts.version === 2 ? SYSTEM_PROMPTS_V2[task] : undefined) ??
+      SYSTEM_PROMPTS[task];
     let adapter = opts.images?.length ? this.vision : this.text;
     if (opts.audio?.length) {
       if (!this.deps.audio)
         throw new AppError('llm_error', 'no audio-capable model is configured', [], false);
       adapter = this.deps.audio;
+    }
+    if (watching) {
+      if (!this.deps.omni) throw new AppError('llm_error', 'no audio-visual model is configured', [], false);
+      adapter = this.deps.omni;
     }
     const parts: LlmPart[] = [{ type: 'text', text: `${INPUT_PREFIX}${JSON.stringify(input)}` }];
     for (const img of opts.images ?? []) {
@@ -436,6 +524,10 @@ export class LlmTasks {
       if (a.label) parts.push({ type: 'text', text: a.label });
       parts.push({ type: 'audio', data: a.data, format: a.format });
     }
+    for (const v of opts.video ?? []) {
+      if (v.label) parts.push({ type: 'text', text: v.label });
+      parts.push({ type: 'video', data: v.data, mime: v.mime });
+    }
     const started = performance.now();
     const temperature = opts.temperature ?? 0.7;
     const counts = { retries: 0 };
@@ -444,7 +536,7 @@ export class LlmTasks {
       this.deps.meter?.llm({
         task,
         model: adapter.model,
-        modality: opts.audio?.length ? 'speech' : opts.images?.length ? 'vision' : 'text',
+        modality: opts.audio?.length ? 'speech' : opts.images?.length || watching ? 'vision' : 'text',
         seconds: (performance.now() - started) / 1000,
         tokensIn: tokens.in,
         tokensOut: tokens.out,
@@ -593,19 +685,35 @@ export class LlmTasks {
   }
 
   /** One scene of the finished film, a strip of three frames per shot (docs/design/feedback.md). */
+  /** One scene, from strips of its shots, or watched and heard as a video when one is given (the audio-visual model). */
   feedbackScene(
     input: FeedbackSceneInput,
     strips: { label: string; data: Buffer }[],
     signal?: AbortSignal,
+    video?: Buffer,
   ): Promise<FeedbackSceneOutput> {
     return this.run('feedback.scene', FeedbackSceneOutputSchema, input, {
-      images: strips.map((s) => ({
-        label: `${FEEDBACK_STRIP_LABEL} ${s.label}:`,
-        data: s.data,
-        mime: 'image/jpeg',
-      })),
+      ...(video
+        ? { video: [{ label: `${SCENE_VIDEO_LABEL}:`, data: video, mime: 'video/mp4' }] }
+        : {
+            images: strips.map((s) => ({
+              label: `${FEEDBACK_STRIP_LABEL} ${s.label}:`,
+              data: s.data,
+              mime: 'image/jpeg',
+            })),
+          }),
       temperature: 0.2,
-      maxTokens: 6000,
+      maxTokens: video ? 8000 : 6000,
+      signal,
+    });
+  }
+
+  /** What a take sounds like (docs/design/continuity.md#quality-checks-in-the-gate), watched by the audio-visual model. */
+  checkSound(input: SoundCheckInput, video: Buffer, signal?: AbortSignal): Promise<SoundCheckOutput> {
+    return this.run('sound.check', SoundCheckOutputSchema, input, {
+      video: [{ label: `${TAKE_VIDEO_LABEL}:`, data: video, mime: 'video/mp4' }],
+      temperature: 0,
+      maxTokens: 2000,
       signal,
     });
   }

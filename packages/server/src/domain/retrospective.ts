@@ -49,6 +49,8 @@ const ADVICE: Record<FeedbackDimension, string> = {
   cinematography:
     'Vary the framing (wide, medium, close, inserts), one motivated camera move per shot, a lens per framing.',
   editing: 'Trim long holds, vary shot lengths with the action, and cut on movement.',
+  dialogue:
+    'Set an audio-visual model so the sound check hears every take, keep lines short and at the film’s level, and name each speaker’s voice in the same words in every prompt (prompt version 2).',
   sound:
     'Normalize loudness, fill silent stretches with ambience or music, and keep each line short enough for its shot.',
 };
@@ -293,6 +295,19 @@ export const RETROSPECTIVE_RULES: Rule[] = [
               'They are spoken too fast or cut off. Prompt version 2 fits lines to shots when planning; shorten or split these.',
           }
         : null,
+  },
+  {
+    id: 'undelivered_lines',
+    area: 'quality',
+    check: (f) => {
+      const d = f.signals.dialogue;
+      if (!d?.missing.length) return null;
+      return {
+        title: `${d.missing.length} of ${d.lines} lines are not heard in the film`,
+        detail:
+          'The video model did not voice them clearly. Apply the recommendations to generate those shots again, and turn the quality checks on with an audio-visual model so the sound check catches them while generating.',
+      };
+    },
   },
   {
     id: 'target_missed',

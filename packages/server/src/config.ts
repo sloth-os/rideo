@@ -157,6 +157,10 @@ export const EnvSchema = z
     RIDEO_VISION_PROXY_DOMAIN: str(),
     RIDEO_VISION_API_KEY: str(),
     RIDEO_VISION_MODEL: str(),
+    RIDEO_OMNI_PROVIDER: z.enum(['openai', 'gemini', 'off']).optional(),
+    RIDEO_OMNI_PROXY_DOMAIN: str(),
+    RIDEO_OMNI_API_KEY: str(),
+    RIDEO_OMNI_MODEL: str(),
     RIDEO_STT_PROXY_DOMAIN: str(),
     RIDEO_STT_API_KEY: str(),
     RIDEO_STT_MODEL: str(),
@@ -365,7 +369,10 @@ export interface Config {
   };
   llm: LlmEndpoint;
   vision: LlmEndpoint;
-  /** How long one text or vision model call may take (`RIDEO_LLM_TIMEOUT_SEC`). */
+  /**
+   * How long a text or vision model call may go without receiving anything (`RIDEO_LLM_TIMEOUT_SEC`); a streamed
+   * answer may take four times that in all (docs/design/ai-gateway.md#proxy-usage-llm-vision-stt-embeddings).
+   */
   llmTimeoutMs: number;
   stt?: ProxyApi & { model: string };
   /** Caption embeddings for semantic search; unset: search ranks by words. */
@@ -376,6 +383,11 @@ export interface Config {
   sfx?: SfxEndpoint;
   /** The audio-capable LLM that checks speakers of native-audio takes (rule V4). */
   voiceJudge?: ProxyApi & { provider: 'openai' | 'gemini'; model: string };
+  /**
+   * The audio-visual model: watches video with its sound for the sound check of takes and listening feedback
+   * (docs/design/continuity.md#quality-checks-in-the-gate); unset until a model is named.
+   */
+  omni?: ProxyApi & { provider: 'openai' | 'gemini'; model: string };
   /** Every AI endpoint with its base and API key (docs/design/settings.md#provider-endpoints-and-api-keys). */
   endpoints: ResolvedEndpoints;
   consistency: { judge: 'vision-llm' | 'off'; threshold: number; maxAttempts: number };
@@ -541,6 +553,7 @@ export function loadConfig(
     tts: endpoints.tts ? api(endpoints.tts) : undefined,
     sfx: endpoints.sfx ? api(endpoints.sfx) : undefined,
     voiceJudge: endpoints.voiceJudge ? api(endpoints.voiceJudge) : undefined,
+    omni: endpoints.omni ? api(endpoints.omni) : undefined,
     endpoints,
     consistency: {
       judge: e.RIDEO_CONSISTENCY_JUDGE,

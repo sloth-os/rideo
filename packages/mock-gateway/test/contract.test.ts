@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   ClipPlanOutputSchema,
+  FeedbackSceneOutputSchema,
   FocusOutputSchema,
   FrameCaptionOutputSchema,
   INPUT_PREFIX,
@@ -11,6 +12,7 @@ import {
   ScorePlanOutputSchema,
   ScreenplayGenerateOutputSchema,
   SfxPlanOutputSchema,
+  SoundCheckOutputSchema,
   ThumbnailPickOutputSchema,
   TranslateOutputSchema,
 } from '@rideo/shared';
@@ -354,6 +356,98 @@ describe('proxy LLM formats', () => {
     }
     expect(gw.counters.overloaded).toBe(2);
     expect(ScreenplayGenerateOutputSchema.parse(await chat('screenplay.generate', input)).title).toBeTruthy();
+  });
+
+  it('hears a take’s lines unless the speaker mumbles or the gateway muffles the check, and hears a scene', async () => {
+    const video = {
+      type: 'video_url',
+      video_url: { url: `data:;base64,${Buffer.from('mp4').toString('base64')}` },
+    };
+    const input = {
+      shot: { description: 'Rosie waves.', action: '', place: 'slope', durationSec: 5 },
+      lines: [{ character: 'Rosie', voice: 'a young female voice', line: 'Hi Sammy!' }],
+      cast: [],
+      music: false,
+    };
+    const heard = SoundCheckOutputSchema.parse(await chat('sound.check', input, [video]));
+    expect(heard.speech).toEqual([
+      { text: 'Hi Sammy!', speaker: 'Rosie', voice: 'a young female voice', lipSync: 0.9 },
+    ]);
+    expect(heard.music).toBe(false);
+    gw.muffleSpeech(1);
+    expect(SoundCheckOutputSchema.parse(await chat('sound.check', input, [video])).speech).toEqual([]);
+    expect(SoundCheckOutputSchema.parse(await chat('sound.check', input, [video])).speech).toHaveLength(1);
+    const mumbled = { ...input, shot: { ...input.shot, description: 'Rosie mumbles, music plays.' } };
+    expect(SoundCheckOutputSchema.parse(await chat('sound.check', mumbled, [video]))).toMatchObject({
+      speech: [],
+      music: true,
+    });
+    const scene = {
+      film: { title: 'T', logline: '', genre: '', tone: '', style: '', dialogueLevel: 'B1' },
+      scene: {
+        number: 1,
+        heading: 'SLOPE',
+        location: '',
+        timeOfDay: '',
+        continuity: '',
+        summary: '',
+        action: '',
+        dialogue: [],
+        start: 0,
+        end: 10,
+      },
+      previousScene: null,
+      nextScene: null,
+      cast: [],
+      shots: [0, 1].map((index) => ({
+        index,
+        label: `C1·S${index + 1}`,
+        start: index * 5,
+        end: index * 5 + 5,
+        description: index ? 'Sammy mumbles.' : 'Rosie waves.',
+        action: '',
+        camera: 'wide, static',
+        dialogue: [{ character: index ? 'Sammy' : 'Rosie', line: index ? 'So white!' : 'Hi Sammy!' }],
+        characters: [],
+        video: { from: index * 5, to: index * 5 + 5 },
+        take: null,
+      })),
+      signals: { unexpectedCuts: [], frozen: [], black: [] },
+      stripCount: 0,
+      listening: true,
+    };
+    const out = FeedbackSceneOutputSchema.parse(await chat('feedback.scene', scene, [video]));
+    expect(out.transcript).toEqual([{ time: 0.3, speaker: 'Rosie', text: 'Hi Sammy!' }]);
+    expect(out.scores).toMatchObject({ dialogue: 4, sound: 7 });
+  });
+
+  it('streams a chat completion when asked: content deltas, the usage last, then [DONE]', async () => {
+    const res = await fetch(`${gw.url}/proxy/api.openai.com/v1/chat/completions`, {
+      method: 'POST',
+      headers: auth,
+      body: JSON.stringify({
+        model: 'gpt-test',
+        stream: true,
+        stream_options: { include_usage: true },
+        messages: [
+          { role: 'system', content: 'rideo-task: screenplay.generate' },
+          {
+            role: 'user',
+            content: `${INPUT_PREFIX}${JSON.stringify({ prompt: 'Two pandas ski', targetDurationSec: 60 })}`,
+          },
+        ],
+      }),
+    });
+    expect(res.headers.get('content-type')).toMatch(/^text\/event-stream/);
+    const events = (await res.text())
+      .split('\n\n')
+      .filter((e) => e.startsWith('data: '))
+      .map((e) => e.slice(6));
+    expect(events.at(-1)).toBe('[DONE]');
+    const chunks = events.slice(0, -1).map((e) => JSON.parse(e));
+    const content = chunks.map((c) => c.choices[0]?.delta?.content ?? '').join('');
+    expect(ScreenplayGenerateOutputSchema.parse(JSON.parse(content)).title).toBeTruthy();
+    expect(chunks.at(-1).usage.completion_tokens).toBeGreaterThan(0);
   });
 });
 

@@ -64,11 +64,20 @@ export const FEEDBACK_DIMENSIONS = [
     help: 'shot lengths, rhythm, cut points, transitions, no repetition',
   },
   {
+    id: 'dialogue',
+    label: 'Dialogue and voices',
+    weight: 1,
+    vision: false,
+    heard: true,
+    help: 'every line spoken as written, clear for the film’s level, in its character’s voice, lips in sync, nothing said that the script does not say',
+  },
+  {
     id: 'sound',
     label: 'Sound',
     weight: 0.5,
     vision: false,
-    help: 'loudness on target, no long silences or clipping, lines that fit their shots',
+    heard: true,
+    help: 'loudness on target, no long silences or clipping, ambience that fits the place, no stray music or noise, lines that fit their shots',
   },
 ] as const;
 
@@ -77,11 +86,15 @@ export const FEEDBACK_DIMENSION_IDS = FEEDBACK_DIMENSIONS.map((d) => d.id) as [
   FeedbackDimension,
   ...FeedbackDimension[],
 ];
-/** The dimensions the vision model scores (`sound` is measured). */
+/** The dimensions the vision model scores (`sound` is measured, `dialogue` needs listening). */
 export const VISION_DIMENSION_IDS = FEEDBACK_DIMENSIONS.filter((d) => d.vision).map((d) => d.id) as [
   FeedbackDimension,
   ...FeedbackDimension[],
 ];
+/** The dimensions the audio-visual model scores: the picture's and what it hears (docs/design/feedback.md#dimensions). */
+export const HEARD_DIMENSION_IDS = FEEDBACK_DIMENSIONS.filter((d) => d.vision || 'heard' in d).map(
+  (d) => d.id,
+) as [FeedbackDimension, ...FeedbackDimension[]];
 export const FeedbackDimensionSchema = z.enum(FEEDBACK_DIMENSION_IDS);
 
 const score = z.number().min(0).max(10).nullable().default(null);
@@ -94,6 +107,7 @@ export const FeedbackScoresSchema = z.object({
   realism: score,
   cinematography: score,
   editing: score,
+  dialogue: score,
   sound: score,
 });
 export type FeedbackScores = z.infer<typeof FeedbackScoresSchema>;
@@ -283,6 +297,33 @@ export const FeedbackSignalsSchema = z.object({
       qualityFailed: z.number().int().nonnegative(),
     })
     .default({ total: 0, passed: 0, failed: 0, unverified: 0, overridden: 0, stale: 0, qualityFailed: 0 }),
+  /**
+   * The script's lines against what the audio-visual model heard during their shots (`dialogueDelivery`); null when
+   * the film was not listened to.
+   */
+  dialogue: z
+    .object({
+      lines: z.number().int().nonnegative(),
+      heard: z.number().int().nonnegative(),
+      missing: z
+        .array(
+          z.object({
+            clipId: IdSchema,
+            shotId: IdSchema,
+            shot: z.string().max(20),
+            character: z.string().max(200),
+            line: z.string().max(2000),
+            /** The share of the line's words heard. */
+            heard: z.number().min(0).max(1),
+            start: z.number().nonnegative(),
+            end: z.number().nonnegative(),
+          }),
+        )
+        .max(500)
+        .default([]),
+    })
+    .nullable()
+    .default(null),
 });
 export type FeedbackSignals = z.infer<typeof FeedbackSignalsSchema>;
 
@@ -306,8 +347,10 @@ export const FeedbackSchema = z.object({
   error: z.string().max(4000).optional(),
   createdAt: IsoDateSchema,
   updatedAt: IsoDateSchema,
-  /** The vision model; null without a gateway. */
+  /** The vision or audio-visual model; null without a gateway. */
   model: z.string().max(200).nullable().default(null),
+  /** The scenes were watched with their sound (an audio-visual model). */
+  listened: z.boolean().default(false),
   timelineCommit: z.string().nullable().default(null),
   durationSec: z.number().nonnegative().default(0),
   overall: z.number().min(0).max(10).nullable().default(null),

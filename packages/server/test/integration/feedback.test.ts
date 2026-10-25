@@ -174,3 +174,81 @@ describe('feedback on an export', () => {
     expect((err as ApiError).status).toBe(404);
   });
 });
+
+describe('listening feedback (an audio-visual model)', () => {
+  let heard: Stack;
+  beforeAll(async () => {
+    heard = await startStack({
+      gw: await startMockGateway({ latencyMs: 20 }),
+      env: { RIDEO_OMNI_MODEL: 'mock-omni' },
+    });
+  }, 60_000);
+  afterAll(async () => {
+    await heard?.stop();
+    await heard?.gw.close();
+  });
+
+  it('watches and hears each scene, finds the line nobody heard and recommends generating its shot again', async () => {
+    const { projectId: pid, state } = await readyStoryProject(heard, {
+      storyboard: { enabled: false },
+      pilotDurationSec: 30,
+      targetDurationSec: 30,
+      dialogue: { mode: 'off', level: 'B1' },
+      generation: { includeAudio: true },
+    });
+    const plan = await heard.api<Job>('POST', `/projects/${pid}/clips/plan`, {
+      sceneId: state.docs.screenplay.scenes[0].id,
+    });
+    expectSucceeded(await heard.waitJob(pid, plan.id));
+    let clip = Object.values<Clip>((await heard.api<any>('GET', `/projects/${pid}/state`)).docs.clips)[0]!;
+    // The speaker of the first spoken shot mumbles: no take of it is heard, so the best one is kept, marked.
+    const spoken = clip.shots.find((s) => s.dialogue.some((d) => d.characterId))!;
+    await heard.api('PATCH', `/projects/${pid}/clips/${clip.id}/shots/${spoken.id}`, {
+      description: `${spoken.description} The speaker mumbles.`,
+    });
+    const gen = await heard.api<Job>('POST', `/projects/${pid}/clips/${clip.id}/generate`);
+    expectSucceeded(await heard.waitJob(pid, gen.id, 180_000));
+    await heard.waitIdle(pid);
+    clip = (await heard.api<any>('GET', `/projects/${pid}/state`)).docs.clips[clip.id];
+    const kept = clip.shots.find((s) => s.id === spoken.id)!;
+    const keptTake = kept.takes.find((t) => t.id === kept.selectedTakeId)!;
+    expect(keptTake.consistency.quality).toMatchObject({ passed: false, sound: { lines: [{ heard: 0 }] } });
+    expect(keptTake.consistency.attempts).toBe(3);
+
+    await heard.api('POST', `/projects/${pid}/clips/${clip.id}/approve`);
+    await heard.api('POST', `/projects/${pid}/timeline/assemble`, {});
+    const editor = await startEditorWorker(heard, pid);
+    const exp = await heard.api<any>('POST', `/projects/${pid}/exports`, { quality: 'draft' });
+    const done = await heard.waitExport(pid, exp.export.id);
+    expect(done.status).toBe('succeeded');
+    const deadline = Date.now() + 60_000;
+    let fbJob: Job | undefined;
+    while (!fbJob && Date.now() < deadline) {
+      fbJob = (await heard.api<Job[]>('GET', `/projects/${pid}/jobs`)).find(
+        (j) => j.kind === 'export.feedback',
+      );
+      if (!fbJob) await new Promise((r) => setTimeout(r, 200));
+    }
+    expectSucceeded(await heard.waitJob(pid, fbJob!.id, 180_000));
+    await editor.stop();
+
+    const [fb] = await heard.api<Feedback[]>('GET', `/projects/${pid}/feedback`);
+    expect(fb).toMatchObject({ status: 'succeeded', model: 'mock-omni', listened: true });
+    expect(fb!.scores.dialogue).toBe(4);
+    expect(fb!.scores.sound).not.toBeNull();
+    const voiced = clip.shots.flatMap((s) => s.dialogue.filter((d) => d.characterId));
+    expect(fb!.signals.dialogue).toMatchObject({ lines: voiced.length, heard: voiced.length - 1 });
+    const label = `C1·S${spoken.index + 1}`;
+    expect(fb!.signals.dialogue!.missing).toMatchObject([{ shot: label, heard: 0 }]);
+    const notHeard = fb!.issues.find((i) => i.source === 'signal' && i.dimension === 'dialogue')!;
+    expect(notHeard).toMatchObject({ shot: label, shotId: spoken.id, severity: 'major' });
+    const regenerate = fb!.recommendations.find(
+      (r) => r.action?.kind === 'regenerate_shot' && r.action.shotId === spoken.id,
+    )!;
+    expect(regenerate).toBeTruthy();
+    expect(fb!.retrospective.map((r) => r.rule)).toContain('undelivered_lines');
+    const md = await (await fetch(`${heard.url}/api/projects/${pid}/media/${fb!.report!.path}`)).text();
+    expect(md).toContain('watched and heard by mock-omni');
+    expect(md).toContain(`Lines heard: ${voiced.length - 1} of ${voiced.length}.`);
+  });
+});

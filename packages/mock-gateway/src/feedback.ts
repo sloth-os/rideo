@@ -3,6 +3,8 @@ import type {
   FeedbackFilmOutput,
   FeedbackSceneInput,
   FeedbackSceneOutput,
+  SoundCheckInput,
+  SoundCheckOutput,
 } from '@rideo/shared';
 
 /**
@@ -22,8 +24,35 @@ const DIMENSIONS = [
 
 type Scores = Record<(typeof DIMENSIONS)[number], number>;
 
-export function feedbackScene(input: FeedbackSceneInput, strips: number): FeedbackSceneOutput {
-  const scores: Scores = {
+/** A shot whose speaker mumbles: the mock never hears its lines (docs/design/feedback.md#mock-gateway). */
+const MUMBLES = /\bmumbl/i;
+
+/**
+ * `sound.check`: hears the shot's lines in their speakers' voices (none when the description says the speaker mumbles,
+ * or when the gateway muffles this check), music when the description asks for it.
+ */
+export function soundCheck(
+  input: SoundCheckInput,
+  opts: { watched: boolean; muffled: boolean },
+): SoundCheckOutput {
+  const silent = !opts.watched || opts.muffled || MUMBLES.test(input.shot.description);
+  return {
+    speech: silent
+      ? []
+      : input.lines.map((l) => ({ text: l.line, speaker: l.character, voice: l.voice, lipSync: 0.9 })),
+    music: /\bmusic\b/i.test(input.shot.description),
+    sounds: ['wind', 'skis on snow'],
+    score: silent && input.lines.length ? 0.4 : 0.85,
+    issues: silent && input.lines.length ? ['no voices are heard'] : [],
+  };
+}
+
+export function feedbackScene(
+  input: FeedbackSceneInput,
+  strips: number,
+  watched = false,
+): FeedbackSceneOutput {
+  const scores: Scores & { dialogue?: number; sound?: number } = {
     storytelling: 7,
     continuity: 7.5,
     character: 8,
@@ -69,11 +98,29 @@ export function feedbackScene(input: FeedbackSceneInput, strips: number): Feedba
       at: Math.min(1, Math.max(0, (at - shot.start) / Math.max(0.1, shot.end - shot.start))),
     });
   }
+  // Watching the video: the lines are heard (but not a mumbling speaker's), and dialogue and sound are scored.
+  const transcript: FeedbackSceneOutput['transcript'] = [];
+  if (watched) {
+    let mumbled = 0;
+    for (const shot of input.shots) {
+      if (MUMBLES.test(shot.description)) {
+        mumbled += shot.dialogue.length;
+        continue;
+      }
+      for (const [k, d] of shot.dialogue.entries())
+        transcript.push({ time: (shot.video?.from ?? 0) + 0.3 + k, speaker: d.character, text: d.line });
+    }
+    scores.dialogue = mumbled ? 4 : 8;
+    scores.sound = 7;
+  }
   const worst = [...shotScore.entries()].sort((a, b) => a[1] - b[1] || a[0] - b[0])[0];
   const worstShot = worst ? input.shots.find((s) => s.index === worst[0]) : undefined;
   return {
     scores,
-    summary: `Scene ${input.scene.number} (${input.scene.heading}) seen in ${strips} strip(s): ${input.shots.length} shot(s).`,
+    transcript,
+    summary: watched
+      ? `Scene ${input.scene.number} (${input.scene.heading}) watched and heard: ${input.shots.length} shot(s), ${transcript.length} line(s) heard.`
+      : `Scene ${input.scene.number} (${input.scene.heading}) seen in ${strips} strip(s): ${input.shots.length} shot(s).`,
     strengths: ['The cast stays recognisable from shot to shot.'],
     issues,
     recommendations: [

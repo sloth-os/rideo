@@ -104,7 +104,7 @@ that is set in the environment wins and shows locked there; one that is not can 
 | `RIDEO_LLM_PROXY_DOMAIN` | provider default | the LLM's API base URL (`https://ai.example.com/v1`) or just its domain; the host is the gateway proxy ([API base URL](design/settings.md#api-base-url)) |
 | `RIDEO_LLM_API_KEY` | – | the LLM's API key: registered in mm-gateway as a proxy account; empty: the gateway's own account for the domain |
 | `RIDEO_LLM_MODEL` | `gpt-4.1-mini` | text model |
-| `RIDEO_LLM_TIMEOUT_SEC` | `600` | how long one text or vision model call may take; the screenplay of a long film takes minutes on slower models |
+| `RIDEO_LLM_TIMEOUT_SEC` | `600` | how long a text or vision model call may go without receiving anything; streamed answers (OpenAI-compatible) may take four times that in all, since the screenplay of a long film takes minutes on slower models |
 | `RIDEO_VISION_PROVIDER` / `_PROXY_DOMAIN` / `_API_KEY` / `_MODEL` | LLM values (the key of an endpoint with the same origin) | vision model for the judge and descriptions |
 | `RIDEO_STT_PROXY_DOMAIN` / `_API_KEY` / `RIDEO_STT_MODEL` | – / – / `whisper-1` | optional speech-to-text (OpenAI-style) |
 | `RIDEO_EMBEDDINGS_PROXY_DOMAIN` / `_API_KEY` / `RIDEO_EMBEDDINGS_MODEL` | – / – / `text-embedding-3-small` | optional caption embeddings: media search by meaning ([search](design/search.md)); without them it ranks by words |
@@ -117,6 +117,7 @@ that is set in the environment wins and shows locked there; one that is not can 
 | `RIDEO_ENHANCE_MODEL` | `auto` | upscale and frame-interpolation model of exports ([finishing](design/finishing.md)): `auto` picks the first gateway model with the capabilities, `off` uses ffmpeg; projects can override `models.enhance` |
 | `RIDEO_LIPSYNC_MODEL` | `auto` | video model of the lip-sync pass (projects can override `models.lipSync`) |
 | `RIDEO_VOICE_JUDGE_PROVIDER` / `_PROXY_DOMAIN` / `_API_KEY` / `_MODEL` | the vision provider (none for Anthropic) / the vision base URL for the same provider, else the provider's / the key of an endpoint with the same origin / `gpt-4o-audio-preview` or `gemini-2.5-flash` | audio-capable model of the speaker check (rule V4); `off` disables it |
+| `RIDEO_OMNI_PROVIDER` / `_PROXY_DOMAIN` / `_API_KEY` / `_MODEL` | the vision provider (none for Anthropic) / the vision base URL for the same provider / the key of an endpoint with the same origin / none | audio-visual model that watches video with its sound (`qwen3.8-omni-flash`, `gemini-2.5-flash`): the [sound check](design/continuity.md#quality-checks-in-the-gate) of takes and [feedback](design/feedback.md#how-a-film-is-watched) that listens; off until a model is set, or with `off` |
 
 ### Consistency, jobs, watermark
 

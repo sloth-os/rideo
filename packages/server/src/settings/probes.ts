@@ -138,6 +138,7 @@ export async function probeEndpoint(
     switch (id) {
       case 'llm':
       case 'vision':
+      case 'omni':
       case 'voiceJudge': {
         const adapter = createAdapter(proxy, {
           ...api,
