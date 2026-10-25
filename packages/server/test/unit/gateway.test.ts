@@ -49,6 +49,30 @@ describe('GatewayClient (SDK)', () => {
     expect(metrics.gatewayTasks.get({ modality: 'image', status: 'succeeded' })).toBe(2);
   });
 
+  it('asks image and video models for no visible watermark, unless a request says otherwise', async () => {
+    const parametersOf = (id: string) => (gw.store.requests.get(id) as { parameters?: object }).parameters;
+    const image = await client.generateImage(
+      { input: [{ type: 'text', text: 'a slope' }], parameters: { output_count: 1 } },
+      { idempotencyKey: 'wm-image' },
+    );
+    expect(parametersOf(image.id)).toEqual({ watermark: false, output_count: 1 });
+    const video = await client.generateVideo(
+      { input: [{ type: 'text', text: 'a run' }], parameters: { duration_seconds: 5 } },
+      { idempotencyKey: 'wm-video' },
+    );
+    expect(parametersOf(video.id)).toMatchObject({ watermark: false, duration_seconds: 5 });
+    const marked = await client.generateImage(
+      { input: [{ type: 'text', text: 'a slope' }], parameters: { watermark: true } },
+      { idempotencyKey: 'wm-kept' },
+    );
+    expect(parametersOf(marked.id)).toEqual({ watermark: true });
+    const music = await client.generateMusic(
+      { input: [{ type: 'text', text: 'a theme' }], parameters: { duration_seconds: 5 } },
+      { idempotencyKey: 'wm-music' },
+    );
+    expect(parametersOf(music.id)).not.toHaveProperty('watermark');
+  });
+
   it('classifies task failures and HTTP problems', async () => {
     const failed = await client
       .generateVideo(

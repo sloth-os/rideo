@@ -224,6 +224,8 @@ export class GatewayClient {
     const body: WireRequest[M] = {
       ...req,
       ...(this.cfg.routingProfile && !req.routing ? { routing: { profile: this.cfg.routingProfile } } : {}),
+      // No visible provider watermark: Rideo marks its own output (docs/design/provenance.md#provider-watermarks)
+      ...(modality === 'music' ? {} : { parameters: { watermark: false, ...req.parameters } }),
       metadata: { ...req.metadata, ...opts.metadata },
     };
     if (opts.signal?.aborted) throw abortError();

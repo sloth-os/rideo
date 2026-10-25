@@ -37,6 +37,12 @@ action a camera can see, short dialogue.
 sun is), what each character wears and carries, and where they are, at the start of the scene. The planner and the
 prompts read it, and the next extension continues from it.
 
+**Outfits.** A character's wardrobe entries are complete outfits, everything worn at once, and the first is the one
+worn most of the film: references, keyframes and video prompts show one entry (`Wearing: …`), so an entry that is a
+single piece (a scarf) leaves the rest out of every picture. The panda demo's writer split each outfit into a scarf, a
+jacket and goggles with the scarf as the default, and the references came out without the jackets the scenes
+describe; version 2 asks for whole outfits.
+
 **Extensions remember.** `screenplay.extend` used to see only the title, logline, synopsis and scene summaries, so
 later scenes lost the user's brief. With version 2 it also gets the brief, the dialogue level, the last written scene
 in full (action, dialogue, continuity) and the outline beats after the ones it writes (so it can set up what comes).

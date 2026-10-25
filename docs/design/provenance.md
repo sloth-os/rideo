@@ -130,6 +130,14 @@ even when `RIDEO_API_TOKEN` is set:
 `{uri}` and `{projectId, mediaPath}` need the token because they make the server fetch media. The Verify
 page (`/verify`) uses the public form and needs no sign-in.
 
+## Provider watermarks
+
+Rideo asks every image and video model for no visible watermark (`parameters.watermark: false`, the default of
+`GatewayClient`, which a request may override): its own marking covers every take and export (the C2PA manifest and
+the invisible watermark), and the disclosure label below is the visible one. A provider's mark burned into a reference
+or a keyframe (Seedream's "AI生成" in a corner, October 2026 demo) moves on into every keyframe and video made from
+it, at a different place in each shot, and cannot be removed later.
+
 ## Disclosure label
 
 A visible label (for example "AI-generated") in a corner of the picture, for the whole film:

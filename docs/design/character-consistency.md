@@ -39,7 +39,7 @@ type Character = {
     age: string; gender: string; ethnicity?: string; build: string; height?: string;
     face: string; hair: string; eyes: string; skin: string; distinguishingMarks?: string;
   };
-  wardrobe: { id: string; name: string; description: string; default?: boolean }[];
+  wardrobe: { id: string; name: string; description: string; default?: boolean }[];  // each a complete outfit
   personality?: string; voice?: { description: string };
   references: {
     id: string; view: 'front' | 'three_quarter' | 'profile' | 'full_body' | 'expression' | 'custom';

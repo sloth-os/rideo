@@ -10,7 +10,7 @@ import {
   OpenAiAdapter,
   retryAfterOf,
 } from '../../src/ai/llm';
-import { extractJson, LlmTasks, SYSTEM_PROMPTS } from '../../src/ai/tasks';
+import { extractJson, LlmTasks, SYSTEM_PROMPTS, SYSTEM_PROMPTS_V2 } from '../../src/ai/tasks';
 import type { ProxyClient } from '../../src/gateway/proxy-client';
 import { Metrics } from '../../src/metrics';
 
@@ -388,6 +388,13 @@ describe('structured tasks', () => {
       code: 'llm_error',
       retryable: false,
     });
+  });
+
+  it('asks the version 2 writer for complete outfits, the first worn most of the film', () => {
+    expect(SYSTEM_PROMPTS_V2['screenplay.generate']).toContain('Each wardrobe entry is a complete outfit');
+    expect(SYSTEM_PROMPTS_V2['screenplay.generate']).toContain(
+      'the first is what the character wears most of the film',
+    );
   });
 
   it('reads Retry-After in seconds or as a date', () => {

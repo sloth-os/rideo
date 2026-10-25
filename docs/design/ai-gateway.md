@@ -57,6 +57,8 @@ const task = await client.generateMusic(req, { idempotencyKey, signal, metadata,
   `timeout`, `rate_limited`, `provider_unavailable`, `upstream_error`, `provider_timeout`, `internal_error`).
 - `routing.profile` is sent when `MM_GATEWAY_ROUTING_PROFILE` is set. `model` is sent when the project pins
   one; otherwise it is omitted and the gateway auto-routes by limits.
+- Image and video requests ask for no visible watermark (`parameters.watermark: false` unless the request says
+  otherwise): Rideo marks its own output ([provider watermarks](provenance.md#provider-watermarks)).
 - `metadata` carries `{rideo_project, rideo_job, rideo_step}` for cross-system tracing.
 - `enhance_prompt` (the provider's own prompt rewriting, Wan's `prompt_extend`) is sent only when
   `settings.generation.enhancePrompt` is set ([continuity](continuity.md#prompts-version-2)).
