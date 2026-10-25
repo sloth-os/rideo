@@ -195,29 +195,41 @@ const JudgeScoreSchema = z.object({
   issues: z.array(z.string().max(500)).catch([]).default([]),
 });
 
+/** The objects of a list a model filled with strays too ("Sammy is absent"): the strays dropped. */
+const objectsOnly = (v: unknown) => (Array.isArray(v) ? v.filter((x) => x && typeof x === 'object') : v);
+
 export const JudgeOutputSchema = z.object({
   frames: z
     .array(
       z.object({
         index: z.coerce.number().int().nonnegative(),
-        characters: z.array(
-          z.object({
-            characterId: z.string(),
-            present: z.boolean().catch(false),
-            identityScore: z.coerce.number().min(0).max(1).catch(0),
-            outfitScore: z.coerce.number().min(0).max(1).optional().catch(undefined),
-            issues: z.array(z.string().max(500)).catch([]).default([]),
-          }),
+        characters: z.preprocess(
+          objectsOnly,
+          z.array(
+            z.object({
+              /** Models sometimes name the character instead; the server maps a name to its id. */
+              characterId: z.string().optional().catch(undefined),
+              name: z.string().max(200).optional().catch(undefined),
+              present: z.boolean().catch(false),
+              identityScore: z.coerce.number().min(0).max(1).catch(0),
+              outfitScore: z.coerce.number().min(0).max(1).optional().catch(undefined),
+              issues: z.array(z.string().max(500)).catch([]).default([]),
+            }),
+          ),
         ),
         /** Present when the request listed elements (rule E4). */
         elements: z
-          .array(
-            z.object({
-              elementId: z.string(),
-              present: z.boolean().catch(false),
-              score: z.coerce.number().min(0).max(1).catch(0),
-              issues: z.array(z.string().max(500)).catch([]).default([]),
-            }),
+          .preprocess(
+            objectsOnly,
+            z.array(
+              z.object({
+                elementId: z.string().optional().catch(undefined),
+                name: z.string().max(200).optional().catch(undefined),
+                present: z.boolean().catch(false),
+                score: z.coerce.number().min(0).max(1).catch(0),
+                issues: z.array(z.string().max(500)).catch([]).default([]),
+              }),
+            ),
           )
           .catch([])
           .default([]),

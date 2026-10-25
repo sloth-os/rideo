@@ -92,27 +92,42 @@ export class VisionLlmJudge implements ConsistencyJudge {
       req.signal,
       req.qualityChecks ? req.sceneReference : undefined,
     );
-    const knownCharacters = new Set(req.characters.map((c) => c.id));
+    // Verdicts name their character or element by id, or by name when the model gave only that
+    const characterIdOf = new Map<string, string>([
+      ...req.characters.map((c) => [c.id, c.id] as const),
+      ...req.characters.map((c) => [c.name.toLowerCase(), c.id] as const),
+    ]);
+    const elementIdOf = new Map<string, string>([
+      ...elements.map((e) => [e.id, e.id] as const),
+      ...elements.map((e) => [e.name.toLowerCase(), e.id] as const),
+    ]);
+    const idOf = (ids: Map<string, string>, id?: string, name?: string) =>
+      (id && ids.get(id)) ?? (name ? ids.get(name.trim().toLowerCase()) : undefined);
     // Only the names the judge was told to look for count as extras
     const absent = new Map((req.absent ?? []).map((a) => [a.name.toLowerCase(), a.name]));
-    const knownElements = new Set(elements.map((e) => e.id));
     const frames = req.frames.map((_, i) => out.frames.find((f) => f.index === i));
     return {
       characters: frames.map((frame) =>
-        (frame?.characters ?? [])
-          .filter((c) => knownCharacters.has(c.characterId))
-          .map((c) => ({
-            characterId: c.characterId,
-            present: c.present,
-            identityScore: c.identityScore,
-            outfitScore: c.outfitScore,
-            issues: c.issues,
-          })),
+        (frame?.characters ?? []).flatMap((c) => {
+          const characterId = idOf(characterIdOf, c.characterId, c.name);
+          return characterId
+            ? [
+                {
+                  characterId,
+                  present: c.present,
+                  identityScore: c.identityScore,
+                  outfitScore: c.outfitScore,
+                  issues: c.issues,
+                },
+              ]
+            : [];
+        }),
       ),
       elements: frames.map((frame) =>
-        (frame?.elements ?? [])
-          .filter((e) => knownElements.has(e.elementId))
-          .map((e) => ({ elementId: e.elementId, present: e.present, score: e.score, issues: e.issues })),
+        (frame?.elements ?? []).flatMap((e) => {
+          const elementId = idOf(elementIdOf, e.elementId, e.name);
+          return elementId ? [{ elementId, present: e.present, score: e.score, issues: e.issues }] : [];
+        }),
       ),
       ...(req.qualityChecks
         ? {

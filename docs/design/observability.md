@@ -36,7 +36,11 @@ type Usage = {
 - **The job** keeps its own usage (`job.usage`, in its record).
 - **The project** keeps the sum in `.rideo/usage.json` beside the job records: totals, `byKind` (jobs, outcomes, run
   and queue seconds, cost) and `byModel`. It is written behind the jobs (at most every 5 s, one write at a time) and
-  read when the project loads; a missing or broken file starts again from zero.
+  read when the project loads. A read that fails is made again (three tries); a ledger that still cannot be read is
+  left alone (no write goes over it) and the job keeps its own usage. A file that reads as missing is read once more
+  (slow WebDAV servers answer false `404`s), and a ledger that is really missing, or broken, is rebuilt from the
+  project's jobs in the job store. In the panda demo a studio reload under load read the ledger as missing and the
+  next write replaced $50 of history with a fresh one; the jobs still held all of it.
 - **The studio** counts it in metrics (below).
 
 **Prices.** A gateway task that reports its cost (`usage.cost`, from the provider or the gateway's estimate) is

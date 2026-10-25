@@ -186,12 +186,14 @@ Every LLM use is a **task** with an id, a zod output schema, a system prompt and
    turns away for load (`429`, `500`, `502`, `503`, `529`, or a dropped connection) is made again up to 3 times,
    waiting 2 s, 4 s, then 8 s, with jitter, or longer when the answer's `Retry-After` asks (up to 60 s). Timeouts,
    `504`, other answers, and mm-gateway's own problems that are not about load (`provider_not_configured`,
-   `forbidden`, …; its `rate_limited`, `provider_unavailable`, `upstream_error` and `internal_error` are) are not
+   `forbidden`, …; its `rate_limited`, `provider_unavailable`, `upstream_error`, `generation_service_error` (its 502
+   when the proxied API fails) and `internal_error` are) are not
    repeated here; a timeout or a connection that failed otherwise becomes a retryable `llm_error`, so the job runs
    again. Each retry is logged (`LLM call turned away; retrying`, with the
    task, status and wait) and counted in `rideo_llm_retries_total{task,status}`; a judge that still fails leaves the
    take unverified (R9).
-2. Extract JSON: strip code fences, then take the outermost object.
+2. Extract JSON: strip code fences, then take the outermost object. Schemas are lenient where models drift: the
+   judge's verdicts may name a character instead of giving its id, and stray strings in its lists are dropped.
 3. Validate with zod. If validation fails, make **one repair call** with the validation errors and the
    previous output.
 4. If it still fails, raise `llm_invalid_output` (retryable at the job level).

@@ -52,4 +52,35 @@ describe('the vision judge (docs/design/continuity.md#quality-checks-in-the-gate
     const plain = JSON.parse((vision.calls[1]!.parts[0] as { text: string }).text.replace(/^[^{]*/, ''));
     expect(plain).not.toHaveProperty('absent');
   });
+
+  it('reads verdicts that name a character instead of its id, and drops strays in the lists', async () => {
+    const vision = new ScriptedVision({
+      frames: [
+        {
+          index: 0,
+          characters: [
+            { name: 'Rosie', present: true, identityScore: 0.88, issues: [] },
+            'Sammy is not in this shot',
+            { name: 'Nobody', present: true, identityScore: 0.9 },
+          ],
+          elements: [{ name: 'Rental shop', present: true, score: 0.8 }, 'the chart'],
+        },
+      ],
+    });
+    const judge = new VisionLlmJudge(new LlmTasks(vision, vision));
+    const out = await judge.judge({
+      characters: [{ id: 'chr_rosie', name: 'Rosie', identity: 'a small plush panda', references: [] }],
+      elements: [
+        { id: 'ele_shop', kind: 'location', name: 'Rental Shop', description: 'wood', references: [] },
+      ],
+      frames: [Buffer.from('png')],
+      shotDescription: 'Rosie points at the chart',
+    });
+    expect(out.characters).toEqual([
+      [{ characterId: 'chr_rosie', present: true, identityScore: 0.88, outfitScore: undefined, issues: [] }],
+    ]);
+    expect(out.elements).toEqual([[{ elementId: 'ele_shop', present: true, score: 0.8, issues: [] }]]);
+    // No repair round was needed
+    expect(vision.calls).toHaveLength(1);
+  });
 });

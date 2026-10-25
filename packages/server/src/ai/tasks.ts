@@ -380,6 +380,8 @@ const GATEWAY_LOAD_CODES = new Set([
   'rate_limited',
   'provider_unavailable',
   'upstream_error',
+  // Its 502 when the proxied API fails
+  'generation_service_error',
   'internal_error',
 ]);
 

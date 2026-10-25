@@ -1,6 +1,6 @@
 import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { Actor, AutoActionId, ProjectDocs } from '@rideo/shared';
+import type { Actor, AutoActionId, Job, ProjectDocs } from '@rideo/shared';
 import {
   checkRequirement,
   dialogueMode,
@@ -166,7 +166,13 @@ export function createStudio(
   });
   // Usage and cost of every call, per job and per project (docs/design/observability.md#usage-ledger)
   const meter = new UsageMeter({ metrics, prices: () => config.prices });
-  const ledger = new UsageLedger({ storage, layout, log: log.child({ component: 'usage' }) });
+  const ledger: UsageLedger = new UsageLedger({
+    storage,
+    layout,
+    log: log.child({ component: 'usage' }),
+    // A ledger whose file is gone is rebuilt from the job store (docs/design/observability.md#usage-ledger)
+    jobs: (projectId): Job[] => jobs.list(projectId),
+  });
   const llm = new LlmTasks(
     createAdapter(proxy, config.llm, config.llmTimeoutMs),
     createAdapter(proxy, config.vision, config.llmTimeoutMs),

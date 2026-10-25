@@ -121,11 +121,111 @@ describe('usage ledger', () => {
       waitSeconds: 20,
       costUsd: 0.5,
     });
-    // A broken file starts again from zero.
+    // A broken file is rebuilt from the jobs (none here: zero).
     await storage.write(`${layout.rideoDir(projectId)}/usage.json`, 'not json');
     expect((await new UsageLedger({ storage, layout, log: silent }).get(projectId)).totals.videoSeconds).toBe(
       0,
     );
+  });
+
+  it('never writes over a ledger it cannot read, reads a false 404 again, and rebuilds a missing one from the jobs', async () => {
+    const layout = new Layout('/rideo');
+    const path = `${layout.rideoDir(projectId)}/usage.json`;
+    const stored = {
+      version: 1,
+      projectId,
+      updatedAt: '2026-10-25T00:00:00.000Z',
+      totals: { ...emptyUsage(), costUsd: 50 },
+      byKind: {},
+    };
+    // A server that fails twice, then answers
+    const flaky = new MemoryBackend();
+    await flaky.write(path, JSON.stringify(stored));
+    let failures = 2;
+    const read = flaky.read.bind(flaky);
+    flaky.read = async (p: string) => {
+      if (failures-- > 0) throw new Error('503');
+      return read(p);
+    };
+    const ledger = new UsageLedger({ storage: flaky, layout, log: silent, retryMs: 1 });
+    expect((await ledger.get(projectId)).totals.costUsd).toBe(50);
+
+    // One that cannot be read at all: nothing is written over it, and the next get tries again
+    const down = new MemoryBackend();
+    await down.write(path, JSON.stringify(stored));
+    const writes: string[] = [];
+    const write = down.write.bind(down);
+    down.read = async () => {
+      throw new Error('500');
+    };
+    down.write = async (p: string, data: Buffer | string) => {
+      writes.push(p);
+      return write(p, data);
+    };
+    const blind = new UsageLedger({ storage: down, layout, log: silent, delayMs: 1, retryMs: 1 });
+    await expect(
+      blind.add(
+        { projectId, kind: 'shot.generate', status: 'succeeded' },
+        { usage: { ...emptyUsage(), costUsd: 1 }, runSeconds: 1, waitSeconds: 0, finished: true },
+      ),
+    ).rejects.toThrow('500');
+    await blind.flush();
+    expect(writes).toEqual([]);
+    down.read = async (p: string) =>
+      (await new MemoryBackend().read(p)) ?? Buffer.from(JSON.stringify(stored));
+    expect((await blind.get(projectId)).totals.costUsd).toBe(50);
+
+    // A false 404: the second read finds the file
+    const lagging = new MemoryBackend();
+    await lagging.write(path, JSON.stringify(stored));
+    let misses = 1;
+    const lread = lagging.read.bind(lagging);
+    lagging.read = async (p: string) => (misses-- > 0 ? null : lread(p));
+    expect(
+      (await new UsageLedger({ storage: lagging, layout, log: silent, retryMs: 1 }).get(projectId)).totals
+        .costUsd,
+    ).toBe(50);
+
+    // Really missing: rebuilt from the jobs in the job store
+    const at = (s: number) => new Date(Date.UTC(2026, 9, 25, 12, 0, s)).toISOString();
+    const jobs = [
+      {
+        projectId,
+        kind: 'shot.generate',
+        status: 'succeeded',
+        usage: { ...emptyUsage(), costUsd: 1.5, videoSeconds: 5 },
+        createdAt: at(0),
+        startedAt: at(10),
+        finishedAt: at(70),
+      },
+      {
+        projectId,
+        kind: 'shot.generate',
+        status: 'failed',
+        usage: null,
+        createdAt: at(0),
+        startedAt: at(5),
+        finishedAt: at(15),
+      },
+      { projectId, kind: 'clip.plan', status: 'running', usage: null, createdAt: at(0), startedAt: at(1) },
+    ] as never[];
+    const rebuilt = await new UsageLedger({
+      storage: new MemoryBackend(),
+      layout,
+      log: silent,
+      retryMs: 1,
+      jobs: () => jobs,
+    }).get(projectId);
+    expect(rebuilt.totals).toMatchObject({ costUsd: 1.5, videoSeconds: 5 });
+    expect(rebuilt.byKind['shot.generate']).toMatchObject({
+      jobs: 2,
+      succeeded: 1,
+      failed: 1,
+      runSeconds: 70,
+      waitSeconds: 15,
+      costUsd: 1.5,
+    });
+    expect(rebuilt.byKind).not.toHaveProperty('clip.plan');
   });
 
   it('gives each job its own usage through the queue, with its wait for the lane', async () => {

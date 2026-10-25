@@ -3,13 +3,61 @@ import * as f from '@rideo/shared/testing';
 import { cleanup, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { afterEach, describe, expect, it } from 'vitest';
-import { ConsistencyBadge } from '../src/components/ConsistencyBadge';
+import { ConsistencyBadge, QualityBadge } from '../src/components/ConsistencyBadge';
 import { JobRow } from '../src/components/JobProgress';
 import { WorkflowStepper } from '../src/components/WorkflowStepper';
 import { LoginPage } from '../src/features/account/LoginPage';
 import { LineageBadge, MultiShotBadge } from '../src/features/clips/TakeActions';
 
 afterEach(cleanup);
+
+describe('QualityBadge (docs/design/continuity.md#quality-checks-in-the-gate)', () => {
+  const quality = (over: object) => ({
+    passed: true,
+    temporal: { jumps: [], maxScore: 0.1 },
+    physics: 0.9,
+    continuity: null,
+    extras: [],
+    sound: null,
+    issues: [],
+    ...over,
+  });
+  it('names what failed and lists the lines heard', () => {
+    const take = f.readyShot([f.character()]).takes[0]!;
+    const withQuality = (q: object) => ({
+      ...take,
+      consistency: { ...take.consistency, quality: quality(q) },
+    });
+    const sound = {
+      lines: [
+        { character: 'Rosie', line: 'Wait. Check the size.', heard: 1, speaker: 'Rosie' },
+        { character: 'Sammy', line: 'I am ready!', heard: 0.2, speaker: null },
+      ],
+      transcript: 'Rosie: Wait. Check the size.',
+      music: false,
+      unexpectedSpeech: false,
+      score: 0.8,
+    };
+    const { rerender } = render(<QualityBadge take={withQuality({ sound })} />);
+    const ok = screen.getByTestId('quality-badge');
+    expect(ok.textContent).toBe('quality ok');
+    expect(ok.getAttribute('title')).toContain('1/2 lines heard');
+    expect(ok.getAttribute('title')).toContain('heard: “Rosie: Wait. Check the size.”');
+    rerender(<QualityBadge take={withQuality({ passed: false, sound })} />);
+    expect(screen.getByTestId('quality-badge').textContent).toBe('line not heard');
+    rerender(
+      <QualityBadge
+        take={withQuality({
+          passed: false,
+          extras: ['Sammy'],
+          issues: ['Sammy is in the frame, though the shot is not theirs'],
+        })}
+      />,
+    );
+    expect(screen.getByTestId('quality-badge').textContent).toBe('wrong cast in frame');
+    expect(screen.getByTestId('quality-badge').getAttribute('title')).toContain('Sammy is in the frame');
+  });
+});
 
 describe('ConsistencyBadge', () => {
   it('shows passed, stale and override states', () => {

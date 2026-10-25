@@ -337,10 +337,13 @@ describe('structured tasks', () => {
       });
       expect(once.calls).toBe(1);
     }
-    // mm-gateway's own load problems are worth waiting for
-    const busy = new FlakyAdapter([new LlmError('503', 503, true, problem('upstream_error'))]);
+    // mm-gateway's own load problems are worth waiting for, its 502 for a failed upstream too
+    const busy = new FlakyAdapter([
+      new LlmError('503', 503, true, problem('upstream_error')),
+      new LlmError('502', 502, true, problem('generation_service_error')),
+    ]);
     await new LlmTasks(busy, busy, { retry }).run('clip.plan', ClipPlanOutputSchema, {});
-    expect(busy.calls).toBe(2);
+    expect(busy.calls).toBe(3);
     // a cancelled job stops waiting
     const controller = new AbortController();
     const slow = new FlakyAdapter([new LlmError('503', 503, true)]);

@@ -126,9 +126,11 @@ RIDEO_TEST_WEBDAV_URL=http://rideo:rideo@localhost:8080/ npx vitest run --projec
   without it but an "upstream" error not, a stream gone quiet ended by the timeout, a streamed error retryable); the
   proxy client waiting for slow headers only as long as the call's timeout and still sending multipart uploads; LLM
   calls made again while the provider turns them away for load (`503`, `429` with its `Retry-After`, a dropped
-  connection), giving up after the retries, never for `400`, `504` or mm-gateway's `provider_not_configured`, a
+  connection, mm-gateway's `upstream_error` and `generation_service_error`), giving up after the retries, never for
+  `400`, `504` or mm-gateway's `provider_not_configured`, a
   timeout or failed connection made a retryable `llm_error` for the job, and a cancelled job not waiting; live hub sequencing, replay and resync, and job heartbeats on the live channel (leased, lost, cancelled); config parsing (TTS, speaker-check and audio-visual endpoints); the vision judge told who is absent and counting
-only those names as extras (`judge.test.ts`); the ElevenLabs and OpenAI TTS clients
+only those names as extras, and reading verdicts that name a character instead of its id with strays dropped
+(`judge.test.ts`); the ElevenLabs and OpenAI TTS clients
   against a fake proxy (design, save, clone, speech with timings and seeds, retryable failures, metrics); the
   speaker-check merge (V4: same, different, missing and silent voices, no judge, judge outage); sound effects
   through a fake proxy (request shape, length clamp, retryable failures, `rideo_post_audio_total`) and the
@@ -213,7 +215,8 @@ only those names as extras (`judge.test.ts`); the ElevenLabs and OpenAI TTS clie
 
 - **server, observability and feedback** (`usage.test.ts`, `feedback-service.test.ts`): usage attributed to the job
   whose handler made the call (nested calls, none outside a job), prices from the gateway's reported cost or the
-  table, unpriced usage, discarded attempts, the project ledger written behind and read back; the new metrics
+  table, unpriced usage, discarded attempts, the project ledger written behind and read back (a failed read made again,
+  an unreadable ledger never written over, a false 404 read again, a missing one rebuilt from the jobs); the new metrics
   (`rideo_job_wait_seconds`, lane gauges, LLM seconds and tokens, HTTP route latency, storage buckets to 300 s);
   the retrospective rules on fixtures (each rule firing and staying quiet); applying and dismissing recommendations
   (`feedback_stale`); the telemetry endpoint (validation, the cap, off).

@@ -17,6 +17,7 @@ import {
 import type { Metrics } from '../metrics';
 import type { StorageBackend } from '../storage/backend';
 import type { Layout } from '../storage/layout';
+import { sleep } from '../util/abort';
 
 /**
  * Usage and cost (docs/design/observability.md#usage-ledger): every gateway task and model call adds to the usage of
@@ -199,6 +200,10 @@ export class UsageMeter {
 }
 
 /** The usage of a project in `.rideo/usage.json`, written behind the jobs (at most every 5 s, one write at a time). */
+/** Tries of a ledger read that fails, and the wait before the next (times the try). */
+const READ_TRIES = 3;
+const READ_RETRY_MS = 1000;
+
 export class UsageLedger {
   private readonly projects = new Map<string, Promise<ProjectUsage>>();
   private readonly timers = new Map<string, NodeJS.Timeout>();
@@ -214,6 +219,10 @@ export class UsageLedger {
       log: { warn: (o: unknown, m?: string) => void };
       /** How long a change waits before it is written. */
       delayMs?: number;
+      /** The project's jobs in the job store, to rebuild a ledger whose file is gone. */
+      jobs?: (projectId: string) => Job[];
+      /** The wait between tries of a read (tests). */
+      retryMs?: number;
     },
   ) {}
 
@@ -221,32 +230,79 @@ export class UsageLedger {
     return `${this.deps.layout.rideoDir(projectId)}/usage.json`;
   }
 
-  /** The project's usage (read once from storage; a missing or broken file starts from zero). */
+  /**
+   * The project's usage, read once from storage. A ledger that cannot be read rejects (and is read again next time),
+   * so nothing is written over it; a missing or broken one is rebuilt from the project's jobs.
+   */
   get(projectId: string): Promise<ProjectUsage> {
     let p = this.projects.get(projectId);
     if (!p) {
-      p = this.read(projectId);
+      const reading = this.read(projectId);
+      reading.catch(() => {
+        if (this.projects.get(projectId) === reading) this.projects.delete(projectId);
+      });
+      p = reading;
       this.projects.set(projectId, p);
     }
     return p;
   }
 
   private async read(projectId: string): Promise<ProjectUsage> {
-    const fresh: ProjectUsage = {
+    const wait = (k: number) => sleep((this.deps.retryMs ?? READ_RETRY_MS) * k);
+    let missing = 0;
+    for (let failures = 0; ; ) {
+      let buf: Buffer | null;
+      try {
+        buf = await this.deps.storage.read(this.path(projectId));
+      } catch (err) {
+        // Unreadable is not missing: never start again over a ledger that is there
+        if (++failures >= READ_TRIES) throw err;
+        await wait(failures);
+        continue;
+      }
+      if (buf) {
+        try {
+          const parsed = ProjectUsageSchema.safeParse(JSON.parse(buf.toString()));
+          if (parsed.success) return parsed.data;
+        } catch {
+          // a broken file: rebuilt below
+        }
+        return this.rebuild(projectId);
+      }
+      // Missing: once more, since slow WebDAV servers answer false 404s
+      if (++missing >= 2) return this.rebuild(projectId);
+      await wait(1);
+    }
+  }
+
+  /** A ledger from the project's jobs in the job store (empty without them). */
+  private rebuild(projectId: string): ProjectUsage {
+    const ledger: ProjectUsage = {
       version: 1,
       projectId,
       updatedAt: new Date().toISOString(),
       totals: emptyUsage(),
       byKind: {},
     };
-    try {
-      const buf = await this.deps.storage.read(this.path(projectId));
-      if (!buf) return fresh;
-      const parsed = ProjectUsageSchema.safeParse(JSON.parse(buf.toString()));
-      return parsed.success ? parsed.data : fresh;
-    } catch {
-      return fresh;
+    const seconds = (from?: string, to?: string) =>
+      from && to ? Math.max(0, (Date.parse(to) - Date.parse(from)) / 1000) : 0;
+    for (const job of this.deps.jobs?.(projectId) ?? []) {
+      const terminal = job.status === 'succeeded' || job.status === 'failed' || job.status === 'cancelled';
+      if (!terminal && !job.usage) continue;
+      if (job.usage) addUsage(ledger.totals, job.usage);
+      const k: KindUsage = ledger.byKind[job.kind] ?? KindUsageSchema.parse({});
+      ledger.byKind[job.kind] = k;
+      if (terminal) {
+        k.jobs += 1;
+        if (job.status === 'succeeded') k.succeeded += 1;
+        else if (job.status === 'failed') k.failed += 1;
+        else k.cancelled += 1;
+      }
+      k.runSeconds = round6(k.runSeconds + seconds(job.startedAt, job.finishedAt));
+      k.waitSeconds = round6(k.waitSeconds + seconds(job.createdAt, job.startedAt));
+      if (job.usage) k.costUsd = round6(k.costUsd + job.usage.costUsd);
     }
+    return ledger;
   }
 
   /** Adds a finished job run: its usage, its outcome, its run time and how long it waited for its lane. */
