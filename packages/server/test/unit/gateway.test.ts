@@ -56,21 +56,30 @@ describe('GatewayClient (SDK)', () => {
       { idempotencyKey: 'wm-image' },
     );
     expect(parametersOf(image.id)).toEqual({ watermark: false, output_count: 1 });
-    const video = await client.generateVideo(
-      { input: [{ type: 'text', text: 'a run' }], parameters: { duration_seconds: 5 } },
-      { idempotencyKey: 'wm-video' },
-    );
-    expect(parametersOf(video.id)).toMatchObject({ watermark: false, duration_seconds: 5 });
+    // The request is what matters: the unit job has no ffmpeg to render the mock's video or music
+    const created: string[] = [];
+    const onTask = (t: { id: string }) => {
+      if (!created.includes(t.id)) created.push(t.id);
+    };
+    await client
+      .generateVideo(
+        { input: [{ type: 'text', text: 'a run' }], parameters: { duration_seconds: 5 } },
+        { idempotencyKey: 'wm-video', onTask },
+      )
+      .catch(() => undefined);
+    expect(parametersOf(created[0]!)).toMatchObject({ watermark: false, duration_seconds: 5 });
     const marked = await client.generateImage(
       { input: [{ type: 'text', text: 'a slope' }], parameters: { watermark: true } },
       { idempotencyKey: 'wm-kept' },
     );
     expect(parametersOf(marked.id)).toEqual({ watermark: true });
-    const music = await client.generateMusic(
-      { input: [{ type: 'text', text: 'a theme' }], parameters: { duration_seconds: 5 } },
-      { idempotencyKey: 'wm-music' },
-    );
-    expect(parametersOf(music.id)).not.toHaveProperty('watermark');
+    await client
+      .generateMusic(
+        { input: [{ type: 'text', text: 'a theme' }], parameters: { duration_seconds: 5 } },
+        { idempotencyKey: 'wm-music', onTask },
+      )
+      .catch(() => undefined);
+    expect(parametersOf(created[1]!)).not.toHaveProperty('watermark');
   });
 
   it('classifies task failures and HTTP problems', async () => {
