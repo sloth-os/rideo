@@ -180,6 +180,52 @@ describe('editor-job worker', () => {
     w3.setProject(null);
   });
 
+  it('heartbeats on the live channel too, and stops a job the live channel says is lost or cancelled', async () => {
+    const run = async (reply: { leased: boolean; cancelled: boolean }) => {
+      const { api, calls } = fakeApi([job()]);
+      const beats: unknown[] = [];
+      const worker = new EditorWorker({
+        api,
+        pollMs: 60_000,
+        heartbeatMs: 15,
+        progressMs: 0,
+        keepAlive: (_id, run) => run(),
+        handlers: {
+          'export.render': (ctx) =>
+            new Promise((_, reject) => {
+              ctx.progress(1, 4, 'chunk 1/4');
+              ctx.signal.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')));
+            }),
+          'media.process': async () => ({}),
+          'analysis.signals': async () => ({}),
+        },
+      });
+      worker.setSession(() => 's1');
+      worker.setLive((jobId, progress) => {
+        beats.push([jobId, progress]);
+        return true;
+      });
+      worker.setProject('prj_01m3s0000000000000');
+      await new Promise((r) => setTimeout(r, 50));
+      const id = worker.busy!.jobId;
+      // with progress at once, then on the heartbeat timer
+      expect(beats[0]).toEqual([id, { done: 1, total: 4, message: 'chunk 1/4' }]);
+      expect(beats.length).toBeGreaterThan(1);
+      worker.liveReply({ jobId: 'job_other', leased: false, cancelled: false });
+      expect(worker.busy?.jobId).toBe(id);
+      worker.liveReply({ jobId: id, ...reply });
+      await idle();
+      expect(worker.busy).toBeNull();
+      expect(calls).toEqual([]);
+      const sent = beats.length;
+      await new Promise((r) => setTimeout(r, 40));
+      expect(beats.length).toBe(sent);
+      worker.setProject(null);
+    };
+    await run({ leased: false, cancelled: false });
+    await run({ leased: true, cancelled: true });
+  });
+
   it('retries a claim that overtook the live subscription', async () => {
     const { api } = fakeApi([]);
     let calls = 0;

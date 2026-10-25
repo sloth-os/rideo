@@ -23,10 +23,14 @@ describe('assets managed over WebDAV', () => {
     });
     const dav = createClient(`${stack.url}/dav`);
     const root = `/rideo/projects/${p.id}`;
-    const listing = (await dav.getDirectoryContents(root)) as { basename: string }[];
-    expect(listing.map((e) => e.basename)).toEqual(
-      expect.arrayContaining(['project.json', 'screenplay.json', 'screenplay.md', 'inbox', '.rideo']),
-    );
+    // The work tree follows the commits in the background
+    await expect
+      .poll(async () =>
+        ((await dav.getDirectoryContents(root)) as { basename: string }[]).map((e) => e.basename),
+      )
+      .toEqual(
+        expect.arrayContaining(['project.json', 'screenplay.json', 'screenplay.md', 'inbox', '.rideo']),
+      );
 
     const sp = JSON.parse(
       (await dav.getFileContents(`${root}/screenplay.json`, { format: 'text' })) as string,

@@ -84,6 +84,9 @@ import { UiService } from './ui';
 import { VoiceService } from './voices';
 import { WorkflowService } from './workflow';
 
+/** How long shutdown waits for the work trees to catch up with the last commits. */
+const WORKTREE_FLUSH_MS = 15_000;
+
 export interface Studio {
   config: Config;
   /** Studio settings (docs/design/settings.md), set by the host on every studio it builds. */
@@ -317,6 +320,8 @@ export function createStudio(
   // New takes, uploads and references reach the search index of projects that use it (docs/design/search.md).
   projectsRegistry.onCommit = (projectId, docs) => services.search.committed(projectId, docs);
   hub.onSessionClosed((sessionId) => void jobs.releaseSession(sessionId));
+  // Editor-job heartbeats on the live channel, beside POST /api/editor/jobs/:jobId/heartbeat (docs/design/editor.md)
+  hub.jobHeartbeat = (sessionId, jobId, progress) => jobs.heartbeat(jobId, sessionId, progress);
   const handlerDeps: HandlerDeps = { ...deps, services };
   const reg = (
     kind: Parameters<JobQueue['register']>[0],
@@ -514,6 +519,8 @@ export function createStudio(
       services.search.close();
       if (sweepTimer) clearInterval(sweepTimer);
       await jobs.shutdown();
+      // The work trees catch up with the last commits (docs/design/storage-webdav.md#external-edits)
+      await projectsRegistry.flush(WORKTREE_FLUSH_MS);
       hub.close();
     },
   };

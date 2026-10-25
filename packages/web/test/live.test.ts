@@ -119,4 +119,37 @@ describe('LiveClient', () => {
     expect(ws.sent.at(-1)).toEqual({ type: 'subscribe', projectId: 'prj_a' });
     client.close();
   });
+
+  it('sends job heartbeats when open and hands their answers on', () => {
+    const answers: unknown[] = [];
+    const client = new LiveClient({
+      onEvent: vi.fn(),
+      onResync: vi.fn(),
+      onUi: vi.fn(),
+      onStatus: vi.fn(),
+      onJobHeartbeat: (r) => answers.push(r),
+    });
+    expect(client.jobHeartbeat('job_a')).toBe(false);
+    client.connect();
+    const ws = FakeWebSocket.instances[0]!;
+    ws.open();
+    expect(client.jobHeartbeat('job_a')).toBe(false); // no session yet
+    ws.receive({ type: 'hello', sessionId: 's1', instanceId: 'i1', serverTime: 'now' });
+    expect(client.jobHeartbeat('job_a', { done: 1, total: 2 })).toBe(true);
+    expect(ws.sent.at(-1)).toEqual({
+      type: 'job-heartbeat',
+      jobId: 'job_a',
+      progress: { done: 1, total: 2 },
+    });
+    ws.receive({
+      type: 'job-heartbeat',
+      jobId: 'job_a',
+      leased: false,
+      cancelled: false,
+      leaseExpiresAt: null,
+    });
+    expect(answers).toEqual([
+      { type: 'job-heartbeat', jobId: 'job_a', leased: false, cancelled: false, leaseExpiresAt: null },
+    ]);
+  });
 });

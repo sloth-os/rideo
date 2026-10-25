@@ -10,6 +10,7 @@ import { buildServer, loadConfig, type RideoServer } from '@rideo/server';
 import { startHostPage } from './host-page';
 import { GATEWAY_ADMIN_KEY, PORTS } from './ports';
 import { startPrefixProxy } from './prefix-proxy';
+import { startSlowMediaProxy } from './slow-media-proxy';
 
 // Runs that were killed leave their data behind: remove what earlier stacks left more than an hour ago.
 for (const name of await readdir(tmpdir())) {
@@ -120,6 +121,14 @@ for (const [name, port] of [
   );
 const host: Server = await startHostPage({ port: PORTS.host });
 console.log(`rideo e2e library host page on http://127.0.0.1:${PORTS.host}/`);
+const slowMedia: Server = await startSlowMediaProxy({
+  port: PORTS.slowMedia,
+  upstream: PORTS.main,
+  delayMs: 20_000,
+});
+console.log(
+  `rideo e2e slow media: http://127.0.0.1:${PORTS.slowMedia}/ → :${PORTS.main} (ranged media held 20 s)`,
+);
 // The main studio last.
 await start(`main studio (gateway ${gateway.url})`, await env(PORTS.main));
 
@@ -130,6 +139,8 @@ async function stop() {
   for (const s of [...servers].reverse()) await s.stop().catch(() => undefined);
   await new Promise((r) => proxy.close(() => r(null)));
   await new Promise((r) => host.close(() => r(null)));
+  slowMedia.closeAllConnections();
+  await new Promise((r) => slowMedia.close(() => r(null)));
   await idp.close().catch(() => undefined);
   await gateway.close().catch(() => undefined);
   for (const dir of dirs) await rm(dir, { recursive: true, force: true });

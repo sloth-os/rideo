@@ -30,7 +30,7 @@ type WriteOptions = { ifMatch?: string; ifNoneMatch?: '*'; contentType?: string;
 
 | Implementation | Use |
 |---|---|
-| `WebDavBackend` | Production. Wraps the `webdav` client. It creates parent collections on demand (MKCOL, with a known-directory cache), streams uploads and downloads, forwards `Range`, and sends `If-Match` / `If-None-Match` when the server supports them. |
+| `WebDavBackend` | Production. Wraps the `webdav` client. It creates parent collections on demand (MKCOL, with a known-directory cache; concurrent writes into a new folder share one MKCOL), streams uploads and downloads, forwards `Range`, sends `If-Match` / `If-None-Match` when the server supports them, and tries transient failures again ([slow and flaky servers](#slow-and-flaky-servers)). |
 | `MemoryBackend` | Unit tests. Same semantics, including conditional writes. |
 | `FsBackend` | A local directory: studio-wide data when projects live in browsers ([browser storage](browser-storage.md#fsbackend)). |
 | `WorkspaceStorage` | One browser's projects, every operation a round trip to one of its tabs ([browser storage](browser-storage.md#the-protocol)). |
@@ -41,6 +41,26 @@ second write means the server honours preconditions (Apache mod_dav, Nextcloud a
 `webdav-server` does not). Either way, every project write goes through an in-process **per-project mutex**,
 which is correct for one Rideo instance per WebDAV root. Conditional writes add protection against other
 writers.
+
+## Slow and flaky servers
+
+A WebDAV server in front of cloud storage (OpenList on a cloud drive) can take over a second per request, and under
+load it answers `423 Locked`, `5xx`, or even `404` for files it holds. Rideo keeps the number of round trips on the
+paths people wait for small, and does not let one bad answer become an error:
+
+| Concern | Rule |
+|---|---|
+| Transient failures | `423`, `429`, `500`, `502`, `503`, `504` and dropped connections (`ECONNRESET`, `ETIMEDOUT`, …) are tried up to 4 more times, waiting 250 ms, then doubling up to 4 s, with jitter. A `Retry-After` is honoured (up to 10 s). |
+| What may repeat | Reads, listings, `stat`, deletes, MKCOL and writes of a buffered body repeat on any of them. A conditional write and a MOVE repeat only on answers that say the server did not apply them (`423`, `429`, `503`). A streamed upload is never sent twice. |
+| False `404`s | A file this process wrote or read, and has not deleted or moved since, is believed to exist (the last 50 000 paths). A `404` for it is tried again like a `503` before it is believed. |
+| Project existence | A project's `.rideo/HEAD` is looked up once per process, not on every request (a project kept in a browser is still asked every time: that is how a closed browser is noticed). A `404` for it is looked up again 1 s later before the project counts as gone. Projects deleted through Rideo are forgotten at once; sync (`verify`) looks again, so a folder deleted outside Rideo is noticed. |
+| Commits | The objects of a commit are written concurrently (up to 8), then the ref: two round trips ([commit protocol](version-control.md#commit-protocol)). |
+| Work tree | Written behind the commits ([external edits](#external-edits)). |
+| Job records | One write at a time per job; a newer state waits for the write in flight instead of racing it (which OpenList answers with `423 Locked`). |
+
+`rideo_storage_retries_total{op,reason}` counts the retries (`reason`: the status, the connection error code, or
+`missing` for a false `404`); a request that still fails is logged (`WebDAV request kept failing`, with the op, path,
+reason and tries) and fails as before.
 
 ## Embedded server
 
@@ -164,7 +184,15 @@ some servers reply `bytes a-b/*`. WebCodecs (mediabunny `UrlSource`) relies on c
 Assets are meant to be managed over WebDAV, so the work tree is a real editing channel, not just an export:
 
 1. After each commit, the **work-tree materializer** writes the changed documents as pretty JSON, records
-   `{hash, etag, size}` in `.rideo/worktree.json`, and re-renders `screenplay.md`.
+   `{hash, etag, size}` in `.rideo/worktree.json`, and re-renders `screenplay.md`. It runs behind the commits, so a
+   commit never waits for it: the commit queues its documents, and one batch at a time writes the newest version of
+   every queued path (a burst of edits to `timeline.json` costs one write, not one per edit), up to 8 files at once.
+   A failed batch goes back in the queue and is tried again after 1 s, doubling up to 30 s. When a project is loaded,
+   the index is compared with HEAD, and documents whose recorded hash is not HEAD's (a batch lost to a crash) are
+   queued again; files edited outside Rideo keep their index entry, so sync still sees those edits. Sync waits for
+   the queue before it scans and before it answers (up to 30 s: commits that keep coming keep it busy), and shutdown
+   waits up to 15 s for the queues. `rideo_worktree_batches_total{outcome}` and `rideo_worktree_pending_docs` follow the
+   queue.
 2. **Sync** (on project open, on a timer for projects with live subscribers
    (`RIDEO_WEBDAV_SYNC_INTERVAL_SEC`, default 15, 0 disables), and on demand through
    `POST /api/projects/:id/sync` or the MCP tool `project_sync`) lists the work-tree folders and compares

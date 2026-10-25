@@ -1,15 +1,18 @@
 import { ClipPlanOutputSchema } from '@rideo/shared';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   AnthropicAdapter,
   createAdapter,
   GeminiAdapter,
   type LlmAdapter,
+  LlmError,
   type LlmRequest,
   OpenAiAdapter,
+  retryAfterOf,
 } from '../../src/ai/llm';
 import { extractJson, LlmTasks, SYSTEM_PROMPTS } from '../../src/ai/tasks';
 import type { ProxyClient } from '../../src/gateway/proxy-client';
+import { Metrics } from '../../src/metrics';
 
 class FakeProxy {
   calls: { domain: string; path: string; body: any; headers: Headers; timeoutMs?: number }[] = [];
@@ -138,6 +141,89 @@ describe('structured tasks', () => {
     await expect(
       new LlmTasks(broken, broken).run('clip.plan', ClipPlanOutputSchema, {}),
     ).rejects.toMatchObject({ code: 'llm_invalid_output', retryable: true });
+  });
+
+  it('makes a call again while the provider turns it away for load, and only then', async () => {
+    const good = JSON.stringify({ shots: [{ description: 'Wide', durationSec: 5 }] });
+    const problem = (code: string) =>
+      JSON.stringify({ type: `urn:mm-gateway:problem:${code}`, code, title: code, status: 503 });
+    class FlakyAdapter implements LlmAdapter {
+      readonly provider = 'fake';
+      readonly model = 'fake-1';
+      calls = 0;
+      constructor(private readonly failures: Error[]) {}
+      async complete() {
+        this.calls++;
+        const err = this.failures.shift();
+        if (err) throw err;
+        return { text: good };
+      }
+    }
+    const metrics = new Metrics();
+    const info = vi.fn();
+    const retry = { retries: 3, baseMs: 1, maxMs: 50 };
+    const overloaded = new FlakyAdapter([
+      new LlmError('503', 503, true, 'system cpu overloaded'),
+      new LlmError('429', 429, true, '', 30),
+      Object.assign(new TypeError('fetch failed'), { cause: { code: 'ECONNRESET' } }),
+    ]);
+    const tasks = new LlmTasks(overloaded, overloaded, { metrics, log: { info }, retry });
+    const started = Date.now();
+    expect((await tasks.run('clip.plan', ClipPlanOutputSchema, {})).shots).toHaveLength(1);
+    expect(overloaded.calls).toBe(4);
+    expect(Date.now() - started).toBeGreaterThanOrEqual(30); // the 429's Retry-After
+    expect(metrics.llmRetries.get({ task: 'clip.plan', status: '503' })).toBe(1);
+    expect(metrics.llmRetries.get({ task: 'clip.plan', status: '429' })).toBe(1);
+    expect(metrics.llmRetries.get({ task: 'clip.plan', status: 'ECONNRESET' })).toBe(1);
+    expect(info).toHaveBeenCalledWith(
+      expect.objectContaining({ task: 'clip.plan', status: '503', attempt: 1 }),
+      'LLM call turned away; retrying',
+    );
+
+    // gives up after its retries with the provider's error
+    const down = new FlakyAdapter(Array.from({ length: 5 }, () => new LlmError('502', 502, true)));
+    await expect(
+      new LlmTasks(down, down, { retry }).run('clip.plan', ClipPlanOutputSchema, {}),
+    ).rejects.toMatchObject({
+      status: 502,
+    });
+    expect(down.calls).toBe(4);
+    // ...and does not repeat what waiting does not fix
+    for (const err of [
+      new LlmError('400', 400, false),
+      new LlmError('504', 504, true),
+      new LlmError('503', 503, true, problem('provider_not_configured')),
+      Object.assign(new Error('timed out'), { name: 'TimeoutError' }),
+    ]) {
+      const once = new FlakyAdapter([err]);
+      await expect(
+        new LlmTasks(once, once, { retry }).run('clip.plan', ClipPlanOutputSchema, {}),
+      ).rejects.toBe(err);
+      expect(once.calls).toBe(1);
+    }
+    // mm-gateway's own load problems are worth waiting for
+    const busy = new FlakyAdapter([new LlmError('503', 503, true, problem('upstream_error'))]);
+    await new LlmTasks(busy, busy, { retry }).run('clip.plan', ClipPlanOutputSchema, {});
+    expect(busy.calls).toBe(2);
+    // a cancelled job stops waiting
+    const controller = new AbortController();
+    const slow = new FlakyAdapter([new LlmError('503', 503, true)]);
+    const pending = new LlmTasks(slow, slow, { retry: { retries: 3, baseMs: 10_000, maxMs: 60_000 } }).run(
+      'clip.plan',
+      ClipPlanOutputSchema,
+      {},
+      { signal: controller.signal },
+    );
+    setTimeout(() => controller.abort(), 20);
+    await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
+  });
+
+  it('reads Retry-After in seconds or as a date', () => {
+    const answer = (value: string) => new Response('', { status: 503, headers: { 'retry-after': value } });
+    expect(retryAfterOf(answer('2'))).toBe(2000);
+    expect(retryAfterOf(answer(new Date(Date.now() + 5000).toUTCString()))).toBeGreaterThan(3000);
+    expect(retryAfterOf(answer('soon'))).toBeUndefined();
+    expect(retryAfterOf(new Response('', { status: 503 }))).toBeUndefined();
   });
 
   it('routes image tasks to the vision adapter with labelled parts', async () => {

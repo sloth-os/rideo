@@ -159,7 +159,14 @@ Every LLM use is a **task** with an id, a zod output schema, a system prompt and
 
 `runTask()`:
 
-1. Build messages, call the adapter in JSON mode (temperature 0.7 for writing, 0 for judging).
+1. Build messages, call the adapter in JSON mode (temperature 0.7 for writing, 0 for judging). A call the provider
+   turns away for load (`429`, `500`, `502`, `503`, `529`, or a dropped connection) is made again up to 3 times,
+   waiting 2 s, 4 s, then 8 s, with jitter, or longer when the answer's `Retry-After` asks (up to 60 s). Timeouts,
+   `504`, other answers, and mm-gateway's own problems that are not about load (`provider_not_configured`,
+   `forbidden`, …; its `rate_limited`, `provider_unavailable`, `upstream_error` and `internal_error` are) are not
+   repeated here. Each retry is logged (`LLM call turned away; retrying`, with the
+   task, status and wait) and counted in `rideo_llm_retries_total{task,status}`; a judge that still fails leaves the
+   take unverified (R9).
 2. Extract JSON: strip code fences, then take the outermost object.
 3. Validate with zod. If validation fails, make **one repair call** with the validation errors and the
    previous output.
@@ -187,4 +194,5 @@ and the offline demo (`npm run dev:demo`).
 paint that colour into a marker band. Mock keyframes and videos copy the marker bands of the reference
 images they receive, as a real model copies identity. The mock judge decodes the PNG frames and checks the
 bands. `MOCK_FLAKY_EVERY=n` drops the bands from every n-th generation, so tests can prove that the gate
-retries and recovers. `metadata.mock_fail: "<code>"` fails a task with that code.
+retries and recovers. `overloadChat(n)` makes the next n chat calls through the proxy answer
+`503 system cpu overloaded`, as an overloaded upstream does, so tests can prove that LLM calls are made again. `metadata.mock_fail: "<code>"` fails a task with that code.

@@ -336,6 +336,25 @@ describe('proxy LLM formats', () => {
       openai.title,
     );
   });
+
+  it('turns chat calls away like an overloaded upstream when asked (docs/design/ai-gateway.md#mock-gateway)', async () => {
+    gw.overloadChat(2);
+    const body = {
+      model: 'gpt-test',
+      messages: [{ role: 'system', content: 'rideo-task: screenplay.generate' }],
+    };
+    for (let i = 0; i < 2; i++) {
+      const res = await fetch(`${gw.url}/proxy/api.openai.com/v1/chat/completions`, {
+        method: 'POST',
+        headers: auth,
+        body: JSON.stringify(body),
+      });
+      expect(res.status).toBe(503);
+      expect(await res.text()).toBe('system cpu overloaded');
+    }
+    expect(gw.counters.overloaded).toBe(2);
+    expect(ScreenplayGenerateOutputSchema.parse(await chat('screenplay.generate', input)).title).toBeTruthy();
+  });
 });
 
 describe('post audio (docs/design/post-audio.md#mock-gateway)', () => {

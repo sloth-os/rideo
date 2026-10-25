@@ -7,10 +7,12 @@ import {
   type VideoItem,
 } from '@rideo/shared';
 import * as f from '@rideo/shared/testing';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { MediaPool } from '../src/features/editor/engine/media-pool';
 import { drawPeaks } from '../src/features/editor/engine/peaks';
 import { RampSection, TransformSection } from '../src/features/editor/ItemPanels';
+import { Waveform } from '../src/features/editor/LaneMedia';
 import { TranscriptPanel } from '../src/features/editor/TranscriptPanel';
 import { emptySlice, useProject } from '../src/store/project';
 
@@ -206,5 +208,37 @@ describe('waveforms', () => {
     drawPeaks(ctx, peaks, 0, 2, 4, 22);
     expect(rects.map((r) => r[3])).toEqual([1, 20, 1, 10]);
     expect(rects[1]).toEqual([1, 1, 1, 20]);
+  });
+});
+
+describe('lane media (docs/design/engine-performance.md#media-requests)', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('reads an item’s media only once its block comes on screen', async () => {
+    const observers: { cb: (entries: { isIntersecting: boolean }[]) => void; disconnected: boolean }[] = [];
+    vi.stubGlobal(
+      'IntersectionObserver',
+      class {
+        disconnected = false;
+        constructor(readonly cb: (entries: { isIntersecting: boolean }[]) => void) {
+          observers.push(this);
+        }
+        observe() {}
+        disconnect() {
+          this.disconnected = true;
+        }
+      },
+    );
+    const get = vi.fn(async () => ({ audio: null }));
+    const pool = { get } as unknown as MediaPool;
+    const media = f.media({ path: 'media/uploads/far-0123456789cd.mp4', durationSec: 10, hasAudio: true });
+    render(<Waveform pool={pool} item={item({ source: { type: 'media', media } })} zoom={20} height={18} />);
+    await act(async () => undefined);
+    expect(get).not.toHaveBeenCalled();
+    await act(async () => observers[0]!.cb([{ isIntersecting: false }]));
+    expect(get).not.toHaveBeenCalled();
+    await act(async () => observers[0]!.cb([{ isIntersecting: true }]));
+    expect(get).toHaveBeenCalledWith(media);
+    expect(observers[0]!.disconnected).toBe(true);
   });
 });

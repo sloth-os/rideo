@@ -36,10 +36,21 @@ export class LlmError extends Error {
     readonly retryable: boolean,
     /** The answer's body (the gateway's problem or the provider's error). */
     readonly body?: string,
+    /** How long the answer asked to wait before another try (`Retry-After`). */
+    readonly retryAfterMs?: number,
   ) {
     super(message);
     this.name = 'LlmError';
   }
+}
+
+/** A `Retry-After` header (seconds or an HTTP date) in milliseconds. */
+export function retryAfterOf(res: Response): number | undefined {
+  const value = res.headers.get('retry-after');
+  if (!value) return undefined;
+  const sec = Number(value);
+  const ms = Number.isFinite(sec) ? sec * 1000 : Date.parse(value) - Date.now();
+  return Number.isFinite(ms) && ms > 0 ? ms : undefined;
 }
 
 async function failure(res: Response, provider: string): Promise<LlmError> {
@@ -49,6 +60,7 @@ async function failure(res: Response, provider: string): Promise<LlmError> {
     res.status,
     res.status === 429 || res.status >= 500,
     body,
+    retryAfterOf(res),
   );
 }
 

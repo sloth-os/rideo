@@ -17,6 +17,8 @@ export const PORTS = {
   settingsMobile: E2E_PORT + 7,
   /** The studio library embedded in a page on another origin (docs/design/embedding.md). */
   host: E2E_PORT + 6,
+  /** The main studio behind slow media storage: ranged media reads are held (docs/design/engine-performance.md). */
+  slowMedia: E2E_PORT + 8,
   /** The mock mm-gateway. */
   gateway: E2E_PORT + 10,
 } as const;

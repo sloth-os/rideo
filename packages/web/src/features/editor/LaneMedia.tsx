@@ -1,10 +1,31 @@
 import { type AudioItem, isStillMedia, itemDuration, sourceTimeAt, type VideoItem } from '@rideo/shared';
-import { useEffect, useRef, useState } from 'react';
+import { type RefObject, useEffect, useRef, useState } from 'react';
 import type { MediaPool } from './engine/media-pool';
 import { drawPeaks, thumbnailAt, waveformPeaks } from './engine/peaks';
 
 /** The visible pixels of an item block, at most this wide (keeps long items cheap). */
 const MAX_PX = 2400;
+
+/**
+ * Whether an element has come on screen (and stays counted once it has): a long cut reads only the media of the
+ * blocks in view (docs/design/engine-performance.md#media-requests).
+ */
+export function useSeen(ref: RefObject<Element | null>): boolean {
+  const [seen, setSeen] = useState(() => typeof IntersectionObserver === 'undefined');
+  useEffect(() => {
+    const el = ref.current;
+    if (seen || !el) return;
+    const io = new IntersectionObserver((entries) => {
+      if (entries.some((e) => e.isIntersecting)) {
+        setSeen(true);
+        io.disconnect();
+      }
+    });
+    io.observe(el);
+    return () => io.disconnect();
+  }, [ref, seen]);
+  return seen;
+}
 
 /**
  * A video item's filmstrip: thumbnails at the lane's height across the item, from the source times they show
@@ -22,13 +43,14 @@ export function Filmstrip({
   height: number;
 }) {
   const ref = useRef<HTMLCanvasElement>(null);
+  const seen = useSeen(ref);
   const [ready, setReady] = useState(false);
   const media = item.source.media;
   const width = Math.min(MAX_PX, Math.max(8, Math.round(itemDuration(item) * zoom || 8)));
   const key = `${media.hash}|${item.in}|${item.out}|${item.speed}|${zoom}|${JSON.stringify(item.ramp ?? null)}`;
   useEffect(() => {
     const canvas = ref.current;
-    if (!pool || !canvas) return;
+    if (!pool || !canvas || !seen) return;
     let alive = true;
     setReady(false);
     const aspect = media.width && media.height ? media.width / media.height : 16 / 9;
@@ -52,7 +74,7 @@ export function Filmstrip({
     return () => {
       alive = false;
     };
-  }, [pool, key, width, height]);
+  }, [pool, key, width, height, seen]);
   return (
     <canvas
       ref={ref}
@@ -80,13 +102,14 @@ export function Waveform({
   height: number;
 }) {
   const ref = useRef<HTMLCanvasElement>(null);
+  const seen = useSeen(ref);
   const [ready, setReady] = useState(false);
   const media = item.source.media;
   const span = itemDuration(item);
   const width = Math.min(MAX_PX, Math.max(8, Math.round(span * zoom)));
   useEffect(() => {
     const canvas = ref.current;
-    if (!pool || !canvas || media.hasAudio === false) return;
+    if (!pool || !canvas || media.hasAudio === false || !seen) return;
     let alive = true;
     setReady(false);
     void waveformPeaks(pool, media)
@@ -101,7 +124,7 @@ export function Waveform({
     return () => {
       alive = false;
     };
-  }, [pool, media.hash, item.in, item.out, width, height]);
+  }, [pool, media.hash, item.in, item.out, width, height, seen]);
   if (media.hasAudio === false) return null;
   return (
     <canvas

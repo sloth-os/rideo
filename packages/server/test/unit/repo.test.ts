@@ -9,6 +9,7 @@ import {
 import * as f from '@rideo/shared/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppError } from '../../src/errors';
+import { Metrics } from '../../src/metrics';
 import { Layout } from '../../src/storage/layout';
 import { MemoryBackend } from '../../src/storage/memory';
 import { type CommitEvent, Repository } from '../../src/vcs/repo';
@@ -21,6 +22,7 @@ let storage: MemoryBackend;
 let layout: Layout;
 let project: Project;
 let repo: Repository;
+let worktree: Worktree;
 let clock: number;
 let events: CommitEvent[];
 
@@ -33,7 +35,8 @@ beforeEach(async () => {
     coalesceWindowMs: 30_000,
     now: () => new Date(clock),
   });
-  repo.materializer = new Worktree(storage, layout, project.id);
+  worktree = new Worktree(storage, layout, project.id);
+  repo.materializer = worktree;
   events = [];
   repo.onCommit = (e) => events.push(e);
   await repo.init({ 'project.json': project }, user, 'Create project');
@@ -205,9 +208,11 @@ describe('history operations', () => {
       actor: user,
       message: 'Alt',
     });
+    await worktree.idle();
     expect((await storage.read(layout.doc(project.id, 'screenplay.json')))!.toString()).toContain('"Alt"');
     await repo.switchBranch('main');
     expect(await repo.readDoc('screenplay.json')).toBeNull();
+    await worktree.idle();
     expect(await storage.read(layout.doc(project.id, 'screenplay.json'))).toBeNull();
     expect((await repo.listBranches()).map((b) => [b.name, b.current])).toEqual([
       ['alt-ending', false],
@@ -249,6 +254,7 @@ describe('work tree', () => {
       },
       { actor: user, message: 'Add' },
     );
+    await worktree.idle();
     const wt = new Worktree(storage, layout, project.id);
     const json = (await storage.read(layout.doc(project.id, docPath.character(c.id))))!.toString();
     expect(json).toContain('\n  "name": "Mira"');
@@ -285,6 +291,7 @@ describe('work tree', () => {
   it('deletes nothing a lagging listing leaves out, and still sees edits of it', async () => {
     const c = f.character();
     await repo.transact((tx) => tx.set(docPath.character(c.id), c), { actor: user, message: 'Add' });
+    await worktree.idle();
     const file = layout.doc(project.id, docPath.character(c.id));
     // The server's listing has not caught up with the write (OpenList caches directory listings)
     const lagging = new Proxy(storage, {
@@ -308,5 +315,175 @@ describe('work tree', () => {
     // a file that is really gone is still a deletion
     await storage.delete(file);
     expect((await wt.scan(snap.docs)).changes[docPath.character(c.id)]).toBeNull();
+  });
+});
+
+/** A store whose every operation takes `ms`, recording when each started and ended (docs/design/storage-webdav.md). */
+class SlowBackend extends MemoryBackend {
+  readonly calls: { op: string; path: string; start: number; end: number }[] = [];
+  failWrites: (path: string) => boolean = () => false;
+  constructor(private readonly ms = 15) {
+    super();
+  }
+  private async slow<T>(op: string, path: string, run: () => Promise<T>): Promise<T> {
+    const call = { op, path, start: performance.now(), end: 0 };
+    this.calls.push(call);
+    await new Promise((r) => setTimeout(r, this.ms));
+    try {
+      return await run();
+    } finally {
+      call.end = performance.now();
+    }
+  }
+  override read(path: string) {
+    return this.slow('read', path, () => super.read(path));
+  }
+  override write(
+    path: string,
+    data: Parameters<MemoryBackend['write']>[1],
+    opts?: Parameters<MemoryBackend['write']>[2],
+  ) {
+    return this.slow('write', path, async () => {
+      if (this.failWrites(path)) throw new Error(`write of ${path} failed`);
+      return super.write(path, data, opts);
+    });
+  }
+  override stat(path: string) {
+    return this.slow('stat', path, () => super.stat(path));
+  }
+  override list(dir: string) {
+    return this.slow('list', dir, () => super.list(dir));
+  }
+  override delete(path: string) {
+    return this.slow('delete', path, () => super.delete(path));
+  }
+}
+
+describe('commit round trips (docs/design/version-control.md#commit-protocol)', () => {
+  it('writes the objects at once, then the ref, without waiting for the work tree or reading tags', async () => {
+    const slow = new SlowBackend();
+    const r = new Repository(slow, layout, project.id, {
+      coalesceWindowMs: 30_000,
+      now: () => new Date(clock),
+    });
+    const wt = new Worktree(slow, layout, project.id);
+    r.materializer = wt;
+    await r.init({ 'project.json': project }, user, 'Create project');
+    await wt.idle();
+    const c = f.character();
+    slow.calls.length = 0;
+    const started = performance.now();
+    await r.transact((tx) => tx.set(docPath.character(c.id), c), { actor: user, message: 'Add Mira' });
+    const took = performance.now() - started;
+    const objects = slow.calls.filter((x) => x.path.includes('/objects/'));
+    const ref = slow.calls.find((x) => x.path.endsWith('/refs/heads/main'))!;
+    // a blob, the characters tree, the root tree and the commit: written together, then the ref
+    expect(objects).toHaveLength(4);
+    expect(Math.max(...objects.map((o) => o.start))).toBeLessThan(Math.min(...objects.map((o) => o.end)));
+    expect(ref.start).toBeGreaterThanOrEqual(Math.max(...objects.map((o) => o.end)));
+    // the work tree follows in the background: its write had not finished when the commit answered
+    const doc = layout.doc(project.id, docPath.character(c.id));
+    expect(slow.files.has(doc)).toBe(false);
+    await wt.idle();
+    const write = slow.calls.find((x) => x.op === 'write' && x.path === doc)!;
+    expect(write.end - started).toBeGreaterThan(took);
+    expect((await slow.read(doc))!.toString()).toContain('"Mira"');
+
+    // coalescing commits read the tags once, and the tip comes from memory
+    slow.calls.length = 0;
+    for (const title of ['A', 'B', 'C'])
+      await r.transact((tx) => tx.set('screenplay.json', f.screenplay({ title })), {
+        actor: user,
+        message: 'Edit',
+        coalesce: { key: 'doc:screenplay.json' },
+      });
+    expect(slow.calls.filter((x) => x.op === 'list' && x.path.endsWith('/refs/tags'))).toHaveLength(1);
+    await r.log();
+    expect(slow.calls.filter((x) => x.op === 'read' && x.path.endsWith('/refs/heads/main'))).toHaveLength(0);
+    const tag = await r.createTag({ name: 'draft', actor: user });
+    expect((await r.listTags()).map((t) => t.name)).toEqual(['draft']);
+    expect(tag.commit).toBe((await r.snapshot()).commit);
+  });
+});
+
+describe('work tree in the background (docs/design/storage-webdav.md#external-edits)', () => {
+  const timelineDoc = (n: number): Timeline => ({
+    version: 1,
+    fps: 24,
+    width: 320,
+    height: 180,
+    tracks: [{ id: 'trk_0000000000aaaaaa', kind: 'video', name: `V${n}`, items: [] }],
+  });
+
+  it('writes the newest version of a burst of commits once per path', async () => {
+    const slow = new SlowBackend(30);
+    const r = new Repository(slow, layout, project.id, { coalesceWindowMs: 0 });
+    const wt = new Worktree(slow, layout, project.id);
+    r.materializer = wt;
+    await r.init({ 'project.json': project }, user, 'Create project');
+    await wt.idle();
+    slow.calls.length = 0;
+    for (let n = 1; n <= 8; n++)
+      await r.transact((tx) => tx.set('timeline.json', timelineDoc(n)), {
+        actor: user,
+        message: `Edit ${n}`,
+      });
+    await wt.idle();
+    const writes = slow.calls.filter(
+      (x) => x.op === 'write' && x.path === layout.doc(project.id, 'timeline.json'),
+    );
+    expect(writes.length).toBeLessThan(8);
+    const file = JSON.parse((await slow.read(layout.doc(project.id, 'timeline.json')))!.toString());
+    expect(file.tracks[0].name).toBe('V8');
+    // ...and sync sees no external edit in what it wrote
+    expect((await wt.scan((await r.snapshot()).docs)).changes).toEqual({});
+  });
+
+  it('tries a failed batch again, and catches up with commits it missed when the project loads', async () => {
+    const slow = new SlowBackend(1);
+    const metrics = new Metrics();
+    const warn = vi.fn();
+    const r = new Repository(slow, layout, project.id, { coalesceWindowMs: 0 });
+    const wt = new Worktree(slow, layout, project.id, { warn }, metrics, { retryMs: 20 });
+    r.materializer = wt;
+    await r.init({ 'project.json': project }, user, 'Create project');
+    await wt.idle();
+    const target = layout.doc(project.id, 'timeline.json');
+    let failures = 2;
+    slow.failWrites = (path) => path === target && failures-- > 0;
+    await r.transact((tx) => tx.set('timeline.json', timelineDoc(1)), { actor: user, message: 'Edit' });
+    await expect.poll(async () => (await slow.read(target))?.toString() ?? '').toContain('"V1"');
+    await wt.idle();
+    expect(metrics.worktreeBatches.get({ outcome: 'failed' })).toBe(2);
+    expect(metrics.worktreeBatches.get({ outcome: 'ok' })).toBeGreaterThanOrEqual(2);
+    expect(metrics.worktreePending.get()).toBe(0);
+    expect(warn).toHaveBeenCalledWith(
+      expect.objectContaining({ projectId: project.id, retryInMs: expect.any(Number) }),
+      'work tree materialization failed; will retry',
+    );
+
+    // A screenplay written to the work tree, then edited outside Rideo
+    const sp = f.screenplay({ title: 'Committed' });
+    await r.transact((tx) => tx.set('screenplay.json', sp), { actor: user, message: 'Script' });
+    await wt.idle();
+    await slow.write(
+      layout.doc(project.id, 'screenplay.json'),
+      JSON.stringify({ ...sp, title: 'Edited in Finder' }),
+    );
+    // A commit whose batch was lost (the process stopped): the next load writes it, and only it
+    r.materializer = undefined;
+    await r.transact((tx) => tx.set('timeline.json', timelineDoc(2)), { actor: user, message: 'Lost' });
+    const fresh = new Repository(slow, layout, project.id);
+    const wt2 = new Worktree(slow, layout, project.id, { warn });
+    fresh.materializer = wt2;
+    await fresh.snapshot();
+    await expect.poll(async () => (await slow.read(target))?.toString() ?? '').toContain('"V2"');
+    await wt2.idle();
+    expect(warn).toHaveBeenCalledWith(
+      { projectId: project.id, paths: ['timeline.json'], count: 1 },
+      'work tree behind HEAD; rewriting',
+    );
+    const scan = await wt2.scan((await fresh.snapshot()).docs);
+    expect((scan.changes['screenplay.json'] as Screenplay).title).toBe('Edited in Finder');
   });
 });

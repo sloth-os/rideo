@@ -3,7 +3,8 @@ import { readFileSync } from 'node:fs';
 import { expect, type Page, test } from '@playwright/test';
 import { newId, parseProbe } from '@rideo/shared';
 import { PNG } from 'pngjs';
-import { Api, makeFootage } from './support/api';
+import { Api, makeFootage, TINY } from './support/api';
+import { at, PORTS } from './support/ports';
 import { exportInThisTab } from './support/ui';
 
 // A software WebGPU adapter: SwiftShader through Vulkan (the GL-only SwiftShader path loses its device).
@@ -244,4 +245,98 @@ test('ffmpeg.wasm renders a cut of 40 short items within its 32-thread pool', as
   const exports = Object.values<any>((await api.call<any>('GET', `/projects/${pid}/state`)).docs.exports);
   expect(exports.map((e) => [e.engine, e.status])).toEqual([['ffmpeg', 'succeeded']]);
   expect(exports[0].durationSec).toBeCloseTo(10, 0);
+});
+
+/**
+ * A cut of many clips on slow storage (docs/design/engine-performance.md#media-requests): the lanes and the preview
+ * read a few media requests at a time, and heartbeats also go on the live channel, so an export the tab claimed keeps
+ * its lease while ranged media reads are held for 20 s each on the browser's six connections.
+ */
+test('an editor tab on a cut of many clips keeps its export lease while media reads are slow', async ({
+  page,
+  request,
+}, testInfo) => {
+  test.setTimeout(300_000);
+  const api = new Api(request);
+  const { id: pid } = await api.call<{ id: string }>('POST', '/projects', {
+    kind: 'edit',
+    title: `Slow media (${testInfo.project.name})`,
+    settings: TINY,
+  });
+  // 40 different clips: every item reads a file of its own (with every lane reading at once, the tab's requests
+  // would wait minutes behind the held reads: the claim, the heartbeats, the export's inputs)
+  const medias: unknown[] = [];
+  for (let k = 0; k < 40; k++) {
+    const file = testInfo.outputPath(`clip-${k}.mp4`);
+    execFileSync(ffmpeg, [
+      '-y',
+      '-v',
+      'error',
+      '-f',
+      'lavfi',
+      '-i',
+      `color=c=0x${(0x203040 + k * 0x0b0907).toString(16).slice(-6)}:size=320x180:rate=24:duration=1.5`,
+      '-f',
+      'lavfi',
+      '-i',
+      `sine=frequency=${300 + k * 20}:duration=1.5`,
+      '-c:v',
+      'libx264',
+      '-preset',
+      'ultrafast',
+      '-pix_fmt',
+      'yuv420p',
+      '-c:a',
+      'aac',
+      '-shortest',
+      file,
+    ]);
+    let banner = '';
+    try {
+      execFileSync(ffmpeg, ['-hide_banner', '-i', file], { stdio: 'pipe' });
+    } catch (err) {
+      banner = String((err as { stderr?: Buffer }).stderr ?? '');
+    }
+    const res = await request.post(`/api/projects/${pid}/uploads`, {
+      multipart: {
+        meta: JSON.stringify({ probe: parseProbe(banner) }),
+        file: { name: `clip-${k}.mp4`, mimeType: 'video/mp4', buffer: readFileSync(file) },
+      },
+    });
+    expect(res.ok()).toBe(true);
+    medias.push((await res.json()).media);
+  }
+  const track = (await api.call<any>('GET', `/projects/${pid}/timeline`)).tracks[0].id;
+  await api.call('POST', `/projects/${pid}/timeline/ops`, {
+    ops: medias.map((media, k) => ({
+      op: 'insert',
+      trackId: track,
+      item: { kind: 'video', source: { type: 'media', media }, in: 0, out: 1.5, start: k * 1.5 },
+    })),
+  });
+  const { export: queued } = await api.call<any>('POST', `/projects/${pid}/exports`, {
+    quality: 'draft',
+    engine: 'ffmpeg',
+  });
+
+  // The editor through the slow-media proxy claims the export at once
+  await page.goto(at(PORTS.slowMedia, `/p/${pid}/editor`));
+  const job = async () =>
+    (await api.call<any[]>('GET', `/projects/${pid}/jobs?limit=20`)).find((j) => j.kind === 'export.render');
+  await expect
+    .poll(async () => (await job())?.status ?? 'queued', { timeout: 60_000 })
+    .toMatch(/running|succeeded/);
+  // ...and finishes it on its first lease: a lost lease would put it back in the queue (a second attempt)
+  await expect
+    .poll(
+      async () => (await api.call<any>('GET', `/projects/${pid}/state`)).docs.exports[queued.id]?.status,
+      {
+        timeout: 240_000,
+        intervals: [2000],
+      },
+    )
+    .toBe('succeeded');
+  const done = await job();
+  expect(done.attempts).toBe(1);
+  expect(done.error?.code).not.toBe('lease_expired');
 });

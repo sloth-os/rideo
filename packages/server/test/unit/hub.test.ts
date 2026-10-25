@@ -110,4 +110,33 @@ describe('live hub', () => {
     expect(ev.event.kind === 'commit' && ev.event.docs).toBeNull();
     hub.close();
   });
+
+  it('answers job heartbeats on the live channel for the session holding the lease', () => {
+    const hub = new LiveHub();
+    const tab = new FakeSocket();
+    hub.attach(tab);
+    const sessionId = (tab.sent[0] as { sessionId: string }).sessionId;
+    const beats: unknown[] = [];
+    hub.jobHeartbeat = (session, jobId, progress) => {
+      beats.push([session, jobId, progress]);
+      if (jobId === 'job_lost') throw Object.assign(new Error('not leased'), { code: 'lease_lost' });
+      return {
+        cancelled: jobId === 'job_cancelled',
+        leaseExpiresAt: jobId === 'job_cancelled' ? null : 'soon',
+      };
+    };
+    tab.receive({
+      type: 'job-heartbeat',
+      jobId: 'job_a',
+      progress: { done: 1, total: 4, message: 'chunk 1/3' },
+    });
+    tab.receive({ type: 'job-heartbeat', jobId: 'job_lost' });
+    tab.receive({ type: 'job-heartbeat', jobId: 'job_cancelled' });
+    expect(beats[0]).toEqual([sessionId, 'job_a', { done: 1, total: 4, message: 'chunk 1/3' }]);
+    expect(tab.sent.filter((m) => m.type === 'job-heartbeat')).toEqual([
+      { type: 'job-heartbeat', jobId: 'job_a', leased: true, cancelled: false, leaseExpiresAt: 'soon' },
+      { type: 'job-heartbeat', jobId: 'job_lost', leased: false, cancelled: false, leaseExpiresAt: null },
+      { type: 'job-heartbeat', jobId: 'job_cancelled', leased: true, cancelled: true, leaseExpiresAt: null },
+    ]);
+  });
 });

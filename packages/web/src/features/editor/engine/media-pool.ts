@@ -48,7 +48,11 @@ export class MediaPool {
   constructor(
     private readonly projectId: string,
     private readonly size: { width: number; height: number },
-    private readonly opts: { editingProxies?: boolean } = {},
+    private readonly opts: {
+      editingProxies?: boolean;
+      /** What reads originals over HTTP: a limited fetch leaves room on the connection (engine/media-fetch.ts). */
+      fetchFn?: typeof fetch;
+    } = {},
   ) {}
 
   get(media: MediaRef): Promise<PoolEntry> {
@@ -83,7 +87,12 @@ export class MediaPool {
 
   private async open(media: MediaRef, proxy?: Blob): Promise<PoolEntry> {
     let input: Input = new Input({
-      source: proxy ? new BlobSource(proxy) : new UrlSource(mediaUrl(this.projectId, media.path)),
+      source: proxy
+        ? new BlobSource(proxy)
+        : new UrlSource(
+            mediaUrl(this.projectId, media.path),
+            this.opts.fetchFn ? { fetchFn: this.opts.fetchFn } : undefined,
+          ),
       formats: ALL_FORMATS,
     });
     let tracks = await tracksOf(input);

@@ -2,6 +2,7 @@ import { formatDuration, type Timeline, timelineDuration } from '@rideo/shared';
 import { Pause, Play } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '../../components/ui';
+import { previewFetch } from '../../engine/media-fetch';
 import { MediaPool } from '../editor/engine/media-pool';
 import { Player } from '../editor/engine/player';
 
@@ -23,7 +24,7 @@ export function AnimaticPlayer({ projectId, timeline }: { projectId: string; tim
   }, [timeline.width, timeline.height]);
   useEffect(() => {
     if (!canvasRef.current) return;
-    const pool = new MediaPool(projectId, size);
+    const pool = new MediaPool(projectId, size, { fetchFn: previewFetch });
     const player = new Player(canvasRef.current, pool, timeline);
     player.onTime = setTime;
     player.onPlaying = setPlaying;

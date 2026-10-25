@@ -73,6 +73,7 @@ import {
   SectionHeader,
   Select,
 } from '../../components/ui';
+import { laneFetch, previewFetch } from '../../engine/media-fetch';
 import { useEngine } from '../../engine/state';
 import { api } from '../../lib/api';
 import { useProjectRole } from '../../lib/auth';
@@ -909,7 +910,7 @@ export function EditorView() {
   useEffect(() => {
     if (!projectId || !canvasRef.current || !preview || !webcodecs) return;
     // Heavy originals preview from editing proxies (docs/design/engine-performance.md#local-proxies-made-with-webcodecs)
-    const pool = new MediaPool(projectId, previewSize, { editingProxies: true });
+    const pool = new MediaPool(projectId, previewSize, { editingProxies: true, fetchFn: previewFetch });
     const player = new Player(canvasRef.current, pool, preview);
     player.onTime = setTime;
     player.onPlaying = setPlaying;
@@ -933,7 +934,8 @@ export function EditorView() {
 
   useEffect(() => {
     if (!projectId || !webcodecs) return;
-    const pool = new MediaPool(projectId, { width: 160, height: 90 });
+    // The lanes read three media requests at a time, so a long cut leaves room for the API and job heartbeats
+    const pool = new MediaPool(projectId, { width: 160, height: 90 }, { fetchFn: laneFetch });
     setLanePool(pool);
     return () => {
       pool.dispose();

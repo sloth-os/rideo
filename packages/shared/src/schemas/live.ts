@@ -150,6 +150,15 @@ export const ServerMessageSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('resync'), projectId: z.string(), reason: z.string() }),
   z.object({ type: z.literal('ui'), command: UiCommandSchema }),
   z.object({ type: z.literal('pong') }),
+  /** The answer to a `job-heartbeat` (docs/design/editor.md#editor-jobs). */
+  z.object({
+    type: z.literal('job-heartbeat'),
+    jobId: z.string().max(100),
+    /** False: the job is not leased to this session any more. */
+    leased: z.boolean(),
+    cancelled: z.boolean(),
+    leaseExpiresAt: z.string().nullable(),
+  }),
   z.object({ type: z.literal('error'), message: z.string() }),
   /** For the signed-in person (docs/design/review.md#notifications). */
   z.object({ type: z.literal('notification'), notification: NotificationSchema }),
@@ -196,6 +205,18 @@ export const ClientMessageSchema = z.discriminatedUnion('type', [
     error: z.string().optional(),
   }),
   z.object({ type: z.literal('ping') }),
+  /** An editor job's heartbeat from the tab holding its lease (docs/design/editor.md#editor-jobs). */
+  z.object({
+    type: z.literal('job-heartbeat'),
+    jobId: z.string().max(100),
+    progress: z
+      .object({
+        done: z.number().nonnegative(),
+        total: z.number().nonnegative(),
+        message: z.string().max(300).optional(),
+      })
+      .optional(),
+  }),
   /**
    * This tab serves a browser workspace (docs/design/browser-storage.md#the-protocol); `changed` names projects the
    * browser changed by itself (an import), so the server reads them afresh.

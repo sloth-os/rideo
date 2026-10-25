@@ -229,6 +229,33 @@ describe('editor jobs (client lane)', () => {
     expect(await q.claim(projectId, 's3')).toBeNull();
   });
 
+  it('writes a job record one write at a time, the latest state last', async () => {
+    // a store where a write takes a while: OpenList answers two PUTs to one file at once with 423 Locked
+    class SlowStore extends MemoryBackend {
+      writing = 0;
+      overlap = 0;
+      override async write(...args: Parameters<MemoryBackend['write']>) {
+        if (++this.writing > 1) this.overlap++;
+        await new Promise((r) => setTimeout(r, 20));
+        try {
+          return await super.write(...args);
+        } finally {
+          this.writing--;
+        }
+      }
+    }
+    const store = new SlowStore();
+    const { q } = makeQueue({}, store);
+    const job = await enqueue(q, 'export.render');
+    await q.claim(projectId, 's1');
+    await Promise.all(
+      ['part-0001.mp4', 'part-0002.mp4', 'part-0003.mp4'].map((n) => q.staged(job.id, 's1', n)),
+    );
+    expect(store.overlap).toBe(0);
+    const record = JSON.parse((await store.read(new Layout('/rideo').job(projectId, job.id)))!.toString());
+    expect(record.staged).toEqual(['part-0001.mp4', 'part-0002.mp4', 'part-0003.mp4']);
+  });
+
   it('extends leases on heartbeat, rejects other sessions and keeps staged files across a released lease', async () => {
     const { q } = makeQueue();
     const job = await enqueue(q, 'export.render');

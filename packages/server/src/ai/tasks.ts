@@ -53,7 +53,8 @@ import {
 import type { z } from 'zod';
 import { AppError } from '../errors';
 import type { Metrics } from '../metrics';
-import type { LlmAdapter, LlmPart } from './llm';
+import { sleep } from '../util/abort';
+import { type LlmAdapter, LlmError, type LlmPart, type LlmRequest, type LlmResponse } from './llm';
 
 const IDENTITY_TEMPLATE =
   '{"age":"early 30s","gender":"woman","ethnicity":"...","build":"...","height":"...","face":"...","hair":"...","eyes":"...","skin":"...","distinguishingMarks":"..."}';
@@ -217,6 +218,62 @@ function tryParse<T>(
   }
 }
 
+/** How a call the provider turned away for load is made again (docs/design/ai-gateway.md#structured-tasks). */
+export interface LlmRetryPolicy {
+  /** Calls after the first one. */
+  retries: number;
+  /** The first wait; it doubles with every try, with jitter. */
+  baseMs: number;
+  /** The longest wait, also for a `Retry-After`. */
+  maxMs: number;
+}
+
+export const DEFAULT_LLM_RETRY: LlmRetryPolicy = { retries: 3, baseMs: 2000, maxMs: 60_000 };
+
+/** Statuses that turn a call away for load (`529`: Anthropic's overloaded). */
+const RETRY_STATUS = new Set([429, 500, 502, 503, 529]);
+const NETWORK_CODES = new Set([
+  'ECONNRESET',
+  'ECONNREFUSED',
+  'EPIPE',
+  'EAI_AGAIN',
+  'UND_ERR_SOCKET',
+  'UND_ERR_CONNECT_TIMEOUT',
+]);
+
+/** mm-gateway's own problems that are about load (others, like `provider_not_configured`, do not pass by waiting). */
+const GATEWAY_LOAD_CODES = new Set([
+  'rate_limited',
+  'provider_unavailable',
+  'upstream_error',
+  'internal_error',
+]);
+
+/** The code of an mm-gateway problem answer, or null for an answer that is not one (the provider's own). */
+function gatewayProblemCode(body: string | undefined): string | null {
+  try {
+    const problem = JSON.parse(body ?? '') as { type?: unknown; code?: unknown };
+    return typeof problem.type === 'string' && problem.type.startsWith('urn:mm-gateway:problem:')
+      ? String(problem.code ?? '')
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Why a failed call is worth making again (the status or connection error), or null. */
+function turnedAway(err: unknown): string | null {
+  if (err instanceof LlmError) {
+    if (err.status === undefined || !RETRY_STATUS.has(err.status)) return null;
+    const code = gatewayProblemCode(err.body);
+    return code === null || GATEWAY_LOAD_CODES.has(code) ? String(err.status) : null;
+  }
+  const e = err as { name?: string; code?: string; cause?: { code?: string } };
+  if (e?.name === 'AbortError' || e?.name === 'TimeoutError') return null;
+  const code = e?.cause?.code ?? e?.code;
+  return code && NETWORK_CODES.has(code) ? code : null;
+}
+
 /** Structured LLM tasks with schema validation and one repair round (docs/design/ai-gateway.md#structured-tasks). */
 export class LlmTasks {
   constructor(
@@ -227,8 +284,31 @@ export class LlmTasks {
       log?: { info: (o: unknown, m?: string) => void };
       /** An audio-capable model for the speaker check (rule V4); absent when none is configured. */
       audio?: LlmAdapter;
+      retry?: LlmRetryPolicy;
     } = {},
   ) {}
+
+  /** One adapter call, made again while the provider turns it away for load. */
+  private async complete(task: LlmTaskId, adapter: LlmAdapter, req: LlmRequest): Promise<LlmResponse> {
+    const policy = this.deps.retry ?? DEFAULT_LLM_RETRY;
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await adapter.complete(req);
+      } catch (err) {
+        const status = turnedAway(err);
+        if (!status || attempt >= policy.retries || req.signal?.aborted) throw err;
+        const backoff = policy.baseMs * 2 ** attempt * (0.5 + Math.random() / 2);
+        const asked = err instanceof LlmError ? (err.retryAfterMs ?? 0) : 0;
+        const waitMs = Math.round(Math.min(policy.maxMs, Math.max(backoff, asked)));
+        this.deps.metrics?.llmRetries.inc({ task, status });
+        this.deps.log?.info(
+          { task, provider: adapter.provider, model: adapter.model, status, attempt: attempt + 1, waitMs },
+          'LLM call turned away; retrying',
+        );
+        await sleep(waitMs, req.signal);
+      }
+    }
+  }
 
   get audio(): LlmAdapter | undefined {
     return this.deps.audio;
@@ -263,7 +343,7 @@ export class LlmTasks {
     }
     const started = performance.now();
     const temperature = opts.temperature ?? 0.7;
-    let res = await adapter.complete({
+    let res = await this.complete(task, adapter, {
       system: SYSTEM_PROMPTS[task],
       parts,
       json: true,
@@ -274,7 +354,7 @@ export class LlmTasks {
     let parsed = tryParse(schema, res.text);
     if (!parsed.ok) {
       this.deps.log?.info({ task, error: parsed.error }, 'LLM output invalid, repairing');
-      res = await adapter.complete({
+      res = await this.complete(task, adapter, {
         system: SYSTEM_PROMPTS[task],
         parts: [
           ...parts,

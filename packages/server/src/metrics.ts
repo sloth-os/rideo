@@ -46,6 +46,13 @@ export class Gauge implements Metric {
   set(labels: Labels, value: number): void {
     this.values.set(key(labels), value);
   }
+  add(labels: Labels, delta: number): void {
+    const k = key(labels);
+    this.values.set(k, (this.values.get(k) ?? 0) + delta);
+  }
+  get(labels: Labels = {}): number {
+    return this.values.get(key(labels)) ?? 0;
+  }
   render(): string[] {
     return [...this.values].map(([k, v]) => `${this.name}${k ? `{${k}}` : ''} ${v}`);
   }
@@ -94,6 +101,10 @@ export class Metrics {
     new Counter('rideo_gateway_tasks_total', 'mm-gateway tasks by modality and status'),
   );
   readonly llmCalls = this.add(new Counter('rideo_llm_calls_total', 'LLM task calls by task and status'));
+  /** LLM calls made again after the provider turned them away for load (docs/design/ai-gateway.md#structured-tasks). */
+  readonly llmRetries = this.add(
+    new Counter('rideo_llm_retries_total', 'LLM calls made again after 429/5xx, by task and status'),
+  );
   readonly consistency = this.add(new Counter('rideo_consistency_checks_total', 'Consistency gate outcomes'));
   readonly watermark = this.add(
     new Counter('rideo_watermark_operations_total', 'Watermark embeds and detections'),
@@ -104,6 +115,18 @@ export class Metrics {
       'WebDAV operation latency',
       [0.005, 0.01, 0.05, 0.1, 0.25, 0.5, 1, 2, 5],
     ),
+  );
+  /** WebDAV requests tried again after a transient failure (docs/design/storage-webdav.md#slow-and-flaky-servers). */
+  readonly storageRetries = this.add(
+    new Counter('rideo_storage_retries_total', 'WebDAV requests tried again, by op and reason'),
+  );
+  /** Work-tree writes behind commits (docs/design/storage-webdav.md#external-edits), by outcome. */
+  readonly worktreeBatches = this.add(
+    new Counter('rideo_worktree_batches_total', 'Work-tree materialization batches by outcome'),
+  );
+  /** Documents waiting to be written to the work tree, across projects. */
+  readonly worktreePending = this.add(
+    new Gauge('rideo_worktree_pending_docs', 'Documents waiting for the work tree'),
   );
   readonly liveSessions = this.add(new Gauge('rideo_live_sessions', 'Connected live sessions'));
   /** Accounts (docs/design/accounts.md): sign-ins, token use and denials. */

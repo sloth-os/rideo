@@ -215,7 +215,9 @@ them with a count, and removes them all in one op (ranges padded by 30 ms and me
 Timeline items show their sound as a **waveform** (peaks per 10 ms, decoded with WebCodecs `AudioBufferSink` from
 the original or the local proxy) and their picture as a **filmstrip** (thumbnails every few seconds at the
 lane's height, `CanvasSink`); both are computed in the tab, kept per media hash for the session, and drawn for the
-visible part of the lane.
+visible part of the lane. An item's waveform and filmstrip load when its block first comes on screen, so opening a
+cut of a hundred clips reads only the clips in view; the lanes read media two requests at a time, the preview three
+([media requests](engine-performance.md#media-requests)).
 
 ## Where editing runs
 
@@ -429,8 +431,11 @@ Protocol (REST, see [api/rest.md](../api/rest.md#editor-jobs)):
    idle, on every `job` event for a queued `client` job, and every 10 s. The server hands out the oldest
    queued editor job of that project, sets `status: running` and a lease (`sessionId`, `expiresAt`, 60 s).
 2. **Heartbeat.** Every 10 s the tab reports progress and extends the lease. The reply tells it when the
-   job was cancelled. A dedicated worker sends the heartbeats and the job holds a Web Lock, so a hidden tab, or one
-   whose main thread is busy, keeps its lease ([engine performance](engine-performance.md#rendering-in-a-background-tab)).
+   job was cancelled, or that the lease is lost. The heartbeat goes two ways: a dedicated worker posts it over HTTP,
+   and the page sends it on the live channel (`job-heartbeat`, [realtime sync](realtime-sync.md#client--server)).
+   Either keeps the lease: the worker's when the page is hidden or its main thread is busy, the live channel's when
+   the tab's HTTP connection is clogged by media downloads (the WebSocket has a connection of its own). The job also
+   holds a Web Lock ([engine performance](engine-performance.md#rendering-in-a-background-tab)).
 3. **Files.** Outputs are uploaded one by one (`PUT /api/editor/jobs/:jobId/files/:name`) into a staging
    folder on the server's disk (`RIDEO_DATA_DIR/staging/<jobId>/`). The job lists them in `staged`.
 4. **Complete / fail.** The tab posts the result (validated per kind); the server applies it and starts the

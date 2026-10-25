@@ -20,6 +20,16 @@ export interface EditorApi {
   editorHeartbeatRequest?(jobId: string): { url: string; headers: Record<string, string> };
 }
 
+/** The live channel's answer to a job heartbeat (docs/design/realtime-sync.md). */
+export interface LiveHeartbeatReply {
+  jobId: string;
+  leased: boolean;
+  cancelled: boolean;
+}
+
+/** Sends a job heartbeat on the live channel; false when it is not connected. */
+export type LiveHeartbeat = (jobId: string, progress?: Job['progress']) => boolean;
+
 export interface EditorWorkerOptions {
   api: EditorApi;
   handlers: Record<EditorJobKind, EditorJobHandler>;
@@ -53,7 +63,10 @@ export class EditorWorker {
     controller: AbortController;
     progress: Job['progress'];
     ticks?: 'worker' | 'page';
+    /** Hears the live channel's answers to this job's heartbeats. */
+    onLive?: (reply: LiveHeartbeatReply) => void;
   } | null = null;
+  private live: LiveHeartbeat | null = null;
   private claiming = false;
   private retries = 0;
   private timer: ReturnType<typeof setInterval> | null = null;
@@ -67,6 +80,16 @@ export class EditorWorker {
   /** Where the live session id comes from (the tab's live client). */
   setSession(source: () => string | null): void {
     this.sessionOf = source;
+  }
+
+  /** How heartbeats go on the live channel too (the tab's live client). */
+  setLive(send: LiveHeartbeat | null): void {
+    this.live = send;
+  }
+
+  /** The live channel answered a job heartbeat: a lost lease or a cancellation stops the job. */
+  liveReply(reply: LiveHeartbeatReply): void {
+    if (this.current?.job.id === reply.jobId) this.current.onLive?.(reply);
   }
 
   /** The project this tab works for (null: stop claiming; a running job continues). */
@@ -126,7 +149,13 @@ export class EditorWorker {
     this.emit();
     let lost = false;
     let lastSent = 0;
+    let beating = 0;
+    const ms = this.opts.heartbeatMs ?? 10_000;
     const beat = async (withProgress: boolean) => {
+      // One at a time: on a clogged connection a stuck heartbeat is not joined by more (for three periods)
+      if (beating && Date.now() - beating < ms * 3) return;
+      const mine = Date.now();
+      beating = mine;
       try {
         const r = await this.opts.api.editorHeartbeat(
           job.id,
@@ -139,10 +168,20 @@ export class EditorWorker {
           lost = true;
           controller.abort('lease lost');
         }
+      } finally {
+        if (beating === mine) beating = 0;
       }
     };
+    // ...and on the live channel, whose WebSocket has a connection of its own: media downloads that clog the tab's
+    // HTTP connection cannot hold it up (docs/design/editor.md#editor-jobs)
+    state.onLive = (reply) => {
+      if (!reply.leased) {
+        lost = true;
+        controller.abort('lease lost');
+      } else if (reply.cancelled) controller.abort('cancelled');
+    };
+    const live = () => this.live?.(job.id, state.progress);
     // Heartbeats from a worker, off the main thread; the page only tells it the progress and hears the replies
-    const ms = this.opts.heartbeatMs ?? 10_000;
     const plain = this.opts.api.editorHeartbeatRequest?.(job.id);
     const bodyOf = () => JSON.stringify({ sessionId, progress: state.progress });
     const pump = plain
@@ -154,6 +193,7 @@ export class EditorWorker {
         })
       : null;
     const ticker = pump ?? (this.opts.ticker ?? startTicker)(ms, () => void beat(true));
+    const liveTimer = setInterval(live, ms);
     state.ticks = ticker.source;
     this.emit();
     const ctx: EditorJobContext = {
@@ -168,6 +208,7 @@ export class EditorWorker {
         if (now - lastSent >= (this.opts.progressMs ?? 1000)) {
           lastSent = now;
           void beat(true);
+          live();
         }
       },
       upload: async (name, data) => {
@@ -191,6 +232,7 @@ export class EditorWorker {
       }
     } finally {
       ticker.stop();
+      clearInterval(liveTimer);
       this.current = null;
       this.emit();
       void this.poke();

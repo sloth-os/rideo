@@ -63,11 +63,14 @@ document or to `null` for deletion:
 1. Take the project write lock.
 2. Validate each document against the schema for its path. Invalid input is rejected with `validation_error`.
 3. Drop no-op changes (same blob hash). If nothing is left, return the current tip without committing.
-4. Write the blob objects, the rewritten trees on the changed paths, and the commit object.
+4. Build the blob objects, the rewritten trees on the changed paths, and the commit object in memory, and write
+   the ones not stored yet concurrently (up to 8 at a time). Nothing refers to them until the ref moves, so their
+   order does not matter.
 5. Move the branch ref (`If-Match` on its etag when the backend supports conditional writes; otherwise the
-   in-process lock is authoritative).
-6. Update the in-memory snapshot cache, materialize the work tree (when `branch` is checked out), and emit a
-   `commit` live event with the new documents.
+   in-process lock is authoritative). A commit is two storage round trips: the objects, then the ref.
+6. Update the in-memory snapshot cache, queue the work-tree materialization (when `branch` is checked out; it runs
+   in the background, see [external edits](storage-webdav.md#external-edits)), and emit a `commit` live event with
+   the new documents.
 
 ### Coalescing
 
@@ -120,4 +123,7 @@ automatically.
 
 The repository keeps an LRU of flattened snapshots (`commit → Map<path, blobId>`) and parsed blobs. The
 checked-out branch's full document set is kept hot, so `GET /state` needs no WebDAV round trips in steady
-state.
+state: the project's existence is looked up once per process
+([slow and flaky servers](storage-webdav.md#slow-and-flaky-servers)), the checked-out branch's tip comes from
+memory (it moves only through this process), and tags are read once and kept up to date by `createTag` (one tag
+is created at a time). The coalescing check reads the cached tags.

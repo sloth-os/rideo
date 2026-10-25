@@ -17,15 +17,23 @@ afterAll(async () => {
 
 async function liveSession(projectId: string) {
   const ws = new WebSocket(`${stack.url.replace(/^http/, 'ws')}/api/live`);
+  const received: any[] = [];
   const sessionId = await new Promise<string>((ok) =>
     ws.addEventListener('message', (m) => {
       const msg = JSON.parse(String(m.data));
+      received.push(msg);
       if (msg.type === 'hello') ok(msg.sessionId);
     }),
   );
   ws.send(JSON.stringify({ type: 'subscribe', projectId }));
   await new Promise((r) => setTimeout(r, 50));
-  return { sessionId, close: () => ws.close() };
+  return {
+    sessionId,
+    close: () => ws.close(),
+    send: (msg: object) => ws.send(JSON.stringify(msg)),
+    /** The answers to job heartbeats so far. */
+    beats: () => received.filter((m) => m.type === 'job-heartbeat'),
+  };
 }
 
 async function expectProblem(p: Promise<unknown>, status: number, code: string) {
@@ -228,4 +236,60 @@ describe('editor jobs over REST', () => {
       s1.close();
     }
   }, 120_000);
+
+  it('keeps a lease with heartbeats on the live channel (docs/design/editor.md#editor-jobs)', async () => {
+    const p = await project('Live heartbeats');
+    await timelineOf(p.id, 1);
+    const s1 = await liveSession(p.id);
+    const s2 = await liveSession(p.id);
+    try {
+      const queued = await stack.api<any>('POST', `/projects/${p.id}/exports`, {});
+      const { job } = await stack.api<{ job: Job }>('POST', '/editor/claim', {
+        sessionId: s1.sessionId,
+        projectId: p.id,
+      });
+      expect(job.id).toBe(queued.job.id);
+      // two lease lengths (2 s here) of heartbeats on the WebSocket alone
+      for (let i = 0; i < 8; i++) {
+        s1.send({
+          type: 'job-heartbeat',
+          jobId: job.id,
+          progress: { done: i, total: 8, message: `chunk ${i}` },
+        });
+        await new Promise((r) => setTimeout(r, 500));
+      }
+      const held = await stack.api<Job>('GET', `/projects/${p.id}/jobs/${job.id}`);
+      expect(held).toMatchObject({ status: 'running', attempts: 1, lease: { sessionId: s1.sessionId } });
+      expect(held.progress).toEqual({ done: 7, total: 8, message: 'chunk 7' });
+      expect(s1.beats().at(-1)).toMatchObject({ jobId: job.id, leased: true, cancelled: false });
+      // another session holds no lease on it
+      s2.send({ type: 'job-heartbeat', jobId: job.id });
+      await until(
+        async () => s2.beats(),
+        (b) => b.length > 0,
+      );
+      expect(s2.beats()[0]).toEqual({
+        type: 'job-heartbeat',
+        jobId: job.id,
+        leased: false,
+        cancelled: false,
+        leaseExpiresAt: null,
+      });
+      // silence: the lease expires
+      const expired = await until(
+        () => stack.api<Job>('GET', `/projects/${p.id}/jobs/${job.id}`),
+        (j) => j.status === 'queued' && j.error?.code === 'lease_expired',
+        10_000,
+      );
+      expect(expired.lease).toBeNull();
+      s1.send({ type: 'job-heartbeat', jobId: job.id });
+      await until(
+        async () => s1.beats().at(-1),
+        (b) => b?.leased === false,
+      );
+    } finally {
+      s1.close();
+      s2.close();
+    }
+  }, 60_000);
 });

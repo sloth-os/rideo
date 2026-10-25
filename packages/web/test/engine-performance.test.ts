@@ -597,4 +597,32 @@ describe('rendering in a background tab (docs/design/engine-performance.md#rende
     expect(api.editorFail).not.toHaveBeenCalled();
     worker.setProject(null);
   });
+
+  it('keeps one heartbeat in flight when the page sends them (a stuck one is not joined by more)', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('Worker', undefined);
+    let answer: ((r: Response) => void) | null = null;
+    const fetches = vi.fn(
+      () =>
+        new Promise<Response>((r) => {
+          answer = r;
+        }),
+    );
+    vi.stubGlobal('fetch', fetches);
+    const replies: unknown[] = [];
+    const pump = startHeartbeat(
+      { url: '/api/editor/jobs/j1/heartbeat', headers: {}, body: '{}', ms: 1000 },
+      (r) => replies.push(r),
+    );
+    expect(pump.source).toBe('page');
+    await vi.advanceTimersByTimeAsync(3500);
+    expect(fetches).toHaveBeenCalledTimes(1);
+    (answer as unknown as (r: Response) => void)(new Response('{"cancelled":false}', { status: 200 }));
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(replies).toEqual([{ status: 200, json: { cancelled: false } }]);
+    expect(fetches).toHaveBeenCalledTimes(2);
+    pump.stop();
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
 });

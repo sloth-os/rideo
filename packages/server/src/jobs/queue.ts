@@ -142,17 +142,42 @@ export class JobQueue {
     return this.list(projectId).filter((j) => !isTerminalJob(j));
   }
 
-  private async save(job: Job, force = true): Promise<void> {
+  /** Job records being written; a job in `dirty` changed during its write (it is written again after it). */
+  private readonly saving = new Map<string, Promise<void>>();
+  private readonly dirty = new Set<string>();
+
+  /**
+   * Persists the job's record. One write at a time per job (docs/design/storage-webdav.md#slow-and-flaky-servers):
+   * a save during a write waits for it and for one more write of the latest state.
+   */
+  private save(job: Job, force = true): Promise<void> {
     const now = Date.now();
-    if (!force && now - (this.lastSave.get(job.id) ?? 0) < 3000) return;
+    if (!force && now - (this.lastSave.get(job.id) ?? 0) < 3000) return Promise.resolve();
     this.lastSave.set(job.id, now);
-    try {
-      await this.deps.storage.write(this.deps.layout.job(job.projectId, job.id), JSON.stringify(job), {
-        contentType: 'application/json',
-      });
-    } catch (err) {
-      this.deps.log.warn({ err, jobId: job.id }, 'failed to persist job record');
+    const running = this.saving.get(job.id);
+    if (running) {
+      this.dirty.add(job.id);
+      return running;
     }
+    const writes = (async () => {
+      for (;;) {
+        this.dirty.delete(job.id);
+        try {
+          await this.deps.storage.write(this.deps.layout.job(job.projectId, job.id), JSON.stringify(job), {
+            contentType: 'application/json',
+          });
+        } catch (err) {
+          this.deps.log.warn({ err, jobId: job.id }, 'failed to persist job record');
+        }
+        // Checked and let go at once: a save after this starts writes of its own
+        if (!this.dirty.has(job.id)) {
+          this.saving.delete(job.id);
+          return;
+        }
+      }
+    })();
+    this.saving.set(job.id, writes);
+    return writes;
   }
 
   private readonly trailing = new Map<string, NodeJS.Timeout>();

@@ -29,6 +29,9 @@ export interface CommitObject {
 }
 export type VcsObject = BlobObject | TreeObject | CommitObject;
 
+/** How many objects of one commit are written at once. */
+const WRITE_CONCURRENCY = 8;
+
 /** Content-addressed, write-once object store: id = sha256(canonical JSON). Reads verify the hash. */
 export class ObjectStore {
   private readonly cache = new Lru<string, VcsObject>(20_000);
@@ -46,15 +49,29 @@ export class ObjectStore {
   }
 
   async put(obj: VcsObject): Promise<string> {
-    const { id, json } = this.hashOf(obj);
-    if (!this.written.has(id)) {
-      await this.storage.write(this.layout.object(this.projectId, id), json, {
-        contentType: 'application/json',
-      });
-      this.written.add(id);
-    }
-    this.cache.set(id, obj);
-    return id;
+    return (await this.putAll([obj]))[0]!;
+  }
+
+  /**
+   * Stores objects not written yet, several at once: nothing refers to them until a ref moves, so their order does
+   * not matter (docs/design/version-control.md#commit-protocol). Returns their ids in order.
+   */
+  async putAll(objs: readonly VcsObject[]): Promise<string[]> {
+    const hashed = objs.map((obj) => ({ obj, ...this.hashOf(obj) }));
+    const todo = [...new Map(hashed.filter((h) => !this.written.has(h.id)).map((h) => [h.id, h.json]))];
+    let next = 0;
+    const worker = async () => {
+      while (next < todo.length) {
+        const [id, json] = todo[next++]!;
+        await this.storage.write(this.layout.object(this.projectId, id), json, {
+          contentType: 'application/json',
+        });
+        this.written.add(id);
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(WRITE_CONCURRENCY, todo.length) }, worker));
+    for (const h of hashed) this.cache.set(h.id, h.obj);
+    return hashed.map((h) => h.id);
   }
 
   async get<T extends VcsObject>(id: string): Promise<T> {

@@ -256,7 +256,10 @@ export class ProjectService extends Service {
 
   /** Applies external WebDAV edits and imports the inbox (docs/design/storage-webdav.md#external-edits). */
   async sync(projectId: string, opts: { discardInvalid?: boolean } = {}): Promise<SyncReport> {
-    const h = await this.deps.projects.existing(projectId);
+    // The folder may have been deleted outside Rideo: look again
+    const h = await this.deps.projects.existing(projectId, { verify: true });
+    // The work tree catches up with the commits first: an edit made over a document a commit changed is overwritten
+    await h.worktree.idle();
     const snap = await h.repo.snapshot();
     const scan = await h.worktree.scan(snap.docs);
     const report: SyncReport = {
@@ -294,6 +297,8 @@ export class ProjectService extends Service {
     );
     const files = scan.inbox.filter((f) => f.name !== 'README.txt');
     if (files.length) report.imported = await this.importInbox(projectId, files);
+    // ...and shows what sync committed when it answers
+    await h.worktree.idle();
     return report;
   }
 

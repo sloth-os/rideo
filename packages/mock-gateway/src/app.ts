@@ -53,12 +53,16 @@ export interface MockGatewayApp {
   counters: {
     generations: number;
     flaky: number;
+    /** Chat calls answered `503 system cpu overloaded` (overloadChat). */
+    overloaded: number;
     proxyCalls: Record<string, number>;
     /** The account and gateway key of the last call to each registered proxy. */
     proxyAccounts: Record<string, { account: string; key: string; headers: Record<string, string> }>;
   };
   /** The management API's state: proxies and keys with their real credentials. */
   management: MockManagement;
+  /** The next `times` chat calls through the proxy answer `503 system cpu overloaded`, as an overloaded upstream does. */
+  overloadChat(times: number): void;
   close(): Promise<void>;
 }
 
@@ -69,9 +73,11 @@ export async function buildMockGateway(opts: MockGatewayOptions = {}): Promise<M
   const counters: MockGatewayApp['counters'] = {
     generations: 0,
     flaky: 0,
+    overloaded: 0,
     proxyCalls: {},
     proxyAccounts: {},
   };
+  let overloads = 0;
   const management = new MockManagement({ apiKey: opts.apiKey, managementKey: opts.managementKey });
   const keyOf = new WeakMap<FastifyRequest, MockKey>();
   const flakyEvery = opts.flakyEvery ?? Number(process.env.MOCK_FLAKY_EVERY ?? 0);
@@ -399,6 +405,12 @@ export async function buildMockGateway(opts: MockGatewayOptions = {}): Promise<M
       const res = embeddings(body);
       return reply.code(res.status).send(res.body);
     }
+    if (overloads > 0) {
+      // An upstream turning calls away for load (newapi's words), passed through by the proxy
+      overloads--;
+      counters.overloaded++;
+      return reply.code(503).type('text/plain').send('system cpu overloaded');
+    }
     const res = handleChat(path, body);
     return reply.code(res.status).headers(res.headers).send(res.body);
   });
@@ -409,6 +421,9 @@ export async function buildMockGateway(opts: MockGatewayOptions = {}): Promise<M
     dir,
     counters,
     management,
+    overloadChat(times) {
+      overloads = times;
+    },
     async close() {
       await app.close();
       if (ownsDir) await rm(dir, { recursive: true, force: true });

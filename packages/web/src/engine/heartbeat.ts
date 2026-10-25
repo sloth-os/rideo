@@ -25,8 +25,10 @@ export interface HeartbeatRequest {
   ms: number;
 }
 
-const SOURCE = `let t=null,r=null;
-async function beat(){if(!r)return;try{const res=await fetch(r.url,{method:'POST',headers:r.headers,body:r.body,credentials:'same-origin'});let json=null;try{json=await res.json();}catch{}postMessage({status:res.status,json});}catch{postMessage({status:0,json:null});}}
+// One request in flight at a time (on a clogged connection a stuck heartbeat is not joined by more), given up after
+// three periods so the next one can go
+const SOURCE = `let t=null,r=null,busy=false;
+async function beat(){if(!r||busy)return;busy=true;try{const res=await fetch(r.url,{method:'POST',headers:r.headers,body:r.body,credentials:'same-origin',signal:AbortSignal.timeout(r.ms*3)});let json=null;try{json=await res.json();}catch{}postMessage({status:res.status,json});}catch{postMessage({status:0,json:null});}finally{busy=false;}}
 onmessage=(e)=>{const m=e.data;if(m.type==='start'){r=m;clearInterval(t);t=setInterval(beat,m.ms);}else if(m.type==='body'){if(r)r.body=m.body;}else{clearInterval(t);t=null;r=null;}};`;
 
 export function startHeartbeat(
@@ -61,10 +63,23 @@ export function startHeartbeat(
   } catch {
     // No workers here: the page sends them (throttled when hidden)
     let body = req.body;
-    const beat = () =>
-      fetch(absolute.url, { method: 'POST', headers: req.headers, body, credentials: 'same-origin' })
+    let busy = false;
+    const beat = () => {
+      if (busy) return;
+      busy = true;
+      fetch(absolute.url, {
+        method: 'POST',
+        headers: req.headers,
+        body,
+        credentials: 'same-origin',
+        signal: AbortSignal.timeout(req.ms * 3),
+      })
         .then(async (res) => reply({ status: res.status, json: await res.json().catch(() => null) }))
-        .catch(() => reply({ status: 0, json: null }));
+        .catch(() => reply({ status: 0, json: null }))
+        .finally(() => {
+          busy = false;
+        });
+    };
     const t = setInterval(beat, req.ms);
     return {
       source: 'page',

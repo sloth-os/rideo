@@ -70,9 +70,11 @@ export function LiveBridge() {
       workspace: () => (workspaceEnabled() ? workspaceId() : null),
       onStorage: (request) => void serveStorage(request, (msg) => c.send(msg)),
       onWorkspaceReady: () => useWorkspaceStatus.getState().markReady(),
+      onJobHeartbeat: (reply) => editorWorker.liveReply(reply),
     });
     client = c;
     editorWorker.setSession(() => c.sessionId);
+    editorWorker.setLive((jobId, progress) => c.jobHeartbeat(jobId, progress));
     c.connect();
     // The config says where projects live: in this browser, the tab attaches its workspace.
     const applyStorage = (storage: string | undefined) => {
@@ -100,6 +102,7 @@ export function LiveBridge() {
     return () => {
       window.removeEventListener('beforeunload', guard);
       unsubscribe();
+      editorWorker.setLive(null);
       c.close();
       client = null;
     };

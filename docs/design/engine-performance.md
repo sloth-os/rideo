@@ -71,7 +71,12 @@ frames stop; some freeze hidden tabs. An editor job keeps going:
 - **Heartbeats from a worker.** A dedicated worker sends the job's heartbeats itself, on its own timer (timers in
   workers are not throttled like a hidden page's) and with its own requests, so neither a hidden page nor a main
   thread that is busy for a long while (a slow GPU readback, a long synchronous step) lets the lease (60 s) expire.
-  The page tells it the latest progress and hears the replies: a cancellation or a lost lease stops the job.
+  The page tells it the latest progress and hears the replies: a cancellation or a lost lease stops the job. One
+  heartbeat request is in flight at a time (a stuck one is not joined by more), and it is given up after three
+  periods so the next one can go.
+- **Heartbeats on the live channel.** The page also sends each heartbeat as a `job-heartbeat` message on the live
+  WebSocket, which has a connection of its own: when the tab's HTTP/2 connection is clogged (hundreds of slow media
+  downloads leave no room for anything else on it), the lease still holds.
 - **A Web Lock** (`rideo-editor-job`) is held while a job runs: browsers do not freeze or discard tabs that hold one.
   On a phone, a screen wake lock keeps the device awake while the tab is visible and rendering.
 - **No timers in the render loop**: chunks render on WebCodecs and ffmpeg.wasm callbacks only.
@@ -80,6 +85,23 @@ frames stop; some freeze hidden tabs. An editor job keeps going:
 
 The tab's presence says when it is hidden (`engine.hidden`), so agents (`ui_sessions`) and other tabs see where a
 job is running.
+
+## Media requests
+
+The editor reads media over HTTP ranges (mediabunny's `UrlSource`: open-ended ranges, two per file). A tab that opened
+every clip of a long cut at once would put hundreds of slow downloads on its one HTTP/2 connection to the studio, and
+on the storage behind it: nothing else on that connection (API calls, job heartbeats) would get through until they
+finish. So:
+
+| Who | Rule |
+|---|---|
+| Timeline lanes (waveforms, filmstrips) | Load an item's media when its block first comes on screen; at most 2 requests at once for the whole tab. |
+| The preview (and the animatic) | At most 3 requests at once for the whole tab. |
+| Exports | Read their inputs one after another. |
+
+A request holds its slot until its body ends, fails or is cancelled (`engine/media-fetch.ts`). Five in all: over
+HTTP/1.1, where a browser opens six connections to a host, one stays free for the API, heartbeats and an export's
+inputs.
 
 ## Local proxies made with WebCodecs
 

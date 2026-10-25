@@ -170,6 +170,7 @@ export class StudioHost {
           username: config.webdav.username,
           password: config.webdav.password,
           metrics,
+          log: this.deps.log,
         });
       case 'embedded':
         return new WebDavBackend({
@@ -177,6 +178,7 @@ export class StudioHost {
           username: config.webdav.davUsername,
           password: config.webdav.davPassword,
           metrics,
+          log: this.deps.log,
         });
       default:
         throw new Error(`storage mode ${config.storage.mode} needs a workspace registry`);

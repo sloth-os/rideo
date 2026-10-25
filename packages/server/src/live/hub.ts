@@ -55,8 +55,17 @@ export interface WorkspaceHandler {
   result(sessionId: string, msg: StorageResult): void;
 }
 
+/** Editor-job heartbeats sent on the live channel (docs/design/editor.md#editor-jobs). */
+export type JobHeartbeatHandler = (
+  sessionId: string,
+  jobId: string,
+  progress?: { done: number; total: number; message?: string },
+) => { cancelled: boolean; leaseExpiresAt: string | null };
+
 /** Per-project event fan-out, replay, presence and UI command relay (docs/design/realtime-sync.md). */
 export class LiveHub {
+  /** Answers `job-heartbeat` (the job queue); it throws when the job is not leased to the session. */
+  jobHeartbeat?: JobHeartbeatHandler;
   /** Set when projects live in browsers: the workspace registry answers `workspace` and `storage-result`. */
   workspaceHandler?: WorkspaceHandler;
   readonly instanceId = randomHex(8);
@@ -203,6 +212,23 @@ export class LiveHub {
       case 'ping':
         this.send(session, { type: 'pong' });
         break;
+      case 'job-heartbeat': {
+        if (!this.jobHeartbeat) break;
+        try {
+          const r = this.jobHeartbeat(session.id, msg.jobId, msg.progress);
+          this.send(session, { type: 'job-heartbeat', jobId: msg.jobId, leased: true, ...r });
+        } catch {
+          // Not leased to this session (or no such job): the tab stops it
+          this.send(session, {
+            type: 'job-heartbeat',
+            jobId: msg.jobId,
+            leased: false,
+            cancelled: false,
+            leaseExpiresAt: null,
+          });
+        }
+        break;
+      }
       case 'workspace': {
         const handler = this.workspaceHandler;
         if (!handler) {

@@ -25,6 +25,8 @@ export interface LiveHandlers {
   onStorage?: (request: StorageRequest) => void;
   /** The server serves this browser's projects (after every (re)connect). */
   onWorkspaceReady?: (projects: number) => void;
+  /** The answer to an editor job's heartbeat (docs/design/editor.md#editor-jobs). */
+  onJobHeartbeat?: (reply: { jobId: string; leased: boolean; cancelled: boolean }) => void;
 }
 
 /**
@@ -139,6 +141,9 @@ export class LiveClient {
       case 'workspace-ready':
         this.handlers.onWorkspaceReady?.(msg.projects);
         return;
+      case 'job-heartbeat':
+        this.handlers.onJobHeartbeat?.(msg);
+        return;
       default:
         return;
     }
@@ -157,6 +162,13 @@ export class LiveClient {
 
   resetSeq(projectId: string, seq: number): void {
     if (this.subscriptions.has(projectId)) this.subscriptions.set(projectId, seq);
+  }
+
+  /** An editor job's heartbeat on this socket; false when it is not open. */
+  jobHeartbeat(jobId: string, progress?: { done: number; total: number; message?: string }): boolean {
+    if (this.ws?.readyState !== WebSocket.OPEN || !this.sessionId) return false;
+    this.send({ type: 'job-heartbeat', jobId, ...(progress ? { progress } : {}) });
+    return true;
   }
 
   setPresence(presence: Presence): void {

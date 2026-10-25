@@ -15,7 +15,7 @@ import type { StorageBackend } from '../storage/backend';
 import type { Layout } from '../storage/layout';
 import { Lru } from '../util/lru';
 import { KeyedMutex } from '../util/mutex';
-import { type CommitObject, ObjectStore, type TreeEntry, type TreeObject } from './objects';
+import { type BlobObject, type CommitObject, ObjectStore, type TreeEntry, type TreeObject } from './objects';
 
 export interface CommitEvent {
   summary: CommitSummary;
@@ -38,6 +38,8 @@ export interface TransactOptions<R = unknown> {
 export interface Materializer {
   materialize(changes: Record<string, unknown | null>, docs: ReadonlyMap<string, unknown>): Promise<void>;
   materializeAll(docs: ReadonlyMap<string, unknown>): Promise<void>;
+  /** The checked-out documents were loaded: catch up with commits the work tree missed. */
+  reconcile?(docs: ReadonlyMap<string, unknown>): Promise<void>;
 }
 
 interface BranchState {
@@ -125,6 +127,8 @@ export class Repository {
   private readonly flatCache = new Lru<string, Map<string, string>>(128);
   private head: BranchState | null = null;
   private headBranch: string | null = null;
+  /** Tags, read once: they change only through this repository (createTag). */
+  private tags: Promise<TagInfo[]> | null = null;
   materializer?: Materializer;
   onCommit?: (e: CommitEvent) => void;
   onHead?: (branch: string, commit: string | null) => void;
@@ -154,6 +158,8 @@ export class Repository {
   }
 
   async readRef(branch: string): Promise<string | null> {
+    // The loaded branch's tip moves only through this repository
+    if (this.head?.branch === branch) return this.head.commit;
     const buf = await this.storage.read(this.layout.branchRef(this.projectId, branch));
     return buf ? ((JSON.parse(buf.toString()).commit as string | null) ?? null) : null;
   }
@@ -198,7 +204,10 @@ export class Repository {
   private async state(branch: string): Promise<BranchState> {
     const current = await this.currentBranch();
     if (branch !== current) return this.loadState(branch);
-    if (!this.head || this.head.branch !== branch) this.head = await this.loadState(branch);
+    if (!this.head || this.head.branch !== branch) {
+      this.head = await this.loadState(branch);
+      void this.materializer?.reconcile?.(this.head.docs);
+    }
     return this.head;
   }
 
@@ -218,7 +227,8 @@ export class Repository {
     return id ? ((await this.objects.get<{ type: 'blob'; content: T }>(id)).content ?? null) : null;
   }
 
-  private async writeTree(flat: ReadonlyMap<string, string>): Promise<string> {
+  /** The trees of a snapshot, built in memory: the root's id and every tree object (stored with the commit). */
+  private buildTree(flat: ReadonlyMap<string, string>): { root: string; trees: TreeObject[] } {
     interface Node {
       blobs: Map<string, string>;
       dirs: Map<string, Node>;
@@ -237,13 +247,16 @@ export class Repository {
       }
       node.blobs.set(segs[segs.length - 1]!, id);
     }
-    const write = async (node: Node): Promise<string> => {
+    const trees: TreeObject[] = [];
+    const build = (node: Node): string => {
       const entries: Record<string, TreeEntry> = {};
       for (const [name, id] of node.blobs) entries[name] = { kind: 'blob', hash: id };
-      for (const [name, child] of node.dirs) entries[name] = { kind: 'tree', hash: await write(child) };
-      return this.objects.put({ type: 'tree', entries });
+      for (const [name, child] of node.dirs) entries[name] = { kind: 'tree', hash: build(child) };
+      const tree: TreeObject = { type: 'tree', entries };
+      trees.push(tree);
+      return this.objects.hashOf(tree).id;
     };
-    return write(root);
+    return { root: build(root), trees };
   }
 
   private async tagsByCommit(): Promise<Map<string, string[]>> {
@@ -285,18 +298,21 @@ export class Repository {
   ): Promise<CommitSummary | null> {
     const flat = new Map(state.flat);
     const changedDocs: Record<string, unknown | null> = {};
+    const blobs: BlobObject[] = [];
     for (const [path, doc] of changes) {
       if (doc === null) {
         if (flat.delete(path)) changedDocs[path] = null;
         continue;
       }
-      const blobId = await this.objects.put({ type: 'blob', content: doc });
+      const blob: BlobObject = { type: 'blob', content: doc };
+      const blobId = this.objects.hashOf(blob).id;
       if (flat.get(path) === blobId) continue;
       flat.set(path, blobId);
+      blobs.push(blob);
       changedDocs[path] = doc;
     }
     if (Object.keys(changedDocs).length === 0) return null;
-    const tree = await this.writeTree(flat);
+    const { root: tree, trees } = this.buildTree(flat);
     const now = this.now();
     let parents = state.commit ? [state.commit] : [];
     let message = opts.message;
@@ -306,7 +322,7 @@ export class Repository {
     let commitChanges = diffFlat(state.flat, flat);
     if (opts.coalesce && state.commit) {
       const tip = await this.objects.get<CommitObject>(state.commit);
-      const tagged = (await this.tagsByCommit()).has(state.commit);
+      const tagged = (await this.listTags()).some((t) => t.commit === state.commit);
       const young = now.getTime() - Date.parse(tip.timestamp) <= this.opts.coalesceWindowMs;
       if (
         !tagged &&
@@ -333,10 +349,11 @@ export class Repository {
       changes: commitChanges,
       ...(Object.keys(meta).length ? { meta } : {}),
     };
-    const id = await this.objects.put(commit);
-    await this.writeRef(state.branch, id);
-    this.flatCache.set(id, flat);
-    state.commit = id;
+    // The objects all at once, then the ref: the commit exists once the ref names it
+    const [id] = await this.objects.putAll([commit, ...blobs, ...trees]);
+    await this.writeRef(state.branch, id!);
+    this.flatCache.set(id!, flat);
+    state.commit = id!;
     state.flat = flat;
     for (const [p, d] of Object.entries(changedDocs)) {
       if (d === null) state.docs.delete(p);
@@ -344,7 +361,7 @@ export class Repository {
     }
     const checkedOut = state.branch === (await this.currentBranch());
     if (checkedOut) await this.materializer?.materialize(changedDocs, state.docs);
-    const summary = summaryOf(id, commit, state.branch);
+    const summary = summaryOf(id!, commit, state.branch);
     this.onCommit?.({ summary, branch: state.branch, docs: changedDocs, checkedOut, replaces });
     return summary;
   }
@@ -507,6 +524,14 @@ export class Repository {
   }
 
   async listTags(): Promise<TagInfo[]> {
+    this.tags ??= this.readTags().catch((err) => {
+      this.tags = null;
+      throw err;
+    });
+    return [...(await this.tags)];
+  }
+
+  private async readTags(): Promise<TagInfo[]> {
     const entries = await this.storage.list(this.layout.tagsDir(this.projectId));
     const tags = await Promise.all(
       entries
@@ -530,25 +555,30 @@ export class Repository {
     if (!REF_NAME_PATTERN.test(opts.name)) throw invalid(`invalid tag name ${opts.name}`);
     const commit = opts.commit ? await this.resolve(opts.commit) : (await this.snapshot()).commit;
     if (!commit) throw new AppError('conflict', 'nothing to tag yet');
-    const existing = new Set((await this.listTags()).map((t) => t.name));
-    let name = opts.name;
-    if (existing.has(name)) {
-      if (!opts.unique) throw conflict(`tag ${name} exists`);
-      let n = 2;
-      while (existing.has(`${opts.name}-${n}`)) n++;
-      name = `${opts.name}-${n}`;
-    }
-    const tag: TagInfo = {
-      name,
-      commit,
-      message: opts.message,
-      actor: opts.actor,
-      createdAt: this.now().toISOString(),
-    };
-    const { name: _n, ...body } = tag;
-    await this.storage.write(this.layout.tagRef(this.projectId, name), JSON.stringify(body), {
-      contentType: 'application/json',
+    // One tag at a time: the name check and the write
+    return this.lock.run('tags', async () => {
+      const known = await this.listTags();
+      const existing = new Set(known.map((t) => t.name));
+      let name = opts.name;
+      if (existing.has(name)) {
+        if (!opts.unique) throw conflict(`tag ${name} exists`);
+        let n = 2;
+        while (existing.has(`${opts.name}-${n}`)) n++;
+        name = `${opts.name}-${n}`;
+      }
+      const tag: TagInfo = {
+        name,
+        commit,
+        message: opts.message,
+        actor: opts.actor,
+        createdAt: this.now().toISOString(),
+      };
+      const { name: _n, ...body } = tag;
+      await this.storage.write(this.layout.tagRef(this.projectId, name), JSON.stringify(body), {
+        contentType: 'application/json',
+      });
+      this.tags = Promise.resolve([...known, tag].sort((a, b) => a.name.localeCompare(b.name)));
+      return tag;
     });
-    return tag;
   }
 }

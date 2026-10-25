@@ -92,12 +92,25 @@ RIDEO_TEST_WEBDAV_URL=http://rideo:rideo@localhost:8080/ npx vitest run --projec
   checksums), the entries a project file carries and the unsafe ones it refuses, the manifest, and the history
   rewrite of a copy (every commit names the new id, other documents and subtrees shared, merges kept).
 - **server**: repository commit, log, diff, restore, branches, tags, coalescing and GC on `MemoryBackend`; the work
-  tree's external edits (a listing that leaves out a file deletes nothing, a confirmed deletion does);
+  tree's external edits (a listing that leaves out a file deletes nothing, a confirmed deletion does); on a store where
+  every operation takes a while (`repo.test.ts`), a commit's objects written together and the ref after them, the
+  commit answering before the work tree is written, coalescing commits reading the tags once and the tip from memory,
+  a burst of commits written to the work tree once per path with the newest version, a failed batch tried again
+  (counted and logged), and a commit whose batch was lost written when the project loads while a file edited outside
+  Rideo keeps its edit; project existence (`registry.test.ts`): looked up once, a 404 looked at twice, a folder
+  deleted outside Rideo noticed by sync's `verify`, a project kept in a browser asked every time; the WebDAV backend
+  against a scripted flaky server (`webdav.test.ts`, `test/helpers/flaky-dav.ts`): `423`, `5xx` and dropped
+  connections tried again (counted by op and reason), giving up after the retries with a log line, a conditional write
+  or a stream repeated only when not applied, `Retry-After` honoured, a false 404 tried again for a file it wrote and
+  believed for one it never saw or deleted, one MKCOL per folder level for concurrent writes; job records written one
+  at a time with the latest state last;
   job queue (lanes, priorities, dedupe, retry classification, cancel propagation, restart recovery; the
   `client` lane: claim order, leases, heartbeats, expiry and session release, cancel, staged files);
   consistency gate scoring, preconditions R1/R2, stale detection R6, override rules R8, fail-closed R9; LLM
-  adapters' request shapes and JSON repair (and audio parts for the speaker check); live hub sequencing,
-  replay and resync; config parsing (TTS and speaker-check endpoints); the ElevenLabs and OpenAI TTS clients
+  adapters' request shapes and JSON repair (and audio parts for the speaker check); LLM calls made again while the
+  provider turns them away for load (`503`, `429` with its `Retry-After`, a dropped connection), giving up after the
+  retries, never for `400`, `504`, a timeout or mm-gateway's `provider_not_configured`, and a cancelled job not
+  waiting; live hub sequencing, replay and resync, and job heartbeats on the live channel (leased, lost, cancelled); config parsing (TTS and speaker-check endpoints); the ElevenLabs and OpenAI TTS clients
   against a fake proxy (design, save, clone, speech with timings and seeds, retryable failures, metrics); the
   speaker-check merge (V4: same, different, missing and silent voices, no judge, judge outage); sound effects
   through a fake proxy (request shape, length clamp, retryable failures, `rideo_post_audio_total`) and the
@@ -146,10 +159,15 @@ RIDEO_TEST_WEBDAV_URL=http://rideo:rideo@localhost:8080/ npx vitest run --projec
 - **web**: live-event store reducer and optimistic timeline edits (queued, the rest replayed on each answer, a
   refused edit dropped and one that no longer applies skipped, live timeline commits held back while edits are
   pending, a reload keeping the shown timeline), live client
-  (sequence dedupe, UI-command acks, restart resync), UI command dispatch, WebCodecs codec/container
+  (sequence dedupe, UI-command acks, restart resync, job heartbeats sent when open and their answers handed on), UI
+  command dispatch, the limited media fetch (`media-fetch.test.ts`: at most its limit at once, a slot handed on when a
+  body ends, fails, is cancelled or aborted, a waiting request dropped when aborted), lane media read only once a block
+  comes on screen (`editor-depth.test.tsx`), WebCodecs codec/container
   selection, render engine choice, the editor-job worker against a fake API (claims only with a project and a
-  session, one job at a time, progress heartbeats, failures reported with their code, cancellations and
-  lost leases not reported, claim retry when the claim overtakes the live subscription), timeline edge-drag
+  session, one job at a time, progress heartbeats, heartbeats on the live channel too and a job stopped when the live
+  channel says it is lost or cancelled, failures reported with their code, cancellations and lost leases not reported,
+  claim retry when the claim overtakes the live subscription, one page heartbeat in flight at a time), timeline
+  edge-drag
   ops, and rendering of the workflow stepper, consistency badge, job rows and take badges (lineage and
   multi-shot segments), and the preview's duck automation (`automateDuck`, the shared breakpoints from any
   playback start); editing tools (`editing-tools.test.ts`: the edit history's stacks, the keymap and its labels, paste,
@@ -204,7 +222,13 @@ RIDEO_TEST_WEBDAV_URL=http://rideo:rideo@localhost:8080/ npx vitest run --projec
 - **Editor jobs** (`editor-jobs.test.ts`): the REST protocol with a Node **reference editor worker**
   (`test/helpers/editor-worker.ts`) that implements the browser's jobs with native ffmpeg and the same shared
   planners: claim/lease/heartbeat, staged uploads, resume after a lost lease, cancel, and the follow-up
-  jobs.
+  jobs; a lease kept by heartbeats on the live WebSocket alone, refused to another session, and expiring when they
+  stop.
+- **Busy storage and an overloaded provider** (`overload.test.ts`): a studio on the scripted flaky WebDAV server: a
+  loaded project's reads ask the storage nothing; a save goes through `423`s, a `503` and a dropped connection (the
+  retries in `/metrics`); after a restart a false 404 for the project is looked at again; the work tree catches up.
+  The mock gateway turns two chat calls away (`overloadChat`): the screenplay is written anyway, with
+  `rideo_llm_retries_total` counting them.
 - **Provenance** (`provenance.test.ts`): the development signer's certificate chain verifies with
   `node:crypto`; a footage export is signed as a C2PA composite of its source, with the policy label burned in
   and recorded, bound to its watermark, and trusted by the C2PA SDK given the dev CA; uploaded likenesses need
@@ -329,8 +353,9 @@ RIDEO_TEST_WEBDAV_URL=http://rideo:rideo@localhost:8080/ npx vitest run --projec
   storyboard and the shot list), and asserts that a WebSocket subscriber
   received the matching `commit`, `job` and
   `activity` events and that `ui_*` commands reach a fake browser session with acks.
-- **WebDAV editing** (`webdav-sync.test.ts`): edit `screenplay.json` through the WebDAV client and sync (a
-  commit by `webdav`); an invalid edit raises a `sync-issue`; the inbox import creates resources.
+- **WebDAV editing** (`webdav-sync.test.ts`): the work tree appears behind the commits; edit `screenplay.json` through
+  the WebDAV client and sync (a commit by `webdav`); an invalid edit raises a `sync-issue`; the inbox import creates
+  resources.
 - **Recovery** (`recovery.test.ts`): kill the server mid-generation, restart, and check the job resumes with
   the same gateway idempotency keys.
 
@@ -352,7 +377,7 @@ when a new stack starts. Specs:
 | `take-editing.spec.ts` | (desktop and mobile) relight a take and extend another by 2 s from the take tiles (lineage badges); generative extend of the first item in the editor (the lanes on desktop, the item list on phones) |
 | `accounts.spec.ts` | (desktop and mobile, on the stack's second server with accounts and a mock identity provider) sign-in; a director adds a reviewer by email in the Members card; an agent token created, used and revoked; people and the audit log; the reviewer's view (banner, no settings); sign-out |
 | `pwa.spec.ts` | (desktop and mobile) the manifest and the service worker; the Inbox from the header: an agent's commit, a failed recipe, a gate approved; notifications on this device turned on and off (a stand-in subscription: headless browsers have no push service); the shell starting offline |
-| `engine.spec.ts` | (desktop and mobile, WebGPU on SwiftShader through Vulkan) the studio cross-origin isolated; the same graded, overlaid frame from WebGPU and the canvas; an ffmpeg.wasm export on threads; a WebCodecs export composited by WebGPU in a hidden tab (worker heartbeats, the job's Web Lock); a 4K original previewed from a WebCodecs editing proxy in OPFS. A cut of 40 quarter-second items exported with ffmpeg.wasm, its threads planned for 8 cores: the chunk and the soundtrack read their 40 inputs on the main thread and stay in the 32-thread pool |
+| `engine.spec.ts` | (desktop and mobile, WebGPU on SwiftShader through Vulkan) the studio cross-origin isolated; the same graded, overlaid frame from WebGPU and the canvas; an ffmpeg.wasm export on threads; a WebCodecs export composited by WebGPU in a hidden tab (worker heartbeats, the job's Web Lock); a 4K original previewed from a WebCodecs editing proxy in OPFS. A cut of 40 quarter-second items exported with ffmpeg.wasm, its threads planned for 8 cores: the chunk and the soundtrack read their 40 inputs on the main thread and stay in the 32-thread pool. A cut of 40 different clips opened through the stack's slow-media proxy (every ranged media read held 20 s on the browser's six HTTP/1.1 connections): the tab claims the queued export at once and finishes it on its first lease (with every lane reading at once, the claim, the heartbeats and the export's inputs waited minutes behind the held reads and the lease was lost) |
 | `performance.spec.ts` | (desktop and mobile, a fake camera and microphone) a performance recorded on a shot: countdown, recording, stop, playback, used as the shot's performance; the model shown; the regenerated take acted by `mock-performance-v1` and verified |
 | `search.spec.ts` | (desktop and mobile) footage and a still indexed from the Search view, found by words at the matched frame, filtered by kind, *Show* in Resources; the editor's overlay picker finds the still and puts it at the playhead |
 | `brand.spec.ts` | (desktop and mobile) a brand kit made on the Brand kits page with a logo and the bug on; applied to a project from its overview; a lower third from the kit's template in the editor; the export with the bug (on by default) rendered in the tab |
@@ -379,8 +404,9 @@ when a new stack starts. Specs:
 The e2e stack starts through Playwright's `webServer` (`e2e/support/stack.ts`, ports in `e2e/support/ports.ts`): the
 mock gateway, the main studio with the embedded WebDAV (temporary data dir) serving the built web app, a studio with
 accounts, one that keeps projects in browsers without a gateway (and allows the host page's origin), one under
-`/studio` with a prefix-stripping proxy in front of it at `/rideo`, two whose settings the settings spec changes, and
-the library's host page (`e2e/fixtures/embed`, built by `npm run build:e2e-host` against `dist-lib`). The main studio
+`/studio` with a prefix-stripping proxy in front of it at `/rideo`, two whose settings the settings spec changes, a
+slow-media proxy in front of the main studio (`e2e/support/slow-media-proxy.ts`: HTTP/1.1, every ranged media read held
+20 s, everything else at once), and the library's host page (`e2e/fixtures/embed`, built by `npm run build:e2e-host` against `dist-lib`). The main studio
 starts last, so its readiness means all are up. `npm run test:e2e` builds the app, the library and the host first. Tiny media sizes (320×180)
 and short durations keep the suite fast. Playwright's Chromium decodes H.264 with WebCodecs, so the story
 spec emulates a browser without an H.264 decoder (an init script hides AVC from `VideoDecoder`): the preview

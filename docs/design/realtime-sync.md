@@ -23,6 +23,7 @@ the socket closes, the tab reconnects and, seeing a new `instanceId`, resyncs.
 | `{type: "storage", id, op, path, …}` | Browser storage: a storage operation on this browser's projects ([protocol](browser-storage.md#the-protocol)). |
 | `{type: "workspace-ready", workspaceId, projects}` | The server has listed this browser's projects and serves them (after every attach). |
 | `{type: "pong"}` | Heartbeat. |
+| `{type: "job-heartbeat", jobId, leased, cancelled, leaseExpiresAt}` | The answer to a `job-heartbeat`: `leased: false` when the job is no longer leased to this session (the tab stops it), `cancelled` when it was cancelled. |
 
 ### Client → server
 
@@ -33,6 +34,7 @@ the socket closes, the tab reconnects and, seeing a new `instanceId`, resyncs.
 | `{type: "presence", projectId, route, selection?, viewport, engine?}` | What the user is looking at, and the tab's editor engine (`{ffmpeg, webcodecs: {video, audio}, busyJobId, threads, compositor, hidden}`: ffmpeg.wasm's threads, `webgpu` or `canvas` compositing, and whether the tab is hidden, [engine performance](engine-performance.md)). Agents read it with `ui_sessions`. |
 | `{type: "ui-ack", commandId, ok, error?}` | Acknowledges a UI command. |
 | `{type: "ping"}` | Heartbeat every 20 s; the server closes the socket after 60 s of silence. |
+| `{type: "job-heartbeat", jobId, progress?}` | An editor job's heartbeat, sent by the tab that holds its lease (this session) every 10 s and with progress, like `POST /api/editor/jobs/:jobId/heartbeat` ([editor jobs](editor.md#editor-jobs)): it keeps the lease when the tab's HTTP requests are stuck behind media downloads. |
 | `{type: "workspace", workspaceId, changed?}` | Browser storage: this tab serves its browser's projects; `changed` names projects it changed by itself (an import) ([protocol](browser-storage.md#the-protocol)). |
 | `{type: "storage-result", id, ok, result?, data?, error?}` | The answer to a `storage` operation. |
 
