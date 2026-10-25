@@ -390,11 +390,12 @@ describe('structured tasks', () => {
     });
   });
 
-  it('asks the version 2 writer for complete outfits, the first worn most of the film', () => {
+  it('asks the version 2 writer for complete outfits and for places and props without characters', () => {
     expect(SYSTEM_PROMPTS_V2['screenplay.generate']).toContain('Each wardrobe entry is a complete outfit');
     expect(SYSTEM_PROMPTS_V2['screenplay.generate']).toContain(
       'the first is what the character wears most of the film',
     );
+    expect(SYSTEM_PROMPTS_V2['screenplay.generate']).toContain('with no character in it');
   });
 
   it('reads Retry-After in seconds or as a date', () => {

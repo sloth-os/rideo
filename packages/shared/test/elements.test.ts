@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   checkRequirement,
   compileElementReferenceRequest,
+  compileReferenceRequest,
   compileShotPrompt,
   elementIndex,
   elementsInUse,
@@ -162,12 +163,24 @@ describe('element conditioning (E3)', () => {
     expect(selectReferences([mira], f.shot(), 4)).toMatchObject({ perElement: [], elementSheet: false });
   });
 
-  it('compiles element reference sheets anchored on the first approved view', () => {
+  it('compiles element references anchored on the first approved view: one picture, nobody in it', () => {
     const req = compileElementReferenceRequest(lamp, 'establishing', { screenplay: null, settings });
     expect(req.input[0]).toEqual({
       type: 'text',
-      text: 'Element reference sheet, location: establishing wide shot of the place, empty of people, even natural light; no text. Lamp room: circular brass lantern room.',
+      text: 'Element reference image, location: establishing wide shot of the place, empty: no people, animals or characters, even natural light; one single picture, not a collage or a grid of panels; no text. Lamp room: circular brass lantern room. Nobody in the picture, even if the description mentions someone.',
     });
+    expect(req.parameters?.negative_prompt).toMatch(
+      /^people, animals, characters, figures, collage, grid of panels/,
+    );
+    // Character references are single pictures too
+    const sheet = compileReferenceRequest(f.character({ name: 'Mira' }), 'three_quarter', {
+      screenplay: null,
+      settings,
+    });
+    expect((sheet.input[0] as { text: string }).text).toMatch(
+      /^Character reference image, .*; one single picture, not a collage or a grid of panels;/,
+    );
+    expect(sheet.parameters?.negative_prompt).toContain('collage, grid of panels');
     const angle = compileElementReferenceRequest(lamp, 'angle', {
       screenplay: null,
       settings,

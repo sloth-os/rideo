@@ -31,8 +31,14 @@ element keeps its version (no stale takes).
 
 | Kind | Meaning | Reference views generated |
 |---|---|---|
-| `location` | a place: set, landscape, interior | `establishing` (wide, empty of people), `angle` (the reverse angle) |
+| `location` | a place: set, landscape, interior | `establishing` (wide), `angle` (the reverse angle), both empty |
 | `prop` | an object that must stay the same: a key, a car, a letter | `detail` (isolated on neutral ground), `angle` |
+
+A reference is one picture, not a collage or a grid of panels, with nobody in it: no people, animals or characters,
+even when the element's description mentions them (`compileElementReferenceRequest`). References feed every keyframe
+made at the place or with the prop, so a figure in one walks into the film. In the panda demo the plush style made the
+image model fill the slopes with a fox, two bears and a red panda, and the chairlift's description, "the two pandas
+ride alone", put pandas in its reference.
 | `style` | a look: a painting style, a film stock, a palette board | `custom` (a style frame) |
 
 ## Where elements are used
@@ -129,7 +135,7 @@ Agents can `ui_navigate` to `elements` and `ui_focus` an `element`.
 
 ## Mock gateway
 
-Element reference sheets follow the mock's consistency model: an "Element reference sheet" paints a
+Element references follow the mock's consistency model: an "Element reference image" (or "sheet") paints a
 signature colour derived from the element's name, generations copy the signatures of the reference images
 they receive, and the mock judge looks for each element's signature in the frames when asked to judge
 elements.

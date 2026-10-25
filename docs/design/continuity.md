@@ -41,7 +41,8 @@ prompts read it, and the next extension continues from it.
 worn most of the film: references, keyframes and video prompts show one entry (`Wearing: …`), so an entry that is a
 single piece (a scarf) leaves the rest out of every picture. The panda demo's writer split each outfit into a scarf, a
 jacket and goggles with the scarf as the default, and the references came out without the jackets the scenes
-describe; version 2 asks for whole outfits.
+describe; version 2 asks for whole outfits. Locations and props are described as they look, with no character in
+them (their references show them empty, [elements](elements.md)).
 
 **Extensions remember.** `screenplay.extend` used to see only the title, logline, synopsis and scene summaries, so
 later scenes lost the user's brief. With version 2 it also gets the brief, the dialogue level, the last written scene

@@ -459,10 +459,15 @@ export function selectReferences(
   };
 }
 
+/** A reference is one picture: "sheet" and the like make image models paint grids of panels. */
+const SINGLE_PICTURE = 'one single picture, not a collage or a grid of panels';
+const REFERENCE_NEGATIVE = 'collage, grid of panels, split screen';
+
 const ELEMENT_VIEW_PHRASE: Record<Element['kind'], Partial<Record<ElementReferenceView, string>>> = {
   location: {
-    establishing: 'establishing wide shot of the place, empty of people, even natural light',
-    angle: 'the reverse angle of the same place, empty of people',
+    establishing:
+      'establishing wide shot of the place, empty: no people, animals or characters, even natural light',
+    angle: 'the reverse angle of the same place, empty: no people, animals or characters',
     detail: 'a characteristic detail of the place',
     custom: 'the place',
   },
@@ -493,8 +498,10 @@ export function compileElementReferenceRequest(
 ): GatewayImageRequest {
   const style = clean(ctx.screenplay?.style.visual);
   const text = [
-    `Element reference sheet, ${e.kind}: ${ELEMENT_VIEW_PHRASE[e.kind][view] ?? 'reference'}; no text.`,
+    `Element reference image, ${e.kind}: ${ELEMENT_VIEW_PHRASE[e.kind][view] ?? 'reference'}; ${SINGLE_PICTURE}; no text.`,
     `${clean(e.name)}: ${clean(e.description) || clean(e.name)}.`,
+    // Places and objects alone: a figure in a reference walks into every keyframe made from it
+    e.kind === 'style' ? '' : 'Nobody in the picture, even if the description mentions someone.',
     style && e.kind !== 'style' ? `Visual style: ${style}.` : '',
     ctx.baseImageUri ? 'Keep exactly the same design as in the reference image.' : '',
   ]
@@ -509,7 +516,7 @@ export function compileElementReferenceRequest(
     parameters: {
       dimensions: referenceDimensions(ctx.settings),
       seed: (e.seed + ELEMENT_VIEW_PRIORITY.indexOf(view)) % MAX_SEED,
-      negative_prompt: 'people, text, logo, watermark, deformed',
+      negative_prompt: `people, animals, characters, figures, ${REFERENCE_NEGATIVE}, text, logo, watermark, deformed`,
       output_count: 1,
     },
   };
@@ -713,7 +720,7 @@ export function compileReferenceRequest(
 ): GatewayImageRequest {
   const style = clean(ctx.screenplay?.style.visual);
   const text = [
-    `Character reference sheet, ${VIEW_PHRASE[view]}; neutral light-grey background, even soft studio lighting, sharp focus, no text.`,
+    `Character reference image, ${VIEW_PHRASE[view]}; ${SINGLE_PICTURE}; neutral light-grey background, even soft studio lighting, sharp focus, no text.`,
     identityFragment(c),
     style ? `Visual style: ${style}.` : '',
     ctx.baseImageUri ? 'Keep exactly the same person as in the reference image.' : '',
@@ -729,7 +736,7 @@ export function compileReferenceRequest(
     parameters: {
       dimensions: referenceDimensions(ctx.settings),
       seed: (c.seed + REFERENCE_VIEW_PRIORITY.indexOf(view)) % MAX_SEED,
-      negative_prompt: BASE_NEGATIVE,
+      negative_prompt: `${BASE_NEGATIVE}, ${REFERENCE_NEGATIVE}`,
       output_count: 1,
     },
   };

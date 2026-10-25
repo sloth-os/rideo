@@ -172,7 +172,7 @@ function promptOf(parts: Part[]): string {
 }
 
 function referenceSheetName(prompt: string): string | null {
-  if (!/(Character|Element) reference sheet/i.test(prompt)) return null;
+  if (!/(Character|Element) reference (sheet|image)/i.test(prompt)) return null;
   const m = /no text\.\s+([^:]{1,80}):/.exec(prompt);
   return m ? m[1]!.trim() : null;
 }
