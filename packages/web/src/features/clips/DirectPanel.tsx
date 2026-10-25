@@ -40,7 +40,9 @@ export function DirectPanel({ clip, shot }: { clip: Clip; shot: Shot }) {
   const videos = ready.filter((r) => r.kind === 'video');
   const update = (body: Record<string, unknown>) =>
     api.updateShot(projectId, clip.id, shot.id, body).catch(reportError);
-  const camera = (patch: Record<string, unknown>) => update({ camera: { ...shot.camera, ...patch } });
+  // Only the fields that changed: the server merges them, so quick successive changes (a lens, then an aperture)
+  // never send a camera the store has not caught up with yet.
+  const camera = (patch: Record<string, unknown>) => update({ camera: patch });
   const num = (v: string) => (v === '' ? null : Number(v));
   return (
     <div

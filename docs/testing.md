@@ -190,8 +190,9 @@ RIDEO_TEST_WEBDAV_URL=http://rideo:rideo@localhost:8080/ npx vitest run --projec
   wipe's side, dips over white with xfade's weights from whole frames, slides, the circle's gradient, dips and circles
   handed to the canvas while WebGPU gets the rest; `engine-performance.test.ts`: scissors of wipes and slides,
   mirrored UVs and the uniforms of adjustments, key and vignette, and the thread budget counting every scaler so a
-  command stays in ffmpeg.wasm's pool, reading the 118 inputs of a long cut's soundtrack on the main thread). Resuming
-  an interrupted render
+  command stays in ffmpeg.wasm's pool, reading the 118 inputs of a long cut's soundtrack on the main thread); the
+  direct panel sending only the camera fields that changed (`direct-panel.test.tsx`: a lens then an aperture changed
+  before the store hears of the first keep both). Resuming an interrupted render
   is covered by the editor-jobs integration test, local proxies by the story e2e spec.
 
 - **web, settings, workspace and library** (`settings.test.tsx`, `workspace.test.ts`, `runtime.test.ts`,
