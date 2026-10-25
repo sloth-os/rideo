@@ -226,6 +226,21 @@ describe('usage ledger', () => {
       costUsd: 1.5,
     });
     expect(rebuilt.byKind).not.toHaveProperty('clip.plan');
+
+    // A ledger behind its jobs (a write lost, or one that replaced it) is rebuilt and written again
+    const behind = new MemoryBackend();
+    await behind.write(path, JSON.stringify({ ...stored, totals: { ...emptyUsage(), costUsd: 0.5 } }));
+    const healed = new UsageLedger({
+      storage: behind,
+      layout,
+      log: silent,
+      delayMs: 1,
+      retryMs: 1,
+      jobs: () => jobs,
+    });
+    expect((await healed.get(projectId)).totals.costUsd).toBe(1.5);
+    await healed.flush();
+    expect(JSON.parse((await behind.read(path))!.toString()).totals.costUsd).toBe(1.5);
   });
 
   it('gives each job its own usage through the queue, with its wait for the lane', async () => {

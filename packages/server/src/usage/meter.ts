@@ -263,7 +263,21 @@ export class UsageLedger {
       if (buf) {
         try {
           const parsed = ProjectUsageSchema.safeParse(JSON.parse(buf.toString()));
-          if (parsed.success) return parsed.data;
+          if (parsed.success) {
+            // A ledger behind the job store (a write lost, or one that replaced it) is rebuilt from the jobs
+            const fromJobs = this.rebuild(projectId);
+            const behind =
+              fromJobs.totals.costUsd > parsed.data.totals.costUsd + 0.005 ||
+              fromJobs.totals.videoSeconds > parsed.data.totals.videoSeconds + 0.5 ||
+              fromJobs.totals.images > parsed.data.totals.images;
+            if (!behind) return parsed.data;
+            this.deps.log.warn(
+              { projectId, costUsd: parsed.data.totals.costUsd, fromJobs: fromJobs.totals.costUsd },
+              'usage ledger behind its jobs; rebuilt from them',
+            );
+            this.schedule(projectId);
+            return fromJobs;
+          }
         } catch {
           // a broken file: rebuilt below
         }
@@ -275,7 +289,7 @@ export class UsageLedger {
     }
   }
 
-  /** A ledger from the project's jobs in the job store (empty without them). */
+  /** A ledger from the project's finished jobs in the job store (empty without them); running ones add themselves. */
   private rebuild(projectId: string): ProjectUsage {
     const ledger: ProjectUsage = {
       version: 1,
@@ -288,16 +302,14 @@ export class UsageLedger {
       from && to ? Math.max(0, (Date.parse(to) - Date.parse(from)) / 1000) : 0;
     for (const job of this.deps.jobs?.(projectId) ?? []) {
       const terminal = job.status === 'succeeded' || job.status === 'failed' || job.status === 'cancelled';
-      if (!terminal && !job.usage) continue;
+      if (!terminal) continue;
       if (job.usage) addUsage(ledger.totals, job.usage);
       const k: KindUsage = ledger.byKind[job.kind] ?? KindUsageSchema.parse({});
       ledger.byKind[job.kind] = k;
-      if (terminal) {
-        k.jobs += 1;
-        if (job.status === 'succeeded') k.succeeded += 1;
-        else if (job.status === 'failed') k.failed += 1;
-        else k.cancelled += 1;
-      }
+      k.jobs += 1;
+      if (job.status === 'succeeded') k.succeeded += 1;
+      else if (job.status === 'failed') k.failed += 1;
+      else k.cancelled += 1;
       k.runSeconds = round6(k.runSeconds + seconds(job.startedAt, job.finishedAt));
       k.waitSeconds = round6(k.waitSeconds + seconds(job.createdAt, job.startedAt));
       if (job.usage) k.costUsd = round6(k.costUsd + job.usage.costUsd);
