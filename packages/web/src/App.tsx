@@ -26,6 +26,7 @@ import { Workspace } from './features/workspace/Workspace';
 import { loginUrl, useAuth } from './lib/auth';
 import { LiveBridge } from './lib/live-bridge';
 import { getRuntime } from './lib/runtime';
+import { startTelemetry } from './lib/telemetry';
 
 /** With accounts, everything but sign-in and verification needs a signed-in person (docs/design/accounts.md). */
 function Signed({ children }: { children: React.ReactNode }) {
@@ -99,6 +100,8 @@ export function Studio({
   const load = useAuth((s) => s.load);
   useEffect(() => {
     void load();
+    // What only the browser knows: vitals, waits, errors (docs/design/observability.md#telemetry-from-the-studio)
+    startTelemetry();
   }, [load]);
   const mode = routing.mode ?? 'browser';
   const basename = routing.basename?.replace(/\/+$/, '') || undefined;

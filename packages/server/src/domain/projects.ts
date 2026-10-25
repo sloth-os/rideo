@@ -72,9 +72,13 @@ export class ProjectService extends Service {
         threshold: c.consistency.threshold,
         maxAttempts: c.consistency.maxAttempts,
         judge: c.consistency.judge,
+        // New projects check every attempt for jumps and physics (docs/design/continuity.md#quality-checks-in-the-gate).
+        qualityChecks: true,
       },
       // New projects speak their dialogue when the server has a TTS provider (docs/design/dialogue.md).
       dialogue: { mode: c.tts ? 'tts' : 'off', lipSync: true },
+      // and use continuity-aware prompts (docs/design/continuity.md#prompt-version).
+      generation: { promptVersion: 2 },
     });
     const merged = mergeSettings(
       base as unknown as Record<string, unknown>,

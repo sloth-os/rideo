@@ -51,6 +51,8 @@ type Job = {
 | `timeline.assemble` | control | approved clips → timeline |
 | `export.render` | client | chunked render + soundtrack in a studio tab ([editor](editor.md#rendering)) |
 | `export.finish` | media | concat parts → watermark → encode → mux → publish |
+| `consistency.recheck` | llm | judge unverified takes again from their evidence frames ([re-checking](character-consistency.md#re-checking-unverified-takes)) |
+| `export.feedback` | llm | signals of the export, a vision call per scene, a text call for the film, the retrospective and the report ([feedback](feedback.md)) |
 
 Lane concurrency defaults: `control=16, llm=2, image=2, video=2, music=1, media=1`. Override with
 `RIDEO_LANES="video=3,image=2"`. The `client` lane has no server concurrency: its jobs are claimed and run
@@ -73,8 +75,10 @@ deadlock a lane.
   the gateway still has it), and commits carry `meta.jobId`, so a re-run finds its earlier results and skips
   finished steps.
 - **Observability**: every transition is logged with `jobId`, `projectId`, `kind`. Prometheus metrics
-  `rideo_jobs_total{kind,status}` and `rideo_job_duration_seconds{kind}` are exported, and each gateway task
-  id is kept in the record for cross-referencing with gateway logs.
+  `rideo_jobs_total{kind,status}`, `rideo_job_duration_seconds{kind}`, `rideo_job_wait_seconds{kind}` and
+  `rideo_lane_jobs{lane,state}` are exported, and each gateway task id is kept in the record for cross-referencing
+  with gateway logs. The handler runs inside the job's usage context: every generation and model call it makes is
+  added to `job.usage` and to the project's ledger ([observability](observability.md#usage-ledger)).
 
 ## Gateway task lifecycle (SDK)
 
@@ -106,7 +110,7 @@ music 10 min (`RIDEO_GATEWAY_TIMEOUT_*`).
 | end frame | 0.30 | the shot's end frame ([directing](directing.md)): a generated keyframe verified like the start one, or an image resource; sent as `last_frame` when the model accepts it |
 | dialogue | 0.33 | `tts`: reuse the storyboard frame's mix when it is current, else speak every voiced line with its locked voice and mix them (ffmpeg); `native`: the speakers' voice samples ([dialogue](dialogue.md)) |
 | video | 0.35–0.80 | video task with `first_frame`, `last_frame`, references, the motion reference as `reference_video`, the dialogue as `reference_audio` (each when the model accepts it), the seed (fixed or derived, offset by attempt and variation) and the clamped duration (long enough for the lines) → download |
-| verify | 0.80–0.90 | sample frames (ffmpeg) → judge; native audio: the speaker check (V4) → retry the video up to `maxAttempts` |
+| verify | 0.80–0.90 | sample frames (ffmpeg) → judge; native audio: the speaker check (V4); with quality checks, the temporal check (ffmpeg scene scores) and the physics and continuity scores of the same judge call ([continuity](continuity.md#quality-checks-in-the-gate)) → retry the video up to `maxAttempts` |
 | lip sync | 0.86 | `tts` takes whose model could not take the mix: lip-sync pass (`reference_video` + `reference_audio`) → judge again |
 | watermark | 0.90–0.96 | embed the invisible watermark (raw frame pipe) + provenance metadata, register the id |
 | poster | 0.96–0.99 | JPEG poster and the last frame (continuity); browsers that cannot decode H.264 build their own local proxy ([editor](editor.md#playback-compatibility-local-proxies)) |
@@ -114,6 +118,10 @@ music 10 min (`RIDEO_GATEWAY_TIMEOUT_*`).
 
 A shot whose attempts are exhausted still commits its best take (`needs_review`), so the user can inspect
 the evidence, regenerate with changes, or override.
+
+With prompt version 2, `clip.generate` sends the first shot of the clip first and the rest after it (in parallel,
+continuous shots still in order), so their keyframes can match its place and light
+([scene reference frame](continuity.md#scene-reference-frame)).
 
 ## Planning (`clip.plan`)
 
@@ -125,7 +133,12 @@ continuity}`. The planner then **normalizes** the result deterministically:
   `[4, 10]` when the limits are unknown);
 - split shots longer than the maximum into continuous sub-shots;
 - scale durations so the clip lands within `[10, 180]` s and near the scene estimate;
-- drop unknown character ids, and make the first shot of a clip a `cut`.
+- drop unknown character ids, and make the first shot of a clip a `cut`;
+- fit the dialogue to the shots (`fitDialogue`: lengthen a shot, or move lines to a continuous shot after it;
+  [continuity](continuity.md#shot-planning)).
+
+With prompt version 2 the planner also gets the brief, the dialogue level, the scene's time of day and continuity and
+the previous shot, and returns a lens and an end state for every shot.
 
 ## Batch generation (`batch.generate`)
 
@@ -139,6 +152,7 @@ loop:
   enqueue clip.generate(clip)   // at most 2 clip jobs in flight (lookahead)
   stop if generations started by this batch would exceed settings.batch.maxGenerations
 wait for in-flight clip jobs
+re-check unverified takes (consistency.recheck) when any remain
 ```
 
 - Clips are generated **in order**, because continuity chaining and the story extension depend on earlier

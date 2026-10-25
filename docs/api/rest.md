@@ -48,6 +48,7 @@ Errors are RFC 9457 problem details (`application/problem+json`) with a stable `
 | `setting_locked` | 409 | a setting set in the environment cannot be changed in Settings ([settings](../design/settings.md#surfaces)) |
 | `gateway_not_configured` | 409 | work that needs mm-gateway while none is configured ([without mm-gateway](../design/settings.md#without-mm-gateway)) |
 | `storage_offline` | 503 | the project is kept in a browser that has no tab open (retryable; [browser storage](../design/browser-storage.md#routing-on-the-server)) |
+| `feedback_stale` | 409 | a feedback recommendation whose shot or scene no longer exists, or that was already applied or dismissed ([feedback](../design/feedback.md#actions)) |
 
 Under a subpath every path below starts with the base path, e.g. `/rideo/api/projects` ([subpath](../design/subpath.md)).
 When projects live in browsers, the app names its browser on every call with `x-rideo-workspace: ws_…` (and `?ws=` on
@@ -308,6 +309,18 @@ review does not show is `403 forbidden`.
 | POST | `/api/projects/:id/analyses/:aid/auto-edit` | – | `{timeline, commit}` |
 | POST | `/api/projects/:id/exports` | `{quality?, engine?: "auto" \| "ffmpeg" \| "webcodecs", source?: "timeline" \| "animatic", loudness?: "streaming" \| "broadcast" \| "off", stems?, language?, dubbed?, captions?: "burn" \| "sidecar", preset?, format?: "mp4" \| "prores" \| "frames", resolution?: "project" \| "hd" \| "uhd", fps?, aspect?: "source" \| "9:16" \| "1:1", maxDurationSec?, thumbnails?}` | `{export, job}` (the job is `export.prepare` when a reframe needs focus tracks first; the export records its resolved `delivery`, how it was enhanced and its `thumbnails`, [finishing](../design/finishing.md)) (`export.render` editor job; the export records `loudness`, with `stems` the three stem WAVs, `subtitles` (SRT and VTT) and, for a language variant, `language`, `dubbed` and its `renders/<id>.json` timeline) |
 | GET | `/api/projects/:id/exports` | – | `Export[]` |
+| POST | `/api/projects/:id/consistency/recheck` | `{clipIds?}` | `202 Job` (`consistency.recheck`: unverified takes judged again from their evidence frames, [re-checking](../design/character-consistency.md#re-checking-unverified-takes)) |
+| POST | `/api/projects/:id/exports/:eid/feedback` | – | `202 {feedback, job}` (`export.feedback`: the vision model watches the export, [feedback](../design/feedback.md)) |
+| GET | `/api/projects/:id/feedback` | – | `Feedback[]` (newest first) |
+| POST | `/api/projects/:id/feedback/:fid/recommendations/:rid/apply` | – | `{feedback, job}` (the job the action started, or null; `feedback_stale`) |
+| POST | `/api/projects/:id/feedback/:fid/recommendations/:rid/dismiss` | – | `Feedback` |
+
+## Insights and telemetry
+
+| Method | Path | Body | Result |
+|---|---|---|---|
+| GET | `/api/projects/:id/insights` | – | `Insights`: usage and cost, jobs by kind (times, waits, failures), takes and characters, stages, feedback scores, the latest retrospective ([observability](../design/observability.md#insights)) |
+| POST | `/api/telemetry` | `{events: [{kind: "vital" \| "timing" \| "error", name, value, route?}]}` (≤ 50) | `204` (`404` with `RIDEO_TELEMETRY=off`; [telemetry](../design/observability.md#telemetry-from-the-studio)) |
 
 ## History
 

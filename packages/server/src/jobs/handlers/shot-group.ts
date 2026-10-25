@@ -13,6 +13,7 @@ import {
   parseAnalysisLog,
   type Shot,
   type ShotContext,
+  shotContextOf,
 } from '@rideo/shared';
 import { verifyFrames } from '../../consistency/gate';
 import { assertCastReady, assertVoicesReady, clipStatusOf } from '../../domain/clips';
@@ -70,13 +71,7 @@ export async function shotGroup(deps: HandlerDeps, ctx: JobContext) {
   const settings = docs.project.settings;
   const judge = settings.consistency.judge === 'off' ? deps.offJudge : deps.judge;
   const { threshold, maxAttempts } = settings.consistency;
-  const ctxs: ShotContext[] = shots.map((shot) => ({
-    shot,
-    characters: orderedShotCharacters(shot, docs.characters),
-    elements: orderedShotElements(shot, docs.elements),
-    screenplay: docs.screenplay,
-    settings,
-  }));
+  const ctxs: ShotContext[] = shots.map((shot) => shotContextOf(shot, docs, clip));
   const label = (s: Shot) => `c${clip.index + 1}-s${s.index + 1}`;
   await markShots(deps, ctx, clipId, shotIds, 'generating', null);
   try {

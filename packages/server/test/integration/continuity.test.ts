@@ -1,0 +1,168 @@
+import { startMockGateway } from '@rideo/mock-gateway';
+import type { Clip, Job } from '@rideo/shared';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { expectSucceeded, readyStoryProject, type Stack, startStack } from '../helpers/stack';
+
+/** Continuity, storytelling and realism (docs/design/continuity.md) on the mock gateway. */
+let stack: Stack;
+beforeAll(async () => {
+  stack = await startStack({ gw: await startMockGateway({ latencyMs: 20 }) });
+}, 60_000);
+afterAll(async () => {
+  await stack?.stop();
+  await stack?.gw.close();
+});
+
+const requestOf = (taskId: string) => stack.gw.store.requests.get(taskId) as any;
+const stateOf = (pid: string) => stack.api<any>('GET', `/projects/${pid}/state`);
+
+async function plannedClip(settings: Record<string, unknown> = {}) {
+  const { projectId: pid, state } = await readyStoryProject(stack, {
+    storyboard: { enabled: false },
+    // Three 10 s shots on the mock model: cut, continuous, cut.
+    pilotDurationSec: 30,
+    targetDurationSec: 60,
+    dialogue: { mode: 'off', level: 'B1' },
+    generation: { includeAudio: true },
+    ...settings,
+  });
+  const plan = await stack.api<Job>('POST', `/projects/${pid}/clips/plan`, {
+    sceneId: state.docs.screenplay.scenes[0].id,
+  });
+  expectSucceeded(await stack.waitJob(pid, plan.id));
+  const clip = Object.values<Clip>((await stateOf(pid)).docs.clips)[0]!;
+  return { pid, clip, state: await stateOf(pid) };
+}
+
+async function generate(pid: string, clipId: string) {
+  const job = await stack.api<Job>('POST', `/projects/${pid}/clips/${clipId}/generate`);
+  expectSucceeded(await stack.waitJob(pid, job.id, 180_000));
+  await stack.waitIdle(pid);
+  return (await stateOf(pid)).docs.clips[clipId] as Clip;
+}
+
+describe('continuity-aware generation (prompt version 2)', () => {
+  it('creates projects with version 2 prompts and quality checks, and plans with the brief, the level and lenses', async () => {
+    const { pid, clip, state } = await plannedClip();
+    const settings = state.docs.project.settings;
+    expect(settings.generation.promptVersion).toBe(2);
+    expect(settings.consistency.qualityChecks).toBe(true);
+    expect(state.docs.screenplay.scenes[0].continuity).toMatch(/night|day/);
+    expect(state.docs.screenplay.outline[0].purpose).toBe('setup');
+    // The mock answers a lens and an end state only to a version 2 planning request.
+    for (const shot of clip.shots) {
+      expect(shot.camera.lensMm).toBeGreaterThan(0);
+      expect(shot.endState).not.toBe('');
+    }
+    const generated = await generate(pid, clip.id);
+    const shots = [...generated.shots].sort((a, b) => a.index - b.index);
+    const takes = shots.map((s) => s.takes.find((t) => t.id === s.selectedTakeId)!);
+    for (const t of takes) {
+      expect(t.consistency.status).toBe('passed');
+      expect(t.consistency.quality).toMatchObject({ passed: true, physics: 0.95 });
+      expect(t.consistency.quality?.temporal?.jumps).toEqual([]);
+    }
+    // Video prompts are blocks; lines carry their voice; silent shots say so.
+    const video = requestOf(takes[0]!.gatewayTaskIds.at(-1)!);
+    expect(video.input[0].text).toContain('One continuous shot, no cuts.');
+    expect(video.input[0].text).toContain('Scene: ');
+    expect(video.input[0].text).toContain('Physics:');
+    expect(video.parameters.negative_prompt).toContain('morphing');
+    const spoken = shots.findIndex((s) => s.dialogue.length > 0);
+    if (spoken >= 0)
+      expect(requestOf(takes[spoken]!.gatewayTaskIds.at(-1)!).input[0].text).toMatch(/says, in an? [^:]+: "/);
+    // The first shot went first; later keyframes carry its keyframe as the scene reference.
+    const keyframes = shots
+      .slice(1)
+      .filter((s, i) => s.continuity === 'cut' && takes[i + 1]!.request.firstFrameSource === 'keyframe');
+    expect(keyframes.length).toBeGreaterThan(0);
+    for (const s of keyframes) {
+      const t = s.takes.find((x) => x.id === s.selectedTakeId)!;
+      const image = requestOf(t.gatewayTaskIds[0]!);
+      expect(image.input[0].text).toContain('The last image is the scene reference');
+      expect(image.input.filter((p: { type: string }) => p.type === 'image').length).toBe(
+        t.request.referenceCount + 1,
+      );
+    }
+    const jobs = await stack.api<Job[]>('GET', `/projects/${pid}/jobs`);
+    const shotJobs = jobs
+      .filter((j) => j.kind === 'shot.generate')
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    expect(shotJobs[0]!.params.shotId).toBe(shots[0]!.id);
+    expect(Date.parse(shotJobs[1]!.createdAt)).toBeGreaterThanOrEqual(Date.parse(shotJobs[0]!.finishedAt!));
+  });
+
+  it('retries a take that jumps inside the shot, and keeps a take that fails physics on every attempt, marked', async () => {
+    const { pid, clip } = await plannedClip();
+    const generated = await generate(pid, clip.id);
+    const shot = [...generated.shots].sort((a, b) => a.index - b.index)[0]!;
+    // The next video jumps: the temporal check retries it.
+    stack.gw.jumpVideos(1);
+    const regen = await stack.api<Job>(
+      'POST',
+      `/projects/${pid}/clips/${clip.id}/shots/${shot.id}/regenerate`,
+    );
+    expectSucceeded(await stack.waitJob(pid, regen.id));
+    let now = (await stateOf(pid)).docs.clips[clip.id] as Clip;
+    let take = now.shots.find((s) => s.id === shot.id)!.takes.at(-1)!;
+    const videos = take.gatewayTaskIds.filter((id) => requestOf(id)?.parameters?.duration_seconds);
+    expect(videos.length, `regenerated take: ${JSON.stringify(take.consistency.quality)}`).toBe(2);
+    expect(take.consistency.attempts).toBe(2);
+    expect(take.consistency.quality).toMatchObject({ passed: true });
+    expect(take.gatewayTaskIds.filter((id) => requestOf(id)?.parameters?.duration_seconds).length).toBe(2);
+
+    // A shot about floating fails physics every time: the best identity-passing take is kept, marked.
+    await stack.api('PATCH', `/projects/${pid}/clips/${clip.id}/shots/${shot.id}`, {
+      description: 'Mira floating above the floor',
+    });
+    const again = await stack.api<Job>(
+      'POST',
+      `/projects/${pid}/clips/${clip.id}/shots/${shot.id}/regenerate`,
+    );
+    expectSucceeded(await stack.waitJob(pid, again.id));
+    now = (await stateOf(pid)).docs.clips[clip.id] as Clip;
+    take = now.shots.find((s) => s.id === shot.id)!.takes.at(-1)!;
+    expect(take.consistency.status).toBe('passed');
+    // Every attempt was made (the report keeps which one was kept: the first of equals).
+    expect(take.gatewayTaskIds.filter((id) => requestOf(id)?.parameters?.duration_seconds).length).toBe(3);
+    expect(take.consistency.quality).toMatchObject({ passed: false, physics: 0.2 });
+    expect(take.consistency.quality?.issues).toContain('the character floats above the ground');
+    const metrics = await (await fetch(`${stack.url}/metrics`)).text();
+    expect(metrics).toMatch(/rideo_quality_checks_total\{check="temporal",result="failed"\} [1-9]/);
+    expect(metrics).toMatch(/rideo_quality_checks_total\{check="physics",result="failed"\} [1-9]/);
+  });
+
+  it('re-checks takes the judge could not verify, from their evidence frames', async () => {
+    const { pid, clip } = await plannedClip({ consistency: { judge: 'off' } });
+    const generated = await generate(pid, clip.id);
+    const takes = generated.shots.map((s) => s.takes.at(-1)!);
+    expect(takes.every((t) => t.consistency.status === 'unverified')).toBe(true);
+    const videos = stack.gw.counters.videos;
+    // The judge is back: the takes are judged again without a new generation.
+    await stack.api('PATCH', `/projects/${pid}`, { settings: { consistency: { judge: 'vision-llm' } } });
+    const job = await stack.api<Job>('POST', `/projects/${pid}/consistency/recheck`, {});
+    const done = expectSucceeded(await stack.waitJob(pid, job.id));
+    expect(done.result).toMatchObject({ checked: takes.length, passed: takes.length, unverified: 0 });
+    expect(stack.gw.counters.videos).toBe(videos);
+    const now = (await stateOf(pid)).docs.clips[clip.id] as Clip;
+    for (const s of now.shots) {
+      const t = s.takes.at(-1)!;
+      expect(t.consistency).toMatchObject({ status: 'passed', note: 're-checked' });
+      expect(s.status).toBe('ready');
+    }
+  });
+
+  it('leaves version 1 projects as they were', async () => {
+    const { pid, clip } = await plannedClip({
+      generation: { promptVersion: 1, includeAudio: true },
+      consistency: { qualityChecks: false },
+    });
+    for (const shot of clip.shots) expect(shot.camera.lensMm ?? null).toBeNull();
+    const generated = await generate(pid, clip.id);
+    const take = generated.shots[0]!.takes.at(-1)!;
+    expect(take.consistency.quality).toBeNull();
+    const video = requestOf(take.gatewayTaskIds.at(-1)!);
+    expect(video.input[0].text).not.toContain('One continuous shot');
+    expect(video.parameters.negative_prompt).not.toContain('morphing');
+  });
+});

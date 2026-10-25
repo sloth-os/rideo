@@ -6,12 +6,16 @@ import {
   type Consent,
   compileElementReferenceRequest,
   compileReferenceRequest,
+  DEFAULT_VIDEO_LIMITS,
+  dialogueDirection,
   docPath,
   type Element,
   type ElementReferenceView,
   identityFromLlm,
   newId,
   nextUnwrittenBeats,
+  type ProjectSettings,
+  promptVersionOf,
   type ReferenceView,
   type Resource,
   type Screenplay,
@@ -24,6 +28,20 @@ import { sampleFrames } from '../../media/frames';
 import { throwIfAborted } from '../../util/abort';
 import type { JobContext } from '../queue';
 import { commitAs, docsFor, gatewayOptions, type HandlerDeps } from './common';
+
+/**
+ * Prompt version 2 of the writing tasks (docs/design/continuity.md#storytelling): the dialogue level and the longest
+ * line a shot of the video model can speak.
+ */
+async function writingDirection(deps: HandlerDeps, settings: ProjectSettings) {
+  if (promptVersionOf(settings) < 2) return { version: 1 as const, direction: {} };
+  const { limits } = await deps.gateway.limitsFor('video', settings.models.video);
+  const maxShot = limits?.max_duration_seconds ?? DEFAULT_VIDEO_LIMITS.max;
+  return {
+    version: 2 as const,
+    direction: dialogueDirection(settings.dialogue?.level ?? 'any', maxShot),
+  };
+}
 
 export async function screenplayGenerate(deps: HandlerDeps, ctx: JobContext) {
   const docs = await docsFor(deps, ctx);
@@ -75,6 +93,7 @@ export async function screenplayGenerate(deps: HandlerDeps, ctx: JobContext) {
     });
   }
   ctx.progress(0.3, 1, 'writing the screenplay');
+  const writing = await writingDirection(deps, p.settings);
   const out = await deps.llm.generateScreenplay(
     {
       prompt: p.brief.prompt,
@@ -83,8 +102,10 @@ export async function screenplayGenerate(deps: HandlerDeps, ctx: JobContext) {
       language: p.settings.language,
       aspectRatio: p.settings.aspectRatio,
       attachments,
+      ...writing.direction,
     },
     ctx.signal,
+    writing.version,
   );
   throwIfAborted(ctx.signal);
   ctx.progress(0.9, 1, 'saving');
@@ -125,6 +146,36 @@ export async function screenplayExtend(deps: HandlerDeps, ctx: JobContext) {
   const beats = nextUnwrittenBeats(sp, Number(ctx.job.params.beats ?? 3));
   if (!beats.length) return { added: 0 };
   const characters = Object.values(docs.characters);
+  const writing = await writingDirection(deps, docs.project.settings);
+  // Version 2: the brief, the last written scene in full and the beats after these (docs/design/continuity.md).
+  const written = sp.scenes.slice().sort((a, b) => a.index - b.index);
+  const last = written[written.length - 1];
+  const after = nextUnwrittenBeats(sp, beats.length + 3).slice(beats.length);
+  const v2 =
+    writing.version === 2
+      ? {
+          brief: docs.project.brief.prompt,
+          ...(last
+            ? {
+                lastScene: {
+                  heading: last.heading,
+                  timeOfDay: last.timeOfDay,
+                  continuity: last.continuity ?? '',
+                  summary: last.summary,
+                  action: last.action.slice(0, 4000),
+                  dialogue: last.dialogue.map((d) => ({ character: d.character, line: d.line })),
+                },
+              }
+            : {}),
+          upcomingBeats: after.map((b) => ({
+            index: b.index,
+            title: b.title,
+            summary: b.summary,
+            purpose: b.purpose ?? '',
+          })),
+          ...writing.direction,
+        }
+      : {};
   const out = await deps.llm.extendScreenplay(
     {
       title: sp.title,
@@ -146,9 +197,12 @@ export async function screenplayExtend(deps: HandlerDeps, ctx: JobContext) {
         title: b.title,
         summary: b.summary,
         estDurationSec: b.estDurationSec,
+        ...(writing.version === 2 ? { purpose: b.purpose ?? '' } : {}),
       })),
+      ...v2,
     },
     ctx.signal,
+    writing.version,
   );
   const wanted = new Set(beats.map((b) => b.index));
   const scenes = out.scenes

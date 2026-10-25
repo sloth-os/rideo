@@ -6,6 +6,7 @@ import {
   defaultWardrobe,
   REFERENCE_VIEW_PRIORITY,
   type ReferenceView,
+  voiceOf,
 } from '../schemas/character';
 import type { EditKind, Shot } from '../schemas/clip';
 import {
@@ -16,8 +17,8 @@ import {
   type ElementReferenceView,
 } from '../schemas/element';
 import type { GatewayImageRequest, GatewayVideoRequest, ModelLimits } from '../schemas/gateway';
-import type { ProjectSettings } from '../schemas/project';
-import type { Screenplay } from '../schemas/screenplay';
+import type { ProjectSettings, PromptVersion } from '../schemas/project';
+import type { Scene, Screenplay } from '../schemas/screenplay';
 import { fnv1a32 } from '../util/hash';
 
 /**
@@ -26,6 +27,22 @@ import { fnv1a32 } from '../util/hash';
  */
 export const BASE_NEGATIVE =
   'different person, changed face, inconsistent outfit, age change, extra people, deformed anatomy, text, logo, watermark';
+
+/**
+ * Prompt version 2 (docs/design/continuity.md#prompts-version-2): motion artefacts too, and never more than the
+ * 500 characters Wan models take.
+ */
+export const BASE_NEGATIVE_V2 = `${BASE_NEGATIVE}, morphing, warping, flicker, extra or missing limbs, floating objects, sliding feet, objects passing through each other, sudden lighting change, jump cut`;
+export const NEGATIVE_PROMPT_MAX = 500;
+/** Exclusions written at the end of version 2 prompts, for models without a negative prompt field. */
+export const EXCLUSIONS_STILL =
+  'extra or missing limbs, deformed hands or paws, duplicated characters, on-screen text, logos, watermark';
+export const EXCLUSIONS_MOTION =
+  'morphing faces or bodies, extra or missing limbs, floating objects, sliding feet, flicker, sudden cuts, on-screen text';
+export const PHYSICS_LINE =
+  'Physics: real weight, gravity and momentum; bodies, feet and equipment keep contact with the ground; objects keep their shape and number.';
+export const SCENE_REFERENCE_PHRASE =
+  'The last image is the scene reference: match its place, light, weather and colours, not its composition or people.';
 
 export const DEFAULT_VIDEO_LIMITS = { min: 4, max: 10 };
 export const DEFAULT_MAX_INPUT_IMAGES = 4;
@@ -146,6 +163,16 @@ export interface ShotContext {
   elements?: Element[];
   screenplay: Pick<Screenplay, 'style'> | null;
   settings: ProjectSettings;
+  /** Version 2 (docs/design/continuity.md#prompts-version-2): the shot's scene. */
+  scene?: Pick<Scene, 'heading' | 'location' | 'timeOfDay' | 'continuity'> | null;
+  /** Version 2: the end state of the shot before it in its scene (a cut continues from it). */
+  previousEndState?: string | null;
+  /** Version 2: the keyframe request ends with the scene reference frame. */
+  sceneReference?: boolean;
+}
+
+export function promptVersionOf(settings: Pick<ProjectSettings, 'generation'>): PromptVersion {
+  return settings.generation?.promptVersion ?? 1;
 }
 
 export function orderedShotCharacters(
@@ -186,11 +213,144 @@ export function elementLines(elements: Element[]): string[] {
   return lines;
 }
 
+/** The scene line of version 2: the same for every shot of a scene. */
+export function sceneLine(
+  scene: ShotContext['scene'],
+  location: Pick<Element, 'name'> | undefined,
+): string | null {
+  if (!scene) return null;
+  const place = clean(scene.location) || clean(location?.name) || clean(scene.heading);
+  const where = [place, clean(scene.timeOfDay)].filter(Boolean).join(', ');
+  const state = clean(scene.continuity);
+  if (!where && !state) return null;
+  return `Scene: ${[where, state].filter(Boolean).join('; ')}.`;
+}
+
+/** Who a character is in a video prompt (version 2): the first frame shows the face, the text says who is who. */
+export function compactIdentity(c: Character, shot?: Pick<Shot, 'wardrobe'>): string {
+  const i = c.identity;
+  const who = [clean(`${i.age} ${i.gender}`), clean(i.ethnicity), clean(i.build)].filter(Boolean).join(', ');
+  const marks = clean(i.distinguishingMarks);
+  const w = wardrobeFor(c, shot);
+  return `${c.name}: ${who}${marks ? `; ${marks}` : ''}${w && clean(w.description) ? `; wearing ${clean(w.description)}` : ''}.`;
+}
+
+/** How a character sounds, in the same words every time (version 2). */
+export function voicePhrase(c: Pick<Character, 'voice' | 'identity'>): string {
+  const d = clean(voiceOf(c).description);
+  const base = d
+    ? /\bvoice\b/i.test(d)
+      ? d
+      : `${d} voice`
+    : `${clean(`${c.identity.age} ${c.identity.gender}`) || 'natural'} voice`;
+  return /^(a|an|the|his|her|their)\s/i.test(base) ? base : `${/^[aeiou]/i.test(base) ? 'an' : 'a'} ${base}`;
+}
+
+/** Version 2: what one shot shows and does (also a segment of a multi-shot request). */
+export function shotBodyV2(
+  ctx: ShotContext,
+  mode: 'keyframe' | 'video',
+  opts: { motionReference?: boolean } = {},
+): string[] {
+  const { shot } = ctx;
+  const lines: string[] = [];
+  const override = shot.promptOverride && clean(shot.promptOverride);
+  if (override) lines.push(`${clean(shot.promptOverride!)}.`);
+  else {
+    lines.push(`${clean(shot.description)}.`);
+    if (mode === 'video' && clean(shot.action)) lines.push(`Action: ${clean(shot.action)}.`);
+  }
+  const previous = clean(ctx.previousEndState ?? '');
+  if (previous && shot.continuity !== 'continuous')
+    lines.push(`Continues from the previous shot: ${previous}.`);
+  const move = cameraMove(shot.camera.move);
+  const lens = lensFragment(shot.camera);
+  lines.push(
+    `Camera: ${FRAMING[shot.camera.framing]}${mode === 'video' ? `, ${move ? move.phrase : MOVEMENT[shot.camera.movement]}` : ''}${lens ? `; ${lens}` : ''}.`,
+  );
+  if (mode === 'video' && opts.motionReference && shot.motionReference)
+    lines.push(MOTION_REFERENCE_PHRASES[shot.motionReference.mode]);
+  return lines;
+}
+
+/**
+ * Version 2: the shot's lines with each speaker's voice in the same words every time, or `No dialogue.` (models that
+ * render sound invent speech otherwise); null when no sound or speech is asked for.
+ */
+export function dialogueBlockV2(ctx: Pick<ShotContext, 'shot' | 'characters' | 'settings'>): string | null {
+  const { settings } = ctx;
+  const spoken = settings.generation.includeAudio || (settings.dialogue?.mode ?? 'off') !== 'off';
+  if (!spoken) return null;
+  const said = ctx.shot.dialogue.filter((d) => clean(d.line));
+  if (!said.length) return 'No dialogue.';
+  const byId = new Map(ctx.characters.map((c) => [c.id, c]));
+  const voiced = said.map((d) => {
+    const c = d.characterId ? byId.get(d.characterId) : undefined;
+    return c
+      ? `${c.name} says, in ${voicePhrase(c)}: "${clean(d.line)}"`
+      : `A narrator says: "${clean(d.line)}"`;
+  });
+  return `Dialogue: ${voiced.join(' ')} Lip sync.`;
+}
+
+/** Version 2: the model's own sound (ambient and action; music only when the project lets it). */
+export function soundBlockV2(settings: Pick<ProjectSettings, 'generation' | 'dialogue'>): string | null {
+  if (!settings.generation.includeAudio || settings.dialogue?.mode === 'tts') return null;
+  return `Sound: natural ambient sound of the place and the action${settings.generation.modelMusic ? '' : '; no background music'}.`;
+}
+
+function compileShotPromptV2(
+  ctx: ShotContext,
+  mode: 'keyframe' | 'video',
+  opts: { motionReference?: boolean },
+): string {
+  const { shot, settings } = ctx;
+  const location = (ctx.elements ?? []).find((e) => e.kind === 'location');
+  const lines: string[] = [styleHeader(ctx.screenplay, settings, mode === 'keyframe' ? 'still' : 'motion')];
+  const sceneText = sceneLine(ctx.scene, location);
+  if (sceneText) lines.push(sceneText);
+  const body = shotBodyV2(ctx, mode, opts);
+  // One take, so no stray cut inside it (docs/design/continuity.md#prompts-version-2).
+  if (mode === 'video') body[0] = `One continuous shot, no cuts. ${body[0]}`;
+  lines.push(...body);
+  if (ctx.characters.length) {
+    lines.push(
+      mode === 'keyframe'
+        ? `Characters (keep identities exactly as described and as in the reference images): ${ctx.characters.map((c) => identityFragment(c, shot)).join(' ')}`
+        : `Characters (keep identities exactly as in the first frame and the reference images): ${ctx.characters.map((c) => compactIdentity(c, shot)).join(' ')}`,
+    );
+  }
+  lines.push(...elementLines(ctx.elements ?? []));
+  if (mode === 'keyframe') {
+    if (ctx.sceneReference) lines.push(SCENE_REFERENCE_PHRASE);
+    lines.push(`Avoid: ${EXCLUSIONS_STILL}.`);
+    return lines.join(' ');
+  }
+  const dialogue = dialogueBlockV2(ctx);
+  if (dialogue) lines.push(dialogue);
+  const sound = soundBlockV2(settings);
+  if (sound) lines.push(sound);
+  lines.push(PHYSICS_LINE);
+  lines.push(`Avoid: ${EXCLUSIONS_MOTION}.`);
+  return lines.join(' ');
+}
+
+/** The negative prompt of a shot: version 2 adds motion artefacts and keeps to 500 characters. */
+export function negativePromptFor(ctx: Pick<ShotContext, 'shot' | 'settings'>): string {
+  if (promptVersionOf(ctx.settings) < 2)
+    return [BASE_NEGATIVE, clean(ctx.shot.negativePrompt ?? '')].filter(Boolean).join(', ');
+  const text = [BASE_NEGATIVE_V2, clean(ctx.shot.negativePrompt ?? '')].filter(Boolean).join(', ');
+  if (text.length <= NEGATIVE_PROMPT_MAX) return text;
+  const cut = text.slice(0, NEGATIVE_PROMPT_MAX);
+  return cut.slice(0, Math.max(cut.lastIndexOf(','), BASE_NEGATIVE.length)).trim();
+}
+
 export function compileShotPrompt(
   ctx: ShotContext,
   mode: 'keyframe' | 'video',
   opts: { motionReference?: boolean } = {},
 ): string {
+  if (promptVersionOf(ctx.settings) >= 2) return compileShotPromptV2(ctx, mode, opts);
   const { shot } = ctx;
   const lines: string[] = [
     styleHeader(ctx.screenplay, ctx.settings, mode === 'keyframe' ? 'still' : 'motion'),
@@ -378,7 +538,7 @@ export function compileKeyframeRequest(
     parameters: {
       dimensions: { width: settings.resolution.width, height: settings.resolution.height },
       seed: shotSeed(shot, ctx.characters, opts.attempt, opts.variation),
-      negative_prompt: [BASE_NEGATIVE, clean(shot.negativePrompt ?? '')].filter(Boolean).join(', '),
+      negative_prompt: negativePromptFor(ctx),
       output_count: 1,
     },
   };
@@ -428,10 +588,14 @@ export function compileVideoRequest(
       duration_seconds: clampDuration(opts.durationSec ?? shot.durationSec, opts.limits),
       dimensions: { width: settings.resolution.width, height: settings.resolution.height },
       seed: shotSeed(shot, ctx.characters, opts.attempt, opts.variation),
-      negative_prompt: [BASE_NEGATIVE, clean(shot.negativePrompt ?? '')].filter(Boolean).join(', '),
+      negative_prompt: negativePromptFor(ctx),
       include_audio: opts.includeAudio ?? settings.generation.includeAudio,
       camera_motion:
         cameraMove(shot.camera.move)?.cameraMotion ?? (shot.camera.movement === 'static' ? 'fixed' : 'auto'),
+      // The provider's own prompt rewriting, only when the project says (docs/design/continuity.md#prompts-version-2)
+      ...(typeof settings.generation.enhancePrompt === 'boolean'
+        ? { enhance_prompt: settings.generation.enhancePrompt }
+        : {}),
     },
   };
 }

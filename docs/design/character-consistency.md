@@ -1,7 +1,9 @@
 # Character consistency
 
 Locations, props and styles follow the same rules as characters: see [elements](elements.md). Voices are locked
-and verified the same way: see [dialogue](dialogue.md) (rules V1–V6).
+and verified the same way: see [dialogue](dialogue.md) (rules V1–V6). What an identity check does not see (cuts that
+do not match, shots that jump, bodies that defy physics, scenes that tell nothing) is the subject of
+[continuity](continuity.md), and the finished film is reviewed by [feedback](feedback.md).
 
 A 40–60 minute movie is several hundred independent generations. Without enforcement, faces, hair, age and
 wardrobe drift from shot to shot. Rideo treats consistency as an **invariant enforced by the server**, not
@@ -24,7 +26,7 @@ as a prompt-writing tip:
 | R6 | **Drift detection.** A take stores the lock version of each character it was generated from. Relocking a character marks older takes **stale**, and a stale selected take blocks clip approval and export. | shared `takeStatus()` |
 | R7 | **Approval gate.** Approving a clip requires every shot's selected take to be `passed` and not stale, or overridden. Export requires `timeline.consistencyVerified`. | `clip.approve`, `export.render`, workflow requirements |
 | R8 | **Audited override.** `take_override {reason}` records `{actor, reason, at}` in the take and in the commit history. Agents may override only when `settings.approvals.allowAgentOverrides` is true (default false). | `StoryService.overrideTake` |
-| R9 | **Fail closed.** If the judge is disabled or unavailable, takes are `unverified`, which is not `passed`. A human must review them (the UI "Mark verified" action is an override with a reason). | `ConsistencyGate` |
+| R9 | **Fail closed.** If the judge is disabled or unavailable, takes are `unverified`, which is not `passed`. A human must review them (the UI "Mark verified" action is an override with a reason), or the takes are re-checked once the judge is back (below). | `ConsistencyGate` |
 
 ## Character document
 
@@ -125,6 +127,10 @@ Scoring:
   `settings.consistency.threshold`). The report's `score` is the minimum over characters.
 - Shots without characters (establishing shots) pass the identity gate trivially, with `status: passed` and
   an empty character list.
+- With `settings.consistency.qualityChecks`, the same judge call also scores each frame for physical plausibility
+  and, against the scene reference frame, for continuity; with the temporal check of the take they make
+  `report.quality`. A quality failure retries the attempt but never fails a take that passed identity: the best
+  candidate is kept with what failed ([quality checks](continuity.md#quality-checks-in-the-gate)).
 
 ```ts
 type ConsistencyReport = {
@@ -145,6 +151,16 @@ type ConsistencyReport = {
 
 The judge is an interface (`ConsistencyJudge`), so a face-embedding judge (for example a WASM face model)
 can be added without touching the gate.
+
+## Re-checking unverified takes
+
+A judge that was down while takes were made leaves them `unverified`; overriding them one by one is slow (94
+overrides in the October 2026 demo) and skips the check. `consistency.recheck` (lane `llm`) judges them again from the
+evidence frames they keep (`report.frames`), with the characters' current references, without generating anything:
+each take becomes `passed` or `failed` like a fresh check (`note: "re-checked"`), its speaker verdicts and temporal
+check kept. Stale and overridden takes are left alone. When the judge is still unavailable the job stops after three
+takes in a row stay unverified. It runs on request (`POST /api/projects/:id/consistency/recheck {clipIds?}`, MCP
+`consistency_recheck`) and by itself when a batch ends with unverified takes.
 
 ## Reference sheets
 

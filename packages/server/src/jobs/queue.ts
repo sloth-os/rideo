@@ -1,5 +1,7 @@
 import {
   type Actor,
+  addUsage,
+  emptyUsage,
   isTerminalJob,
   JOB_GATEWAY,
   JOB_LANES,
@@ -16,6 +18,7 @@ import type { LiveHub } from '../live/hub';
 import type { Metrics } from '../metrics';
 import type { StorageBackend } from '../storage/backend';
 import type { Layout } from '../storage/layout';
+import { newScope, type UsageLedger, withUsage } from '../usage/meter';
 import { Semaphore } from '../util/mutex';
 
 export interface JobLogger {
@@ -96,6 +99,8 @@ export class JobQueue {
       editorLeaseMs?: number;
       /** Whether mm-gateway is configured: kinds that require it fail at once without (JOB_GATEWAY). */
       gatewayConfigured?: boolean;
+      /** The projects' usage (docs/design/observability.md#usage-ledger). */
+      ledger?: UsageLedger;
     },
   ) {
     for (const lane of LANES)
@@ -278,6 +283,7 @@ export class JobQueue {
       lane.waiting.splice(i, 1);
       void this.run(job);
     }
+    this.laneGauges(laneName);
     if (Number.isFinite(nextWake)) {
       if (this.timer) clearTimeout(this.timer);
       this.timer = setTimeout(
@@ -289,6 +295,17 @@ export class JobQueue {
       );
       this.timer.unref();
     }
+  }
+
+  /** `rideo_lane_jobs{lane,state}`: running and waiting jobs of a lane. */
+  private laneGauges(laneName: Lane): void {
+    let running = 0;
+    for (const r of this.running.keys()) if (this.jobs.get(r)?.lane === laneName) running++;
+    this.deps.metrics.laneJobs.set({ lane: laneName, state: 'running' }, running);
+    this.deps.metrics.laneJobs.set(
+      { lane: laneName, state: 'waiting' },
+      this.lanes.get(laneName)?.waiting.length ?? 0,
+    );
   }
 
   private release(job: Job, state: Running): void {
@@ -304,6 +321,10 @@ export class JobQueue {
     const controller = new AbortController();
     const state: Running = { controller, holdsPermit: true };
     this.running.set(job.id, state);
+    // How long it waited for its lane before the first start (docs/design/observability.md#metrics)
+    const waitSeconds =
+      job.attempts === 0 ? Math.max(0, (Date.now() - Date.parse(job.createdAt)) / 1000) : null;
+    if (waitSeconds !== null) this.deps.metrics.jobWait.observe({ kind: job.kind }, waitSeconds);
     job.status = 'running';
     job.attempts += 1;
     job.startedAt = new Date().toISOString();
@@ -361,8 +382,10 @@ export class JobQueue {
         return results;
       },
     };
+    // Every generation and model call the handler makes is its usage (docs/design/observability.md#usage-ledger).
+    const scope = newScope(job.projectId, job.id);
     try {
-      const result = await handler(ctx);
+      const result = await withUsage(scope, () => handler(ctx));
       if (controller.signal.aborted) throw Object.assign(new Error('cancelled'), { name: 'AbortError' });
       job.status = 'succeeded';
       job.result = result;
@@ -401,12 +424,24 @@ export class JobQueue {
     } finally {
       this.release(job, state);
       this.running.delete(job.id);
+      this.laneGauges(job.lane);
     }
+    const runSeconds = (performance.now() - started) / 1000;
     if (isTerminalJob(job)) {
       job.finishedAt = new Date().toISOString();
       this.deps.metrics.jobs.inc({ kind: job.kind, status: job.status });
-      this.deps.metrics.jobDuration.observe({ kind: job.kind }, (performance.now() - started) / 1000);
+      this.deps.metrics.jobDuration.observe({ kind: job.kind }, runSeconds);
     }
+    const used = usedAnything(scope.usage);
+    if (used) job.usage = addUsage(job.usage ?? emptyUsage(), scope.usage);
+    void this.deps.ledger
+      ?.add(job, {
+        usage: used ? scope.usage : null,
+        runSeconds,
+        waitSeconds,
+        finished: isTerminalJob(job),
+      })
+      .catch((err) => this.deps.log.warn({ err, jobId: job.id }, 'usage ledger update failed'));
     await this.save(job);
     this.publish(job);
     if (job.status === 'queued') {
@@ -693,4 +728,8 @@ export class JobQueue {
     if (this.leaseTimer) clearInterval(this.leaseTimer);
     for (const [, r] of this.running) r.controller.abort('server shutdown');
   }
+}
+
+function usedAnything(u: Job['usage'] & object): boolean {
+  return Object.keys(u.byModel).length > 0 || u.llmCalls > 0 || u.costUsd > 0;
 }

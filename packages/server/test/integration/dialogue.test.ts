@@ -49,7 +49,7 @@ describe('voices', () => {
       settings: { targetDurationSec: 30, pilotDurationSec: 10, resolution: { width: 320, height: 180 } },
     });
     // New projects speak their dialogue when the server has a TTS provider.
-    expect(p.settings.dialogue).toEqual({ mode: 'tts', lipSync: true });
+    expect(p.settings.dialogue).toEqual({ mode: 'tts', lipSync: true, level: 'any' });
     const c = await stack.api<Character>('POST', `/projects/${p.id}/characters`, {
       name: 'Mira',
       voice: { description: 'low and measured, a warm alto with a coastal accent' },
@@ -175,9 +175,9 @@ describe('dialogue in shots', () => {
       expect(line.start).toBeGreaterThanOrEqual(0.4);
       expect(line.end).toBeGreaterThan(line.start);
       expect(line.media).toMatchObject({ mime: 'audio/mpeg' });
-      expect(take.request.prompt).toContain(
-        `${s.docs.characters[speaker].name} says "${shot.dialogue[0]!.line}"`,
-      );
+      // Prompt version 2 names the speaker's voice (docs/design/continuity.md#prompts-version-2).
+      expect(take.request.prompt).toContain(`${s.docs.characters[speaker].name} says, in `);
+      expect(take.request.prompt).toContain(`: "${shot.dialogue[0]!.line}" Lip sync.`);
       // The model rendered sound from the mix.
       expect(await probeHasAudio(pid, take.video!.path)).toBe(true);
     }

@@ -12,6 +12,7 @@ import {
   orderedShotElements,
   type Resource,
   type ShotContext,
+  shotContextOf,
   type Take,
   type TakeDerivation,
   type Timeline,
@@ -51,7 +52,7 @@ async function shotOf(deps: HandlerDeps, ctx: JobContext, clipId: string, shotId
   const characters = orderedShotCharacters(shot, docs.characters);
   const elements = orderedShotElements(shot, docs.elements);
   const judgedElements = settings.consistency.judgeElements ? elements : [];
-  const shotCtx: ShotContext = { shot, characters, elements, screenplay: docs.screenplay, settings };
+  const shotCtx: ShotContext = { ...shotContextOf(shot, docs, clip), characters, elements };
   return {
     docs,
     clip,

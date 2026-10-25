@@ -1,5 +1,6 @@
 import { isTerminalJob, type View } from '@rideo/shared';
 import {
+  BarChart3,
   Clapperboard,
   Download,
   FolderOpen,
@@ -32,6 +33,7 @@ import { ClipsView } from '../clips/ClipsView';
 import { ElementsView } from '../elements/ElementsView';
 import { ExportsView } from '../exports/ExportsView';
 import { HistoryView } from '../history/HistoryView';
+import { InsightsView } from '../insights/InsightsView';
 import { ResourcesView } from '../resources/ResourcesView';
 import { ReviewHost } from '../review/ReviewHost';
 import { SearchView } from '../search/SearchView';
@@ -58,6 +60,7 @@ const STORY_NAV: NavItem[] = [
   { view: 'search', label: 'Search', icon: Search },
   { view: 'history', label: 'History', icon: GitBranch },
   { view: 'exports', label: 'Exports', icon: Download },
+  { view: 'insights', label: 'Insights', icon: BarChart3 },
 ];
 
 const EDIT_NAV: NavItem[] = [
@@ -68,6 +71,7 @@ const EDIT_NAV: NavItem[] = [
   { view: 'search', label: 'Search', icon: Search },
   { view: 'history', label: 'History', icon: GitBranch },
   { view: 'exports', label: 'Exports', icon: Download },
+  { view: 'insights', label: 'Insights', icon: BarChart3 },
 ];
 
 // The editor pulls in mediabunny (WebCodecs); load it only when the editor is opened.
@@ -86,6 +90,7 @@ const VIEWS: Record<View, ComponentType> = {
   history: HistoryView,
   exports: ExportsView,
   search: SearchView,
+  insights: InsightsView,
 };
 
 function ContextPanel({ projectId }: { projectId: string }) {

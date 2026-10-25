@@ -2,6 +2,7 @@ import {
   approvedElementReferences,
   type Clip,
   DEFAULT_VIDEO_LIMITS,
+  dialogueDirection,
   dialogueMode,
   docPath,
   isAcceptable,
@@ -12,12 +13,14 @@ import {
   normalizePlannedShots,
   plannedDuration,
   planShotGroups,
+  promptVersionOf,
   type Screenplay,
   sortedClips,
   TARGET_REACHED_RATIO,
   takeState,
   voiceOf,
   voicesNotReady,
+  wordsCapacity,
 } from '@rideo/shared';
 import { assertCastReady, assertVoicesReady, clipStatusOf } from '../../domain/clips';
 import { AppError, notFound } from '../../errors';
@@ -26,7 +29,11 @@ import type { JobContext } from '../queue';
 import { commitAs, docsFor, type HandlerDeps } from './common';
 
 export async function clipPlan(deps: HandlerDeps, ctx: JobContext) {
-  const { sceneId, thenGenerate } = ctx.job.params as { sceneId: string; thenGenerate?: boolean };
+  const { sceneId, thenGenerate, direction } = ctx.job.params as {
+    sceneId: string;
+    thenGenerate?: boolean;
+    direction?: string;
+  };
   const docs = await docsFor(deps, ctx);
   const sp = docs.screenplay as Screenplay | null;
   const scene = sp?.scenes.find((s) => s.id === sceneId);
@@ -48,6 +55,26 @@ export async function clipPlan(deps: HandlerDeps, ctx: JobContext) {
   const location = scene.locationId ? docs.elements[scene.locationId] : undefined;
   const sceneElements = scene.elementIds.map((id) => docs.elements[id]).filter((e) => !!e);
   ctx.progress(0.2, 1, `planning shots for “${scene.heading}”`);
+  // Version 2 (docs/design/continuity.md#shot-planning): the brief, the level, the words a shot can hold, the scene's
+  // light and state, and the last shot of the previous scene.
+  const v2 = promptVersionOf(settings) >= 2;
+  const previousClip = sortedClips(docs)
+    .filter((c) => c.index < scene.index)
+    .pop();
+  const previousShot = previousClip?.shots
+    .slice()
+    .sort((a, b) => a.index - b.index)
+    .pop();
+  const v2Inputs = v2
+    ? {
+        brief: docs.project.brief.prompt,
+        maxWordsPerShot: wordsCapacity(maxSec),
+        previousShot: previousShot
+          ? { description: previousShot.description, endState: previousShot.endState ?? '' }
+          : null,
+        ...dialogueDirection(settings.dialogue?.level ?? 'any', maxSec),
+      }
+    : {};
   const out = await deps.llm.planClip(
     {
       scene: {
@@ -61,13 +88,17 @@ export async function clipPlan(deps: HandlerDeps, ctx: JobContext) {
         estDurationSec: target,
         location: location ? { name: location.name, description: location.description } : null,
         props: sceneElements.map((e) => ({ name: e!.name, description: e!.description })),
+        ...(v2 ? { timeOfDay: scene.timeOfDay, continuity: scene.continuity ?? '' } : {}),
       },
       characters: cast.map((c) => ({ name: c!.name, summary: c!.summary })),
       style: [sp.style.visual, sp.style.camera].filter(Boolean).join('; '),
       limits: { minDurationSec: minSec, maxDurationSec: maxSec },
       targetDurationSec: target,
+      ...v2Inputs,
+      ...(direction ? { direction } : {}),
     },
     ctx.signal,
+    v2 ? 2 : 1,
   );
   const shots = normalizePlannedShots(out.shots, {
     characters: all,
@@ -152,10 +183,15 @@ export async function clipGenerate(deps: HandlerDeps, ctx: JobContext) {
       : todo.map((s) => [s.id]);
   const jobs: Job[] = [];
   let prev: Job | null = null;
+  // Version 2: the clip's first shot goes first, so the others can match its place and light
+  // (docs/design/continuity.md#scene-reference-frame).
+  const firstIndex = Math.min(...clip.shots.map((s) => s.index));
+  const anchorFirst = promptVersionOf(settings) >= 2 && todo[0]?.index === firstIndex && units.length > 1;
   for (const unit of units) {
     throwIfAborted(ctx.signal);
     const shot = todo.find((s) => s.id === unit[0])!;
     if (shot.continuity === 'continuous' && prev) await ctx.waitFor([prev.id]);
+    else if (anchorFirst && jobs.length === 1) await ctx.waitFor([jobs[0]!.id]);
     const j =
       unit.length > 1
         ? await ctx.spawn('shot.group', { clipId, shotIds: unit }, { dedupeKey: `group:${unit.join(',')}` })
@@ -297,6 +333,14 @@ export async function batchGenerate(deps: HandlerDeps, ctx: JobContext) {
   }
   if (inFlight.length) await ctx.waitFor(inFlight.map((j) => j.id));
   const docs = await docsFor(deps, ctx);
+  // Takes the judge could not verify while the batch ran are judged again (docs/design/character-consistency.md)
+  const unverified = Object.values(docs.clips).some((c) =>
+    c.shots.some((s) => s.takes.some((t) => t.consistency.status === 'unverified' && t.video && !t.override)),
+  );
+  if (unverified && docs.project.settings.consistency.judge !== 'off')
+    await deps.services.clips
+      .recheck(ctx.actor, ctx.job.projectId)
+      .catch((err) => ctx.log.warn({ err: (err as Error).message }, 'could not start the re-check'));
   return {
     clips: started.size,
     plannedDurationSec: plannedDuration(docs),

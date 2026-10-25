@@ -16,6 +16,7 @@ import {
 } from '@rideo/shared';
 import { create } from 'zustand';
 import { api } from '../lib/api';
+import { recordTiming } from '../lib/telemetry';
 
 export interface ActivityEntry {
   id: string;
@@ -225,6 +226,7 @@ export const useProject = create<ProjectStore>((set, get) => ({
       error: null,
       ...(get().projectId !== projectId ? { ...emptySlice } : {}),
     });
+    const started = performance.now();
     try {
       const [state, commits] = await Promise.all([
         api.state(projectId),
@@ -251,6 +253,7 @@ export const useProject = create<ProjectStore>((set, get) => ({
         timelineBehind: keep,
       };
       set({ ...slice, loading: false });
+      recordTiming('project_load', (performance.now() - started) / 1000);
       return slice;
     } catch (err) {
       set({ loading: false, error: err instanceof Error ? err.message : String(err) });

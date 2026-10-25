@@ -34,6 +34,7 @@ import type { StorageBackend } from '../storage/backend';
 import { DAV_PREFIX } from '../storage/embedded-dav';
 import { RoutedStorage } from '../storage/routed';
 import { workspaceContext } from '../storage/workspaces';
+import { type RequestCounters, requestCounters } from '../util/request-context';
 import { VERSION } from '../version';
 import { type AuthedRequest, registerAuthRoutes } from './auth-routes';
 import { applyBasePath, injectBase, requestBase } from './base-path';
@@ -223,6 +224,34 @@ export async function buildServer(
   app.addHook('onRequest', (req, _reply, done) => {
     workspaceContext.run(requestWorkspace(req), done);
   });
+  // What the request made the storage do, and how long it took (docs/design/observability.md#logs).
+  app.addHook('onRequest', (req, _reply, done) => {
+    const counters: RequestCounters = { storageOps: 0, storageMs: 0 };
+    (req as { counters?: RequestCounters }).counters = counters;
+    requestCounters.run(counters, done);
+  });
+  app.addHook('onResponse', async (req, reply) => {
+    const route = req.routeOptions?.url ?? 'unmatched';
+    const seconds = reply.elapsedTime / 1000;
+    metrics.httpSeconds.observe(
+      { method: req.method, route, status: `${Math.floor(reply.statusCode / 100)}xx` },
+      seconds,
+    );
+    const counters = (req as { counters?: RequestCounters }).counters;
+    if (!counters || !route.startsWith('/api/')) return;
+    metrics.storageOpsPerRequest.observe({}, counters.storageOps);
+    if (seconds > 2)
+      req.log.warn(
+        {
+          route,
+          status: reply.statusCode,
+          ms: Math.round(reply.elapsedTime),
+          storageOps: counters.storageOps,
+          storageMs: Math.round(counters.storageMs),
+        },
+        'slow request',
+      );
+  });
   // Every project route needs its permission (ROUTE_PERMISSIONS, docs/design/accounts.md#users-roles-and-projects).
   app.addHook('preHandler', async (req) => {
     const principal = (req as AuthedRequest).principal;
@@ -337,6 +366,8 @@ export async function buildServer(
           ? { provider: config.tts.provider, clone: config.tts.provider === 'elevenlabs' }
           : null,
         voiceJudge: !!config.voiceJudge,
+        /** Telemetry from the studio (docs/design/observability.md#telemetry-from-the-studio). */
+        telemetry: config.telemetry,
         /** Generated sound effects (docs/design/post-audio.md#effects-from-action-lines). */
         sfx: config.sfx ? { provider: config.sfx.provider } : null,
         /** NLE hand-off (docs/design/interchange.md#where-the-media-is): the WebDAV root clients reach. */

@@ -9,6 +9,10 @@ LLM calls turned away for load ([structured tasks](design/ai-gateway.md#structur
 be deleted. This page lists what can still improve. Each item gives the evidence, how it fits Rideo, and a rough
 effort (S ≤ 1 week, M 1–3 weeks, L > 3 weeks for one engineer), like the [roadmap](roadmap.md).
 
+Every project now writes its own list: the [feedback](design/feedback.md) on each export ends with a retrospective of
+the run (cost, time, retries, failures, the film's weakest dimensions), and the [Insights](design/observability.md#insights)
+view shows it next to the numbers. After each demo, what it taught is added here.
+
 ## Measured on the demo server
 
 After the fixes, on the demo server:
@@ -104,9 +108,11 @@ editor's media reads may take five of them (the API, heartbeats and an export's 
 
 ## AI calls and jobs
 
-**18. Re-check unverified takes when the judge is back** (S–M) — when the vision provider stays down past the retries,
-takes stay `unverified`, and someone overrides them one by one (94 in the demo). *How:* a `consistency.recheck` job
-over a clip's unverified takes, started when judge calls succeed again and on demand (clip view, MCP).
+**18. Re-check unverified takes when the judge is back** (S–M, done) — when the vision provider stayed down past the
+retries, takes stayed `unverified`, and someone overrode them one by one (94 in the demo). `consistency.recheck` judges
+them again from their evidence frames, on request (REST, MCP) and when a batch ends
+([re-checking](design/character-consistency.md#re-checking-unverified-takes)); a button in the clip view is still to
+come.
 
 **19. One retry budget per call** (S) — an LLM call made up to 4 times by the task's retries is made again by every
 job attempt (`maxAttempts`, 3 by default): up to 12 calls for one task while a provider is down. *How:* no job-level
@@ -117,9 +123,8 @@ trying on its own. *How:* pause calls to the domain for a while after a run of f
 
 ## Observability
 
-**21. Storage latency buckets** (S) — `rideo_storage_seconds` ends at 5 s, so on OpenList uploads and retried requests
-all land in `+Inf`. *How:* add 10, 30, 60 and 300 s.
+**21. Storage latency buckets** (S, done) — `rideo_storage_seconds` ended at 5 s, so on OpenList uploads and retried
+requests all landed in `+Inf`. Its buckets now go to 300 s ([observability](design/observability.md#metrics)).
 
-**22. Storage round trips per request** (S) — nothing shows how many storage operations a request made, so a
-per-request lookup (like the existence check fixed above) shows up in a demo, not in the logs. *How:* count storage
-operations per request and log them (with their time) on slow requests.
+**22. Storage round trips per request** (S, done) — nothing showed how many storage operations a request made. They
+are counted per request (`rideo_storage_ops_per_request`) and logged with their time on requests slower than 2 s.

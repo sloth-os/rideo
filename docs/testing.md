@@ -81,6 +81,15 @@ RIDEO_TEST_WEBDAV_URL=http://rideo:rideo@localhost:8080/ npx vitest run --projec
   on the primary and free tracks with their graph, detached audio, mirror and key with their graph, the color tables,
   hue matrix and vignette, xfade's dip weights, slides, the circle and its 16-stop gradient, the wipe's edge, snap
   targets, spans and edit points, a freeze and the new transitions in EDL, XML, FCPXML and back from OTIO).
+- **shared, continuity and feedback** (`continuity.test.ts`, `feedback.test.ts`): version 1 prompts byte-identical to
+  before; version 2 keyframe and video prompts (the scene line, the continuation, compact identities, voices in the
+  same words every time, `No dialogue.`, the music line, physics, exclusions in the text and a negative prompt cut at
+  500 characters, determinism); the scene reference image in the budget; `fitDialogue` (a shot lengthened within the
+  model, lines moved to a continuous shot, nothing cut); the dialogue levels; the quality verdicts (lowest physics,
+  mean continuity, temporal jumps, candidates ranked); feedback assembly (issue times from the render timeline and the
+  position in the shot, stable ids, recommendations ordered, scores falling back to the duration-weighted scenes,
+  `sound` from the signals, the overall weights), unexpected cuts from scene changes against the cut points, framing
+  runs and rushed lines, the Markdown report.
 - **shared, settings and project files** (`settings-theme.test.ts`, `settings-endpoints.test.ts`, `bundle.test.ts`):
   the settings table (each setting once, in a known group, environment-only configuration and key material kept out,
   secrets marked, `showIf` targets, option labels for every option); the endpoint table (every endpoint's settings
@@ -191,6 +200,13 @@ RIDEO_TEST_WEBDAV_URL=http://rideo:rideo@localhost:8080/ npx vitest run --projec
   theme over the studio's, memory routing, `navigate`, `setTheme`, a person's mode winning, nothing set on the host
   document); the scoped stylesheet (selectors, flattened layers, global keyframes); inlined worker scripts made
   same-origin; the service worker under a subpath scope.
+
+- **server, observability and feedback** (`usage.test.ts`, `feedback-service.test.ts`): usage attributed to the job
+  whose handler made the call (nested calls, none outside a job), prices from the gateway's reported cost or the
+  table, unpriced usage, discarded attempts, the project ledger written behind and read back; the new metrics
+  (`rideo_job_wait_seconds`, lane gauges, LLM seconds and tokens, HTTP route latency, storage buckets to 300 s);
+  the retrospective rules on fixtures (each rule firing and staying quiet); applying and dismissing recommendations
+  (`feedback_stale`); the telemetry endpoint (validation, the cap, off).
 
 ### Integration
 
@@ -323,6 +339,20 @@ RIDEO_TEST_WEBDAV_URL=http://rideo:rideo@localhost:8080/ npx vitest run --projec
   *Remove the background* on an overlay with the mock's segmentation model (the matte stored, the tracks below around
   the subject in the render), `segmentation_unavailable`, metrics; word timings with punctuation from speech-to-text
   and the filler words cut with `remove_ranges`; MCP `timeline_apply` and `timeline_remove_background`.
+- **Feedback** (`feedback.test.ts`): a story export on the mock gateway gets its feedback by itself: the signals
+  (an unexpected cut planted in a take with `metadata.mock_jump`), a vision call per scene with strips, the film call,
+  scores, issues at the right export times, the retrospective and the report on WebDAV; applying a `regenerate_shot`
+  recommendation updates the shot and makes a new passing take; dismissing; on request over REST and MCP; a studio
+  without a gateway writes signals and the retrospective only.
+- **Continuity** (`continuity.test.ts`): a version 2 project's writing and planning inputs (the brief, the level, the
+  previous shot) and outputs (lens, end state, dialogue fitted to 5 s shots), the first shot of a clip generated before
+  the others with its keyframe as the scene reference of the rest, a take that jumps (`MOCK_JUMP_EVERY`) retried by
+  the temporal check and a physics failure by the judge, the kept take marked when all attempts fail; version 1
+  projects unchanged.
+- **Re-check** (in `continuity.test.ts`): takes made with the judge off are `unverified`; with the judge back,
+  `consistency.recheck` turns them `passed` from their evidence frames without a new generation.
+- **Observability** (`observability.test.ts`): a clip generated on the mock fills `job.usage`, the project's
+  `.rideo/usage.json` (priced with `RIDEO_PRICES`) and `/metrics`; `GET /insights` and MCP `project_insights`.
 - **Interchange** (`interchange.test.ts`): an edit project's cut handed off in the four formats (the OTIO's clip URL
   fetched from the embedded WebDAV server is the uploaded file, byte for byte; mounted paths as `file://` URLs; the
   EDL's events, dissolve and speed line); an empty animatic refused; a re-edited OTIO (clips swapped and trimmed, a
@@ -366,7 +396,8 @@ RIDEO_TEST_WEBDAV_URL=http://rideo:rideo@localhost:8080/ npx vitest run --projec
 Projects: `desktop` (1440×900) runs every spec except `responsive`; `mobile` (412×915, touch) runs
 `responsive`, `mcp-sync`, `provenance`, `elements`, `dialogue`, `storyboard`, `directing`, `take-editing`,
 `multi-shot`, `post-audio`, `localization`, `finishing`, `accounts`, `review`, `interchange`, `editor-depth`,
-`editing-tools`, `recipes`, `brand`, `search`, `performance`, `engine`, `pwa`, `settings`, `browser-storage`, `subpath` and `embed`. The
+`editing-tools`, `recipes`, `brand`, `search`, `performance`, `engine`, `pwa`, `settings`, `browser-storage`, `subpath`, `embed`,
+`feedback` and `insights`. The
 web server stops with SIGTERM so the stack removes its data; stale stack directories older than an hour are removed
 when a new stack starts. Specs:
 
@@ -398,6 +429,8 @@ when a new stack starts. Specs:
 | `elements.spec.ts` | (desktop and mobile) the screenplay's location in the Elements view → generate, approve, lock; add a prop and link it to a scene in the Story view |
 | `provenance.spec.ts` | (desktop and mobile) uploading a likeness opens the consent dialog; a real person needs subject, grantor and date and marks the character; the disclosure setting labels the export; the export card and the public Verify page show the Content Credentials |
 | `responsive.spec.ts` | every main view on mobile: no horizontal overflow, navigation reachable, primary actions visible |
+| `feedback.spec.ts` | (desktop and mobile) the project settings' continuity controls (dialogue level B1, continuity-aware prompts, quality checks, feedback after each export); a story export's feedback on its card (overall score, dimension bars, summary); *Show feedback*: scenes, an issue's *Play from here* seeking the export, a `regenerate_shot` recommendation applied (the shot regenerating, the recommendation marked applied) and another dismissed, the retrospective, the report download; no sideways scroll on phones |
+| `insights.spec.ts` | (desktop and mobile) the Insights view of a generated project: cost (with `RIDEO_PRICES` on the stack) by model and job kind, times per job kind, take quality, the feedback score and the retrospective; the studio's telemetry reaching `/metrics` (`rideo_web_vitals_seconds`); no sideways scroll on phones |
 | `settings.spec.ts` | (desktop and mobile, each on a studio of its own) without a gateway the dashboard says AI is off; Settings: sections and search, a locked value, the gateway tested, an invalid value refused under its field and its section opened, the gateway saved and applied (the dashboard and the live channel follow without a reload, a film can be started); the text model's API base URL and API key set with the gateway's admin token, registered in the mock gateway (the card says so, the vision card shares the key, **Test** answers), the key replaced and removed; then the gateway cleared again; no horizontal scroll |
 | `browser-storage.spec.ts` | (desktop and mobile, on the studio without WebDAV and gateway) a project kept in IndexedDB with its upload and poster; its project file downloaded; deleted and imported back; imported again as a copy; still there after a reload. Desktop: analysis by rules, auto edit and an export rendered in the tab, the export stored in the browser and served by the service worker from IndexedDB |
 | `subpath.spec.ts` | (desktop and mobile) the studio under `/studio` with the prefix kept and under `/rideo` through a prefix-stripping proxy: the bare prefix, the injected `<base>`, the live channel, a project's deep link reloaded, the MCP command, the manifest and the service worker's scope, no request outside the prefix, problems for unknown API routes |

@@ -20,6 +20,7 @@ import type { Metrics } from '../metrics';
 import type { C2paService } from '../provenance/c2pa';
 import type { StorageBackend } from '../storage/backend';
 import type { Layout } from '../storage/layout';
+import type { UsageLedger, UsageMeter } from '../usage/meter';
 import type { WatermarkService } from '../watermark/service';
 import type { ProjectRegistry } from './registry';
 
@@ -69,4 +70,6 @@ export interface Deps {
   accounts: AccountsService;
   /** Notifications per person (docs/design/review.md#notifications). */
   notifications: NotificationService;
+  /** Usage and cost of every call, and each project's ledger (docs/design/observability.md#usage-ledger). */
+  usage: { meter: UsageMeter; ledger: UsageLedger };
 }

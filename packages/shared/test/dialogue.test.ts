@@ -49,6 +49,7 @@ const scene = (overrides: Partial<Scene>): Scene => ({
   locationId: null,
   elementIds: [],
   estDurationSec: 10,
+  continuity: '',
   ...overrides,
 });
 

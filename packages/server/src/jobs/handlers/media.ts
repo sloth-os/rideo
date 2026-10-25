@@ -18,6 +18,7 @@ import {
 } from '@rideo/shared';
 import { z } from 'zod';
 import type { LabelledImage } from '../../ai/tasks';
+import { FeedbackService } from '../../domain/feedback';
 import { AppError, notFound } from '../../errors';
 import { extractFrame } from '../../media/frames';
 import { normalizeSoundtrack } from '../../media/loudness';
@@ -533,6 +534,7 @@ export async function exportFinish(deps: HandlerDeps, ctx: JobContext) {
         { mime: file.mime, width, height },
       );
       await deps.staging.remove(p.renderJobId);
+      await autoFeedback(deps, ctx, p.exportId);
       return { exportId: p.exportId, path: media.path, watermarkId, psnr: embed?.stats().psnr };
     });
   } catch (err) {
@@ -545,6 +547,27 @@ export async function exportFinish(deps: HandlerDeps, ctx: JobContext) {
         `Export ${p.exportId.slice(-6)} failed`,
       ).catch(() => undefined);
     throw err;
+  }
+}
+
+/**
+ * A story project's export is watched by itself (docs/design/feedback.md#when-it-runs); a failure to start it never
+ * fails the export.
+ */
+async function autoFeedback(deps: HandlerDeps, ctx: JobContext, exportId: string): Promise<void> {
+  try {
+    const docs = await docsFor(deps, ctx);
+    const exp = docs.exports[exportId];
+    if (
+      !exp ||
+      docs.project.kind !== 'story' ||
+      docs.project.settings.feedback?.auto === false ||
+      !FeedbackService.automatic(exp)
+    )
+      return;
+    await deps.services.feedback.request(ctx.actor, ctx.job.projectId, exportId);
+  } catch (err) {
+    ctx.log.warn({ err: (err as Error).message, exportId }, 'could not start feedback on the export');
   }
 }
 

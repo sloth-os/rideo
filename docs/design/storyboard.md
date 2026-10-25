@@ -48,7 +48,7 @@ type ShotBoard = {
 | `missing` | no frame yet |
 | `failed` | the frame failed the consistency gate after every attempt (regenerate it) |
 | `stale` | a character, element or voice was relocked since (R6/E6/V6) |
-| `outdated` | the shot was edited since: its keyframe prompt hash differs |
+| `outdated` | the shot was edited since, or its keyframe prompt changed another way (its scene's continuity, the [prompt version](continuity.md#prompt-version)): its keyframe prompt hash differs. What neighbouring shots lend a prompt (the previous shot's end state, the scene reference image) is not part of the hash, so moving frames does not outdate the others |
 | `unapproved` | current, waiting for review |
 | `approved` | current and approved |
 

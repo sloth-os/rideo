@@ -58,6 +58,10 @@ const task = await client.generateMusic(req, { idempotencyKey, signal, metadata,
 - `routing.profile` is sent when `MM_GATEWAY_ROUTING_PROFILE` is set. `model` is sent when the project pins
   one; otherwise it is omitted and the gateway auto-routes by limits.
 - `metadata` carries `{rideo_project, rideo_job, rideo_step}` for cross-system tracing.
+- `enhance_prompt` (the provider's own prompt rewriting, Wan's `prompt_extend`) is sent only when
+  `settings.generation.enhancePrompt` is set ([continuity](continuity.md#prompts-version-2)).
+- Every finished task adds its output (images, seconds) and cost (`usage.cost` when the gateway reports one, else the
+  price table) to the current job's usage, and to `rideo_gateway_task_seconds` and `rideo_gateway_usage_total`.
 - Outputs arrive as `https://…` or `data:` URIs. `MediaStore.importUri()` downloads, hashes and stores them.
 
 ## Proxy usage (LLM, vision, STT, embeddings)
@@ -148,7 +152,7 @@ Every LLM use is a **task** with an id, a zod output schema, a system prompt and
 | `screenplay.extend` | story so far (summaries), cast, outline beats to write | `{scenes[]}` |
 | `clip.plan` | scene (with its location and props), cast, style, video model limits | `{shots[]}` (each with the `props` visible in it) |
 | `character.describe` | one photo | `{identity, summary, wardrobe[]}` |
-| `consistency.judge` | references per character (and per element when `judgeElements`), candidate frames | `{frames[{index, characters[{characterId, present, identityScore, outfitScore, issues}], elements?[{elementId, present, score, issues}]}]}` |
+| `consistency.judge` | references per character (and per element when `judgeElements`), the scene reference frame (quality checks), candidate frames | `{frames[{index, characters[{characterId, present, identityScore, outfitScore, issues}], elements?[{elementId, present, score, issues}], physics?{score, issues}, continuity?{score, issues}}]}` ([quality checks](continuity.md#quality-checks-in-the-gate)) |
 | `footage.analyze` | probe stats, scenes, silences, thumbnails, transcript | `{summary, suggestions[]}` |
 | `score.plan` | the film (title, genre, tone, style), the direction, the cues (length, scene, dialogue or not) | `{cues[{index, prompt, bpm?}]}` ([post audio](post-audio.md)) |
 | `reframe.focus` | three frames of a take, its shot and cast | `{frames[{index, x, y}]}` (the subject's centre, [finishing](finishing.md#auto-reframe-and-cut-downs)) |
@@ -156,6 +160,8 @@ Every LLM use is a **task** with an id, a zod output schema, a system prompt and
 | `dialogue.translate` | the target language, the film (title, logline, tone), the cast names, the scene and its lines | `{lines[{key, text}]}` ([localization](localization.md#translation)) |
 | `sfx.plan` | the takes of the cut (length, description, action, location), `maxPerShot` | `{effects[{shot, description, at, durationSec, kind}]}` |
 | `frame.caption` | one frame (512 px wide), what it is from, who and what its source shows (with how they look), the cast | `{caption}` (≤ 300 characters, [search](search.md#the-index)) |
+| `feedback.scene` | the film, one scene with its neighbours, the cast, every shot with its take's reports, the signals inside the scene, a strip of three frames per shot | `{scores{dimension: 0–10}, summary, strengths[], issues[{shot, dimension, severity, title, detail, at}], recommendations[{shot?, dimension, priority, title, detail, action?}]}` ([feedback](feedback.md#how-a-film-is-watched)) |
+| `feedback.film` | the project (logline, synopsis, outline), every scene's scores, summary and issues, the signals, the run's numbers | `{scores, summary, strengths[], recommendations[{dimension, priority, title, detail, scenes[], action?}], lessons[{area, title, detail}]}` |
 
 `runTask()`:
 
@@ -173,7 +179,10 @@ Every LLM use is a **task** with an id, a zod output schema, a system prompt and
 4. If it still fails, raise `llm_invalid_output` (retryable at the job level).
 
 Latency, model, token usage (when reported) and the task id are logged per call, and counted in
-`rideo_llm_calls_total{task,status}`.
+`rideo_llm_calls_total{task,status}`, `rideo_llm_call_seconds{task,model}` and `rideo_llm_tokens_total{task,model,direction}`;
+inside a job they are added to its usage ([observability](observability.md#usage-ledger)). With prompt version 2,
+`screenplay.generate`, `screenplay.extend` and `clip.plan` get the dialogue level and the continuity inputs of
+[continuity](continuity.md).
 
 ## Mock gateway
 

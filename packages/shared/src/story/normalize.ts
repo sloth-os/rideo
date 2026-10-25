@@ -1,3 +1,4 @@
+import { fitDialogue } from '../continuity';
 import { newId } from '../ids';
 import { characterSeed, elementSeed } from '../prompt';
 import type { EditSuggestion } from '../schemas/analysis';
@@ -173,6 +174,7 @@ export function sceneFromLlm(
     locationId: s.location.trim() ? resolveElement('location', s.location) : null,
     elementIds,
     estDurationSec: Math.min(3600, Math.max(5, s.estDurationSec || 60)),
+    continuity: (s.continuity ?? '').trim().slice(0, 1000),
   };
 }
 
@@ -208,6 +210,7 @@ export function screenplayFromLlm(
     summary: b.summary,
     estDurationSec: durations[i]!,
     sceneId: null,
+    purpose: (b.purpose ?? '').trim().toLowerCase().slice(0, 60),
   }));
   const scenes: Scene[] = [];
   out.scenes.forEach((s, i) => {
@@ -314,6 +317,8 @@ export function normalizePlannedShots(planned: LlmShot[], opts: ShotPlanOptions)
   if (Math.abs(k - 1) > 0.1) {
     for (const s of drafts) s.durationSec = Math.min(max, Math.max(min, s.durationSec * k));
   }
+  // Every line speakable in its shot (docs/design/continuity.md#shot-planning).
+  drafts = fitDialogue(drafts, { minSec: min, maxSec: max });
   return drafts.map((s, index) => {
     const characterIds = [...new Set(s.characters.map(resolve).filter((x): x is string => !!x))];
     const wardrobe: Record<string, string> = {};
@@ -332,13 +337,14 @@ export function normalizePlannedShots(planned: LlmShot[], opts: ShotPlanOptions)
       index,
       description: s.description.trim(),
       action: s.action,
-      camera: s.camera,
+      camera: { ...s.camera, ...(s.lensMm ? { lensMm: s.lensMm } : {}) },
       characterIds,
       elementIds,
       wardrobe,
       dialogue: s.dialogue.map((d) => ({ characterId: resolve(d.character), line: d.line })),
       durationSec: Math.round(s.durationSec * 100) / 100,
       continuity: index === 0 ? 'cut' : s.continuity,
+      endState: (s.endState ?? '').trim().slice(0, 1000),
       promptOverride: null,
       negativePrompt: null,
       startFrame: { mode: 'auto', resourceId: null },

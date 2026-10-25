@@ -34,6 +34,8 @@ export interface MockGatewayOptions {
   latencyMs?: number;
   /** Every n-th identity-bearing generation drifts (drops signatures). 0 = never. */
   flakyEvery?: number;
+  /** Every n-th video generation jumps inside the shot (a flash cut). 0 = never. */
+  jumpEvery?: number;
   /** Directory for generated files (a temp dir by default). */
   dir?: string;
   logger?: boolean;
@@ -53,6 +55,9 @@ export interface MockGatewayApp {
   counters: {
     generations: number;
     flaky: number;
+    /** Video generations that jump inside the shot (MOCK_JUMP_EVERY, metadata.mock_jump). */
+    jumps: number;
+    videos: number;
     /** Chat calls answered `503 system cpu overloaded` (overloadChat). */
     overloaded: number;
     proxyCalls: Record<string, number>;
@@ -63,6 +68,8 @@ export interface MockGatewayApp {
   management: MockManagement;
   /** The next `times` chat calls through the proxy answer `503 system cpu overloaded`, as an overloaded upstream does. */
   overloadChat(times: number): void;
+  /** The next `times` video generations jump inside the shot (a flash cut), like MOCK_JUMP_EVERY. */
+  jumpVideos(times: number): void;
   close(): Promise<void>;
 }
 
@@ -73,14 +80,18 @@ export async function buildMockGateway(opts: MockGatewayOptions = {}): Promise<M
   const counters: MockGatewayApp['counters'] = {
     generations: 0,
     flaky: 0,
+    jumps: 0,
+    videos: 0,
     overloaded: 0,
     proxyCalls: {},
     proxyAccounts: {},
   };
   let overloads = 0;
+  let jumpsLeft = 0;
   const management = new MockManagement({ apiKey: opts.apiKey, managementKey: opts.managementKey });
   const keyOf = new WeakMap<FastifyRequest, MockKey>();
   const flakyEvery = opts.flakyEvery ?? Number(process.env.MOCK_FLAKY_EVERY ?? 0);
+  const jumpEvery = opts.jumpEvery ?? Number(process.env.MOCK_JUMP_EVERY ?? 0);
   // Closing ends every connection: a test's gateway stops at once even when a client keeps a socket open
   const app = Fastify({
     logger: opts.logger ?? false,
@@ -239,6 +250,16 @@ export async function buildMockGateway(opts: MockGatewayOptions = {}): Promise<M
         if (flakyEvery > 0 && counters.generations % flakyEvery === 0) flaky = true;
       }
       if (flaky) counters.flaky++;
+      let jump = body.metadata?.mock_jump === true;
+      if (!replay && route.modality === 'video') {
+        counters.videos++;
+        if (jumpEvery > 0 && counters.videos % jumpEvery === 0) jump = true;
+        if (jumpsLeft > 0) {
+          jump = true;
+          jumpsLeft--;
+        }
+      }
+      if (jump) counters.jumps++;
       const failCode = typeof body.metadata?.mock_fail === 'string' ? body.metadata.mock_fail : null;
       const base = baseUrl(req);
       const task =
@@ -255,7 +276,7 @@ export async function buildMockGateway(opts: MockGatewayOptions = {}): Promise<M
               const { TaskError } = await import('./tasks');
               throw new TaskError(failCode, `mock failure: ${failCode}`);
             }
-            return route.run(body, { dir, fileUrl: (name) => `${base}/files/${name}`, flaky });
+            return route.run(body, { dir, fileUrl: (name) => `${base}/files/${name}`, flaky, jump });
           },
         });
       const self = `${base}/v1/${route.path}/${task.id}`;
@@ -423,6 +444,9 @@ export async function buildMockGateway(opts: MockGatewayOptions = {}): Promise<M
     management,
     overloadChat(times) {
       overloads = times;
+    },
+    jumpVideos(times) {
+      jumpsLeft = times;
     },
     async close() {
       await app.close();

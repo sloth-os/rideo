@@ -29,6 +29,9 @@
 | [design/storyboard.md](design/storyboard.md) | The storyboard stage, board frames reused by the video pass, the animatic, screenplay import (Fountain, FDX, PDF), shot lists |
 | [design/dialogue.md](design/dialogue.md) | Character voices (designed or cloned, locked), TTS or native dialogue, lip sync, the speaker check, the Dialogue track |
 | [design/character-consistency.md](design/character-consistency.md) | How consistency is guaranteed: identity lock, deterministic conditioning, judge gate, continuity, drift |
+| [design/continuity.md](design/continuity.md) | Continuity, storytelling and realism: prompt version 2 (scene lines, video prompt blocks, voices, exclusions), story structure, dialogue levels, film grammar in shot planning, the scene reference frame, temporal and physics checks |
+| [design/feedback.md](design/feedback.md) | Feedback on the finished film: the vision model watches each export with the project in hand, scores it, pins issues to shots, recommends actions Rideo can apply, and writes the retrospective of every project |
+| [design/observability.md](design/observability.md) | Logs, metrics, the usage and cost ledger of each project, the Insights view and telemetry from the studio |
 | [design/generation-pipeline.md](design/generation-pipeline.md) | Job queue, shot pipeline, batch generation to target length, retries, idempotency |
 | [design/ai-gateway.md](design/ai-gateway.md) | mm-gateway SDK usage, the LLM/vision/STT proxy, prompts and structured output, the mock gateway |
 | [design/mcp.md](design/mcp.md) | MCP server, transport, tool catalogue, UI control, agent attribution |
@@ -62,3 +65,7 @@
 | Project file | A project as one `.rideo` file (documents, history, media) to export and import. |
 | Setting | A value the studio reads from the environment or, when the environment leaves it unset, from Settings. |
 | Marker | A named, colored point on the cut's time, a snap target ([editing tools](design/editing-tools.md#markers)). |
+| Feedback | The vision model's review of an export: scores, issues pinned to shots, recommendations with actions ([feedback](design/feedback.md)). |
+| Retrospective | What to improve in how a project was made, written with its feedback from the run's own numbers. |
+| Usage | Generations and model calls a job made, with their estimated cost, summed per project ([observability](design/observability.md#usage-ledger)). |
+| Prompt version | `1` (projects from before) or `2` (continuity-aware prompts, [continuity](design/continuity.md#prompt-version)). |

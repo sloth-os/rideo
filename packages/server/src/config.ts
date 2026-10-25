@@ -1,6 +1,8 @@
 import {
   apiBaseProblem,
   desiredProxies,
+  type Prices,
+  parsePrices,
   parseThemeJson,
   type ResolvedEndpoint,
   type ResolvedEndpoints,
@@ -77,6 +79,18 @@ const theme = z
             ? `invalid theme: ${err.issues.map((i) => `${i.path.join('.')} ${i.message}`).join('; ')}`
             : (err as Error).message,
       });
+      return z.NEVER;
+    }
+  });
+
+const prices = z
+  .string()
+  .optional()
+  .transform((v, ctx): Prices => {
+    try {
+      return parsePrices(v);
+    } catch (err) {
+      ctx.addIssue({ code: 'custom', message: (err as Error).message });
       return z.NEVER;
     }
   });
@@ -182,6 +196,10 @@ export const EnvSchema = z
     RIDEO_CONSISTENCY_THRESHOLD: num(0.75),
     RIDEO_CONSISTENCY_MAX_ATTEMPTS: num(3),
     RIDEO_LANES: str(''),
+    /** Model prices for cost estimates (docs/design/observability.md#usage-ledger), JSON. */
+    RIDEO_PRICES: prices,
+    /** Telemetry from the studio (docs/design/observability.md#telemetry-from-the-studio). */
+    RIDEO_TELEMETRY: z.enum(['on', 'off']).optional().default('on'),
     RIDEO_WATERMARK_KEY: str(),
     RIDEO_WATERMARK_KEYS_OLD: str(''),
     RIDEO_WATERMARK_STRENGTH: num(16),
@@ -362,6 +380,9 @@ export interface Config {
   endpoints: ResolvedEndpoints;
   consistency: { judge: 'vision-llm' | 'off'; threshold: number; maxAttempts: number };
   lanes: Record<string, number>;
+  /** Model prices (`RIDEO_PRICES`) and whether the studio sends telemetry (docs/design/observability.md). */
+  prices: Prices;
+  telemetry: boolean;
   watermark: { key?: string; oldKeys: string[]; strength: number };
   brand: { name: string; owner: string; url: string };
   /** C2PA Content Credentials (docs/design/provenance.md#signing-credentials). */
@@ -527,6 +548,8 @@ export function loadConfig(
       maxAttempts: Math.max(1, Math.floor(e.RIDEO_CONSISTENCY_MAX_ATTEMPTS)),
     },
     lanes: parseLanes(e.RIDEO_LANES),
+    prices: e.RIDEO_PRICES,
+    telemetry: e.RIDEO_TELEMETRY === 'on',
     watermark: {
       key: e.RIDEO_WATERMARK_KEY,
       oldKeys: (e.RIDEO_WATERMARK_KEYS_OLD ?? '')

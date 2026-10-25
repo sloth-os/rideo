@@ -32,6 +32,23 @@ export const VoiceVerdictSchema = z.object({
 });
 export type VoiceVerdict = z.infer<typeof VoiceVerdictSchema>;
 
+/** The temporal and physics checks of a take (docs/design/continuity.md#quality-checks-in-the-gate). */
+export const QualityVerdictSchema = z.object({
+  /** Temporal and physics passed (continuity is advisory). */
+  passed: z.boolean(),
+  /** Scene changes inside the take: when (seconds of the take) and the highest score; null when not measured. */
+  temporal: z
+    .object({ jumps: z.array(z.number().nonnegative()).max(50).default([]), maxScore: z.number().min(0) })
+    .nullable()
+    .default(null),
+  /** The lowest frame score for physical plausibility (0–1). */
+  physics: z.number().min(0).max(1).nullable().default(null),
+  /** The mean frame score against the scene reference frame (0–1). */
+  continuity: z.number().min(0).max(1).nullable().default(null),
+  issues: z.array(z.string().max(500)).max(20).default([]),
+});
+export type QualityVerdict = z.infer<typeof QualityVerdictSchema>;
+
 export const ConsistencyReportSchema = z.object({
   status: ConsistencyStatusSchema,
   judge: z.string(),
@@ -46,6 +63,8 @@ export const ConsistencyReportSchema = z.object({
   voices: z.array(VoiceVerdictSchema).default([]),
   frames: z.array(MediaRefSchema).default([]),
   note: z.string().max(1000).optional(),
+  /** Temporal, physics and continuity checks; null when they are off or for takes from before them. */
+  quality: QualityVerdictSchema.nullable().default(null),
 });
 export type ConsistencyReport = z.infer<typeof ConsistencyReportSchema>;
 
@@ -256,6 +275,8 @@ export const ShotSchema = z.object({
   dialogue: z.array(z.object({ characterId: IdSchema.nullable(), line: z.string().max(2000) })).default([]),
   durationSec: z.number().positive().max(60),
   continuity: z.enum(['cut', 'continuous']).default('cut'),
+  /** What the last frame shows: positions, poses, what is in hand (docs/design/continuity.md#shot-planning). */
+  endState: z.string().max(1000).default(''),
   promptOverride: z.string().max(8000).nullable().default(null),
   negativePrompt: z.string().max(2000).nullable().default(null),
   startFrame: StartFrameSchema.default({ mode: 'auto', resourceId: null }),

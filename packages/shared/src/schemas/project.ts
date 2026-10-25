@@ -14,15 +14,25 @@ export const ConsistencySettingsSchema = z.object({
   judgeElements: z.boolean().default(false),
   /** Check the speakers of native-audio takes against their voice locks (rule V4). */
   judgeVoices: z.boolean().default(true),
+  /** Temporal and physics checks of every video attempt (docs/design/continuity.md#quality-checks-in-the-gate). */
+  qualityChecks: z.boolean().default(false),
+  /** The lowest physics score an attempt may have (0–1). */
+  qualityThreshold: z.number().min(0).max(1).default(0.5),
 });
+export type ConsistencySettings = z.infer<typeof ConsistencySettingsSchema>;
 
 /** How screenplay lines become audio (docs/design/dialogue.md#from-lines-to-audio). */
 export const DialogueModeSchema = z.enum(['tts', 'native', 'off']);
 export type DialogueMode = z.infer<typeof DialogueModeSchema>;
+/** The CEFR level every written line keeps to (docs/design/continuity.md#storytelling); `any` sets none. */
+export const DIALOGUE_LEVEL_IDS = ['any', 'A1', 'A2', 'B1', 'B2', 'C1', 'C2'] as const;
+export const DialogueLevelSchema = z.enum(DIALOGUE_LEVEL_IDS);
+export type DialogueLevel = z.infer<typeof DialogueLevelSchema>;
 export const DialogueSettingsSchema = z.object({
   mode: DialogueModeSchema.default('off'),
   /** Re-render TTS takes whose model could not take the dialogue as reference audio. */
   lipSync: z.boolean().default(true),
+  level: DialogueLevelSchema.default('any'),
 });
 export type DialogueSettings = z.infer<typeof DialogueSettingsSchema>;
 
@@ -48,6 +58,9 @@ export const StoryboardSettingsSchema = z.object({
   scenes: z.number().int().min(1).max(50).default(3),
 });
 export type StoryboardSettings = z.infer<typeof StoryboardSettingsSchema>;
+
+export const PromptVersionSchema = z.union([z.literal(1), z.literal(2)]);
+export type PromptVersion = z.infer<typeof PromptVersionSchema>;
 
 export const ProjectSettingsSchema = z.object({
   aspectRatio: AspectRatioSchema.default('16:9'),
@@ -90,8 +103,10 @@ export const ProjectSettingsSchema = z.object({
     judge: 'vision-llm',
     judgeElements: false,
     judgeVoices: true,
+    qualityChecks: false,
+    qualityThreshold: 0.5,
   }),
-  dialogue: DialogueSettingsSchema.default({ mode: 'off', lipSync: true }),
+  dialogue: DialogueSettingsSchema.default({ mode: 'off', lipSync: true, level: 'any' }),
   storyboard: StoryboardSettingsSchema.default({ enabled: true, scenes: 3 }),
   generation: z
     .object({
@@ -99,8 +114,23 @@ export const ProjectSettingsSchema = z.object({
       keyframes: z.boolean().default(true),
       /** Groups of shots in one request on multi-shot models (docs/design/multi-shot.md). */
       multiShot: z.enum(['auto', 'off']).default('auto'),
+      /** 1: prompts as before; 2: continuity-aware prompts (docs/design/continuity.md#prompt-version). */
+      promptVersion: PromptVersionSchema.default(1),
+      /** The provider's own prompt rewriting (`enhance_prompt`); null leaves the provider's default. */
+      enhancePrompt: z.boolean().nullable().default(null),
+      /** Version 2: let the video model add music to its shots (else "no background music"). */
+      modelMusic: z.boolean().default(false),
     })
-    .default({ includeAudio: false, keyframes: true, multiShot: 'auto' }),
+    .default({
+      includeAudio: false,
+      keyframes: true,
+      multiShot: 'auto',
+      promptVersion: 1,
+      enhancePrompt: null,
+      modelMusic: false,
+    }),
+  /** Feedback on exports (docs/design/feedback.md#when-it-runs). */
+  feedback: z.object({ auto: z.boolean().default(true) }).default({ auto: true }),
   batch: z
     .object({ maxGenerations: z.number().int().min(1).max(100000).default(2000) })
     .default({ maxGenerations: 2000 }),

@@ -433,6 +433,7 @@ describe('rendering in a background tab (docs/design/engine-performance.md#rende
       gatewayTasks: [],
       lease: { sessionId: 's1', claimedAt: 'x', expiresAt: 'y' },
       staged: [],
+      usage: null,
       createdAt: '2026-10-02T00:00:00.000Z',
     } as Job;
     const queue = [job];
@@ -544,6 +545,7 @@ describe('rendering in a background tab (docs/design/engine-performance.md#rende
       gatewayTasks: [],
       lease: { sessionId: 's1', claimedAt: 'x', expiresAt: 'y' },
       staged: [],
+      usage: null,
       createdAt: '2026-10-02T00:00:00.000Z',
     } as Job;
     const queue = [job];

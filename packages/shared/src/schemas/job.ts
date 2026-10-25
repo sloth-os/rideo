@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { ActorSchema, IdSchema, IsoDateSchema, MediaRefSchema } from './common';
 import { ContentCredentialsStampSchema, DisclosureStampSchema } from './provenance';
+import { UsageSchema } from './usage';
 
 export const JOB_KINDS = [
   'screenplay.generate',
@@ -35,6 +36,8 @@ export const JOB_KINDS = [
   'timeline.assemble',
   'export.render',
   'export.finish',
+  'export.feedback',
+  'consistency.recheck',
 ] as const;
 export const JobKindSchema = z.enum(JOB_KINDS);
 export type JobKind = z.infer<typeof JobKindSchema>;
@@ -77,6 +80,8 @@ export const JOB_LANES: Record<JobKind, Lane> = {
   'timeline.assemble': 'control',
   'export.render': 'client',
   'export.finish': 'media',
+  'export.feedback': 'llm',
+  'consistency.recheck': 'llm',
 };
 
 /**
@@ -117,6 +122,8 @@ export const JOB_GATEWAY: Record<JobKind, 'required' | 'optional' | 'none'> = {
   'timeline.assemble': 'none',
   'export.render': 'none',
   'export.finish': 'optional',
+  'export.feedback': 'optional',
+  'consistency.recheck': 'required',
 };
 
 export const EDITOR_JOB_KINDS = ['media.process', 'analysis.signals', 'export.render'] as const;
@@ -168,6 +175,8 @@ export const JobSchema = z.object({
   lease: JobLeaseSchema.nullable().default(null),
   /** Editor jobs: files uploaded so far (kept across leases so a render can resume). */
   staged: z.array(z.string()).default([]),
+  /** Generations and model calls the job made (docs/design/observability.md#usage-ledger). */
+  usage: UsageSchema.nullable().default(null),
   createdAt: IsoDateSchema,
   startedAt: IsoDateSchema.optional(),
   finishedAt: IsoDateSchema.optional(),

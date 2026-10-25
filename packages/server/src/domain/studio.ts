@@ -26,11 +26,13 @@ import { ProxyClient } from '../gateway/proxy-client';
 import { GatewayProxies } from '../gateway/proxy-sync';
 import { batchGenerate, clipGenerate, clipPlan } from '../jobs/handlers/clips';
 import type { HandlerDeps } from '../jobs/handlers/common';
+import { exportFeedback } from '../jobs/handlers/feedback';
 import { exportPrepare } from '../jobs/handlers/finishing';
 import { localizeGenerate } from '../jobs/handlers/localize';
 import { maskGenerate } from '../jobs/handlers/mask';
 import { analysisSuggest, editAuto, exportFinish, timelineAssemble } from '../jobs/handlers/media';
 import { scoreGenerate, sfxGenerate } from '../jobs/handlers/post-audio';
+import { consistencyRecheck } from '../jobs/handlers/recheck';
 import { recipeRun } from '../jobs/handlers/recipe';
 import { searchIndex } from '../jobs/handlers/search-index';
 import { shotGenerate } from '../jobs/handlers/shot';
@@ -58,6 +60,7 @@ import { PushService } from '../push/service';
 import type { SettingsService } from '../settings/service';
 import type { StorageBackend } from '../storage/backend';
 import { Layout } from '../storage/layout';
+import { UsageLedger, UsageMeter } from '../usage/meter';
 import { VERSION } from '../version';
 import { WatermarkService } from '../watermark/service';
 import { BrandService } from './brand';
@@ -67,8 +70,10 @@ import type { Deps, Logger } from './deps';
 import { EditService } from './edit';
 import { EditorService } from './editor';
 import { ElementService } from './elements';
+import { FeedbackService } from './feedback';
 import { HistoryService } from './history';
 import { InboxService } from './inbox';
+import { InsightsService } from './insights';
 import { InterchangeService } from './interchange';
 import { jobNotice, jobRecipient } from './job-notices';
 import { LocalizationService } from './localization';
@@ -112,6 +117,9 @@ export interface Studio {
   inbox: InboxService;
   push: PushService;
   editor: EditorService;
+  /** Feedback on exports and the project's insights (docs/design/feedback.md, docs/design/observability.md). */
+  feedback: FeedbackService;
+  insights: InsightsService;
   history: HistoryService;
   ui: UiService;
   start(): Promise<void>;
@@ -156,11 +164,15 @@ export function createStudio(
     apiKey: config.gateway.apiKey,
     routes: gatewayProxies,
   });
+  // Usage and cost of every call, per job and per project (docs/design/observability.md#usage-ledger)
+  const meter = new UsageMeter({ metrics, prices: () => config.prices });
+  const ledger = new UsageLedger({ storage, layout, log: log.child({ component: 'usage' }) });
   const llm = new LlmTasks(
     createAdapter(proxy, config.llm, config.llmTimeoutMs),
     createAdapter(proxy, config.vision, config.llmTimeoutMs),
     {
       metrics,
+      meter,
       log: log.child({ component: 'llm' }),
       ...(config.voiceJudge ? { audio: createAdapter(proxy, config.voiceJudge) } : {}),
     },
@@ -172,6 +184,7 @@ export function createStudio(
     pollMs: config.gateway.pollMs,
     timeoutsSec: config.gateway.timeoutsSec,
     metrics,
+    meter,
     log: log.child({ component: 'gateway' }),
   });
   const watermark = new WatermarkService({
@@ -203,6 +216,7 @@ export function createStudio(
     lanes: config.lanes,
     editorLeaseMs: config.editor.leaseSec * 1000,
     gatewayConfigured: config.gateway.configured,
+    ledger,
   });
   const staging = new Staging(config.dataDir);
   const projectsRegistry = new ProjectRegistry({
@@ -269,9 +283,11 @@ export function createStudio(
     ...(config.tts ? { tts: createTts(proxy, config.tts, metrics) } : {}),
     ...(config.sfx ? { sfx: new SfxClient(proxy, config.sfx, metrics) } : {}),
     voiceJudge: config.voiceJudge ? new LlmVoiceJudge(llm) : null,
+    usage: { meter, ledger },
   };
   const workflow = new WorkflowService(deps);
   const projectService = new ProjectService(deps);
+  const clipService = new ClipService(deps);
   const services = {
     projects: projectService,
     bundles: new BundleService(deps, projectService),
@@ -280,7 +296,7 @@ export function createStudio(
     elements: new ElementService(deps),
     voices: new VoiceService(deps),
     storyboard: new StoryboardService(deps),
-    clips: new ClipService(deps),
+    clips: clipService,
     edit: new EditService(deps),
     localization: new LocalizationService(deps),
     review: new ReviewService(deps, workflow),
@@ -292,6 +308,8 @@ export function createStudio(
     push,
     brand: new BrandService(deps),
     editor: new EditorService(deps),
+    feedback: new FeedbackService(deps, { clips: clipService, projects: projectService }),
+    insights: new InsightsService(deps),
   } satisfies Record<string, unknown>;
   // Editor jobs: failures and cancellations are recorded on their documents; a closed tab releases its jobs.
   jobs.onEditorJobEnded = (job) => services.editor.ended(job);
@@ -354,6 +372,8 @@ export function createStudio(
   reg('batch.generate', batchGenerate);
   reg('analysis.suggest', analysisSuggest);
   reg('export.finish', exportFinish);
+  reg('export.feedback', exportFeedback);
+  reg('consistency.recheck', consistencyRecheck);
   reg('edit.auto', editAuto);
   reg('timeline.assemble', timelineAssemble);
 
@@ -519,6 +539,7 @@ export function createStudio(
       services.search.close();
       if (sweepTimer) clearInterval(sweepTimer);
       await jobs.shutdown();
+      await ledger.flush().catch((err) => log.warn({ err }, 'usage ledger flush failed'));
       // The work trees catch up with the last commits (docs/design/storage-webdav.md#external-edits)
       await projectsRegistry.flush(WORKTREE_FLUSH_MS);
       hub.close();

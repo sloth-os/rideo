@@ -17,6 +17,8 @@ export const VIEWS = [
   'history',
   'exports',
   'search',
+  /** docs/design/observability.md#insights */
+  'insights',
 ] as const;
 export const ViewSchema = z.enum(VIEWS);
 export type View = z.infer<typeof ViewSchema>;

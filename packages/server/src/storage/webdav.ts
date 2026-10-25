@@ -2,6 +2,7 @@ import type { Readable } from 'node:stream';
 import { createClient, type FileStat, type WebDAVClient } from 'webdav';
 import type { Metrics } from '../metrics';
 import { sleep } from '../util/abort';
+import { countStorageOp } from '../util/request-context';
 import {
   type Entry,
   joinPath,
@@ -127,7 +128,9 @@ export class WebDavBackend implements StorageBackend {
     try {
       return await fn();
     } finally {
-      this.opts.metrics?.storageLatency.observe({ op }, (performance.now() - start) / 1000);
+      const ms = performance.now() - start;
+      this.opts.metrics?.storageLatency.observe({ op }, ms / 1000);
+      countStorageOp(ms);
     }
   }
 

@@ -130,7 +130,13 @@ console.log(
   `rideo e2e slow media: http://127.0.0.1:${PORTS.slowMedia}/ → :${PORTS.main} (ranged media held 20 s)`,
 );
 // The main studio last.
-await start(`main studio (gateway ${gateway.url})`, await env(PORTS.main));
+await start(
+  `main studio (gateway ${gateway.url})`,
+  await env(PORTS.main, {
+    // Cost estimates on the Insights view (docs/design/observability.md#usage-ledger).
+    RIDEO_PRICES: JSON.stringify({ 'mock-video-v1': { videoSecond: 0.1 }, 'mock-image-v1': { image: 0.02 } }),
+  }),
+);
 
 let stopping = false;
 async function stop() {

@@ -1,5 +1,11 @@
 import { isStale, takeState } from '../consistency';
-import { compileShotPrompt, orderedShotCharacters, orderedShotElements, type ShotContext } from '../prompt';
+import {
+  compileShotPrompt,
+  orderedShotCharacters,
+  orderedShotElements,
+  promptVersionOf,
+  type ShotContext,
+} from '../prompt';
 import type { Clip, Shot } from '../schemas/clip';
 import { type ProjectDocs, sortedClips } from '../schemas/documents';
 import type { Scene } from '../schemas/screenplay';
@@ -12,21 +18,48 @@ import { fnv1a32 } from '../util/hash';
 
 export type BoardState = 'missing' | 'failed' | 'stale' | 'outdated' | 'unapproved' | 'approved';
 
-type BoardDocs = Pick<ProjectDocs, 'characters' | 'elements' | 'screenplay' | 'project'>;
+type BoardDocs = Pick<ProjectDocs, 'characters' | 'elements' | 'screenplay' | 'project'> &
+  Partial<Pick<ProjectDocs, 'clips'>>;
 
-export function shotContextOf(shot: Shot, docs: BoardDocs): ShotContext {
-  return {
+/**
+ * What a shot's prompts are compiled from. With prompt version 2 that includes its scene and the end state of the shot
+ * before it (docs/design/continuity.md#prompts-version-2); `clip` saves looking the shot's clip up.
+ */
+export function shotContextOf(shot: Shot, docs: BoardDocs, clip?: Clip): ShotContext {
+  const ctx: ShotContext = {
     shot,
     characters: orderedShotCharacters(shot, docs.characters),
     elements: orderedShotElements(shot, docs.elements),
     screenplay: docs.screenplay,
     settings: docs.project.settings,
   };
+  if (promptVersionOf(docs.project.settings) < 2) return ctx;
+  const owner = clip ?? Object.values(docs.clips ?? {}).find((c) => c.shots.some((s) => s.id === shot.id));
+  const scene = owner?.sceneId ? docs.screenplay?.scenes.find((x) => x.id === owner.sceneId) : undefined;
+  const previous = owner?.shots.find((s) => s.index === shot.index - 1);
+  return {
+    ...ctx,
+    scene: scene
+      ? {
+          heading: scene.heading,
+          location: scene.location,
+          timeOfDay: scene.timeOfDay,
+          continuity: scene.continuity ?? '',
+        }
+      : null,
+    previousEndState: previous?.endState || null,
+  };
 }
 
-/** Hash of what a frame is generated from: the keyframe prompt and the negative prompt. */
+/**
+ * Hash of what a frame is generated from: the keyframe prompt and the negative prompt. What the shot's neighbours lend
+ * it is left out: the scene reference image (whether one was at hand depends on the order of generation) and the
+ * previous shot's end state (moving a frame on the board must not make the frames around it outdated).
+ */
 export function boardPromptHash(ctx: ShotContext): string {
-  return fnv1a32(`${compileShotPrompt(ctx, 'keyframe')}\n${ctx.shot.negativePrompt ?? ''}`).toString(16);
+  return fnv1a32(
+    `${compileShotPrompt({ ...ctx, sceneReference: false, previousEndState: null }, 'keyframe')}\n${ctx.shot.negativePrompt ?? ''}`,
+  ).toString(16);
 }
 
 export function boardState(shot: Shot, docs: BoardDocs): BoardState {

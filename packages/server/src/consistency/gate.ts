@@ -1,5 +1,6 @@
 import {
   aggregateElementVerdicts,
+  aggregateQuality,
   aggregateVerdicts,
   type Character,
   type ConsistencyReport,
@@ -30,6 +31,35 @@ export interface VerifyInput {
   metrics?: Metrics;
   log?: { warn: (o: unknown, m?: string) => void };
   signal?: AbortSignal;
+  /**
+   * Quality checks (docs/design/continuity.md#quality-checks-in-the-gate): physics and continuity judged in the same
+   * call, and the take's temporal check measured beforehand.
+   */
+  quality?: {
+    threshold: number;
+    sceneReference?: Buffer;
+    temporal: { jumps: number[]; maxScore: number } | null;
+  };
+}
+
+function qualityOf(input: VerifyInput, frames: Parameters<typeof aggregateQuality>[0]['frames']) {
+  if (!input.quality) return null;
+  const q = aggregateQuality({
+    frames,
+    temporal: input.quality.temporal,
+    threshold: input.quality.threshold,
+  });
+  if (q.temporal)
+    input.metrics?.qualityChecks.inc({
+      check: 'temporal',
+      result: q.temporal.jumps.length ? 'failed' : 'passed',
+    });
+  if (q.physics !== null)
+    input.metrics?.qualityChecks.inc({
+      check: 'physics',
+      result: q.physics >= input.quality.threshold ? 'passed' : 'failed',
+    });
+  return q;
 }
 
 /** Runs the judge and applies the gate's scoring rules; judge failures fail closed as `unverified` (R9). */
@@ -52,6 +82,7 @@ export async function verifyFrames(input: VerifyInput): Promise<ConsistencyRepor
       elements: [],
       voices: [],
       note: 'no characters in shot',
+      quality: qualityOf(input, []),
     };
   }
   let verdicts: JudgeVerdicts;
@@ -77,6 +108,7 @@ export async function verifyFrames(input: VerifyInput): Promise<ConsistencyRepor
       frames: input.frames,
       shotDescription: input.shot.description,
       signal: input.signal,
+      ...(input.quality ? { qualityChecks: true, sceneReference: input.quality.sceneReference } : {}),
     });
   } catch (err) {
     if ((err as Error)?.name === 'AbortError') throw err;
@@ -90,6 +122,7 @@ export async function verifyFrames(input: VerifyInput): Promise<ConsistencyRepor
       elements: elements.map((e) => ({ elementId: e.id, present: false, score: 0, issues: [] })),
       voices: [],
       note: `judge unavailable: ${(err as Error).message.slice(0, 300)}`,
+      quality: qualityOf(input, []),
     };
   }
   const agg = aggregateVerdicts(
@@ -114,5 +147,6 @@ export async function verifyFrames(input: VerifyInput): Promise<ConsistencyRepor
     characters: agg.characters,
     elements: els.elements,
     voices: [],
+    quality: qualityOf(input, verdicts.quality ?? []),
   };
 }

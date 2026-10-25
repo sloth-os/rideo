@@ -1,6 +1,8 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
+  attemptDone,
+  betterAttempt,
   boardState,
   type Clip,
   type ConsistencyReport,
@@ -11,11 +13,16 @@ import {
   type MediaRef,
   orderedShotCharacters,
   orderedShotElements,
+  type ProjectDocs,
+  promptVersionOf,
   type Shot,
   type ShotContext,
+  shotContextOf,
   type Take,
   type TakeAudio,
+  type TimelineOp,
   takeState,
+  temporalVerdict,
 } from '@rideo/shared';
 import { verifyFrames } from '../../consistency/gate';
 import { verifyVoices } from '../../consistency/voice';
@@ -28,6 +35,7 @@ import {
 import { performanceModel } from '../../domain/performance';
 import { notFound } from '../../errors';
 import { sampleFrames } from '../../media/frames';
+import { sceneChanges } from '../../media/temporal';
 import { throwIfAborted } from '../../util/abort';
 import type { JobContext } from '../queue';
 import { commitAs, docsFor, gatewayOptions, type HandlerDeps } from './common';
@@ -46,6 +54,43 @@ interface Candidate {
 
 function label(clip: Clip, shot: Shot): string {
   return `c${clip.index + 1}-s${shot.index + 1}`;
+}
+
+/** Every item of the cut showing the shot now shows `take` (`replace_source`, its range kept within the take). */
+async function swapInCut(deps: HandlerDeps, ctx: JobContext, clipId: string, shotId: string, take: Take) {
+  const timeline = (await docsFor(deps, ctx)).timeline;
+  if (!timeline || !take.video) return;
+  const ops: TimelineOp[] = timeline.tracks.flatMap((track) =>
+    track.items.flatMap((item) =>
+      item.kind !== 'text' &&
+      item.source.type === 'take' &&
+      item.source.shotId === shotId &&
+      item.source.takeId !== take.id
+        ? [
+            {
+              op: 'replace_source' as const,
+              itemId: item.id,
+              source: { type: 'take' as const, clipId, shotId, takeId: take.id, media: take.video! },
+            },
+          ]
+        : [],
+    ),
+  );
+  if (ops.length) await deps.services.edit.applyOps(ctx.actor, ctx.job.projectId, ops);
+}
+
+/**
+ * The scene reference frame (docs/design/continuity.md#scene-reference-frame): the keyframe of the clip's first shot's
+ * selected, acceptable take (or its approved board frame), for every later shot of the clip.
+ */
+export function sceneReferenceOf(clip: Clip, shot: Shot, docs: ProjectDocs): MediaRef | null {
+  const anchor = [...clip.shots].sort((a, b) => a.index - b.index)[0];
+  if (!anchor || anchor.id === shot.id) return null;
+  const take = anchor.takes.find((t) => t.id === anchor.selectedTakeId);
+  if (take && isAcceptable(takeState(take, anchor, docs.characters, docs.elements)) && take.keyframe)
+    return take.keyframe;
+  if (anchor.board && boardState(anchor, docs) === 'approved') return anchor.board.keyframe;
+  return null;
 }
 
 /**
@@ -125,7 +170,23 @@ export async function shotGenerate(deps: HandlerDeps, ctx: JobContext) {
         dir,
       });
       const { referenceUris, judgeRefs, elementJudgeRefs } = refs;
-      const shotCtx: ShotContext = { shot, characters, elements, screenplay: docs.screenplay, settings };
+      // Version 2 adds the scene and the previous shot's end state (docs/design/continuity.md#prompts-version-2).
+      const shotCtx: ShotContext = { ...shotContextOf(shot, docs, clip), characters, elements };
+      const v2 = promptVersionOf(settings) >= 2;
+      const sceneRefMedia = v2 ? sceneReferenceOf(clip, shot, docs) : null;
+      const sceneRef = sceneRefMedia
+        ? {
+            uri: await deps.media.pngDataUri(projectId, sceneRefMedia, 1024),
+            png: await deps.media.pngBuffer(projectId, sceneRefMedia, 512),
+          }
+        : null;
+      const maxImages = imageLimits.limits?.max_input_images;
+      // One more image for the keyframe, when the image model takes at least three and there is room.
+      const keyframeRefs =
+        sceneRef && (maxImages === undefined || (maxImages >= 3 && referenceUris.length < maxImages))
+          ? { refs: { ...refs, referenceUris: [...referenceUris, sceneRef.uri] }, sceneReference: true }
+          : { refs, sceneReference: false };
+      const qualityChecks = settings.consistency.qualityChecks === true;
 
       // R5: continuity chaining from the previous shot's passing take.
       let firstFrame: { uri: string; source: Take['request']['firstFrameSource'] } | null = null;
@@ -166,9 +227,10 @@ export async function shotGenerate(deps: HandlerDeps, ctx: JobContext) {
         firstFrame = { uri: await deps.media.pngDataUri(projectId, keyframeRef, 1920), source: 'storyboard' };
       }
       if (!firstFrame && settings.generation.keyframes) {
+        const keyframeStarted = Date.now();
         const kf = await generateKeyframe(deps, ctx, {
-          shotCtx,
-          refs,
+          shotCtx: { ...shotCtx, sceneReference: keyframeRefs.sceneReference },
+          refs: keyframeRefs.refs,
           judge,
           judgedElements,
           threshold,
@@ -187,6 +249,8 @@ export async function shotGenerate(deps: HandlerDeps, ctx: JobContext) {
         keyframeReport = kf.report;
         imageModel = kf.imageModel;
         taskIds.push(...kf.taskIds);
+        deps.metrics.shotStepSeconds.observe({ step: 'keyframe' }, (Date.now() - keyframeStarted) / 1000);
+        if (kf.report) deps.metrics.takeAttempts.observe({ stage: 'keyframe' }, kf.report.attempts);
         if (keyframeReport?.status === 'failed') {
           // Never spend a video generation on an unverified identity: save the evidence for review.
           const kfRequest = compileKeyframeRequest(shotCtx, {
@@ -344,20 +408,29 @@ export async function shotGenerate(deps: HandlerDeps, ctx: JobContext) {
       const judgeVoices = dialogue?.mode === 'native' && settings.consistency.judgeVoices;
 
       let best: Candidate | null = null;
+      const videoTaskIds: string[] = [];
       let videoReq = compileVideoRequest(shotCtx, videoOpts(0));
       for (let attempt = 0; attempt < maxAttempts; attempt++) {
         throwIfAborted(ctx.signal);
         ctx.progress(0.35 + (0.45 * attempt) / maxAttempts, 1, `video attempt ${attempt + 1}/${maxAttempts}`);
         videoReq = compileVideoRequest(shotCtx, videoOpts(attempt));
+        const videoStarted = Date.now();
         const task = await deps.gateway.generateVideo(
           videoReq,
           gatewayOptions(ctx, 'video', 'video', attempt),
         );
         taskIds.push(task.id);
+        videoTaskIds.push(task.id);
         // The raw (unwatermarked) generation stays in the temp dir; only the watermarked take is stored.
         const raw = join(dir, `raw-${attempt}.mp4`);
         await deps.media.downloadTo(task.outputs![0]!.uri, raw, ctx.signal);
+        deps.metrics.shotStepSeconds.observe({ step: 'video' }, (Date.now() - videoStarted) / 1000);
+        const verifyStarted = Date.now();
         const probe = await deps.ff.probe(raw);
+        // The temporal check: a single shot must not jump (docs/design/continuity.md#quality-checks-in-the-gate).
+        const temporal = qualityChecks
+          ? temporalVerdict(await sceneChanges(deps.ff, raw, { signal: ctx.signal }))
+          : null;
         ctx.progress(0.8, 1, 'verifying identity');
         const framePaths = await sampleFrames(
           deps.ff,
@@ -382,6 +455,15 @@ export async function shotGenerate(deps: HandlerDeps, ctx: JobContext) {
           metrics: deps.metrics,
           log: ctx.log,
           signal: ctx.signal,
+          ...(qualityChecks
+            ? {
+                quality: {
+                  threshold: settings.consistency.qualityThreshold,
+                  sceneReference: sceneRef?.png,
+                  temporal,
+                },
+              }
+            : {}),
         });
         if (judgeVoices && dialogue) {
           // Rule V4: the speakers must sound like their locked voices.
@@ -405,11 +487,28 @@ export async function shotGenerate(deps: HandlerDeps, ctx: JobContext) {
           model: task.model,
           taskId: task.id,
         };
-        if (!best || report.score > best.report.score || report.status !== 'failed') best = candidate;
-        if (report.status !== 'failed') break;
-        ctx.log.info({ attempt, score: report.score }, 'video failed the consistency gate');
+        deps.metrics.consistencyScore.observe({}, report.score);
+        deps.metrics.shotStepSeconds.observe({ step: 'verify' }, (Date.now() - verifyStarted) / 1000);
+        // Identity first, then the quality checks, then the score (docs/design/continuity.md#quality-checks-in-the-gate).
+        if (betterAttempt(report, best?.report ?? null)) best = candidate;
+        if (attemptDone(report)) break;
+        if (report.status === 'failed')
+          ctx.log.info({ attempt, score: report.score }, 'video failed the consistency gate');
+        else
+          ctx.log.info(
+            {
+              attempt,
+              physics: report.quality?.physics,
+              jumps: report.quality?.temporal?.jumps,
+              issues: report.quality?.issues.slice(0, 3),
+            },
+            'video failed the quality checks',
+          );
       }
       let final = best!;
+      deps.metrics.takeAttempts.observe({ stage: 'video' }, final.report.attempts);
+      // Attempts the gate threw away are waste (docs/design/observability.md#usage-ledger).
+      deps.usage?.meter.discard(videoTaskIds.filter((id) => id !== final.taskId));
       let lipSync: TakeAudio['lipSync'] = dialogue?.conditioned ? 'conditioned' : 'none';
       if (
         dialogue?.mode === 'tts' &&
@@ -521,6 +620,16 @@ export async function shotGenerate(deps: HandlerDeps, ctx: JobContext) {
         endKeyframe,
         variation,
       });
+      // A regeneration a feedback recommendation asked for replaces the shot's old take in the cut
+      // (docs/design/feedback.md#actions).
+      if (
+        (ctx.job.params as { swapInCut?: boolean }).swapInCut &&
+        take.video &&
+        final.report.status !== 'failed'
+      )
+        await swapInCut(deps, ctx, clipId, shotId, take).catch((err) =>
+          ctx.log.warn({ err: (err as Error).message }, 'could not put the new take in the cut'),
+        );
       ctx.progress(1, 1, `take ${final.report.status}`);
       return { takeId: take.id, status: final.report.status, score: final.report.score };
     });

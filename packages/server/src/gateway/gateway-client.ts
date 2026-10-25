@@ -21,6 +21,7 @@ import {
 } from '@sloth-os/mm-gateway-ts';
 import axios, { type AxiosResponse, isAxiosError, isCancel } from 'axios';
 import type { Metrics } from '../metrics';
+import type { UsageMeter } from '../usage/meter';
 import { abortError, sleep } from '../util/abort';
 import { gatewayNotConfigured } from './proxy-client';
 
@@ -130,6 +131,8 @@ export class GatewayClient {
       timeoutsSec: Record<Modality, number>;
       metrics?: Metrics;
       log?: { info: (o: unknown, m?: string) => void; warn: (o: unknown, m?: string) => void };
+      /** Usage and cost of finished tasks (docs/design/observability.md#usage-ledger). */
+      meter?: UsageMeter;
     },
   ) {
     const configuration = new Configuration({
@@ -224,6 +227,7 @@ export class GatewayClient {
       metadata: { ...req.metadata, ...opts.metadata },
     };
     if (opts.signal?.aborted) throw abortError();
+    const started = Date.now();
     let res: AxiosResponse<object>;
     try {
       res = await calls.create(body, opts.idempotencyKey, opts.signal);
@@ -278,6 +282,14 @@ export class GatewayClient {
     }
     if (!current.outputs?.length)
       throw new GatewayTaskError('no_output', `${modality} task ${current.id} returned no outputs`, current);
+    const params = (req as { parameters?: { duration_seconds?: number } }).parameters;
+    this.cfg.meter?.gateway({
+      modality,
+      model: current.model || (req as { model?: string }).model || 'auto',
+      seconds: (Date.now() - started) / 1000,
+      task: current,
+      requestedSeconds: params?.duration_seconds,
+    });
     return current;
   }
 }

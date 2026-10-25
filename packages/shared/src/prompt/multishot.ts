@@ -4,11 +4,23 @@ import {
   BASE_NEGATIVE,
   clampDuration,
   compileShotPrompt,
+  dialogueBlockV2,
   elementLines,
   identityFragment,
+  negativePromptFor,
+  PHYSICS_LINE,
+  promptVersionOf,
   type ShotContext,
+  sceneLine,
+  shotBodyV2,
   shotSeed,
+  soundBlockV2,
+  styleHeader,
 } from './index';
+
+/** Version 2 exclusions of a multi-shot request: its cuts are wanted. */
+const EXCLUSIONS_MULTI =
+  'morphing faces or bodies, extra or missing limbs, floating objects, sliding feet, flicker, on-screen text';
 
 /**
  * Multi-shot generation (docs/design/multi-shot.md): which shots render together, the request, and where the
@@ -63,10 +75,15 @@ export function planShotGroups(
 }
 
 function shotLine(ctx: ShotContext, k: number): string {
+  const label = `Shot ${k + 1} (${Number(ctx.shot.durationSec.toFixed(1))} s):`;
+  if (promptVersionOf(ctx.settings) >= 2) {
+    const dialogue = dialogueBlockV2(ctx);
+    return [label, ...shotBodyV2(ctx, 'video'), ...(dialogue ? [dialogue] : [])].join(' ');
+  }
   // The shot's own prompt without the style header, the cast and the elements (those are said once).
   const full = compileShotPrompt({ ...ctx, characters: [], elements: [] }, 'video');
   const body = full.replace(/^[^.]*\.\s*/, '');
-  return `Shot ${k + 1} (${Number(ctx.shot.durationSec.toFixed(1))} s): ${body}`;
+  return `${label} ${body}`;
 }
 
 /** One request for a group of shots (docs/design/multi-shot.md#request). */
@@ -81,11 +98,22 @@ export function compileMultiShotRequest(
   },
 ): GatewayVideoRequest {
   const first = ctxs[0]!;
-  const header = compileShotPrompt({ ...first, characters: [], elements: [] }, 'video').split('. ')[0]!;
+  const v2 = promptVersionOf(first.settings) >= 2;
+  const header = v2
+    ? [
+        styleHeader(first.screenplay, first.settings, 'motion'),
+        sceneLine(
+          first.scene,
+          (first.elements ?? []).find((e) => e.kind === 'location'),
+        ),
+      ]
+        .filter(Boolean)
+        .join(' ')
+    : `${compileShotPrompt({ ...first, characters: [], elements: [] }, 'video').split('. ')[0]!}.`;
   const characters = [...new Map(ctxs.flatMap((c) => c.characters).map((c) => [c.id, c])).values()];
   const elements = [...new Map(ctxs.flatMap((c) => c.elements ?? []).map((e) => [e.id, e])).values()];
   const lines = [
-    `${header}.`,
+    header,
     `A multi-shot sequence of ${ctxs.length} shots separated by hard cuts.`,
     ...ctxs.map((c, k) => shotLine(c, k)),
   ];
@@ -94,6 +122,11 @@ export function compileMultiShotRequest(
       `Characters (keep identities exactly as described and as in the reference images): ${characters.map((c) => identityFragment(c)).join(' ')}`,
     );
   lines.push(...elementLines(elements));
+  if (v2) {
+    const sound = soundBlockV2(first.settings);
+    if (sound) lines.push(sound);
+    lines.push(PHYSICS_LINE, `Avoid: ${EXCLUSIONS_MULTI}.`);
+  }
   const total = ctxs.reduce((n, c) => n + c.shot.durationSec, 0);
   const refs = opts.limits?.supports_reference_image === false ? [] : opts.referenceUris;
   const input: GatewayVideoRequest['input'] = [{ type: 'text', text: lines.join(' ') }];
@@ -107,7 +140,7 @@ export function compileMultiShotRequest(
       duration_seconds: clampDuration(total, opts.limits),
       dimensions: { width: first.settings.resolution.width, height: first.settings.resolution.height },
       seed: shotSeed(first.shot, first.characters, opts.attempt),
-      negative_prompt: BASE_NEGATIVE,
+      negative_prompt: v2 ? negativePromptFor(first).replace(/,\s*jump cut/, '') : BASE_NEGATIVE,
       include_audio: false,
       camera_motion: 'auto',
     },

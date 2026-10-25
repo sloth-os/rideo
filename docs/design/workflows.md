@@ -41,7 +41,7 @@ type StageDef = {
 | 6 | `pilot` | Plan clip 1 (shots sized to model limits) and generate it. The user edits shot prompts, regenerates shots or picks takes, and approves. The approved pilot fixes the look for the rest of the production. | `pilot_approved`: `clips.pilotApproved`, `elements.allLocked` | `clip.plan` + `clip.generate` for clip 1 |
 | 7 | `production` | A `batch.generate` job writes the remaining scenes from the outline, plans the clips and generates them in order until the planned length reaches the target. The user reviews, regenerates any shot or clip, and approves clips. | `production_approved`: `clips.allApproved`, `duration.targetReached` | `batch.generate` |
 | 8 | `edit` | The timeline is assembled from approved clips (selected takes, scene transitions, music bed, optional dialogue captions). The user edits it in the WebCodecs editor. | `cut_approved`: `timeline.nonEmpty`, `timeline.consistencyVerified` | `timeline.assemble` |
-| 9 | `export` | The browser renders the timeline (ffmpeg.wasm or WebCodecs, in chunks) and uploads it; the server watermarks and publishes it. | – (terminal; done when `exports.anySucceeded`) | – |
+| 9 | `export` | The browser renders the timeline (ffmpeg.wasm or WebCodecs, in chunks) and uploads it; the server watermarks and publishes it. Then the vision model watches the export and writes [feedback](feedback.md): scores, issues, recommendations to apply and the project's retrospective (`settings.feedback.auto`). Applying a recommendation regenerates or re-plans what it names; export again to compare. | – (terminal; done when `exports.anySucceeded`) | – |
 
 "Go on…" after production means editing and exporting. At any point you can reopen an earlier stage, or
 tag and branch the history to try an alternative.
@@ -124,6 +124,9 @@ sequenceDiagram
 | `timeline.assemble` | assemble the timeline from approved clips if the timeline is empty |
 | `analysis.start` | start an analysis (an `analysis.signals` editor job) for the newest source video without one |
 | `edit.auto` | build the timeline from accepted suggestions if the timeline is empty |
+
+Feedback is not an auto action of a stage: it follows every successful export of a story project while
+`settings.feedback.auto` is on, autopilot or not ([feedback](feedback.md#when-it-runs)).
 
 Auto actions are idempotent. They check the snapshot before enqueueing and use deterministic job dedupe
 keys, so a repeated stage entry or a restart does not duplicate work.

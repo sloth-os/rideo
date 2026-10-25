@@ -142,7 +142,8 @@ export class ClipService extends Service {
     actor: Actor,
     projectId: string,
     sceneId: string,
-    opts: { thenGenerate?: boolean } = {},
+    /** `direction`: what a new plan must do (a feedback recommendation, docs/design/feedback.md#actions). */
+    opts: { thenGenerate?: boolean; direction?: string } = {},
   ): Promise<Job> {
     const docs = await this.docs(projectId);
     const sp = docs.screenplay as Screenplay | null;
@@ -150,7 +151,11 @@ export class ClipService extends Service {
     return this.deps.jobs.enqueue({
       projectId,
       kind: 'clip.plan',
-      params: { sceneId, thenGenerate: !!opts.thenGenerate },
+      params: {
+        sceneId,
+        thenGenerate: !!opts.thenGenerate,
+        ...(opts.direction ? { direction: opts.direction.slice(0, 2000) } : {}),
+      },
       actor,
       branch: await this.branchOf(projectId),
       dedupeKey: `plan:${sceneId}`,
@@ -322,7 +327,29 @@ export class ClipService extends Service {
     return jobs;
   }
 
-  async regenerateShot(actor: Actor, projectId: string, clipId: string, shotId: string): Promise<Job> {
+  /** Unverified takes judged again (docs/design/character-consistency.md#re-checking-unverified-takes). */
+  async recheck(actor: Actor, projectId: string, clipIds?: string[]): Promise<Job> {
+    const docs = await this.docs(projectId);
+    for (const id of clipIds ?? []) if (!docs.clips[id]) throw notFound(`clip ${id}`);
+    return this.deps.jobs.enqueue({
+      projectId,
+      kind: 'consistency.recheck',
+      params: clipIds?.length ? { clipIds } : {},
+      actor,
+      branch: await this.branchOf(projectId),
+      dedupeKey: 'consistency.recheck',
+      priority: 5,
+    });
+  }
+
+  async regenerateShot(
+    actor: Actor,
+    projectId: string,
+    clipId: string,
+    shotId: string,
+    /** `swapInCut`: the new take replaces the shot's old take in the cut (feedback, docs/design/feedback.md#actions). */
+    opts: { swapInCut?: boolean } = {},
+  ): Promise<Job> {
     const docs = await this.docs(projectId);
     const clip = docs.clips[clipId];
     if (!clip) throw notFound(`clip ${clipId}`);
@@ -335,7 +362,7 @@ export class ClipService extends Service {
     return this.deps.jobs.enqueue({
       projectId,
       kind: 'shot.generate',
-      params: { clipId, shotId },
+      params: { clipId, shotId, ...(opts.swapInCut ? { swapInCut: true } : {}) },
       actor,
       branch: await this.branchOf(projectId),
       dedupeKey: `shot:${shotId}`,

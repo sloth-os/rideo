@@ -58,3 +58,25 @@ export function ConsistencyBadge({
       );
   }
 }
+
+/** The temporal and physics checks of a take (docs/design/continuity.md#quality-checks-in-the-gate). */
+export function QualityBadge({ take }: { take: Take }) {
+  const q = take.consistency.quality;
+  if (!q) return null;
+  const parts = [
+    q.temporal?.jumps.length
+      ? `jumps at ${q.temporal.jumps.map((t) => `${t.toFixed(1)} s`).join(', ')}`
+      : null,
+    q.physics !== null ? `physics ${q.physics.toFixed(2)}` : null,
+    q.continuity !== null ? `continuity ${q.continuity.toFixed(2)}` : null,
+  ].filter(Boolean);
+  return (
+    <Badge
+      tone={q.passed ? 'neutral' : 'warning'}
+      title={[...parts, ...q.issues].join('; ')}
+      testid="quality-badge"
+    >
+      {q.passed ? 'quality ok' : q.temporal?.jumps.length ? 'jumps' : 'physics'}
+    </Badge>
+  );
+}

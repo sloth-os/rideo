@@ -146,6 +146,12 @@ or keep going and `job_wait` until a tab picks the job up.
 | `suggestions_review` | `projectId`, `analysisId`, `decisions[{id, status}]` |
 | `edit_auto` | `projectId`, `analysisId` |
 | `export_render` | `projectId`, `quality?` (`draft`, `standard`, `high`), `engine?` (`auto`, `ffmpeg`, `webcodecs`), `source?` (`timeline`, `animatic`), `loudness?` (`streaming`, `broadcast`, `off`), `stems?`, `language?`, `dubbed?`, `captions?` (`burn`, `sidecar`), `preset?` (`web`, `youtube`, `broadcast`, `vertical`, `square`, `master_prores`, `master_frames`), `format?`, `resolution?`, `fps?`, `aspect?`, `maxDurationSec?`, `thumbnails?` → `{export, job}` (editor job; `export.prepare` first for a reframe; [finishing](finishing.md)) |
+| `consistency_recheck` | `projectId`, `clipIds?` → job: unverified takes judged again from their evidence frames once the judge is back ([re-checking](character-consistency.md#re-checking-unverified-takes)) |
+| `export_feedback` | `projectId`, `exportId` → `{feedback, job}`: the vision model watches the export and writes scores, issues, recommendations and the retrospective ([feedback](feedback.md)) |
+| `feedback_get` | `projectId`, `exportId?` → the export's feedback (the newest when no export is given) |
+| `feedback_apply` | `projectId`, `feedbackId`, `recommendationId` → `{feedback, job}` (regenerates, re-plans or changes settings as the action says) |
+| `feedback_dismiss` | `projectId`, `feedbackId`, `recommendationId` → `feedback` |
+| `project_insights` | `projectId` → usage and estimated cost, job times and failures, take quality, feedback scores and the latest retrospective ([observability](observability.md#insights)) |
 | `export_list` | `projectId` |
 | `watermark_detect` | `uri` or `projectId` + `mediaPath` → watermark, registry record and `contentCredentials` (C2PA) |
 

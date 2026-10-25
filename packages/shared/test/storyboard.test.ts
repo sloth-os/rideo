@@ -42,6 +42,7 @@ const scene = (index: number): Scene => ({
   locationId: null,
   elementIds: [],
   estDurationSec: 10,
+  continuity: '',
 });
 
 function setup(settings: Record<string, unknown> = {}) {

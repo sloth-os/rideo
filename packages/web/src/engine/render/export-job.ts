@@ -16,6 +16,7 @@ import { detectCaps } from '../../features/editor/engine/capabilities';
 import { gpuRenderer } from '../../features/editor/engine/gpu-choice';
 import { MediaPool } from '../../features/editor/engine/media-pool';
 import { api } from '../../lib/api';
+import { recordTiming } from '../../lib/telemetry';
 import { webCodecsCanDecode } from '../codecs';
 import type { EditorJobContext } from '../context';
 import { ensureVideoFont } from '../fonts';
@@ -72,6 +73,7 @@ export async function exportRenderJob(ctx: EditorJobContext): Promise<ExportRend
     if (engine === 'ffmpeg') await loadInputs();
     else await ensureVideoFont();
     for (const chunk of chunks) {
+      const chunkStarted = performance.now();
       const name = partName(chunk.index, engine, ext);
       parts.push(name);
       if (ctx.job.staged.includes(name)) {
@@ -106,6 +108,7 @@ export async function exportRenderJob(ctx: EditorJobContext): Promise<ExportRend
       await ctx.upload(name, blob);
       framesDone += chunk.frames;
       report(0, label);
+      recordTiming('export_chunk', (performance.now() - chunkStarted) / 1000);
     }
     const audioFiles = [SOUNDTRACK_FILE, ...(params.stems ? AUDIO_ROLES.map(stemFile) : [])];
     if (!audioFiles.every((f) => ctx.job.staged.includes(f))) {

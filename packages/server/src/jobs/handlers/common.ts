@@ -4,6 +4,7 @@ import type { ClipService } from '../../domain/clips';
 import type { Deps } from '../../domain/deps';
 import type { EditService } from '../../domain/edit';
 import type { ElementService } from '../../domain/elements';
+import type { FeedbackService } from '../../domain/feedback';
 import type { ProjectService } from '../../domain/projects';
 import type { RecipeService } from '../../domain/recipes';
 import type { SearchService } from '../../domain/search';
@@ -28,6 +29,7 @@ export interface HandlerDeps extends Deps {
     edit: EditService;
     recipes: RecipeService;
     search: SearchService;
+    feedback: FeedbackService;
   };
 }
 

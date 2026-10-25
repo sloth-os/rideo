@@ -83,6 +83,7 @@ describe('element library', () => {
           characters: [],
           durationSec: 5,
           continuity: 'cut',
+          endState: '',
           dialogue: [],
           props: ['Brass key', 'unknown thing'],
         },
@@ -93,6 +94,7 @@ describe('element library', () => {
           characters: [],
           durationSec: 5,
           continuity: 'cut',
+          endState: '',
           dialogue: [],
           props: [],
         },
@@ -210,6 +212,7 @@ describe('element staleness (E6) and workflow requirements', () => {
           locationId: used.id,
           elementIds: [],
           estDurationSec: 10,
+          continuity: '',
         },
       ],
     });

@@ -8,6 +8,7 @@ import {
   orderedShotElements,
   type ShotBoard,
   type ShotContext,
+  shotContextOf,
   storyboardScenes,
   voicesNotReady,
 } from '@rideo/shared';
@@ -38,7 +39,7 @@ export async function shotBoard(deps: HandlerDeps, ctx: JobContext) {
   const judge = settings.consistency.judge === 'off' ? deps.offJudge : deps.judge;
   const { threshold, maxAttempts } = settings.consistency;
   const name = `board-c${clip.index + 1}-s${shot.index + 1}`;
-  const shotCtx: ShotContext = { shot, characters, elements, screenplay: docs.screenplay, settings };
+  const shotCtx: ShotContext = { ...shotContextOf(shot, docs, clip), characters, elements };
   return deps.media.withTmpDir(async (dir) => {
     ctx.progress(0.05, 1, 'preparing references');
     const imageLimits = await deps.gateway.limitsFor('image', settings.models.image);

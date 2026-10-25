@@ -16,6 +16,8 @@ export const OutlineBeatSchema = z.object({
   summary: z.string().max(4000),
   estDurationSec: z.number().positive().max(3600),
   sceneId: IdSchema.nullable().default(null),
+  /** Its place in the story: setup, inciting, complication, midpoint, crisis, climax, resolution (version 2). */
+  purpose: z.string().max(60).default(''),
 });
 export type OutlineBeat = z.infer<typeof OutlineBeatSchema>;
 
@@ -43,6 +45,11 @@ export const SceneSchema = z.object({
   /** Props and styles present in the scene. */
   elementIds: z.array(IdSchema).default([]),
   estDurationSec: z.number().positive().max(3600),
+  /**
+   * The state at the scene's start: time of day, weather, light, what everyone wears and carries, where they are
+   * (docs/design/continuity.md#storytelling).
+   */
+  continuity: z.string().max(1000).default(''),
 });
 export type Scene = z.infer<typeof SceneSchema>;
 

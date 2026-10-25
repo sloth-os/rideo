@@ -10,6 +10,7 @@ import { api, mediaUrl, type WatermarkDetection } from '../../lib/api';
 import { useProject } from '../../store/project';
 import { reportError } from '../../store/ui';
 import { openThreads, useReviewDialog } from '../review/ReviewHost';
+import { FeedbackSummary } from './FeedbackPanel';
 import { InterchangeCard } from './InterchangeCard';
 
 function ExportCard({ e, projectId }: { e: Export; projectId: string }) {
@@ -170,6 +171,7 @@ function ExportCard({ e, projectId }: { e: Export; projectId: string }) {
             ) : null}
           </div>
         ) : null}
+        <FeedbackSummary e={e} projectId={projectId} />
         {e.thumbnails.length ? (
           <div className="grid grid-cols-3 gap-1.5" data-testid="export-thumbnails">
             {e.thumbnails.map((t, k) => (

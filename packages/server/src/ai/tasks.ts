@@ -5,6 +5,13 @@ import {
   type ClipPlanInput,
   type ClipPlanOutput,
   ClipPlanOutputSchema,
+  FEEDBACK_STRIP_LABEL,
+  type FeedbackFilmInput,
+  type FeedbackFilmOutput,
+  FeedbackFilmOutputSchema,
+  type FeedbackSceneInput,
+  type FeedbackSceneOutput,
+  FeedbackSceneOutputSchema,
   FOCUS_FRAME_LABEL,
   type FocusInput,
   type FocusOutput,
@@ -19,6 +26,7 @@ import {
   JUDGE_ELEMENT_REFERENCE_LABEL,
   JUDGE_FRAME_LABEL,
   JUDGE_REFERENCE_LABEL,
+  JUDGE_SCENE_REFERENCE_LABEL,
   type JudgeInput,
   type JudgeOutput,
   JudgeOutputSchema,
@@ -53,6 +61,7 @@ import {
 import type { z } from 'zod';
 import { AppError } from '../errors';
 import type { Metrics } from '../metrics';
+import type { UsageMeter } from '../usage/meter';
 import { sleep } from '../util/abort';
 import { type LlmAdapter, LlmError, type LlmPart, type LlmRequest, type LlmResponse } from './llm';
 
@@ -93,6 +102,7 @@ Rules:
 - "props": names of the scene's props visible in the shot (only from scene.props).
 - Use "continuity":"continuous" only when the shot continues the previous shot's final frame without a cut; the first shot is always "cut".
 - camera.framing: extreme_wide|wide|medium|medium_close|close_up|extreme_close_up|over_shoulder|pov|insert; camera.movement: static|pan|tilt|dolly_in|dolly_out|tracking|handheld|crane|zoom|orbit.
+- When "direction" is given, the plan must follow it.
 Return only JSON: {"shots":[{"description":"...","action":"...","camera":{"framing":"wide","movement":"static"},"characters":["Name"],"props":["prop name"],"durationSec":6,"continuity":"cut","dialogue":[{"character":"Name","line":"..."}]}]}`,
 
   'character.describe': `rideo-task: character.describe
@@ -108,7 +118,10 @@ For every candidate frame and every character, compare the frame against that ch
 - issues: short concrete differences (e.g. "hair is blonde instead of black").
 Be critical: different faces, age changes, or hair changes must score low.
 When the input lists "elements" (locations and props), also judge each one per frame against its reference images: present (is it visible?), score (0–1: the same place or object, same design, materials and colours), issues.
-Return only JSON: {"frames":[{"index":0,"characters":[{"characterId":"...","present":true,"identityScore":0.9,"outfitScore":0.9,"issues":[]}],"elements":[{"elementId":"...","present":true,"score":0.9,"issues":[]}]}]}`,
+When "qualityChecks" is true, also score every candidate frame for:
+- physics (0–1): is it physically plausible? Anatomy (no extra, missing or merged limbs; hands and paws well formed), contact with the ground (feet, skis and boards touch the surface; nothing floats), gravity and balance, objects keeping their shape and number. 1 = fully plausible, below 0.5 = a clear physical error; list the errors as issues.
+- continuity (0–1, only when "sceneReference" is true): the same place, light direction, weather and colour palette as the scene reference frame (ignore its composition and who is in it); list the differences as issues.
+Return only JSON: {"frames":[{"index":0,"characters":[{"characterId":"...","present":true,"identityScore":0.9,"outfitScore":0.9,"issues":[]}],"elements":[{"elementId":"...","present":true,"score":0.9,"issues":[]}],"physics":{"score":0.9,"issues":[]},"continuity":{"score":0.9,"issues":[]}}]}`,
 
   'voice.judge': `rideo-task: voice.judge
 You are a dialogue supervisor checking that every character in an AI-generated shot speaks with their approved voice.
@@ -165,12 +178,83 @@ You are a film translator writing dialogue for subtitles and dubbing. Translate 
 - Never add notes, quotes or speaker names to the text; one translation per line, same "key".
 Return only JSON: {"lines":[{"key":"...","text":"..."}]}`,
 
+  'feedback.scene': `rideo-task: feedback.scene
+You are a demanding film critic and script supervisor reviewing one scene of an AI-generated film, to help its makers improve it. You get the film's details, the scene as written, its neighbours, the cast and every shot of the scene as planned, each followed by a strip of three frames (at 15%, 50% and 85% of the shot); consecutive strips show each cut from both sides. You cannot hear the sound.
+Score the scene 0–10 on each dimension (10 = a professional feature film, 5 = clearly visible problems, below 3 = broken):
+- storytelling: does the scene show its goal, obstacle and turn; does it follow from the previous scene; does the dialogue move it on?
+- continuity: across cuts, do time of day, light direction, weather, wardrobe, props, positions and screen direction match?
+- character: are the characters the same faces, bodies and outfits as the cast describes, in every shot?
+- temporal: inside shots, is the motion smooth with no morphing, flicker, popping or stray cuts (compare a strip's three frames)?
+- physics: weight, gravity, momentum, contact with the ground, anatomy, objects keeping their shape and number?
+- realism: believable light, materials, scale and depth, a camera that behaves like a real camera, no AI artefacts?
+- cinematography: framing, composition, coverage, lens choice, camera movement?
+- editing: shot lengths, rhythm, cut points, no repetition?
+Then list concrete issues, as many as matter, most severe first: "shot" (the shot's index), "dimension", "severity" (critical: breaks the film; major: clearly visible; minor: polish), "title" (short), "detail" (what is wrong and where in the frame), "at" (0–1: where in the shot).
+Then recommendations, most important first, to fix the issues or make the scene better. When a shot should be generated again, give "action": {"kind":"regenerate_shot","description":"the revised first-frame description","action":"the revised motion","negativePrompt":"what to avoid","framing":"...","movement":"..."} for that "shot" (only the fields that change); when the scene's shots should be planned again, {"kind":"replan_scene","direction":"what the new plan must do"}; otherwise {"kind":"note"}. "priority": 1 = do first, 3 = nice to have.
+Be specific and honest; praise only what deserves it ("strengths").
+Return only JSON: {"scores":{"storytelling":7,"continuity":6,"character":8,"temporal":7,"physics":6,"realism":7,"cinematography":7,"editing":6},"summary":"...","strengths":["..."],"issues":[{"shot":0,"dimension":"physics","severity":"major","title":"...","detail":"...","at":0.5}],"recommendations":[{"shot":0,"dimension":"physics","priority":1,"title":"...","detail":"...","action":{"kind":"regenerate_shot","action":"..."}}]}`,
+
+  'feedback.film': `rideo-task: feedback.film
+You are the story editor and producer writing the final review of an AI-generated film, from the reviews of its scenes and the numbers of the run. Judge the whole: the arc (setup, turns, climax, resolution), the pace across scenes, recurring problems.
+Score the film 0–10 on storytelling, continuity, character, temporal, physics, realism, cinematography and editing (storytelling and editing judge the whole film; the others weigh the scene reviews).
+Write a summary (what the film is, what works, what holds it back), strengths, and recommendations across scenes, most important first: "scenes" lists the scene numbers concerned; "action" {"kind":"replan_scene","scene":3,"direction":"..."} plans a scene again; {"kind":"settings","settings":{"qualityChecks":true}} changes a project setting (only qualityChecks, threshold 0.5–0.95, maxAttempts 1–6, judgeElements, storyboard, promptVersion 2); otherwise {"kind":"note"}.
+"lessons": what the makers should do differently in the production of their next film ("area": quality, cost, performance, reliability or ux), from the numbers and the recurring issues.
+Return only JSON: {"scores":{"storytelling":7,"continuity":6,"character":8,"temporal":7,"physics":6,"realism":7,"cinematography":7,"editing":6},"summary":"...","strengths":["..."],"recommendations":[{"dimension":"storytelling","priority":1,"title":"...","detail":"...","scenes":[3],"action":{"kind":"note"}}],"lessons":[{"area":"cost","title":"...","detail":"..."}]}`,
+
   'frame.caption': `rideo-task: frame.caption
 You describe one frame of a film project so people can find it later by searching in words. Write one sentence of at most 300 characters: who is in it, where it is, what is happening, the shot size (extreme close-up, close-up, medium, wide or extreme wide) and the light (daylight, night, dusk, dawn, interior...), with notable colours and objects.
 - "known" lists who and what this frame's source shows, with how they look: use their names when you see them.
 - Name others from "cast" only when you are sure; never guess at what you cannot see.
 - "kind" says what the frame is from: a generated take, footage, a still, or a reference image of a character or element.
 Return only JSON: {"caption":"..."}`,
+};
+
+/**
+ * Prompt version 2 of the writing tasks (docs/design/continuity.md): story structure, continuity, dialogue levels and
+ * film grammar. The first line is the same task marker.
+ */
+export const SYSTEM_PROMPTS_V2: Partial<Record<LlmTaskId, string>> = {
+  'screenplay.generate': `rideo-task: screenplay.generate
+You are an award-winning screenwriter planning a film that will be generated shot by shot by AI video models.
+Rules:
+- Write in the requested language. When "dialogueLevel" is given (a CEFR level), every line of dialogue keeps to "dialogueGuidance". Every line has at most "maxWordsPerLine" words, so it can be spoken in one shot.
+- Plan the WHOLE film as a story with a clear arc: setup, inciting incident, rising complications, midpoint, crisis, climax and resolution. Give every outline beat a "purpose" (one of: setup, inciting, complication, midpoint, crisis, climax, resolution). The protagonists want something concrete, something stands in their way, and they change by the end. What a scene sets up is paid off later; scenes follow from each other (therefore, but), not just after each other (and then).
+- "outline" must cover the WHOLE film: the sum of outline[].estDurationSec must be within 5% of targetDurationSec. Use beats of 60–180 s for long films and 10–30 s for short ones.
+- Write full "scenes" only for the first outline beats, enough to cover at least pilotDurationSec. Each scene has beatIndex = index of the outline beat it realizes.
+- Every scene has a goal, an obstacle and a turn, told in actions a camera can see; keep dialogue short and natural.
+- Each scene's "continuity": the state at the scene's start: time of day, weather, where the light comes from, what each character wears and carries, and where they are. Keep it consistent from scene to scene unless the story changes it.
+- "characters": 1–6 principal characters with precise, visual, stable identities (age, gender, ethnicity, build, height, face, hair, eyes, skin, distinguishing marks), at least one wardrobe item and a "voice" (a short, concrete description of how they sound). Never depict real people.
+- Scenes: vivid visual action, characters listed by name.
+- "locations": every distinct place of the WHOLE film (all outline beats, not only the written scenes), each with a precise visual description (architecture, materials, light); each scene's "location" is one of these names. "props": the recurring objects of the whole film that must look the same every time (name + precise visual description); each scene lists the props it shows in "props".
+- "style": concrete visual language (film stock or render look, lens, palette, lighting, camera movement), with believable light and physically plausible motion within that look.
+- Use the attachment descriptions as inspiration for the look and the cast.
+Return only JSON: {"title":"...","logline":"...","synopsis":"...","genre":"...","tone":"...","style":{"visual":"...","palette":"...","camera":"...","lighting":"..."},"characters":[{"name":"...","role":"protagonist|antagonist|supporting|minor","summary":"...","identity":${IDENTITY_TEMPLATE},"wardrobe":[{"name":"...","description":"..."}],"personality":"...","voice":"..."}],"locations":[{"name":"...","description":"..."}],"props":[{"name":"...","description":"..."}],"outline":[{"title":"...","summary":"...","purpose":"setup","estDurationSec":90}],"scenes":[{"beatIndex":0,"heading":"EXT. PLACE - DAY","location":"location name","timeOfDay":"...","continuity":"...","summary":"...","action":"...","dialogue":[{"character":"Name","line":"...","parenthetical":"..."}],"characters":["Name"],"props":["prop name"],"estDurationSec":90}],"ended":true}`,
+
+  'screenplay.extend': `rideo-task: screenplay.extend
+You are the screenwriter continuing an AI-generated film. Write one full scene for each requested outline beat, in order, consistent with the story so far, the user's "brief", the cast (use only these names) and the tone.
+Rules:
+- Continue from "lastScene": its ending and its continuity carry into the next scene unless the beat changes them (time passes, the weather turns, someone changes clothes).
+- Every scene has a goal, an obstacle and a turn, told in actions a camera can see. Set up what "upcomingBeats" will need; pay off what earlier scenes set up. Honour each beat's "purpose".
+- When "dialogueLevel" is given, every line keeps to "dialogueGuidance". Every line has at most "maxWordsPerLine" words. Keep dialogue short and natural.
+- Each scene's "continuity": the state at its start: time of day, weather, where the light comes from, what each character wears and carries, where they are.
+- Each scene's beatIndex must equal the beat's index and estDurationSec should match the beat estimate.
+- Reuse the names in "locations" and "props" for places and objects the story already has; list only new places and objects (name + precise visual description) in the answer's "locations" and "props".
+Return only JSON: {"scenes":[{"beatIndex":0,"heading":"EXT. PLACE - DAY","location":"location name","timeOfDay":"...","continuity":"...","summary":"...","action":"...","dialogue":[{"character":"Name","line":"..."}],"characters":["Name"],"props":["prop name"],"estDurationSec":90}],"locations":[{"name":"...","description":"..."}],"props":[{"name":"...","description":"..."}]}`,
+
+  'clip.plan': `rideo-task: clip.plan
+You are a film director breaking one scene into shots for an AI video model. Each shot is generated on its own from its text, so every shot must say what it needs.
+Rules:
+- Every shot durationSec must be within [limits.minDurationSec, limits.maxDurationSec]; the durations should sum to targetDurationSec.
+- A shot is one continuous camera setup. "description": what the first frame shows (who, where, poses, framing). "action": how things move during the shot, as cause and effect with direction and contact (e.g. "Rosie carves left across the slope, snow spraying from the uphill edge of her skis"); describe a gesture, never count repetitions. "endState": what the last frame shows (positions, poses, what is in hand).
+- Film grammar: open the scene (or a new place) with an establishing wide shot; play a conversation as shot and reverse shot with matching eyelines; add reaction shots after important lines and inserts for props; keep the 180-degree rule and screen direction (a character who leaves frame right enters the next shot from the left); no more than two consecutive cuts with the same framing; at most one camera move per shot, motivated by the action.
+- "lensMm": a real focal length for the framing: 18–28 for wide shots, 35–50 for medium, 85–135 for close-ups.
+- Keep the scene's time of day, weather and light ("scene.timeOfDay", "scene.continuity") in every shot. When the scene continues "previousShot" (the end of the previous scene), start from it.
+- Dialogue: put each line in the shot where it is spoken, keep the words of the scene's lines, and give one shot at most "maxWordsPerShot" words in total; spread a longer exchange over several shots (shot and reverse shot). When "dialogueLevel" is given, any line you write keeps to "dialogueGuidance".
+- "characters": names of the characters visible in the shot (only from the cast list). "props": names of the scene's props visible in the shot (only from scene.props).
+- Use "continuity":"continuous" only when the shot continues the previous shot's final frame without a cut; the first shot is always "cut".
+- camera.framing: extreme_wide|wide|medium|medium_close|close_up|extreme_close_up|over_shoulder|pov|insert; camera.movement: static|pan|tilt|dolly_in|dolly_out|tracking|handheld|crane|zoom|orbit.
+- When "direction" is given (what a new plan must do), follow it.
+Return only JSON: {"shots":[{"description":"...","action":"...","endState":"...","camera":{"framing":"wide","movement":"static"},"lensMm":24,"characters":["Name"],"props":["prop name"],"durationSec":5,"continuity":"cut","dialogue":[{"character":"Name","line":"..."}]}]}`,
 };
 
 export interface LabelledImage {
@@ -285,11 +369,18 @@ export class LlmTasks {
       /** An audio-capable model for the speaker check (rule V4); absent when none is configured. */
       audio?: LlmAdapter;
       retry?: LlmRetryPolicy;
+      /** Tokens, time and cost of every call (docs/design/observability.md#usage-ledger). */
+      meter?: UsageMeter;
     } = {},
   ) {}
 
   /** One adapter call, made again while the provider turns it away for load. */
-  private async complete(task: LlmTaskId, adapter: LlmAdapter, req: LlmRequest): Promise<LlmResponse> {
+  private async complete(
+    task: LlmTaskId,
+    adapter: LlmAdapter,
+    req: LlmRequest,
+    counts: { retries: number } = { retries: 0 },
+  ): Promise<LlmResponse> {
     const policy = this.deps.retry ?? DEFAULT_LLM_RETRY;
     for (let attempt = 0; ; attempt++) {
       try {
@@ -297,6 +388,7 @@ export class LlmTasks {
       } catch (err) {
         const status = turnedAway(err);
         if (!status || attempt >= policy.retries || req.signal?.aborted) throw err;
+        counts.retries++;
         const backoff = policy.baseMs * 2 ** attempt * (0.5 + Math.random() / 2);
         const asked = err instanceof LlmError ? (err.retryAfterMs ?? 0) : 0;
         const waitMs = Math.round(Math.min(policy.maxMs, Math.max(backoff, asked)));
@@ -324,8 +416,11 @@ export class LlmTasks {
       temperature?: number;
       signal?: AbortSignal;
       maxTokens?: number;
+      /** Prompt version 2 of a writing task (docs/design/continuity.md). */
+      version?: 1 | 2;
     } = {},
   ): Promise<T> {
+    const system = (opts.version === 2 ? SYSTEM_PROMPTS_V2[task] : undefined) ?? SYSTEM_PROMPTS[task];
     let adapter = opts.images?.length ? this.vision : this.text;
     if (opts.audio?.length) {
       if (!this.deps.audio)
@@ -343,38 +438,59 @@ export class LlmTasks {
     }
     const started = performance.now();
     const temperature = opts.temperature ?? 0.7;
-    let res = await this.complete(task, adapter, {
-      system: SYSTEM_PROMPTS[task],
-      parts,
-      json: true,
-      temperature,
-      signal: opts.signal,
-      maxTokens: opts.maxTokens,
-    });
+    const counts = { retries: 0 };
+    const tokens = { in: 0, out: 0 };
+    const meter = () =>
+      this.deps.meter?.llm({
+        task,
+        model: adapter.model,
+        modality: opts.audio?.length ? 'speech' : opts.images?.length ? 'vision' : 'text',
+        seconds: (performance.now() - started) / 1000,
+        tokensIn: tokens.in,
+        tokensOut: tokens.out,
+        retries: counts.retries,
+      });
+    let res = await this.complete(
+      task,
+      adapter,
+      { system, parts, json: true, temperature, signal: opts.signal, maxTokens: opts.maxTokens },
+      counts,
+    );
+    tokens.in += res.usage?.input ?? 0;
+    tokens.out += res.usage?.output ?? 0;
     let parsed = tryParse(schema, res.text);
     if (!parsed.ok) {
       this.deps.log?.info({ task, error: parsed.error }, 'LLM output invalid, repairing');
-      res = await this.complete(task, adapter, {
-        system: SYSTEM_PROMPTS[task],
-        parts: [
-          ...parts,
-          {
-            type: 'text',
-            text: `Your previous answer did not match the required JSON shape (${parsed.error}). Previous answer:\n${res.text.slice(0, 12000)}\nReturn the corrected JSON only.`,
-          },
-        ],
-        json: true,
-        temperature: 0,
-        signal: opts.signal,
-        maxTokens: opts.maxTokens,
-      });
+      res = await this.complete(
+        task,
+        adapter,
+        {
+          system,
+          parts: [
+            ...parts,
+            {
+              type: 'text',
+              text: `Your previous answer did not match the required JSON shape (${parsed.error}). Previous answer:\n${res.text.slice(0, 12000)}\nReturn the corrected JSON only.`,
+            },
+          ],
+          json: true,
+          temperature: 0,
+          signal: opts.signal,
+          maxTokens: opts.maxTokens,
+        },
+        counts,
+      );
+      tokens.in += res.usage?.input ?? 0;
+      tokens.out += res.usage?.output ?? 0;
       parsed = tryParse(schema, res.text);
       if (!parsed.ok) {
         this.deps.metrics?.llmCalls.inc({ task, status: 'invalid' });
+        meter();
         throw new AppError('llm_invalid_output', `${task}: ${parsed.error}`, [], true);
       }
     }
     this.deps.metrics?.llmCalls.inc({ task, status: 'ok' });
+    meter();
     this.deps.log?.info(
       {
         task,
@@ -399,24 +515,36 @@ export class LlmTasks {
   generateScreenplay(
     input: ScreenplayGenerateInput,
     signal?: AbortSignal,
+    version: 1 | 2 = 1,
   ): Promise<ScreenplayGenerateOutput> {
     return this.run('screenplay.generate', ScreenplayGenerateOutputSchema, input, {
       temperature: 0.8,
       signal,
       maxTokens: 16000,
+      version,
     });
   }
 
-  extendScreenplay(input: ScreenplayExtendInput, signal?: AbortSignal): Promise<ScreenplayExtendOutput> {
+  extendScreenplay(
+    input: ScreenplayExtendInput,
+    signal?: AbortSignal,
+    version: 1 | 2 = 1,
+  ): Promise<ScreenplayExtendOutput> {
     return this.run('screenplay.extend', ScreenplayExtendOutputSchema, input, {
       temperature: 0.8,
       signal,
       maxTokens: 16000,
+      version,
     });
   }
 
-  planClip(input: ClipPlanInput, signal?: AbortSignal): Promise<ClipPlanOutput> {
-    return this.run('clip.plan', ClipPlanOutputSchema, input, { temperature: 0.5, signal });
+  planClip(input: ClipPlanInput, signal?: AbortSignal, version: 1 | 2 = 1): Promise<ClipPlanOutput> {
+    return this.run('clip.plan', ClipPlanOutputSchema, input, {
+      temperature: 0.5,
+      signal,
+      version,
+      ...(version === 2 ? { maxTokens: 8000 } : {}),
+    });
   }
 
   describeCharacter(
@@ -436,6 +564,7 @@ export class LlmTasks {
     references: Map<string, Buffer[]>,
     frames: Buffer[],
     signal?: AbortSignal,
+    sceneReference?: Buffer,
   ): Promise<JudgeOutput> {
     const images: LabelledImage[] = [];
     // Characters, then elements (docs/design/elements.md#prompt-and-references), each labelled with its id.
@@ -456,9 +585,38 @@ export class LlmTasks {
         });
       });
     }
+    if (sceneReference)
+      images.push({ label: `${JUDGE_SCENE_REFERENCE_LABEL}:`, data: sceneReference, mime: 'image/png' });
     for (const [i, data] of frames.entries())
       images.push({ label: `${JUDGE_FRAME_LABEL} ${i}:`, data, mime: 'image/png' });
     return this.run('consistency.judge', JudgeOutputSchema, input, { images, temperature: 0, signal });
+  }
+
+  /** One scene of the finished film, a strip of three frames per shot (docs/design/feedback.md). */
+  feedbackScene(
+    input: FeedbackSceneInput,
+    strips: { label: string; data: Buffer }[],
+    signal?: AbortSignal,
+  ): Promise<FeedbackSceneOutput> {
+    return this.run('feedback.scene', FeedbackSceneOutputSchema, input, {
+      images: strips.map((s) => ({
+        label: `${FEEDBACK_STRIP_LABEL} ${s.label}:`,
+        data: s.data,
+        mime: 'image/jpeg',
+      })),
+      temperature: 0.2,
+      maxTokens: 6000,
+      signal,
+    });
+  }
+
+  /** The whole film, from its scene reviews and the run's numbers (text only). */
+  feedbackFilm(input: FeedbackFilmInput, signal?: AbortSignal): Promise<FeedbackFilmOutput> {
+    return this.run('feedback.film', FeedbackFilmOutputSchema, input, {
+      temperature: 0.3,
+      maxTokens: 6000,
+      signal,
+    });
   }
 
   /** Rule V4: each speaker's reference voice, then the take's audio. */

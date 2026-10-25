@@ -48,7 +48,7 @@ endpoint from it and the server derives the endpoints, their keys and the gatewa
 | Consistency | `RIDEO_CONSISTENCY_JUDGE`, `RIDEO_CONSISTENCY_THRESHOLD`, `RIDEO_CONSISTENCY_MAX_ATTEMPTS` |
 | Accounts | `RIDEO_OIDC_ISSUER`, `RIDEO_OIDC_CLIENT_ID`, `RIDEO_OIDC_CLIENT_SECRET`, `RIDEO_OIDC_SCOPES`, `RIDEO_OIDC_NAME`, `RIDEO_ADMINS`, `RIDEO_OIDC_ALLOWED_DOMAINS`, `RIDEO_SESSION_DAYS`, `RIDEO_USER_NAME` |
 | Brand and provenance | `RIDEO_BRAND_NAME`, `RIDEO_BRAND_OWNER`, `RIDEO_BRAND_URL`, `RIDEO_WATERMARK_STRENGTH`, `RIDEO_C2PA`, `RIDEO_C2PA_CERT`, `RIDEO_C2PA_KEY`, `RIDEO_C2PA_TSA_URL`, `RIDEO_C2PA_TRUST_ANCHORS`, `RIDEO_VAPID_SUBJECT` |
-| Limits and embedding | `RIDEO_LANES`, `RIDEO_EDITOR_LEASE_SEC`, `RIDEO_EDITOR_FILE_MAX_BYTES`, `RIDEO_PUBLIC_DETECT_MAX_BYTES`, `RIDEO_CACHE_MAX_BYTES`, `RIDEO_CROSS_ORIGIN_ISOLATION`, `RIDEO_CORS_ORIGINS` |
+| Limits and embedding | `RIDEO_LANES`, `RIDEO_EDITOR_LEASE_SEC`, `RIDEO_EDITOR_FILE_MAX_BYTES`, `RIDEO_PUBLIC_DETECT_MAX_BYTES`, `RIDEO_CACHE_MAX_BYTES`, `RIDEO_CROSS_ORIGIN_ISOLATION`, `RIDEO_CORS_ORIGINS`, `RIDEO_PRICES` (model prices for cost estimates, [observability](observability.md#usage-ledger)), `RIDEO_TELEMETRY` ([telemetry from the studio](observability.md#telemetry-from-the-studio)) |
 | Appearance | `RIDEO_THEME` (the studio's [theme](embedding.md#themes)) |
 
 **Environment only** (needed before the studio can serve the Settings page, or too dangerous to change from a web

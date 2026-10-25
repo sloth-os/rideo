@@ -3,11 +3,13 @@ import {
   JUDGE_ELEMENT_REFERENCE_LABEL,
   JUDGE_FRAME_LABEL,
   JUDGE_REFERENCE_LABEL,
+  JUDGE_SCENE_REFERENCE_LABEL,
   type LlmTaskId,
   TAKE_AUDIO_LABEL,
   TASK_MARKER_PATTERN,
   VOICE_REFERENCE_LABEL,
 } from '@rideo/shared';
+import { feedbackFilm, feedbackScene } from './feedback';
 import {
   characterDescribe,
   clipPlan,
@@ -133,6 +135,10 @@ function labelledImages(parts: Part[]): LabelledImages {
       } else if (frame) {
         frameIndex = Number(frame[1]);
         refOwner = null;
+      } else if (p.text.startsWith(JUDGE_SCENE_REFERENCE_LABEL)) {
+        // The scene reference frame is neither a reference of the cast nor a candidate.
+        refOwner = null;
+        frameIndex = null;
       }
       continue;
     }
@@ -228,6 +234,12 @@ export function answer(req: ChatRequest): string {
       break;
     case 'frame.caption':
       out = frameCaption(input, imagesOf(req.parts));
+      break;
+    case 'feedback.scene':
+      out = feedbackScene(input, imagesOf(req.parts).length);
+      break;
+    case 'feedback.film':
+      out = feedbackFilm(input);
       break;
     default:
       out = { ok: true, echo: text.slice(0, 200) };

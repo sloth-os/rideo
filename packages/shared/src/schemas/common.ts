@@ -115,6 +115,8 @@ export const ERROR_CODES = [
   'performance_unavailable',
   'localization_incomplete',
   'board_unapprovable',
+  /** docs/design/feedback.md#actions */
+  'feedback_stale',
   /** docs/design/settings.md */
   'setting_locked',
   'gateway_not_configured',

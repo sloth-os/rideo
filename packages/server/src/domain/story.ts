@@ -173,6 +173,7 @@ export class StoryService extends Service {
               locationId: null,
               elementIds: [],
               estDurationSec: 60,
+              continuity: '',
             }),
             ...Object.fromEntries(Object.entries(up).filter(([, v]) => v !== undefined)),
             dialogue: (up.dialogue ?? existing?.dialogue ?? []).map((d) => ({
@@ -207,6 +208,7 @@ export class StoryService extends Service {
               summary: b.summary,
               estDurationSec: b.estDurationSec,
               sceneId: b.sceneId ?? sp.outline.find((o) => o.id === b.id)?.sceneId ?? null,
+              purpose: b.purpose ?? sp.outline.find((o) => o.id === b.id)?.purpose ?? '',
             }),
           );
         }

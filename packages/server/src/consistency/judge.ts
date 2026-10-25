@@ -1,4 +1,4 @@
-import type { ElementFrameVerdict, FrameVerdict } from '@rideo/shared';
+import type { ElementFrameVerdict, FrameVerdict, QualityFrame } from '@rideo/shared';
 import type { LlmTasks } from '../ai/tasks';
 
 export interface JudgeCharacter {
@@ -23,12 +23,17 @@ export interface JudgeRequest {
   frames: Buffer[];
   shotDescription: string;
   signal?: AbortSignal;
+  /** Physics too, and continuity against the scene reference frame (docs/design/continuity.md#quality-checks-in-the-gate). */
+  qualityChecks?: boolean;
+  sceneReference?: Buffer;
 }
 
 /** Per frame (request order): character verdicts, and element verdicts when elements were asked for. */
 export interface JudgeVerdicts {
   characters: FrameVerdict[][];
   elements: ElementFrameVerdict[][];
+  /** Per frame, when quality checks were asked for. */
+  quality?: QualityFrame[];
 }
 
 /** Pluggable identity verifier (docs/design/character-consistency.md#judges). */
@@ -77,10 +82,12 @@ export class VisionLlmJudge implements ConsistencyJudge {
           : {}),
         frameCount: req.frames.length,
         shotDescription: req.shotDescription,
+        ...(req.qualityChecks ? { qualityChecks: true, sceneReference: !!req.sceneReference } : {}),
       },
       refs,
       req.frames,
       req.signal,
+      req.qualityChecks ? req.sceneReference : undefined,
     );
     const knownCharacters = new Set(req.characters.map((c) => c.id));
     const knownElements = new Set(elements.map((e) => e.id));
@@ -102,6 +109,14 @@ export class VisionLlmJudge implements ConsistencyJudge {
           .filter((e) => knownElements.has(e.elementId))
           .map((e) => ({ elementId: e.elementId, present: e.present, score: e.score, issues: e.issues })),
       ),
+      ...(req.qualityChecks
+        ? {
+            quality: frames.map((frame) => ({
+              ...(frame?.physics ? { physics: frame.physics } : {}),
+              ...(frame?.continuity && req.sceneReference ? { continuity: frame.continuity } : {}),
+            })),
+          }
+        : {}),
     };
   }
 }

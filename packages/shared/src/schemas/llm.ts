@@ -1,4 +1,11 @@
 import { z } from 'zod';
+import {
+  FeedbackFramingSchema,
+  FeedbackMovementSchema,
+  FeedbackSettingsPatchSchema,
+  RetrospectiveAreaSchema,
+  VISION_DIMENSION_IDS,
+} from './feedback';
 
 /**
  * Structured LLM task outputs (docs/design/ai-gateway.md#structured-tasks). Lenient by design: real models
@@ -60,6 +67,8 @@ export const LlmSceneSchema = z.object({
   /** Names of the props in the scene (the location is `location`). */
   props: z.array(z.string().max(120)).catch([]).default([]),
   estDurationSec: num(60),
+  /** Prompt version 2: the state at the scene's start (docs/design/continuity.md#storytelling). */
+  continuity: str(1000),
 });
 export type LlmScene = z.infer<typeof LlmSceneSchema>;
 
@@ -81,7 +90,15 @@ export const ScreenplayGenerateOutputSchema = z.object({
   locations: z.array(LlmElementSchema).max(60).catch([]).default([]),
   props: z.array(LlmElementSchema).max(60).catch([]).default([]),
   outline: z
-    .array(z.object({ title: str(200), summary: z.string().min(1).max(4000), estDurationSec: num(90) }))
+    .array(
+      z.object({
+        title: str(200),
+        summary: z.string().min(1).max(4000),
+        estDurationSec: num(90),
+        /** Prompt version 2: setup, inciting, complication, midpoint, crisis, climax or resolution. */
+        purpose: str(60),
+      }),
+    )
     .min(1)
     .max(400),
   scenes: z.array(LlmSceneSchema).min(1).max(60),
@@ -140,6 +157,9 @@ export const LlmShotSchema = z.object({
     .default([]),
   /** Names of the scene's props visible in this shot. */
   props: z.array(z.string().max(120)).catch([]).default([]),
+  /** Prompt version 2: a real focal length and what the last frame shows (docs/design/continuity.md#shot-planning). */
+  lensMm: z.coerce.number().int().min(8).max(800).optional().catch(undefined),
+  endState: str(1000),
 });
 export type LlmShot = z.infer<typeof LlmShotSchema>;
 
@@ -170,6 +190,11 @@ export const CharacterDescribeOutputSchema = z.object({
 });
 export type CharacterDescribeOutput = z.infer<typeof CharacterDescribeOutputSchema>;
 
+const JudgeScoreSchema = z.object({
+  score: z.coerce.number().min(0).max(1).catch(0),
+  issues: z.array(z.string().max(500)).catch([]).default([]),
+});
+
 export const JudgeOutputSchema = z.object({
   frames: z
     .array(
@@ -196,6 +221,10 @@ export const JudgeOutputSchema = z.object({
           )
           .catch([])
           .default([]),
+        /** Quality checks (docs/design/continuity.md#quality-checks-in-the-gate): asked with `qualityChecks`. */
+        physics: JudgeScoreSchema.optional().catch(undefined),
+        /** Against the scene reference frame, when one was sent. */
+        continuity: JudgeScoreSchema.optional().catch(undefined),
       }),
     )
     .min(1),
@@ -292,6 +321,8 @@ export const LLM_TASKS = [
   'reframe.focus',
   'thumbnail.pick',
   'frame.caption',
+  'feedback.scene',
+  'feedback.film',
 ] as const;
 export type LlmTaskId = (typeof LLM_TASKS)[number];
 
@@ -301,7 +332,16 @@ export const TASK_MARKER_PATTERN = /rideo-task:\s*([a-z.]+)/;
  * Task inputs: the server sends `INPUT:\n<json>` as the first user text, followed by labelled images.
  * The shapes are part of the server ↔ LLM contract (the mock gateway reads them).
  */
-export interface ScreenplayGenerateInput {
+/** What prompt version 2 adds to the writing tasks (docs/design/continuity.md#storytelling). */
+export interface DialogueDirection {
+  /** A CEFR level and what it means for the writer; absent when the project sets none. */
+  dialogueLevel?: string;
+  dialogueGuidance?: string;
+  /** The longest line, in words, that a shot of the video model can speak. */
+  maxWordsPerLine?: number;
+}
+
+export interface ScreenplayGenerateInput extends DialogueDirection {
   prompt: string;
   targetDurationSec: number;
   pilotDurationSec: number;
@@ -310,7 +350,7 @@ export interface ScreenplayGenerateInput {
   attachments: { kind: 'image' | 'video'; description: string }[];
 }
 
-export interface ScreenplayExtendInput {
+export interface ScreenplayExtendInput extends DialogueDirection {
   title: string;
   logline: string;
   synopsis: string;
@@ -320,10 +360,21 @@ export interface ScreenplayExtendInput {
   locations: { name: string; description: string }[];
   props: { name: string; description: string }[];
   previousScenes: { index: number; heading: string; summary: string }[];
-  beats: { index: number; title: string; summary: string; estDurationSec: number }[];
+  beats: { index: number; title: string; summary: string; estDurationSec: number; purpose?: string }[];
+  /** Version 2: the user's brief, the last written scene in full and the beats after the requested ones. */
+  brief?: string;
+  lastScene?: {
+    heading: string;
+    timeOfDay: string;
+    continuity: string;
+    summary: string;
+    action: string;
+    dialogue: { character: string; line: string }[];
+  };
+  upcomingBeats?: { index: number; title: string; summary: string; purpose?: string }[];
 }
 
-export interface ClipPlanInput {
+export interface ClipPlanInput extends DialogueDirection {
   scene: {
     heading: string;
     summary: string;
@@ -332,11 +383,20 @@ export interface ClipPlanInput {
     estDurationSec: number;
     location: { name: string; description: string } | null;
     props: { name: string; description: string }[];
+    /** Version 2. */
+    timeOfDay?: string;
+    continuity?: string;
   };
   characters: { name: string; summary: string }[];
   style: string;
   limits: { minDurationSec: number; maxDurationSec: number };
   targetDurationSec: number;
+  /** Version 2: the brief, the words a shot can hold and the last shot of the previous scene. */
+  brief?: string;
+  maxWordsPerShot?: number;
+  previousShot?: { description: string; endState: string } | null;
+  /** What a new plan must do (a feedback recommendation, docs/design/feedback.md#actions). */
+  direction?: string;
 }
 
 export interface MediaDescribeInput {
@@ -355,6 +415,9 @@ export interface JudgeInput {
   elements?: { id: string; kind: string; name: string; description: string; referenceCount: number }[];
   frameCount: number;
   shotDescription: string;
+  /** Score physics (and continuity against the scene reference frame) too. */
+  qualityChecks?: boolean;
+  sceneReference?: boolean;
 }
 
 export interface FootageAnalyzeInput {
@@ -432,8 +495,195 @@ export interface ThumbnailPickInput {
 export const FOCUS_FRAME_LABEL = 'Frame';
 
 export const INPUT_PREFIX = 'INPUT:\n';
+export const JUDGE_SCENE_REFERENCE_LABEL = 'Scene reference frame';
+export const FEEDBACK_STRIP_LABEL = 'Shot strip';
 export const VOICE_REFERENCE_LABEL = 'Reference voice for character';
 export const TAKE_AUDIO_LABEL = 'Take audio';
 export const JUDGE_REFERENCE_LABEL = 'Reference images for character';
 export const JUDGE_ELEMENT_REFERENCE_LABEL = 'Reference images for element';
 export const JUDGE_FRAME_LABEL = 'Candidate frame';
+
+/** Feedback tasks (docs/design/feedback.md#how-a-film-is-watched): lenient, the server assembles the document. */
+const score10 = z.coerce.number().min(0).max(10).optional().catch(undefined);
+export const VisionScoresSchema = z
+  .object({
+    storytelling: score10,
+    continuity: score10,
+    character: score10,
+    temporal: score10,
+    physics: score10,
+    realism: score10,
+    cinematography: score10,
+    editing: score10,
+  })
+  .catch({})
+  .default({});
+export type VisionScores = z.infer<typeof VisionScoresSchema>;
+const visionDimension = z.enum(VISION_DIMENSION_IDS).catch('cinematography');
+const optionalText = (max: number) => z.string().max(max).optional().catch(undefined);
+
+export const LlmFeedbackActionSchema = z
+  .object({
+    kind: z.enum(['regenerate_shot', 'replan_scene', 'settings', 'note']).catch('note'),
+    description: optionalText(4000),
+    action: optionalText(4000),
+    negativePrompt: optionalText(2000),
+    framing: FeedbackFramingSchema.optional().catch(undefined),
+    movement: FeedbackMovementSchema.optional().catch(undefined),
+    direction: optionalText(2000),
+    /** The film call names a scene by its number. */
+    scene: z.coerce.number().int().nonnegative().optional().catch(undefined),
+    settings: FeedbackSettingsPatchSchema.optional().catch(undefined),
+  })
+  .catch({ kind: 'note' });
+export type LlmFeedbackAction = z.infer<typeof LlmFeedbackActionSchema>;
+
+export const FeedbackSceneOutputSchema = z.object({
+  scores: VisionScoresSchema,
+  summary: str(3000),
+  strengths: z.array(z.string().max(400)).max(10).catch([]).default([]),
+  issues: z
+    .array(
+      z.object({
+        shot: z.coerce.number().int().nonnegative().optional().catch(undefined),
+        dimension: visionDimension,
+        severity: z.enum(['critical', 'major', 'minor']).catch('minor').default('minor'),
+        title: z.string().min(1).max(200),
+        detail: str(1500),
+        at: z.coerce.number().min(0).max(1).optional().catch(undefined),
+      }),
+    )
+    .max(40)
+    .catch([])
+    .default([]),
+  recommendations: z
+    .array(
+      z.object({
+        shot: z.coerce.number().int().nonnegative().optional().catch(undefined),
+        dimension: visionDimension,
+        priority: z.coerce.number().int().min(1).max(3).catch(2).default(2),
+        title: z.string().min(1).max(200),
+        detail: str(2000),
+        action: LlmFeedbackActionSchema.optional().catch(undefined),
+      }),
+    )
+    .max(30)
+    .catch([])
+    .default([]),
+});
+export type FeedbackSceneOutput = z.infer<typeof FeedbackSceneOutputSchema>;
+
+export const FeedbackFilmOutputSchema = z.object({
+  scores: VisionScoresSchema,
+  summary: str(6000),
+  strengths: z.array(z.string().max(400)).max(12).catch([]).default([]),
+  recommendations: z
+    .array(
+      z.object({
+        dimension: visionDimension,
+        priority: z.coerce.number().int().min(1).max(3).catch(2).default(2),
+        title: z.string().min(1).max(200),
+        detail: str(3000),
+        scenes: z.array(z.coerce.number().int().nonnegative()).max(100).catch([]).default([]),
+        action: LlmFeedbackActionSchema.optional().catch(undefined),
+      }),
+    )
+    .max(20)
+    .catch([])
+    .default([]),
+  lessons: z
+    .array(
+      z.object({
+        area: RetrospectiveAreaSchema.catch('quality'),
+        title: z.string().min(1).max(200),
+        detail: str(2000),
+      }),
+    )
+    .max(12)
+    .catch([])
+    .default([]),
+});
+export type FeedbackFilmOutput = z.infer<typeof FeedbackFilmOutputSchema>;
+
+export interface FeedbackFilmBrief {
+  title: string;
+  logline: string;
+  genre: string;
+  tone: string;
+  style: string;
+  dialogueLevel: string | null;
+}
+
+export interface FeedbackSceneInput {
+  film: FeedbackFilmBrief;
+  scene: {
+    number: number;
+    heading: string;
+    location: string;
+    timeOfDay: string;
+    continuity: string;
+    summary: string;
+    action: string;
+    dialogue: { character: string; line: string }[];
+    start: number;
+    end: number;
+  };
+  previousScene: { heading: string; summary: string } | null;
+  nextScene: { heading: string; summary: string } | null;
+  cast: { name: string; look: string }[];
+  shots: {
+    index: number;
+    label: string;
+    start: number;
+    end: number;
+    description: string;
+    action: string;
+    camera: string;
+    dialogue: { character: string; line: string }[];
+    characters: string[];
+    take: {
+      consistency: string;
+      score: number | null;
+      quality: { passed: boolean; physics: number | null; continuity: number | null; jumps: number } | null;
+    } | null;
+  }[];
+  /** Measured inside the scene, in seconds of the export. */
+  signals: {
+    unexpectedCuts: number[];
+    frozen: { start: number; end: number }[];
+    black: { start: number; end: number }[];
+  };
+  stripCount: number;
+}
+
+export interface FeedbackFilmInput {
+  film: FeedbackFilmBrief & { synopsis: string; targetDurationSec: number | null; durationSec: number };
+  outline: { title: string; purpose: string; summary: string }[];
+  scenes: {
+    number: number;
+    heading: string;
+    start: number;
+    end: number;
+    scores: VisionScores;
+    summary: string;
+    issues: { severity: string; dimension: string; title: string }[];
+  }[];
+  signals: {
+    unexpectedCuts: number;
+    frozen: number;
+    black: number;
+    silences: number;
+    rushedLines: number;
+    framingRuns: number;
+    loudness: { target: string; integratedLufs: number | null } | null;
+  };
+  run: {
+    shots: number;
+    takes: { passed: number; unverified: number; overridden: number; qualityFailed: number };
+    costUsd: number | null;
+    videoSeconds: number;
+    discardedVideoSeconds: number;
+    llmRetries: number;
+    failedJobs: number;
+  };
+}

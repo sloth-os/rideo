@@ -206,9 +206,13 @@ configuration from its variables.
 ## Operations
 
 - **Health**: `/api/health` (liveness) and `/api/ready` (storage, gateway, ffmpeg and LLM checks).
-- **Metrics**: `/metrics`. Jobs, gateway tasks, LLM calls, consistency outcomes, watermark operations,
-  WebDAV latency, live sessions.
-- **Logs**: JSON (pino) with `reqId`, `projectId`, `jobId` and `gatewayTaskId`.
+- **Metrics**: `/metrics`. Jobs and lane waits, gateway tasks and their output, LLM calls, tokens and retries,
+  estimated cost, shot steps and attempts, consistency and quality checks, feedback scores, REST and WebDAV latency,
+  the studio's web vitals and errors, live sessions ([observability](design/observability.md#metrics)).
+- **Costs**: set `RIDEO_PRICES` (Settings → Limits) to the prices of your models; the Insights view of each project
+  and `rideo_cost_usd_total` then show what films cost, and usage of models without a price stays visible as unpriced.
+- **Logs**: JSON (pino) with `reqId`, `projectId`, `jobId` and `gatewayTaskId`; requests slower than 2 s log their
+  storage operations.
 - **Backups**: back up the WebDAV share. Everything, including version history, lives there.
 - **Watermark key**: keep it secret and stable. After rotating, list the old key in
   `RIDEO_WATERMARK_KEYS_OLD` so earlier media still verifies.

@@ -170,8 +170,11 @@ function sceneFor(
     characters: [a, b],
     props: [PROPS[index % PROPS.length]!],
     estDurationSec: beat.estDurationSec,
+    continuity: `${time.toLowerCase()}, ${index % 2 === 0 ? 'rain on the windows, lamplight from the left' : 'grey overcast daylight'}; ${a} and ${b} in their usual clothes`,
   };
 }
+
+const PURPOSES = ['setup', 'inciting', 'complication', 'midpoint', 'crisis', 'climax', 'resolution'];
 
 /** The locations and props of `scenes` with their looks (docs/design/elements.md). */
 function elementsOf(scenes: LlmScene[]) {
@@ -199,6 +202,12 @@ export function screenplayGenerate(input: ScreenplayGenerateInput): ScreenplayGe
     title: i === 0 ? 'The first letter' : i === count - 1 ? 'The last letter' : `Letter ${i + 1}`,
     summary: `${i === 0 ? 'A letter from the future arrives' : i === count - 1 ? 'The final letter reveals its author' : `Letter ${i + 1} predicts the next storm`}.`,
     estDurationSec: i === count - 1 ? target - beatDur * (count - 1) : beatDur,
+    purpose:
+      i === 0
+        ? 'setup'
+        : i === count - 1
+          ? 'resolution'
+          : PURPOSES[1 + Math.floor(((i - 1) / Math.max(1, count - 2)) * 5)]!,
   }));
   const pick = hash(input.prompt) % CAST.length;
   const cast = [CAST[pick]!, CAST[(pick + 1) % CAST.length]!].map((c, i) => ({
@@ -271,6 +280,9 @@ export function clipPlan(input: ClipPlanInput): ClipPlanOutput {
       dialogue: input.scene.dialogue[i] ? [input.scene.dialogue[i]!] : [],
       // The establishing shot shows the scene's props; later shots the first one.
       props: (input.scene.props ?? []).slice(0, i === 0 ? undefined : 1).map((p) => p.name),
+      endState: i === 0 ? 'Everyone in place, the camera settled wide.' : 'Turned toward the camera, still.',
+      // Prompt version 2 asks for a lens (docs/design/continuity.md#shot-planning).
+      ...(input.maxWordsPerShot !== undefined ? { lensMm: [24, 50, 85, 35][i % 4]! } : {}),
     })),
   };
 }
@@ -345,6 +357,15 @@ export function consistencyJudge(input: JudgeInput, images: LabelledImages): Jud
             issues: present ? [] : [`${e.name} does not match its reference`],
           };
         }),
+        // Quality checks (docs/design/continuity.md#quality-checks-in-the-gate): a shot about floating fails physics.
+        ...(input.qualityChecks
+          ? {
+              physics: /floating|floats/i.test(input.shotDescription)
+                ? { score: 0.2, issues: ['the character floats above the ground'] }
+                : { score: 0.95, issues: [] },
+              ...(input.sceneReference ? { continuity: { score: 0.9, issues: [] } } : {}),
+            }
+          : {}),
       };
     });
   return { frames: frames.length ? frames : [{ index: 0, characters: [], elements: [] }] };

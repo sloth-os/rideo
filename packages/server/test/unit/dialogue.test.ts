@@ -231,6 +231,7 @@ describe('speaker check (rule V4)', () => {
     elements: [],
     voices: [],
     frames: [],
+    quality: null,
   };
   const speakers = [
     { id: 'chr_0000000000aaaaaa', name: 'Mira', description: '', sample: Buffer.from('ref') },

@@ -1070,6 +1070,45 @@ function buildServer(studio: Studio): McpServer {
   );
   tool('export_list', 'List exports.', { projectId: PROJECT }, (a) => studio.edit.exports(a.projectId), ro);
   tool(
+    'consistency_recheck',
+    'Judge unverified takes again from their evidence frames, once the vision judge is back (nothing is generated). Returns the job; use job_wait.',
+    { projectId: PROJECT, clipIds: z.array(z.string()).optional() },
+    (a, actor) => studio.clips.recheck(actor, a.projectId, a.clipIds),
+  );
+  // Feedback on the finished film (docs/design/feedback.md#surfaces)
+  tool(
+    'export_feedback',
+    'Watch an export with the vision model, with the project in hand: scores per dimension (storytelling, continuity, characters, temporal consistency, physics, sense of reality, cinematography, editing, sound), issues pinned to shots and times, recommendations with actions to apply, and the retrospective of the run. Returns {feedback, job}; use job_wait, then feedback_get.',
+    { projectId: PROJECT, exportId: z.string() },
+    (a, actor) => studio.feedback.request(actor, a.projectId, a.exportId),
+  );
+  tool(
+    'feedback_get',
+    "An export's feedback (the newest when no export is given): scores, summary, issues, recommendations with their status, retrospective and the report's media path.",
+    { projectId: PROJECT, exportId: z.string().optional() },
+    async (a) => (await studio.feedback.get(a.projectId, a.exportId)) ?? { feedback: null },
+    ro,
+  );
+  tool(
+    'feedback_apply',
+    "Apply a feedback recommendation's action: regenerate_shot (revises the shot and regenerates it), replan_scene (plans the scene again and generates it), settings (changes project settings) or note (marks it done). Returns {feedback, job}.",
+    { projectId: PROJECT, feedbackId: z.string(), recommendationId: z.string() },
+    (a, actor) => studio.feedback.apply(actor, a.projectId, a.feedbackId, a.recommendationId),
+  );
+  tool(
+    'feedback_dismiss',
+    'Dismiss a feedback recommendation.',
+    { projectId: PROJECT, feedbackId: z.string(), recommendationId: z.string() },
+    (a, actor) => studio.feedback.dismiss(actor, a.projectId, a.feedbackId, a.recommendationId),
+  );
+  tool(
+    'project_insights',
+    "The project's run at a glance (docs/design/observability.md#insights): usage and estimated cost by model and job kind, job times, queue waits and failures, take quality (first-try pass rate, attempts, unverified, overridden, quality failures), the characters who fail most, feedback scores and the latest retrospective.",
+    { projectId: PROJECT },
+    (a) => studio.insights.insights(a.projectId),
+    ro,
+  );
+  tool(
     'watermark_detect',
     'Detect the invisible watermark and read the C2PA Content Credentials of a video (https/data URI, or a project media path).',
     { uri: z.string().optional(), projectId: z.string().optional(), mediaPath: z.string().optional() },

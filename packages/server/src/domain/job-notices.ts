@@ -6,6 +6,8 @@ import type { Job, JobKind, View } from '@rideo/shared';
  */
 const NOTICES: Partial<Record<JobKind, { done: string; failed: string; view: View }>> = {
   'export.finish': { done: 'Export ready', failed: 'Export failed', view: 'exports' },
+  'export.feedback': { done: 'Feedback ready', failed: 'Feedback failed', view: 'exports' },
+  'consistency.recheck': { done: 'Takes re-checked', failed: 'Re-check failed', view: 'clips' },
   'clip.generate': { done: 'Clip generated', failed: 'Clip generation failed', view: 'clips' },
   'batch.generate': { done: 'Batch finished', failed: 'Batch failed', view: 'clips' },
   'recipe.run': { done: 'Recipe finished', failed: 'Recipe failed', view: 'overview' },

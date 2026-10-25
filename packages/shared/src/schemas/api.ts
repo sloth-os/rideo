@@ -21,7 +21,13 @@ import {
   RenderEngineChoiceSchema,
 } from './job';
 import { LanguageCodeSchema } from './localization';
-import { DialogueModeSchema, DisclosurePositionSchema, ProjectKindSchema } from './project';
+import {
+  DialogueLevelSchema,
+  DialogueModeSchema,
+  DisclosurePositionSchema,
+  ProjectKindSchema,
+  PromptVersionSchema,
+} from './project';
 import { ResourceKindSchema, ResourceRoleSchema } from './resource';
 import { AnnotationSchema, CommentTargetSchema, ReviewTargetSchema } from './review';
 import { DialogueLineSchema, StyleBibleSchema } from './screenplay';
@@ -60,16 +66,31 @@ export const ProjectSettingsPatchSchema = z
         judge: z.enum(['vision-llm', 'off']),
         judgeElements: z.boolean(),
         judgeVoices: z.boolean(),
+        /** docs/design/continuity.md#quality-checks-in-the-gate */
+        qualityChecks: z.boolean(),
+        qualityThreshold: z.number().min(0).max(1),
       })
       .partial(),
-    /** Dialogue audio (docs/design/dialogue.md#from-lines-to-audio). */
-    dialogue: z.object({ mode: DialogueModeSchema, lipSync: z.boolean() }).partial(),
+    /** Dialogue audio (docs/design/dialogue.md#from-lines-to-audio) and its level (docs/design/continuity.md). */
+    dialogue: z
+      .object({ mode: DialogueModeSchema, lipSync: z.boolean(), level: DialogueLevelSchema })
+      .partial(),
     /** The storyboard stage (docs/design/storyboard.md). */
     storyboard: z.object({ enabled: z.boolean(), scenes: z.number().int().min(1).max(50) }).partial(),
     generation: z
-      .object({ includeAudio: z.boolean(), keyframes: z.boolean(), multiShot: z.enum(['auto', 'off']) })
+      .object({
+        includeAudio: z.boolean(),
+        keyframes: z.boolean(),
+        multiShot: z.enum(['auto', 'off']),
+        /** docs/design/continuity.md#prompt-version */
+        promptVersion: PromptVersionSchema,
+        enhancePrompt: z.boolean().nullable(),
+        modelMusic: z.boolean(),
+      })
       .partial(),
     batch: z.object({ maxGenerations: z.number().int().min(1).max(100000) }).partial(),
+    /** docs/design/feedback.md#when-it-runs */
+    feedback: z.object({ auto: z.boolean() }).partial(),
     watermark: z.object({ enabled: z.boolean() }).partial(),
     disclosure: z
       .object({
@@ -117,6 +138,8 @@ export const SceneInputSchema = z.object({
   elementIds: z.array(IdSchema).optional(),
   estDurationSec: z.number().positive().max(3600).optional(),
   beatId: IdSchema.nullable().optional(),
+  /** The state at the scene's start (docs/design/continuity.md#storytelling). */
+  continuity: z.string().max(1000).optional(),
 });
 export type SceneInput = z.infer<typeof SceneInputSchema>;
 
@@ -126,6 +149,7 @@ export const OutlineBeatInputSchema = z.object({
   summary: z.string().max(4000),
   estDurationSec: z.number().positive().max(3600),
   sceneId: IdSchema.nullable().optional(),
+  purpose: z.string().max(60).optional(),
 });
 
 export const ScreenplayPatchInputSchema = z.object({
@@ -240,6 +264,8 @@ export const ShotUpdateInputSchema = z
     dialogue: z.array(z.object({ characterId: IdSchema.nullable(), line: z.string().max(2000) })),
     durationSec: z.number().positive().max(60),
     continuity: z.enum(['cut', 'continuous']),
+    /** What the last frame shows (docs/design/continuity.md#shot-planning). */
+    endState: z.string().max(1000),
     promptOverride: z.string().max(8000).nullable(),
     negativePrompt: z.string().max(2000).nullable(),
     /** Directing controls (docs/design/directing.md). */

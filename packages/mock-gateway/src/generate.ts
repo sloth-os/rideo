@@ -16,6 +16,8 @@ export interface GenerateContext {
   fileUrl: (name: string) => string;
   /** True when this generation should drift (identity lost) — MOCK_FLAKY_EVERY / metadata.mock_flaky. */
   flaky: boolean;
+  /** True when this video should jump inside the shot (a flash cut) — MOCK_JUMP_EVERY / metadata.mock_jump. */
+  jump?: boolean;
 }
 
 export interface ValidationIssue {
@@ -419,6 +421,8 @@ export async function runVideo(body: Record<string, any>, ctx: GenerateContext):
       audioPath,
     });
   }
+  // A stray cut inside the shot, away from the judge's sample points (docs/design/continuity.md#quality-checks-in-the-gate).
+  if (ctx.jump) await flashCut(join(ctx.dir, `${name}.mp4`), ctx.dir, name, durationSec);
   return {
     outputs: [
       {
@@ -661,4 +665,35 @@ export async function runMusic(body: Record<string, any>, ctx: GenerateContext):
     usage: { output_count: 1, duration_seconds: durationSec },
     lyrics,
   };
+}
+
+/**
+ * A flash over 30–37% of the video, black then white: the black-to-white step is a maximal change for any picture,
+ * so the temporal check always sees it (an inversion of a mid-grey picture barely changes it).
+ */
+async function flashCut(video: string, dir: string, name: string, durationSec: number): Promise<void> {
+  const tmp = join(dir, `${name}-jump.mp4`);
+  const a = (durationSec * 0.3).toFixed(3);
+  const m = (durationSec * 0.335).toFixed(3);
+  const b = (durationSec * 0.37).toFixed(3);
+  await runFfmpeg([
+    '-i',
+    video,
+    '-vf',
+    `drawbox=x=0:y=0:w=iw:h=ih:color=black@1:t=fill:enable='between(t,${a},${m})',drawbox=x=0:y=0:w=iw:h=ih:color=white@1:t=fill:enable='between(t,${m},${b})'`,
+    '-c:v',
+    'libx264',
+    '-preset',
+    'ultrafast',
+    '-crf',
+    '20',
+    '-pix_fmt',
+    'yuv420p',
+    '-c:a',
+    'copy',
+    '-movflags',
+    '+faststart',
+    tmp,
+  ]);
+  await rename(tmp, video);
 }

@@ -21,7 +21,9 @@ import type {
   ElementReferenceView,
   Export,
   ExportQuality,
+  Feedback,
   Inbox,
+  Insights,
   Job,
   LoudnessTarget,
   Notification,
@@ -125,6 +127,8 @@ export interface PublicConfig {
     sfx?: { provider: string } | null;
     /** NLE hand-off: the WebDAV root as clients reach it (docs/design/interchange.md). */
     interchange?: { mediaBase: string };
+    /** Telemetry from the studio (docs/design/observability.md#telemetry-from-the-studio). */
+    telemetry?: boolean;
   };
   llm: { provider: string; model: string; vision: string } | null;
   models: Record<'image' | 'video' | 'music', { id: string; limits?: Record<string, unknown> | null }[]>;
@@ -159,6 +163,12 @@ export function setToken(token: string | null): void {
   } catch {
     // storage unavailable (private mode): token lives for this page only
   }
+}
+
+/** Called on every 5xx answer (telemetry, docs/design/observability.md#telemetry-from-the-studio). */
+let onServerError: (() => void) | null = null;
+export function setServerErrorHandler(fn: (() => void) | null): void {
+  onServerError = fn;
 }
 
 /** Called when the server says the caller is not signed in (docs/design/accounts.md). */
@@ -199,6 +209,7 @@ async function request<T>(
     json = { detail: text };
   }
   if (res.status === 401 && !path.startsWith('/auth/')) onUnauthorized?.();
+  if (res.status >= 500 && path !== '/telemetry') onServerError?.();
   if (!res.ok) {
     const problem = (json ?? {}) as Partial<ProblemDetails>;
     throw new ApiError(res.status, {
@@ -510,6 +521,18 @@ export const api = {
       bug?: boolean;
     } & Omit<DeliveryInput, 'loudness' | 'captions' | 'stems'>,
   ) => request<{ export: Export; job: Job }>('POST', `${p(id)}/exports`, body),
+  // Feedback on exports (docs/design/feedback.md#surfaces)
+  requestFeedback: (id: string, exportId: string) =>
+    request<{ feedback: Feedback; job: Job }>('POST', `${p(id)}/exports/${exportId}/feedback`),
+  applyRecommendation: (id: string, feedbackId: string, recommendationId: string) =>
+    request<{ feedback: Feedback; job: Job | null }>(
+      'POST',
+      `${p(id)}/feedback/${feedbackId}/recommendations/${recommendationId}/apply`,
+    ),
+  dismissRecommendation: (id: string, feedbackId: string, recommendationId: string) =>
+    request<Feedback>('POST', `${p(id)}/feedback/${feedbackId}/recommendations/${recommendationId}/dismiss`),
+  // Insights (docs/design/observability.md#insights)
+  insights: (id: string) => request<Insights>('GET', `${p(id)}/insights`),
   // Storyboard and animatic (docs/design/storyboard.md#surfaces)
   generateStoryboard: (id: string) => request<Job>('POST', `${p(id)}/storyboard/generate`, {}),
   generateBoard: (id: string, clipId: string, shotId: string) =>

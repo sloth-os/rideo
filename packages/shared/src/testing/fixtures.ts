@@ -148,6 +148,7 @@ export function report(overrides: Partial<ConsistencyReport> = {}): ConsistencyR
     elements: [],
     voices: [],
     frames: [],
+    quality: null,
     ...overrides,
   };
 }
@@ -199,6 +200,7 @@ export function shot(overrides: Partial<Shot> = {}): Shot {
     dialogue: [],
     durationSec: 5,
     continuity: 'cut',
+    endState: '',
     promptOverride: null,
     negativePrompt: null,
     startFrame: { mode: 'auto', resourceId: null },
@@ -277,6 +279,7 @@ export function docs(overrides: Partial<ProjectDocs> = {}): ProjectDocs {
     localizations: {},
     comments: {},
     reviews: {},
+    feedback: {},
     ...overrides,
   };
 }

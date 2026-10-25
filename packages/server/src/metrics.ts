@@ -97,6 +97,111 @@ export class Metrics {
   private readonly all: Metric[] = [];
   readonly jobs = this.add(new Counter('rideo_jobs_total', 'Jobs finished by kind and status'));
   readonly jobDuration = this.add(new Histogram('rideo_job_duration_seconds', 'Job run time by kind'));
+  /** From queued to the first start (docs/design/observability.md#metrics). */
+  readonly jobWait = this.add(
+    new Histogram('rideo_job_wait_seconds', 'Time from queued to the first start, by kind'),
+  );
+  readonly laneJobs = this.add(
+    new Gauge('rideo_lane_jobs', 'Jobs per lane now, by state (running, waiting)'),
+  );
+  readonly gatewayTaskSeconds = this.add(
+    new Histogram(
+      'rideo_gateway_task_seconds',
+      'mm-gateway tasks from create to terminal, by modality and model',
+    ),
+  );
+  readonly gatewayUsage = this.add(
+    new Counter('rideo_gateway_usage_total', 'Generated output by modality, model and unit'),
+  );
+  readonly llmCallSeconds = this.add(
+    new Histogram(
+      'rideo_llm_call_seconds',
+      'Structured LLM tasks (repairs and retries included), by task and model',
+      [0.5, 1, 2, 5, 10, 30, 60, 120, 300, 600],
+    ),
+  );
+  readonly llmTokens = this.add(
+    new Counter('rideo_llm_tokens_total', 'Tokens reported by the provider, by task, model and direction'),
+  );
+  readonly costUsd = this.add(
+    new Counter('rideo_cost_usd_total', 'Estimated cost of priced usage in USD, by modality and model'),
+  );
+  readonly usageUnpriced = this.add(
+    new Counter('rideo_usage_unpriced_total', 'Usage items of models without a price, by modality and model'),
+  );
+  readonly shotStepSeconds = this.add(
+    new Histogram(
+      'rideo_shot_step_seconds',
+      'Time of the shot pipeline steps',
+      [0.5, 1, 5, 10, 30, 60, 120, 300, 600, 1200],
+    ),
+  );
+  readonly takeAttempts = this.add(
+    new Histogram(
+      'rideo_take_attempts',
+      'Attempts until a take passed (or ran out), by stage',
+      [1, 2, 3, 4, 5, 6, 8],
+    ),
+  );
+  readonly consistencyScore = this.add(
+    new Histogram(
+      'rideo_consistency_score',
+      'Judge scores of video attempts',
+      [0.1, 0.25, 0.5, 0.6, 0.7, 0.75, 0.8, 0.9, 1],
+    ),
+  );
+  readonly qualityChecks = this.add(
+    new Counter(
+      'rideo_quality_checks_total',
+      'Temporal and physics checks of video attempts, by check and result',
+    ),
+  );
+  readonly feedback = this.add(new Counter('rideo_feedback_total', 'Feedback runs by outcome'));
+  readonly feedbackScore = this.add(
+    new Histogram(
+      'rideo_feedback_score',
+      'Film scores of feedback (0-10), by dimension',
+      [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+    ),
+  );
+  readonly feedbackRecommendations = this.add(
+    new Counter(
+      'rideo_feedback_recommendations_total',
+      'Feedback recommendations applied or dismissed, by action and outcome',
+    ),
+  );
+  readonly httpSeconds = this.add(
+    new Histogram(
+      'rideo_http_request_seconds',
+      'REST latency by method, route pattern and status class',
+      [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60],
+    ),
+  );
+  readonly storageOpsPerRequest = this.add(
+    new Histogram(
+      'rideo_storage_ops_per_request',
+      'Storage operations one request made',
+      [0, 1, 2, 5, 10, 20, 50, 100, 500],
+    ),
+  );
+  readonly webVitals = this.add(
+    new Histogram(
+      'rideo_web_vitals_seconds',
+      'Core Web Vitals of the studio, by metric',
+      [0.05, 0.1, 0.2, 0.5, 1, 1.8, 2.5, 4, 8, 15],
+    ),
+  );
+  readonly webCls = this.add(
+    new Histogram('rideo_web_cls', 'Layout shift of the studio', [0.01, 0.05, 0.1, 0.25, 0.5, 1]),
+  );
+  readonly webTiming = this.add(
+    new Histogram(
+      'rideo_web_timing_seconds',
+      'Studio operations people wait for, by op',
+      [0.1, 0.25, 0.5, 1, 2, 5, 10, 30, 60, 300],
+    ),
+  );
+  readonly webErrors = this.add(new Counter('rideo_web_errors_total', 'Errors in the studio, by kind'));
   readonly gatewayTasks = this.add(
     new Counter('rideo_gateway_tasks_total', 'mm-gateway tasks by modality and status'),
   );
@@ -113,7 +218,7 @@ export class Metrics {
     new Histogram(
       'rideo_storage_seconds',
       'WebDAV operation latency',
-      [0.005, 0.01, 0.05, 0.1, 0.25, 0.5, 1, 2, 5],
+      [0.005, 0.01, 0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10, 30, 60, 300],
     ),
   );
   /** WebDAV requests tried again after a transient failure (docs/design/storage-webdav.md#slow-and-flaky-servers). */

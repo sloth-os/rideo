@@ -102,6 +102,7 @@ describe('screenplay markdown', () => {
           summary: 'Mira arrives.',
           estDurationSec: 90,
           sceneId: null,
+          purpose: '',
         },
       ],
       scenes: [
@@ -119,6 +120,7 @@ describe('screenplay markdown', () => {
           locationId: null,
           elementIds: [],
           estDurationSec: 60,
+          continuity: '',
         },
       ],
     });

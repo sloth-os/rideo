@@ -1,4 +1,5 @@
 import { type Timeline, timelineDuration } from '@rideo/shared';
+import { recordTiming } from '../../../lib/telemetry';
 import { scheduleAudio } from './audio';
 import { Compositor } from './compositor';
 import type { GpuRenderer } from './gpu';
@@ -20,6 +21,10 @@ export class Player {
   time = 0;
   onTime?: (t: number) => void;
   onPlaying?: (playing: boolean) => void;
+
+  /** When the player was made, until its first frame is drawn (docs/design/observability.md#telemetry-from-the-studio). */
+  private readonly born = performance.now();
+  private drawnOnce = false;
 
   constructor(
     private readonly canvas: HTMLCanvasElement,
@@ -71,6 +76,10 @@ export class Player {
           false,
         );
       } while (this.pending && !this.playing);
+      if (!this.drawnOnce) {
+        this.drawnOnce = true;
+        recordTiming('first_frame', (performance.now() - this.born) / 1000);
+      }
     } finally {
       this.drawing = false;
     }

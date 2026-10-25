@@ -49,7 +49,9 @@ export type MediaKind =
   | 'subtitles'
   | 'luts'
   | 'masks'
-  | 'brand';
+  | 'brand'
+  /** Feedback reports (docs/design/feedback.md#the-report). */
+  | 'reports';
 
 export interface PutOptions {
   kind: MediaKind;

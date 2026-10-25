@@ -47,6 +47,7 @@ import {
   SuggestionDecisionsInputSchema,
   TakeEditInputSchema,
   TakeExtendInputSchema,
+  TelemetryInputSchema,
   TimelineExtendInputSchema,
   TimelineOpsInputSchema,
   TranslationUpdateInputSchema,
@@ -824,6 +825,45 @@ export function registerRoutes(app: FastifyInstance, studio: Studio): void {
       .send(await studio.edit.createExport(actor(), pid(req), parse(ExportInputSchema, req.body ?? {}))),
   );
   app.get('/api/projects/:id/exports', async (req) => studio.edit.exports(pid(req)));
+  // Re-checking unverified takes (docs/design/character-consistency.md#re-checking-unverified-takes)
+  app.post('/api/projects/:id/consistency/recheck', async (req, reply) =>
+    reply
+      .code(202)
+      .send(
+        await studio.clips.recheck(
+          actor(),
+          pid(req),
+          parse(z.object({ clipIds: z.array(z.string()).max(500).optional() }), req.body).clipIds,
+        ),
+      ),
+  );
+  // Feedback on exports (docs/design/feedback.md#surfaces)
+  app.post('/api/projects/:id/exports/:eid/feedback', async (req, reply) =>
+    reply.code(202).send(await studio.feedback.request(actor(), pid(req), p(req, 'eid'))),
+  );
+  app.get('/api/projects/:id/feedback', async (req) => studio.feedback.list(pid(req)));
+  app.post('/api/projects/:id/feedback/:fid/recommendations/:rid/apply', async (req) =>
+    studio.feedback.apply(actor(), pid(req), p(req, 'fid'), p(req, 'rid')),
+  );
+  app.post('/api/projects/:id/feedback/:fid/recommendations/:rid/dismiss', async (req) =>
+    studio.feedback.dismiss(actor(), pid(req), p(req, 'fid'), p(req, 'rid')),
+  );
+  // Insights and telemetry (docs/design/observability.md)
+  app.get('/api/projects/:id/insights', async (req) => studio.insights.insights(pid(req)));
+  app.post('/api/telemetry', async (req, reply) => {
+    if (!studio.config.telemetry) throw new AppError('not_found', 'telemetry is off (RIDEO_TELEMETRY)');
+    const { events } = parse(TelemetryInputSchema, req.body);
+    const m = studio.deps.metrics;
+    for (const e of events) {
+      if (e.kind === 'vital') {
+        if (e.name === 'cls') m.webCls.observe({}, e.value);
+        else m.webVitals.observe({ metric: e.name }, e.value);
+      } else if (e.kind === 'timing') m.webTiming.observe({ op: e.name }, e.value);
+      else m.webErrors.inc({ kind: e.name }, Math.max(1, Math.round(e.value)));
+    }
+    studio.deps.log.debug({ events: events.length }, 'telemetry from the studio');
+    return reply.code(204).send();
+  });
 
   // Editor jobs (docs/design/editor.md#editor-jobs)
   app.addContentTypeParser('application/octet-stream', (_req, payload, done) => done(null, payload));

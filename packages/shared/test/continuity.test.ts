@@ -1,0 +1,343 @@
+import { describe, expect, it } from 'vitest';
+import {
+  aggregateQuality,
+  attemptDone,
+  BASE_NEGATIVE,
+  BASE_NEGATIVE_V2,
+  betterAttempt,
+  boardPromptHash,
+  compactIdentity,
+  compileKeyframeRequest,
+  compileMultiShotRequest,
+  compileShotPrompt,
+  compileVideoRequest,
+  countWords,
+  DIALOGUE_LEVELS,
+  dialogueDirection,
+  fitDialogue,
+  NEGATIVE_PROMPT_MAX,
+  negativePromptFor,
+  ProjectSettingsSchema,
+  parseSceneScores,
+  type ShotContext,
+  sceneLine,
+  shotContextOf,
+  TEMPORAL_JUMP_SCORE,
+  temporalVerdict,
+  voicePhrase,
+  WORDS_PER_SECOND,
+  wordsCapacity,
+} from '../src';
+import * as f from '../src/testing/fixtures';
+
+const v1 = ProjectSettingsSchema.parse({ resolution: { width: 320, height: 180 } });
+const v2 = ProjectSettingsSchema.parse({
+  resolution: { width: 320, height: 180 },
+  generation: { promptVersion: 2, includeAudio: true },
+});
+
+function ctxV2(overrides: Partial<ShotContext> = {}): ShotContext {
+  const mira = f.character();
+  const shot = f.shot({
+    characterIds: [mira.id],
+    dialogue: [{ characterId: mira.id, line: 'Look at the mountain!' }],
+  });
+  return {
+    shot,
+    characters: [mira],
+    elements: [],
+    screenplay: f.screenplay(),
+    settings: v2,
+    scene: {
+      heading: 'EXT. SLOPE - DAY',
+      location: 'Snowy slope',
+      timeOfDay: 'late afternoon',
+      continuity: 'clear sky, sun low on the left',
+    },
+    previousEndState: 'Mira stands at the top, poles planted',
+    ...overrides,
+  };
+}
+
+describe('prompt version 2 (docs/design/continuity.md#prompts-version-2)', () => {
+  it('leaves version 1 prompts exactly as they were', () => {
+    const ctx = { ...ctxV2(), settings: v1 };
+    const p = compileShotPrompt(ctx, 'video');
+    expect(p).not.toContain('Scene:');
+    expect(p).not.toContain('One continuous shot');
+    expect(p).not.toContain('Physics:');
+    expect(compileVideoRequest(ctx, { referenceUris: [], attempt: 0 }).parameters?.negative_prompt).toBe(
+      BASE_NEGATIVE,
+    );
+  });
+
+  it('writes the video prompt as blocks: scene, shot, camera, cast, dialogue with voices, sound, physics, exclusions', () => {
+    const ctx = ctxV2();
+    ctx.shot.camera = { framing: 'wide', movement: 'tracking', lensMm: 24 };
+    const p = compileShotPrompt(ctx, 'video');
+    const order = [
+      'Cinematic shot',
+      'Scene: Snowy slope, late afternoon; clear sky, sun low on the left.',
+      'One continuous shot, no cuts. Mira climbs the lighthouse stairs.',
+      'Action: She climbs, breathing hard.',
+      'Continues from the previous shot: Mira stands at the top, poles planted.',
+      'Camera: wide shot, tracking shot; 24mm lens.',
+      'Characters (keep identities exactly as in the first frame and the reference images): Mira:',
+      'Dialogue: Mira says, in a',
+      ': "Look at the mountain!" Lip sync.',
+      'Sound: natural ambient sound of the place and the action; no background music.',
+      'Physics:',
+      'Avoid:',
+    ];
+    let at = -1;
+    for (const part of order) {
+      const i = p.indexOf(part);
+      expect(i, part).toBeGreaterThan(at);
+      at = i;
+    }
+    // The compact identity says who is who without the face (the first frame shows it).
+    expect(p).not.toContain('face: oval face');
+    expect(compileShotPrompt(ctx, 'keyframe')).toContain('face: oval face');
+    // Deterministic (rule R3).
+    expect(compileShotPrompt(structuredClone(ctx), 'video')).toBe(p);
+  });
+
+  it('says No dialogue when a voiced shot has no lines, and nothing about sound when none is rendered', () => {
+    const silent = ctxV2();
+    silent.shot.dialogue = [];
+    expect(compileShotPrompt(silent, 'video')).toContain('No dialogue.');
+    const mute = { ...silent, settings: ProjectSettingsSchema.parse({ generation: { promptVersion: 2 } }) };
+    const p = compileShotPrompt(mute, 'video');
+    expect(p).not.toContain('No dialogue.');
+    expect(p).not.toContain('Sound:');
+    const music = {
+      ...silent,
+      settings: ProjectSettingsSchema.parse({
+        generation: { promptVersion: 2, includeAudio: true, modelMusic: true },
+      }),
+    };
+    expect(compileShotPrompt(music, 'video')).toContain(
+      'Sound: natural ambient sound of the place and the action.',
+    );
+  });
+
+  it('names each voice in the same words every time', () => {
+    const mira = f.character();
+    expect(voicePhrase(mira)).toBe('an early 30s woman voice');
+    mira.voice = { ...mira.voice!, description: 'warm, bright young voice' } as typeof mira.voice;
+    expect(voicePhrase(mira as never)).toBe('a warm, bright young voice');
+    expect(compactIdentity(f.character())).toBe(
+      'Mira: early 30s woman, East Asian, slender athletic build; wearing charcoal field jacket over a white t-shirt.',
+    );
+  });
+
+  it('keyframes carry the scene line, the continuation, the scene reference phrase and exclusions', () => {
+    const ctx = ctxV2({ sceneReference: true });
+    const p = compileShotPrompt(ctx, 'keyframe');
+    expect(p).toContain('Scene: Snowy slope, late afternoon');
+    expect(p).toContain('Continues from the previous shot:');
+    expect(p).toContain('The last image is the scene reference');
+    expect(p).toContain('Avoid: extra or missing limbs');
+    expect(p).not.toContain('Dialogue:');
+    // A continuous shot starts from the last frame: no continuation sentence.
+    const cont = ctxV2();
+    cont.shot.continuity = 'continuous';
+    expect(compileShotPrompt(cont, 'video')).not.toContain('Continues from the previous shot');
+  });
+
+  it('adds motion artefacts to the negative prompt within 500 characters', () => {
+    const ctx = ctxV2();
+    expect(negativePromptFor(ctx)).toBe(BASE_NEGATIVE_V2);
+    ctx.shot.negativePrompt = 'x'.repeat(800);
+    const long = negativePromptFor(ctx);
+    expect(long.length).toBeLessThanOrEqual(NEGATIVE_PROMPT_MAX);
+    expect(long.startsWith(BASE_NEGATIVE)).toBe(true);
+    const req = compileKeyframeRequest(ctxV2(), { referenceUris: [], attempt: 0 });
+    expect(req.parameters?.negative_prompt).toBe(BASE_NEGATIVE_V2);
+  });
+
+  it('sends enhance_prompt only when the project sets it', () => {
+    const ctx = ctxV2();
+    expect(compileVideoRequest(ctx, { referenceUris: [], attempt: 0 }).parameters).not.toHaveProperty(
+      'enhance_prompt',
+    );
+    const off = {
+      ...ctx,
+      settings: { ...ctx.settings, generation: { ...ctx.settings.generation, enhancePrompt: false } },
+    };
+    expect(compileVideoRequest(off, { referenceUris: [], attempt: 0 }).parameters?.enhance_prompt).toBe(
+      false,
+    );
+  });
+
+  it('builds the scene line from the scene, falling back to the location element and the heading', () => {
+    expect(sceneLine(null, undefined)).toBeNull();
+    expect(
+      sceneLine(
+        { heading: 'EXT. PEAK - DAWN', location: '', timeOfDay: '', continuity: '' },
+        { name: 'Summit' },
+      ),
+    ).toBe('Scene: Summit.');
+    expect(
+      sceneLine({ heading: 'EXT. PEAK - DAWN', location: '', timeOfDay: 'dawn', continuity: '' }, undefined),
+    ).toBe('Scene: EXT. PEAK - DAWN, dawn.');
+  });
+
+  it('gives storyboard frames and the server the same context, without the scene reference in the hash', () => {
+    const mira = f.character();
+    const a = f.shot({ index: 0, endState: 'Mira waves from the lift' });
+    const b = f.shot({ index: 1, characterIds: [mira.id] });
+    const scene = { ...f.screenplay().scenes[0], id: 'scn_0000000000aaaaaa' } as never;
+    const sp = f.screenplay({
+      scenes: [
+        {
+          id: 'scn_0000000000aaaaaa',
+          index: 0,
+          beatId: null,
+          heading: 'EXT. SLOPE - DAY',
+          location: 'Slope',
+          timeOfDay: 'noon',
+          summary: '',
+          action: '',
+          dialogue: [],
+          characterIds: [],
+          locationId: null,
+          elementIds: [],
+          estDurationSec: 10,
+          continuity: 'bright sun',
+        },
+      ],
+    });
+    void scene;
+    const clip = f.clip({ sceneId: 'scn_0000000000aaaaaa', shots: [a, b] });
+    const docs = f.docs({
+      project: f.project({ settings: v2 }),
+      screenplay: sp,
+      characters: { [mira.id]: mira },
+      clips: { [clip.id]: clip },
+    });
+    const ctx = shotContextOf(b, docs);
+    expect(ctx.scene?.continuity).toBe('bright sun');
+    expect(ctx.previousEndState).toBe('Mira waves from the lift');
+    expect(boardPromptHash({ ...ctx, sceneReference: true })).toBe(boardPromptHash(ctx));
+    // Moving frames changes the previous shot: the board stays current.
+    expect(boardPromptHash({ ...ctx, previousEndState: 'someone else' })).toBe(boardPromptHash(ctx));
+    // Version 1 projects keep their contexts (and their board hashes).
+    const old = shotContextOf(b, { ...docs, project: f.project({ settings: v1 }) });
+    expect(old.scene).toBeUndefined();
+  });
+
+  it('keeps multi-shot segments free of the no-cut line', () => {
+    const ctx = ctxV2();
+    const req = compileMultiShotRequest(
+      [ctx, { ...ctx, shot: { ...ctx.shot, id: 'sht_0000000000bbbbbb', index: 1 } }],
+      {
+        referenceUris: [],
+        attempt: 0,
+      },
+    );
+    const text = (req.input[0] as { text: string }).text;
+    expect(text).toContain('A multi-shot sequence of 2 shots');
+    expect(text).not.toContain('One continuous shot');
+    expect(text).toContain('Physics:');
+    expect(req.parameters?.negative_prompt).not.toContain('jump cut');
+  });
+});
+
+describe('dialogue that fits its shot (docs/design/continuity.md#shot-planning)', () => {
+  it('counts words and capacity', () => {
+    expect(countWords("Let's go — slow down, Rosie!")).toBe(5);
+    expect(countWords('...')).toBe(0);
+    expect(wordsCapacity(5)).toBe(Math.floor(5 * WORDS_PER_SECOND));
+  });
+
+  it('lengthens a shot within the model, then moves lines to continuous shots, never cutting a line', () => {
+    const shot = (lines: string[], durationSec = 4) => ({
+      durationSec,
+      continuity: 'cut' as const,
+      dialogue: lines.map((line) => ({ character: 'Mira', line })),
+      description: 'd',
+    });
+    // 10 words need 4.5 s: lengthened from 4 to 4.6 within a 10 s maximum.
+    const [one] = fitDialogue([shot(['one two three four five six seven eight nine ten'])], {
+      minSec: 2,
+      maxSec: 10,
+    });
+    expect(one!.durationSec).toBeCloseTo(4.6, 5);
+    // Fixed 5 s shots: two 8-word lines go to two shots, the second continuous.
+    const out = fitDialogue([shot(['a b c d e f g h', 'i j k l m n o p'], 5)], { minSec: 5, maxSec: 5 });
+    expect(out).toHaveLength(2);
+    expect(out[1]!.continuity).toBe('continuous');
+    expect(out.map((s) => s.dialogue[0]!.line)).toEqual(['a b c d e f g h', 'i j k l m n o p']);
+    expect(out.every((s) => s.durationSec === 5)).toBe(true);
+    // A single line longer than any shot keeps a shot of its own at the maximum.
+    const long = fitDialogue([shot(['w '.repeat(20).trim()], 5)], { minSec: 5, maxSec: 5 });
+    expect(long).toHaveLength(1);
+    expect(long[0]!.dialogue[0]!.line.split(' ')).toHaveLength(20);
+  });
+
+  it('turns a CEFR level into guidance and the longest line', () => {
+    expect(dialogueDirection('any', 5)).toEqual({ maxWordsPerLine: 11 });
+    const b1 = dialogueDirection('B1', 5);
+    expect(b1.dialogueLevel).toBe('B1');
+    expect(b1.dialogueGuidance).toBe(DIALOGUE_LEVELS.B1.guidance);
+    expect(b1.maxWordsPerLine).toBe(11);
+    expect(dialogueDirection('A1', 10).maxWordsPerLine).toBe(6);
+  });
+});
+
+describe('quality checks (docs/design/continuity.md#quality-checks-in-the-gate)', () => {
+  it('parses scene scores and finds jumps', () => {
+    const log = [
+      '[Parsed_metadata_2 @ 0x1] frame:0    pts:5120    pts_time:0.333333',
+      '[Parsed_metadata_2 @ 0x1] lavfi.scene_score=0.572561',
+      '[Parsed_metadata_2 @ 0x1] frame:1    pts:9000    pts_time:2.1',
+      '[Parsed_metadata_2 @ 0x1] lavfi.scene_score=0.3',
+    ].join('\n');
+    const scores = parseSceneScores(log);
+    expect(scores).toEqual([
+      { t: 0.333333, score: 0.572561 },
+      { t: 2.1, score: 0.3 },
+    ]);
+    expect(temporalVerdict(scores)).toEqual({ jumps: [0.33], maxScore: 0.573 });
+    expect(temporalVerdict([{ t: 1, score: TEMPORAL_JUMP_SCORE - 0.01 }]).jumps).toEqual([]);
+    expect(temporalVerdict([])).toEqual({ jumps: [], maxScore: 0 });
+  });
+
+  it('aggregates physics (lowest), continuity (mean) and temporal into a verdict', () => {
+    const q = aggregateQuality({
+      frames: [
+        { physics: { score: 0.9 }, continuity: { score: 0.8 } },
+        {
+          physics: { score: 0.3, issues: ['the ski passes through the leg'] },
+          continuity: { score: 0.4, issues: ['night instead of day'] },
+        },
+      ],
+      temporal: { jumps: [], maxScore: 0.1 },
+      threshold: 0.5,
+    });
+    expect(q.physics).toBe(0.3);
+    expect(q.continuity).toBe(0.6);
+    expect(q.passed).toBe(false);
+    expect(q.issues).toEqual(['the ski passes through the leg', 'continuity: night instead of day']);
+    const jump = aggregateQuality({ frames: [], temporal: { jumps: [1.2], maxScore: 0.6 }, threshold: 0.5 });
+    expect(jump.passed).toBe(false);
+    expect(jump.physics).toBeNull();
+    expect(jump.issues[0]).toBe('the shot jumps at 1.2 s');
+    expect(aggregateQuality({ frames: [], temporal: null, threshold: 0.5 }).passed).toBe(true);
+  });
+
+  it('ranks attempts: identity, then quality, then score', () => {
+    const passedOk = { status: 'passed' as const, score: 0.8, quality: { passed: true } as never };
+    const passedBad = { status: 'passed' as const, score: 0.95, quality: { passed: false } as never };
+    const failed = { status: 'failed' as const, score: 0.99, quality: null };
+    expect(betterAttempt(passedBad, null)).toBe(true);
+    expect(betterAttempt(passedOk, passedBad)).toBe(true);
+    expect(betterAttempt(failed, passedBad)).toBe(false);
+    expect(betterAttempt({ ...passedOk, score: 0.9 }, passedOk)).toBe(true);
+    expect(attemptDone(passedOk)).toBe(true);
+    expect(attemptDone(passedBad)).toBe(false);
+    expect(attemptDone({ status: 'unverified', quality: null })).toBe(true);
+    expect(attemptDone(failed)).toBe(false);
+  });
+});

@@ -1,4 +1,6 @@
 import {
+  DIALOGUE_LEVELS,
+  type DialogueLevel,
   type DialogueMode,
   formatDuration,
   isTerminalJob,
@@ -72,6 +74,7 @@ function SettingsDialog({
           disclosure: s.disclosure,
           dialogue: s.dialogue,
           storyboard: s.storyboard,
+          feedback: s.feedback,
         },
       });
       useUi.getState().toast('Settings saved', 'success');
@@ -177,6 +180,35 @@ function SettingsDialog({
           (v) => setS({ ...s, generation: { ...s.generation, multiShot: v ? 'auto' : 'off' } }),
           'multiShot',
         )}
+        <div
+          className="rounded-[var(--radius-control)] border border-border p-3"
+          data-testid="continuity-settings"
+        >
+          <p className="mb-2 text-[13px] font-medium">Continuity and quality</p>
+          <div className="space-y-1">
+            {toggle(
+              'Continuity-aware prompts (scene line, voices, physics; prompt version 2)',
+              s.generation.promptVersion === 2,
+              (v) => setS({ ...s, generation: { ...s.generation, promptVersion: v ? 2 : 1 } }),
+              'promptVersion',
+            )}
+            {toggle(
+              'Check every take for jumps and physics, and retry the ones that fail',
+              s.consistency.qualityChecks,
+              (v) => setS({ ...s, consistency: { ...s.consistency, qualityChecks: v } }),
+              'qualityChecks',
+            )}
+            {toggle(
+              'Watch each export and write feedback',
+              s.feedback.auto,
+              (v) => setS({ ...s, feedback: { auto: v } }),
+              'feedbackAuto',
+            )}
+          </div>
+          <p className="mt-2 text-[12px] text-muted">
+            Switching the prompt version makes current storyboard frames outdated.
+          </p>
+        </div>
         <div className="rounded-[var(--radius-control)] border border-border p-3">
           <p className="mb-2 text-[13px] font-medium">Storyboard</p>
           <div className="grid grid-cols-1 items-end gap-3 sm:grid-cols-2">
@@ -220,6 +252,22 @@ function SettingsDialog({
                 <option value="tts">Locked voices (TTS) + lip sync</option>
                 <option value="native">Model audio, checked against the voices</option>
                 <option value="off">Off (captions only)</option>
+              </Select>
+            </Field>
+            <Field label="Language level">
+              <Select
+                value={s.dialogue.level}
+                onChange={(e) =>
+                  setS({ ...s, dialogue: { ...s.dialogue, level: e.target.value as DialogueLevel } })
+                }
+                data-testid="dialogue-level"
+              >
+                <option value="any">Any</option>
+                {(Object.keys(DIALOGUE_LEVELS) as (keyof typeof DIALOGUE_LEVELS)[]).map((l) => (
+                  <option key={l} value={l}>
+                    {DIALOGUE_LEVELS[l].label}
+                  </option>
+                ))}
               </Select>
             </Field>
           </div>
