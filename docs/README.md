@@ -42,6 +42,7 @@
 | [deployment.md](deployment.md) | Configuration, Docker, connecting mm-gateway and an external WebDAV server |
 | [brand.md](brand.md) | Brand and UI design tokens |
 | [roadmap.md](roadmap.md) | Market research (Sept 2026) and the prioritized list of features to build next |
+| [improvements.md](improvements.md) | What the ten-minute demo on slow remote storage taught us: measurements, and what can still improve in storage, the editor, AI calls and observability |
 
 ## Glossary
 

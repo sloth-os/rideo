@@ -3,7 +3,8 @@
 Market research of September 2026. It compares Rideo with the AI filmmaking studios, editors, audio,
 review and provenance tools people use today, and turns the gaps into a prioritized feature list. Each item
 says **why** (evidence from other products), **how** it fits Rideo's architecture, and a rough effort
-(S ≤ 1 week, M 1–3 weeks, L > 3 weeks for one engineer).
+(S ≤ 1 week, M 1–3 weeks, L > 3 weeks for one engineer). Engineering improvements found in demos (speed on slow
+storage, the editor with long cuts, AI calls under load) are listed in [improvements.md](improvements.md).
 
 ## Products surveyed
 
