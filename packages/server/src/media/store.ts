@@ -9,6 +9,7 @@ import mime from 'mime-types';
 import { AppError } from '../errors';
 import type { StorageBackend } from '../storage/backend';
 import type { Layout } from '../storage/layout';
+import { sleep } from '../util/abort';
 import { randomHex, sha256, sha256File } from '../util/crypto';
 import type { Ffmpeg } from './ffmpeg';
 import { toPng } from './frames';
@@ -107,6 +108,9 @@ function parseDataUri(uri: string): { mime: string; data: Buffer } | null {
  * Immutable, content-addressed media on WebDAV (`media/<kind>/<name>-<hash12>.<ext>`) with a verified,
  * size-bounded local cache for ffmpeg (docs/design/storage-webdav.md#media-references).
  */
+/** Tries of a gateway output download (docs/design/ai-gateway.md#sdk-usage). */
+const DOWNLOAD_TRIES = 3;
+
 export class MediaStore {
   private readonly cacheDir: string;
   readonly tmpDir: string;
@@ -121,6 +125,8 @@ export class MediaStore {
       dataDir: string;
       maxCacheBytes: number;
       log?: { warn: (o: unknown, m?: string) => void };
+      /** The wait between download tries (tests); else a second, then two. */
+      downloadRetryMs?: number;
     },
   ) {
     this.cacheDir = join(deps.dataDir, 'cache', 'media');
@@ -224,6 +230,46 @@ export class MediaStore {
     }
   }
 
+  /**
+   * Downloads a gateway output to a local file (docs/design/ai-gateway.md#sdk-usage): again on a dropped connection or
+   * a 5xx/429 from the provider's file host, up to `DOWNLOAD_TRIES`; then a retryable `gateway_error`.
+   */
+  private async fetchTo(uri: string, path: string, signal?: AbortSignal): Promise<Headers> {
+    for (let attempt = 1; ; attempt++) {
+      try {
+        const res = await fetch(uri, { signal });
+        if (!res.ok || !res.body) {
+          const retryable = res.status >= 500 || res.status === 429;
+          if (retryable && attempt < DOWNLOAD_TRIES) {
+            await res.body?.cancel().catch(() => undefined);
+            await sleep(this.deps.downloadRetryMs ?? 1000 * attempt, signal);
+            continue;
+          }
+          throw new AppError(
+            'gateway_error',
+            `download failed (${res.status}) for ${uri.slice(0, 120)}`,
+            [],
+            retryable,
+          );
+        }
+        await pipeline(Readable.fromWeb(res.body as never), createWriteStream(path));
+        return res.headers;
+      } catch (err) {
+        if (err instanceof AppError || signal?.aborted) throw err;
+        if (attempt >= DOWNLOAD_TRIES) {
+          const cause = (err as { cause?: { code?: string; message?: string } }).cause;
+          throw new AppError(
+            'gateway_error',
+            `download failed for ${uri.slice(0, 120)}: ${(err as Error).message}${cause ? ` (${cause.code ?? cause.message})` : ''}`,
+            [],
+            true,
+          );
+        }
+        await sleep(this.deps.downloadRetryMs ?? 1000 * attempt, signal);
+      }
+    }
+  }
+
   /** Imports an https/http/data URI (gateway outputs, MCP resource_add). */
   async importUri(
     projectId: string,
@@ -234,19 +280,16 @@ export class MediaStore {
     if (data) return this.putBuffer(projectId, data.data, { ...opts, mime: opts.mime ?? data.mime });
     if (!/^https?:\/\//.test(uri))
       throw new AppError('validation_error', 'uri must be http(s) or a data URI');
-    const res = await fetch(uri, { signal: opts.signal });
-    if (!res.ok || !res.body)
-      throw new AppError(
-        'gateway_error',
-        `download failed (${res.status}) for ${uri.slice(0, 120)}`,
-        [],
-        res.status >= 500,
-      );
-    const type =
-      opts.mime ?? res.headers.get('content-type')?.split(';')[0]?.trim() ?? mimeFor(new URL(uri).pathname);
-    const tmp = this.tmp(extFor(type, new URL(uri).pathname));
+    const pathname = new URL(uri).pathname;
+    let tmp = this.tmp(extFor(opts.mime ?? mimeFor(pathname), pathname));
     try {
-      await pipeline(Readable.fromWeb(res.body as never), createWriteStream(tmp));
+      const headers = await this.fetchTo(uri, tmp, opts.signal);
+      const type = opts.mime ?? headers.get('content-type')?.split(';')[0]?.trim() ?? mimeFor(pathname);
+      const named = this.tmp(extFor(type, pathname));
+      if (extname(named) !== extname(tmp)) {
+        await rename(tmp, named);
+        tmp = named;
+      }
       const size = (await stat(tmp)).size;
       if (opts.maxBytes && size > opts.maxBytes)
         throw new AppError('validation_error', `media larger than ${opts.maxBytes} bytes`);
@@ -265,12 +308,9 @@ export class MediaStore {
     }
     if (!/^https?:\/\//.test(uri))
       throw new AppError('validation_error', 'uri must be http(s) or a data URI');
-    const res = await fetch(uri, { signal });
-    if (!res.ok || !res.body)
-      throw new AppError('gateway_error', `download failed (${res.status})`, [], res.status >= 500);
-    await pipeline(Readable.fromWeb(res.body as never), createWriteStream(path));
+    const headers = await this.fetchTo(uri, path, signal);
     return {
-      mime: res.headers.get('content-type')?.split(';')[0]?.trim() ?? mimeFor(new URL(uri).pathname),
+      mime: headers.get('content-type')?.split(';')[0]?.trim() ?? mimeFor(new URL(uri).pathname),
       size: (await stat(path)).size,
     };
   }

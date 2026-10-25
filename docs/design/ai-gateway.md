@@ -49,7 +49,9 @@ const task = await client.generateMusic(req, { idempotencyKey, signal, metadata,
   `ImageRequest`, `VideoRequest` and `MusicRequest` when the server compiles, so a part role or a parameter the
   contract does not have fails the typecheck rather than a gateway `422`.
 - `generate*` = `create*` (202 + task, `Idempotency-Key`) → poll `get*` until `status` is terminal,
-  honouring `Retry-After`. The job's `AbortSignal` goes with every request: cancelling a job aborts the request in
+  honouring `Retry-After`. Outputs are downloaded from the provider's URLs with up to three tries (a dropped
+  connection, a `5xx` or a `429` from the file host); a download that still fails is a retryable `gateway_error`,
+  so the job runs again instead of failing after the generation was paid for. The job's `AbortSignal` goes with every request: cancelling a job aborts the request in
   flight. The result is a normalized `GatewayTask {id, model, status, outputs[], usage, error}`, validated with zod.
 - Errors: an HTTP problem (`application/problem+json`) becomes `GatewayHttpError {status, code, detail}`, no
   response at all (refused, reset, timed out) a `GatewayHttpError` without a status. Failed tasks become
