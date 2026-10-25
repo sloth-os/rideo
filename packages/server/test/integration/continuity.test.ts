@@ -46,6 +46,40 @@ async function generate(pid: string, clipId: string) {
 }
 
 describe('continuity-aware generation (prompt version 2)', () => {
+  it('sees a cast member who walks into a shot that is not theirs, in the keyframe and in the video', async () => {
+    const { pid, clip } = await plannedClip();
+    const single = [...clip.shots]
+      .sort((a, b) => a.index - b.index)
+      .find((s) => s.index > 0 && s.continuity === 'cut' && s.characterIds.length === 1)!;
+    expect(single).toBeTruthy();
+    await stack.api('PATCH', `/projects/${pid}/clips/${clip.id}/shots/${single.id}`, {
+      description: `${single.description} Another cast member photobombs the shot.`,
+    });
+    const job = await stack.api<Job>(
+      'POST',
+      `/projects/${pid}/clips/${clip.id}/shots/${single.id}/regenerate`,
+    );
+    expectSucceeded(await stack.waitJob(pid, job.id, 180_000));
+    await stack.waitIdle(pid);
+    const state = await stateOf(pid);
+    const shot = (state.docs.clips[clip.id] as Clip).shots.find((s) => s.id === single.id)!;
+    const other = Object.values<{ id: string; name: string }>(state.docs.characters).find(
+      (c) => clip.shots.some((s) => s.characterIds.includes(c.id)) && !single.characterIds.includes(c.id),
+    )!;
+    const take = shot.takes.at(-1)!;
+    expect(take.consistency.quality).toMatchObject({ passed: false, extras: [other.name] });
+    expect(take.consistency.quality?.issues).toContain(
+      `${other.name} is in the frame, though the shot is not theirs`,
+    );
+    expect(take.consistency.attempts).toBe(3);
+    // The keyframe was drawn three times as well, told who is in frame
+    const images = take.gatewayTaskIds
+      .map(requestOf)
+      .filter((r) => r && r.parameters?.duration_seconds === undefined);
+    expect(images).toHaveLength(3);
+    expect(images[0].input[0].text).toContain(`; ${other.name} is out of frame.`);
+  });
+
   it('hears every take: a take whose line is not heard is generated again, and records what was heard', async () => {
     expect((await stack.api<any>('GET', '/config')).features.omni).toBe('mock-omni');
     const { pid, clip } = await plannedClip();

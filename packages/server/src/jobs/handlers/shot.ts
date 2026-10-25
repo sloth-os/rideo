@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
+  absentCast,
   attemptDone,
   betterAttempt,
   boardState,
@@ -188,6 +189,11 @@ export async function shotGenerate(deps: HandlerDeps, ctx: JobContext) {
           ? { refs: { ...refs, referenceUris: [...referenceUris, sceneRef.uri] }, sceneReference: true }
           : { refs, sceneReference: false };
       const qualityChecks = settings.consistency.qualityChecks === true;
+      // Who must not be in the frames: the clip's cast who are not in this shot
+      const absent = absentCast(shotCtx.offscreen, docs.characters);
+      const keyframeQuality = qualityChecks
+        ? { threshold: settings.consistency.qualityThreshold, absent }
+        : undefined;
 
       // R5: continuity chaining from the previous shot's passing take.
       let firstFrame: { uri: string; source: Take['request']['firstFrameSource'] } | null = null;
@@ -239,6 +245,7 @@ export async function shotGenerate(deps: HandlerDeps, ctx: JobContext) {
           name,
           step: 'keyframe',
           variation,
+          quality: keyframeQuality,
           progress: (attempt) =>
             ctx.progress(
               0.05 + (0.3 * attempt) / maxAttempts,
@@ -308,6 +315,7 @@ export async function shotGenerate(deps: HandlerDeps, ctx: JobContext) {
           maxAttempts,
           name: `${name}-end`,
           step: 'end-keyframe',
+          quality: keyframeQuality,
           variation: variation + 50,
           progress: (attempt) => ctx.progress(0.3, 1, `end frame attempt ${attempt + 1}/${maxAttempts}`),
         });
@@ -486,6 +494,7 @@ export async function shotGenerate(deps: HandlerDeps, ctx: JobContext) {
                   threshold: settings.consistency.qualityThreshold,
                   sceneReference: sceneRef?.png,
                   temporal,
+                  absent,
                 },
               }
             : {}),

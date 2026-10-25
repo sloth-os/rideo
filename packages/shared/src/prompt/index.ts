@@ -308,7 +308,10 @@ export function dialogueBlockV2(ctx: Pick<ShotContext, 'shot' | 'characters' | '
 /** Version 2: the model's own sound (ambient and action; music only when the project lets it). */
 export function soundBlockV2(settings: Pick<ProjectSettings, 'generation' | 'dialogue'>): string | null {
   if (!settings.generation.includeAudio || settings.dialogue?.mode === 'tts') return null;
-  return `Sound: natural ambient sound of the place and the action${settings.generation.modelMusic ? '' : '; no background music'}.`;
+  // What the sound is, not only what it is not: "no background music" alone left music in a third of the takes
+  return settings.generation.modelMusic
+    ? 'Sound: natural ambient sound of the place and the action.'
+    : 'Sound: only the voices and the natural sounds of the place and the action; no music, no song, no humming.';
 }
 
 function compileShotPromptV2(

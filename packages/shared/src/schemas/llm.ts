@@ -225,6 +225,10 @@ export const JudgeOutputSchema = z.object({
         physics: JudgeScoreSchema.optional().catch(undefined),
         /** Against the scene reference frame, when one was sent. */
         continuity: JudgeScoreSchema.optional().catch(undefined),
+        /** Cast members of `absent` seen in the frame (quality checks). */
+        extras: z.array(z.string().max(80)).max(10).catch([]).default([]),
+        /** Any other person or animal in the frame, briefly (quality checks). */
+        others: z.array(z.string().max(200)).max(10).catch([]).default([]),
       }),
     )
     .min(1),
@@ -419,6 +423,8 @@ export interface JudgeInput {
   /** Score physics (and continuity against the scene reference frame) too. */
   qualityChecks?: boolean;
   sceneReference?: boolean;
+  /** Cast members who must not be in the frame, with how they look (quality checks). */
+  absent?: { name: string; look: string }[];
 }
 
 export interface FootageAnalyzeInput {

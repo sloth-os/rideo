@@ -59,7 +59,9 @@ export function ConsistencyBadge({
   }
 }
 
-/** The temporal, physics and sound checks of a take (docs/design/continuity.md#quality-checks-in-the-gate). */
+/**
+ * The temporal, physics, cast-in-frame and sound checks of a take (docs/design/continuity.md#quality-checks-in-the-gate).
+ */
 export function QualityBadge({ take }: { take: Take }) {
   const q = take.consistency.quality;
   if (!q) return null;
@@ -79,7 +81,15 @@ export function QualityBadge({ take }: { take: Take }) {
       title={[...parts, ...q.issues].join('; ')}
       testid="quality-badge"
     >
-      {q.passed ? 'quality ok' : q.temporal?.jumps.length ? 'jumps' : unheard ? 'line not heard' : 'physics'}
+      {q.passed
+        ? 'quality ok'
+        : q.temporal?.jumps.length
+          ? 'jumps'
+          : q.extras?.length
+            ? 'wrong cast in frame'
+            : unheard
+              ? 'line not heard'
+              : 'physics'}
     </Badge>
   );
 }

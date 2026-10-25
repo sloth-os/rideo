@@ -38,6 +38,8 @@ export interface VerifyInput {
   quality?: {
     threshold: number;
     sceneReference?: Buffer;
+    /** The clip's cast who must not be in the frames (docs/design/continuity.md#quality-checks-in-the-gate). */
+    absent?: { name: string; look: string }[];
     temporal: { jumps: number[]; maxScore: number } | null;
   };
 }
@@ -108,7 +110,9 @@ export async function verifyFrames(input: VerifyInput): Promise<ConsistencyRepor
       frames: input.frames,
       shotDescription: input.shot.description,
       signal: input.signal,
-      ...(input.quality ? { qualityChecks: true, sceneReference: input.quality.sceneReference } : {}),
+      ...(input.quality
+        ? { qualityChecks: true, sceneReference: input.quality.sceneReference, absent: input.quality.absent }
+        : {}),
     });
   } catch (err) {
     if ((err as Error)?.name === 'AbortError') throw err;

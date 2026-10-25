@@ -26,6 +26,8 @@ export interface JudgeRequest {
   /** Physics too, and continuity against the scene reference frame (docs/design/continuity.md#quality-checks-in-the-gate). */
   qualityChecks?: boolean;
   sceneReference?: Buffer;
+  /** Cast members who must not be in the frames, with how they look (quality checks). */
+  absent?: { name: string; look: string }[];
 }
 
 /** Per frame (request order): character verdicts, and element verdicts when elements were asked for. */
@@ -83,6 +85,7 @@ export class VisionLlmJudge implements ConsistencyJudge {
         frameCount: req.frames.length,
         shotDescription: req.shotDescription,
         ...(req.qualityChecks ? { qualityChecks: true, sceneReference: !!req.sceneReference } : {}),
+        ...(req.qualityChecks && req.absent?.length ? { absent: req.absent } : {}),
       },
       refs,
       req.frames,
@@ -90,6 +93,8 @@ export class VisionLlmJudge implements ConsistencyJudge {
       req.qualityChecks ? req.sceneReference : undefined,
     );
     const knownCharacters = new Set(req.characters.map((c) => c.id));
+    // Only the names the judge was told to look for count as extras
+    const absent = new Map((req.absent ?? []).map((a) => [a.name.toLowerCase(), a.name]));
     const knownElements = new Set(elements.map((e) => e.id));
     const frames = req.frames.map((_, i) => out.frames.find((f) => f.index === i));
     return {
@@ -111,10 +116,18 @@ export class VisionLlmJudge implements ConsistencyJudge {
       ),
       ...(req.qualityChecks
         ? {
-            quality: frames.map((frame) => ({
-              ...(frame?.physics ? { physics: frame.physics } : {}),
-              ...(frame?.continuity && req.sceneReference ? { continuity: frame.continuity } : {}),
-            })),
+            quality: frames.map((frame) => {
+              const extras = (frame?.extras ?? []).flatMap((n) => {
+                const name = absent.get(n.trim().toLowerCase());
+                return name ? [name] : [];
+              });
+              return {
+                ...(frame?.physics ? { physics: frame.physics } : {}),
+                ...(frame?.continuity && req.sceneReference ? { continuity: frame.continuity } : {}),
+                ...(extras.length ? { extras } : {}),
+                ...(frame?.others?.length ? { others: frame.others } : {}),
+              };
+            }),
           }
         : {}),
     };

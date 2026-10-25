@@ -357,7 +357,8 @@ export function consistencyJudge(input: JudgeInput, images: LabelledImages): Jud
             issues: present ? [] : [`${e.name} does not match its reference`],
           };
         }),
-        // Quality checks (docs/design/continuity.md#quality-checks-in-the-gate): a shot about floating fails physics.
+        // Quality checks (docs/design/continuity.md#quality-checks-in-the-gate): a shot about floating fails physics,
+        // and a cast member who walks into a shot that is not theirs ("photobombs") is seen.
         ...(input.qualityChecks
           ? {
               physics: /floating|floats/i.test(input.shotDescription)
@@ -366,9 +367,16 @@ export function consistencyJudge(input: JudgeInput, images: LabelledImages): Jud
               ...(input.sceneReference ? { continuity: { score: 0.9, issues: [] } } : {}),
             }
           : {}),
+        extras:
+          input.qualityChecks && /photobomb/i.test(input.shotDescription) && input.absent?.length
+            ? [input.absent[0]!.name]
+            : [],
+        others: [],
       };
     });
-  return { frames: frames.length ? frames : [{ index: 0, characters: [], elements: [] }] };
+  return {
+    frames: frames.length ? frames : [{ index: 0, characters: [], elements: [], extras: [], others: [] }],
+  };
 }
 
 export function footageAnalyze(input: FootageAnalyzeInput): FootageAnalyzeOutput {

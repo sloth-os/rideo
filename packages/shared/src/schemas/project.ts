@@ -118,7 +118,7 @@ export const ProjectSettingsSchema = z.object({
       promptVersion: PromptVersionSchema.default(1),
       /** The provider's own prompt rewriting (`enhance_prompt`); null leaves the provider's default. */
       enhancePrompt: z.boolean().nullable().default(null),
-      /** Version 2: let the video model add music to its shots (else "no background music"). */
+      /** Version 2: let the video model add music to its shots (else the sound line asks for no music). */
       modelMusic: z.boolean().default(false),
     })
     .default({

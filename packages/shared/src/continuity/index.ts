@@ -1,3 +1,5 @@
+import { compactIdentity } from '../prompt';
+import type { Character } from '../schemas/character';
 import type { ConsistencyReport, QualityVerdict, SoundReport } from '../schemas/clip';
 import type { DialogueDirection, SoundCheckOutput } from '../schemas/llm';
 import type { DialogueLevel } from '../schemas/project';
@@ -161,6 +163,10 @@ export function temporalVerdict(scores: { t: number; score: number }[]): {
 export interface QualityFrame {
   physics?: { score: number; issues?: string[] };
   continuity?: { score: number; issues?: string[] };
+  /** Cast members seen though the shot is not theirs. */
+  extras?: string[];
+  /** Other people or animals in the frame. */
+  others?: string[];
 }
 
 /**
@@ -187,15 +193,34 @@ export function aggregateQuality(input: {
   for (const f of input.frames)
     if (f.continuity && f.continuity.score < 0.5)
       for (const i of f.continuity.issues ?? []) issues.add(`continuity: ${i}`.slice(0, 500));
-  const passed = (physics === null || physics >= input.threshold) && !input.temporal?.jumps.length;
+  const extras = [...new Set(input.frames.flatMap((f) => f.extras ?? []))].slice(0, 10);
+  for (const name of extras)
+    issues.add(`${name} is in the frame, though the shot is not theirs`.slice(0, 500));
+  for (const o of new Set(input.frames.flatMap((f) => f.others ?? [])))
+    issues.add(`another figure in the frame: ${o}`.slice(0, 500));
+  const passed =
+    (physics === null || physics >= input.threshold) && !input.temporal?.jumps.length && !extras.length;
   return {
     passed,
     temporal: input.temporal,
     physics,
     continuity,
+    extras,
     sound: null,
     issues: [...issues].slice(0, 20),
   };
+}
+
+/** The clip's cast who are not in a shot, with how they look: what the judge must not see (`absent`). */
+export function absentCast(
+  offscreen: string[] | undefined,
+  characters: Record<string, Character>,
+): { name: string; look: string }[] {
+  const byName = new Map(Object.values(characters).map((c) => [c.name, c]));
+  return (offscreen ?? []).flatMap((name) => {
+    const c = byName.get(name);
+    return c ? [{ name, look: compactIdentity(c).slice(0, 400) }] : [];
+  });
 }
 
 /** Words to compare what was said with the script: lower case, letters and digits, inner apostrophes kept. */
@@ -300,6 +325,7 @@ export function withSound(
     temporal: null,
     physics: null,
     continuity: null,
+    extras: [],
     sound: null,
     issues: [],
   };

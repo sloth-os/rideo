@@ -2,6 +2,8 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
   approvedElementReferences,
+  attemptDone,
+  betterAttempt,
   type Character,
   type ConsistencyReport,
   compileKeyframeRequest,
@@ -91,7 +93,11 @@ export interface KeyframeResult {
   seed: number;
 }
 
-/** The keyframe step (R4): image task → judge → retry up to `maxAttempts`; the last verdict is returned. */
+/**
+ * The keyframe step (R4): image task → judge → retry up to `maxAttempts`. With quality checks the judge also scores
+ * physics and the cast in frame, and a failure draws again (docs/design/continuity.md#quality-checks-in-the-gate).
+ * The best attempt is returned: identity first, then quality, then the score.
+ */
 export async function generateKeyframe(
   deps: HandlerDeps,
   ctx: JobContext,
@@ -107,12 +113,15 @@ export async function generateKeyframe(
     step: string;
     /** Variations offset the seed (docs/design/directing.md#variations-and-comparison). */
     variation?: number;
+    /** Quality checks: physics and who must not be in the frame. */
+    quality?: { threshold: number; absent?: { name: string; look: string }[] };
     progress: (attempt: number) => void;
   },
 ): Promise<KeyframeResult> {
   const { shotCtx, refs } = input;
   const projectId = ctx.job.projectId;
   const out: KeyframeResult = { keyframe: null, report: null, taskIds: [], prompt: '', seed: 0 };
+  let best: Pick<KeyframeResult, 'keyframe' | 'report' | 'prompt' | 'seed'> | null = null;
   for (let attempt = 0; attempt < input.maxAttempts; attempt++) {
     throwIfAborted(ctx.signal);
     input.progress(attempt);
@@ -147,9 +156,20 @@ export async function generateKeyframe(
       metrics: deps.metrics,
       log: ctx.log,
       signal: ctx.signal,
+      ...(input.quality
+        ? { quality: { threshold: input.quality.threshold, temporal: null, absent: input.quality.absent } }
+        : {}),
     });
-    if (out.report.status !== 'failed') break;
-    ctx.log.info({ attempt, score: out.report.score }, 'keyframe failed the consistency gate');
+    if (!best?.report || betterAttempt(out.report, best.report))
+      best = { keyframe: out.keyframe, report: out.report, prompt: out.prompt, seed: out.seed };
+    if (attemptDone(out.report)) break;
+    if (out.report.status === 'failed')
+      ctx.log.info({ attempt, score: out.report.score }, 'keyframe failed the consistency gate');
+    else
+      ctx.log.info(
+        { attempt, physics: out.report.quality?.physics, extras: out.report.quality?.extras },
+        'keyframe failed the quality checks',
+      );
   }
-  return out;
+  return best ? { ...out, ...best } : out;
 }

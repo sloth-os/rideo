@@ -92,7 +92,9 @@ RIDEO_TEST_WEBDAV_URL=http://rideo:rideo@localhost:8080/ npx vitest run --projec
   runs and rushed lines, the Markdown report; listening: `dialogueDelivery` (each utterance counted for the shot whose
   lines it matches best), issues placed by their time in the scene, the `dialogue` and heard `sound` scores, a
   regenerate recommendation for a shot whose line was not heard; the sound check (`soundVerdict`: words not spelling,
-  a heard word for one line only, the wrong voice, stray speech, music, lips out of sync, merged into the verdict).
+  a heard word for one line only, the wrong voice, stray speech, music, lips out of sync, merged into the verdict, an
+  answer given as a list); the cast in frame (an extra fails the frame, other figures are reported, `absentCast`);
+  who is in frame (`inFrameLine` in keyframe, video and multi-shot prompts, left out of the board hash).
 - **shared, settings and project files** (`settings-theme.test.ts`, `settings-endpoints.test.ts`, `bundle.test.ts`):
   the settings table (each setting once, in a known group, environment-only configuration and key material kept out,
   secrets marked, `showIf` targets, option labels for every option); the endpoint table (every endpoint's settings
@@ -125,7 +127,8 @@ RIDEO_TEST_WEBDAV_URL=http://rideo:rideo@localhost:8080/ npx vitest run --projec
   proxy client waiting for slow headers only as long as the call's timeout and still sending multipart uploads; LLM
   calls made again while the provider turns them away for load (`503`, `429` with its `Retry-After`, a dropped
   connection), giving up after the retries, never for `400`, `504` or mm-gateway's `provider_not_configured`, a
-  timeout or failed connection made a retryable `llm_error` for the job, and a cancelled job not waiting; live hub sequencing, replay and resync, and job heartbeats on the live channel (leased, lost, cancelled); config parsing (TTS, speaker-check and audio-visual endpoints); the ElevenLabs and OpenAI TTS clients
+  timeout or failed connection made a retryable `llm_error` for the job, and a cancelled job not waiting; live hub sequencing, replay and resync, and job heartbeats on the live channel (leased, lost, cancelled); config parsing (TTS, speaker-check and audio-visual endpoints); the vision judge told who is absent and counting
+only those names as extras (`judge.test.ts`); the ElevenLabs and OpenAI TTS clients
   against a fake proxy (design, save, clone, speech with timings and seeds, retryable failures, metrics); the
   speaker-check merge (V4: same, different, missing and silent voices, no judge, judge outage); sound effects
   through a fake proxy (request shape, length clamp, retryable failures, `rideo_post_audio_total`) and the
@@ -358,7 +361,8 @@ RIDEO_TEST_WEBDAV_URL=http://rideo:rideo@localhost:8080/ npx vitest run --projec
   the others with its keyframe as the scene reference of the rest, a take that jumps (`MOCK_JUMP_EVERY`) retried by
   the temporal check and a physics failure by the judge, the kept take marked when all attempts fail; version 1
   projects unchanged; the sound check (an audio-visual model): every take records what was heard, and a take whose
-  line is not heard (`muffleSpeech`) is generated again.
+  line is not heard (`muffleSpeech`) is generated again; a cast member who "photobombs" a shot that is not theirs fails
+  the keyframe and the video three times each, and the kept take names the extra.
 - **Re-check** (in `continuity.test.ts`): takes made with the judge off are `unverified`; with the judge back,
   `consistency.recheck` turns them `passed` from their evidence frames without a new generation.
 - **Observability** (`observability.test.ts`): a clip generated on the mock fills `job.usage`, the project's

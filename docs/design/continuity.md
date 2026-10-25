@@ -115,7 +115,7 @@ One continuous shot, no cuts. <description>. Action: <action>. <continues from �
 Camera: <framing>, <move>; <lens>.
 Characters: <compact identity: name, who they are, what they wear> …  In frame: only <names>; <others> out of frame.
 Dialogue: Sammy says, in a warm, bright young male voice: "We did it!" Lip sync.      | No dialogue.
-Sound: natural ambient sound of the place and the action; no background music.
+Sound: only the voices and the natural sounds of the place and the action; no music, no song, no humming.
 Physics: real weight, gravity and momentum; bodies, feet and equipment keep contact with the ground; objects keep their shape and number.
 Avoid: <exclusions>.
 ```
@@ -124,8 +124,11 @@ Avoid: <exclusions>.
   from the identity), the same words every time, so a model that voices the lines itself (`include_audio` without
   reference audio, [dialogue](dialogue.md#from-lines-to-audio)) keeps each character sounding alike.
 - **No dialogue.** A shot without lines says `No dialogue.`, otherwise models that render sound invent speech.
-- **Music.** Unless `settings.generation.modelMusic` is on, `no background music`: a 5-second shot with its own music
-  makes the cut jump from song to song; the score is laid on the Music track ([post audio](post-audio.md)).
+- **Music.** Unless `settings.generation.modelMusic` is on, the sound is `only the voices and the natural sounds of the
+  place and the action; no music, no song, no humming`: a 5-second shot with its own music makes the cut jump from
+  song to song; the score is laid on the Music track ([post audio](post-audio.md)). With the earlier `no background
+  music`, Wan 3.0 still put music under 2 of the panda demo's 6 pilot takes (the sound check hears it); saying what
+  the sound is, not only what it is not, follows its prompt guide.
 - **Exclusions in the text.** Some models (Wan 3.0) have no negative prompt field, so the last block lists the
   exclusions; the `negative_prompt` parameter still carries them for models that do.
 
@@ -161,7 +164,12 @@ attempt fails them, the best take that passed identity is kept, marked with what
 | **Temporal** (inside the shot) | ffmpeg scene scores of the raw take (`select='gt(scene,0.25)'` + `metadata=print`), 320 px wide | a frame changes with a scene score of at least `TEMPORAL_JUMP_SCORE` (0.45): a single shot that jumps has a stray cut, a pop or a morph |
 | **Physics** | the judge call already made for identity also scores each frame for physical plausibility (0–1: anatomy, contact with the ground, gravity, objects keeping shape and number) with issues | the lowest frame score is below `consistency.qualityThreshold` (0.5) |
 | **Continuity** | the same call compares the frames with the scene reference frame (place, light, weather, palette) | never (advisory: shown on the take, read by feedback) |
+| **Cast in frame** | the same call is told who must not be in the shot (`absent`: the clip's cast who are not in it, with how they look) and lists any it sees (`extras`), and any other person or animal that is not in the cast (`others`) | a cast member who is not in the shot is in a frame. Other figures are reported |
 | **Sound** (takes with a sound track, when an [audio-visual model](settings.md) is set) | the `sound.check` task watches the take with its sound (360p, mono) and writes down what is said (the words, which character, the voice, lip sync), whether music plays and what else is heard; `soundVerdict` (shared) compares the words with the shot's lines | a line of the shot is not heard: fewer than `LINE_HEARD_RATIO` (0.6) of its words. Advisory: a line in another character's voice, speech in a shot without lines, music in a take (the film's score comes later), lips out of sync, a sound score below 0.5 |
+
+**Keyframes too.** With quality checks, a keyframe (and a storyboard frame) is judged for physics and the cast in
+frame as well, in the call that checks its identity, and is drawn again when it fails: an extra character or a
+broken paw is cheaper to catch in a picture than in the video made from it.
 
 The sound check runs at the same time as the judge, so it adds no time to an attempt. A shot's lines count when the
 take carries the voices: dialogue mode `off` with `generation.includeAudio` (the video model voices the lines from the
@@ -176,6 +184,7 @@ report.quality = {
   temporal: { jumps: number[]; maxScore: number } | null;   // seconds of the take; null when not measured
   physics: number | null;                  // lowest frame score
   continuity: number | null;               // mean frame score against the scene reference
+  extras: string[];                        // cast members seen though the shot is not theirs
   sound: {
     lines: { character: string; line: string; heard: number; speaker: string | null }[];  // heard: share of words
     transcript: string;                    // everything said, as heard

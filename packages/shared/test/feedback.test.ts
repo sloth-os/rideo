@@ -117,6 +117,7 @@ describe('feedback signals (docs/design/feedback.md#how-a-film-is-watched)', () 
       temporal: null,
       physics: 0.2,
       continuity: null,
+      extras: [],
       sound: null,
       issues: [],
     };

@@ -1,4 +1,5 @@
 import {
+  absentCast,
   boardNeedsGeneration,
   boardPromptHash,
   boardState,
@@ -58,6 +59,15 @@ export async function shotBoard(deps: HandlerDeps, ctx: JobContext) {
       judgedElements,
       threshold,
       maxAttempts,
+      // A frame is checked like a keyframe (docs/design/continuity.md#quality-checks-in-the-gate)
+      ...(settings.consistency.qualityChecks
+        ? {
+            quality: {
+              threshold: settings.consistency.qualityThreshold,
+              absent: absentCast(shotCtx.offscreen, docs.characters),
+            },
+          }
+        : {}),
       name,
       step: 'board',
       progress: (attempt) =>

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  absentCast,
   aggregateQuality,
   attemptDone,
   BASE_NEGATIVE,
@@ -92,7 +93,7 @@ describe('prompt version 2 (docs/design/continuity.md#prompts-version-2)', () =>
       'Characters (keep identities exactly as in the first frame and the reference images): Mira:',
       'Dialogue: Mira says, in a',
       ': "Look at the mountain!" Lip sync.',
-      'Sound: natural ambient sound of the place and the action; no background music.',
+      'Sound: only the voices and the natural sounds of the place and the action; no music, no song, no humming.',
       'Physics:',
       'Avoid:',
     ];
@@ -476,6 +477,33 @@ describe('the sound check (docs/design/continuity.md#quality-checks-in-the-gate)
     expect(v.passed).toBe(true);
     expect(v.sound.unexpectedSpeech).toBe(true);
     expect(v.issues).toEqual(['speech in a shot without lines: “hello there friend”']);
+  });
+
+  it('fails a frame with a cast member who is not in the shot, and reports other figures', () => {
+    const q = aggregateQuality({
+      frames: [
+        { physics: { score: 0.9 }, extras: ['Sammy'] },
+        { physics: { score: 0.8 }, extras: ['Sammy'], others: ['a fox in the background'] },
+      ],
+      temporal: null,
+      threshold: 0.5,
+    });
+    expect(q).toMatchObject({ passed: false, physics: 0.8, extras: ['Sammy'] });
+    expect(q.issues).toEqual([
+      'Sammy is in the frame, though the shot is not theirs',
+      'another figure in the frame: a fox in the background',
+    ]);
+    const others = aggregateQuality({
+      frames: [{ physics: { score: 0.9 }, others: ['a bird'] }],
+      temporal: null,
+      threshold: 0.5,
+    });
+    expect(others).toMatchObject({ passed: true, extras: [] });
+    const sammy = f.character({ name: 'Sammy' });
+    expect(absentCast(['Sammy', 'Nobody'], { [sammy.id]: sammy })).toEqual([
+      { name: 'Sammy', look: compactIdentity(sammy) },
+    ]);
+    expect(absentCast(undefined, {})).toEqual([]);
   });
 
   it('merges into the quality verdict: the take passes only when the sound check passes', () => {
