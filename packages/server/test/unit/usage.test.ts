@@ -236,7 +236,7 @@ describe('usage ledger', () => {
       log: silent,
       delayMs: 1,
       retryMs: 1,
-      jobs: () => jobs,
+      jobs: async () => jobs,
     });
     expect((await healed.get(projectId)).totals.costUsd).toBe(1.5);
     await healed.flush();

@@ -219,8 +219,8 @@ export class UsageLedger {
       log: { warn: (o: unknown, m?: string) => void };
       /** How long a change waits before it is written. */
       delayMs?: number;
-      /** The project's jobs in the job store, to rebuild a ledger whose file is gone. */
-      jobs?: (projectId: string) => Job[];
+      /** The project's jobs in the job store, to rebuild a ledger whose file is gone (once the store has them). */
+      jobs?: (projectId: string) => Job[] | Promise<Job[]>;
       /** The wait between tries of a read (tests). */
       retryMs?: number;
     },
@@ -265,7 +265,7 @@ export class UsageLedger {
           const parsed = ProjectUsageSchema.safeParse(JSON.parse(buf.toString()));
           if (parsed.success) {
             // A ledger behind the job store (a write lost, or one that replaced it) is rebuilt from the jobs
-            const fromJobs = this.rebuild(projectId);
+            const fromJobs = await this.rebuild(projectId);
             const behind =
               fromJobs.totals.costUsd > parsed.data.totals.costUsd + 0.005 ||
               fromJobs.totals.videoSeconds > parsed.data.totals.videoSeconds + 0.5 ||
@@ -290,7 +290,7 @@ export class UsageLedger {
   }
 
   /** A ledger from the project's finished jobs in the job store (empty without them); running ones add themselves. */
-  private rebuild(projectId: string): ProjectUsage {
+  private async rebuild(projectId: string): Promise<ProjectUsage> {
     const ledger: ProjectUsage = {
       version: 1,
       projectId,
@@ -300,7 +300,7 @@ export class UsageLedger {
     };
     const seconds = (from?: string, to?: string) =>
       from && to ? Math.max(0, (Date.parse(to) - Date.parse(from)) / 1000) : 0;
-    for (const job of this.deps.jobs?.(projectId) ?? []) {
+    for (const job of (await this.deps.jobs?.(projectId)) ?? []) {
       const terminal = job.status === 'succeeded' || job.status === 'failed' || job.status === 'cancelled';
       if (!terminal) continue;
       if (job.usage) addUsage(ledger.totals, job.usage);

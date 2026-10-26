@@ -91,6 +91,8 @@ import { WorkflowService } from './workflow';
 
 /** How long shutdown waits for the work trees to catch up with the last commits. */
 const WORKTREE_FLUSH_MS = 15_000;
+/** How long the usage ledger waits for the startup load of the job store before it rebuilds from what is there. */
+const JOBS_LOADED_WAIT_MS = 120_000;
 
 export interface Studio {
   config: Config;
@@ -166,12 +168,23 @@ export function createStudio(
   });
   // Usage and cost of every call, per job and per project (docs/design/observability.md#usage-ledger)
   const meter = new UsageMeter({ metrics, prices: () => config.prices });
+  // The job store has the projects' records once start() has loaded them
+  let markJobsLoaded = () => {};
+  const jobsLoaded = new Promise<void>((resolve) => {
+    markJobsLoaded = resolve;
+  });
   const ledger: UsageLedger = new UsageLedger({
     storage,
     layout,
     log: log.child({ component: 'usage' }),
-    // A ledger whose file is gone is rebuilt from the job store (docs/design/observability.md#usage-ledger)
-    jobs: (projectId): Job[] => jobs.list(projectId),
+    // A ledger whose file is gone or behind is rebuilt from the job store (docs/design/observability.md#usage-ledger)
+    jobs: async (projectId): Promise<Job[]> => {
+      await Promise.race([
+        jobsLoaded,
+        new Promise<void>((resolve) => setTimeout(resolve, JOBS_LOADED_WAIT_MS).unref()),
+      ]);
+      return jobs.list(projectId);
+    },
   });
   const llm = new LlmTasks(
     createAdapter(proxy, config.llm, config.llmTimeoutMs),
@@ -519,6 +532,7 @@ export function createStudio(
         }
       }
       if (recovered) log.info({ recovered }, 'recovered interrupted jobs');
+      markJobsLoaded();
       await sweepStaging();
       sweepTimer = setInterval(sweepStaging, 3600_000);
       sweepTimer.unref();
