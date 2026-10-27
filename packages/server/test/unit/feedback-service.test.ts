@@ -11,6 +11,7 @@ import * as f from '@rideo/shared/testing';
 import { describe, expect, it } from 'vitest';
 import { settingsPatchOf } from '../../src/domain/feedback';
 import { RETROSPECTIVE_RULES, type RunFacts, retrospective } from '../../src/domain/retrospective';
+import { sceneInput } from '../../src/jobs/handlers/feedback';
 
 function usage(
   over: Partial<ProjectUsage['totals']> = {},
@@ -186,5 +187,38 @@ describe('retrospective rules (docs/design/feedback.md#retrospective-improvement
       storyboard: { enabled: false },
       generation: { promptVersion: 2 },
     });
+  });
+});
+
+describe('the scene reviewers’ input (docs/design/feedback.md#how-a-film-is-watched, step 3)', () => {
+  it('gives the listener where each shot is in the scene’s video and the cast’s voices; the strips get neither', () => {
+    const rosie = f.character({ name: 'Rosie' });
+    const shots = [0, 1].map((index) =>
+      f.shot({ index, characterIds: [rosie.id], takes: [f.take({ id: `tk_${index}` })] }),
+    );
+    const clip = f.clip({ shots });
+    const docs = f.docs({ clips: { [clip.id]: clip }, characters: { [rosie.id]: rosie } });
+    const spans = shots.map((s, i) => ({
+      clipId: clip.id,
+      shotId: s.id,
+      takeId: `tk_${i}`,
+      label: `C1·S${i + 1}`,
+      clipIndex: 0,
+      shotIndex: i,
+      start: 30 + i * 5,
+      end: 35 + i * 5,
+    }));
+    const signals = FeedbackSignalsSchema.parse({ durationSec: 60 });
+    const neighbours = { previous: null, next: null };
+    const heard = sceneInput(docs, clip.id, spans, neighbours, signals, true);
+    expect(heard.listening).toBe(true);
+    expect(heard.shots.map((s) => s.video)).toEqual([
+      { from: 0, to: 5 },
+      { from: 5, to: 10 },
+    ]);
+    expect(heard.cast).toEqual([{ name: 'Rosie', look: expect.any(String), voice: expect.any(String) }]);
+    const seen = sceneInput(docs, clip.id, spans, neighbours, signals);
+    expect(seen.shots[0]).not.toHaveProperty('video');
+    expect(seen.cast[0]).not.toHaveProperty('voice');
   });
 });

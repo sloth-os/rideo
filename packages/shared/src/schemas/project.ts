@@ -18,6 +18,8 @@ export const ConsistencySettingsSchema = z.object({
   qualityChecks: z.boolean().default(false),
   /** The lowest physics score an attempt may have (0–1). */
   qualityThreshold: z.number().min(0).max(1).default(0.5),
+  /** A film with only its cast: another person or animal in a frame fails the quality checks. */
+  castOnly: z.boolean().default(false),
 });
 export type ConsistencySettings = z.infer<typeof ConsistencySettingsSchema>;
 
@@ -105,6 +107,7 @@ export const ProjectSettingsSchema = z.object({
     judgeVoices: true,
     qualityChecks: false,
     qualityThreshold: 0.5,
+    castOnly: false,
   }),
   dialogue: DialogueSettingsSchema.default({ mode: 'off', lipSync: true, level: 'any' }),
   storyboard: StoryboardSettingsSchema.default({ enabled: true, scenes: 3 }),

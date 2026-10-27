@@ -17,6 +17,7 @@ import {
   type FeedbackSignals,
   feedbackMarkdown,
   framingRuns,
+  mergeSceneOutputs,
   type ProjectDocs,
   rushedLines,
   type SceneReview,
@@ -25,6 +26,7 @@ import {
   takeSignals,
   takeState,
   unexpectedCuts,
+  voicePhrase,
 } from '@rideo/shared';
 import { retrospective } from '../../domain/retrospective';
 import { invalid, notFound } from '../../errors';
@@ -136,7 +138,8 @@ async function sceneVideo(
   return fitted.length <= SCENE_VIDEO_MAX_BYTES ? fitted : null;
 }
 
-function sceneInput(
+/** What the scene's reviewers get (docs/design/feedback.md#how-a-film-is-watched, step 3); exported for tests. */
+export function sceneInput(
   docs: ProjectDocs,
   clipId: string,
   spans: FeedbackShotSpan[],
@@ -184,7 +187,11 @@ function sceneInput(
     cast: castIds
       .map((id) => docs.characters[id])
       .filter((c) => !!c)
-      .map((c) => ({ name: c!.name, look: compactIdentity(c!) })),
+      .map((c) => ({
+        name: c!.name,
+        look: compactIdentity(c!),
+        ...(listening ? { voice: voicePhrase(c!) } : {}),
+      })),
     shots: spans.map((span, index) => {
       const shot = clip.shots.find((x) => x.id === span.shotId)!;
       const take = shot.takes.find((t) => t.id === span.takeId);
@@ -329,30 +336,9 @@ export async function exportFeedback(deps: HandlerDeps, ctx: JobContext) {
         };
         if (!watching) return review;
         const neighbours = { previous: groups[k - 1]?.clipId ?? null, next: groups[k + 1]?.clipId ?? null };
-        if (listening) {
-          try {
-            throwIfAborted(ctx.signal);
-            const video = await sceneVideo(deps, file, review, join(dir, `scene-${k}.mp4`), ctx.signal);
-            if (video) {
-              const input = sceneInput(docs, g.clipId, g.spans, neighbours, signals, true);
-              review.output = await deps.llm.feedbackScene(input, [], ctx.signal, video);
-              review.listened = true;
-            }
-          } catch (err) {
-            if (ctx.signal.aborted) throw err;
-            // Watched again as strips by the vision model
-            log.warn(
-              { clipId: g.clipId, err: (err as Error).message.slice(0, 500), exportId, feedbackId },
-              'listening to the scene failed; watching strips',
-            );
-          }
-          if (review.output) {
-            done++;
-            ctx.progress(0.2 + (0.65 * done) / groups.length, 1, `watched ${done}/${groups.length} scenes`);
-            return review;
-          }
-        }
-        try {
+        // The picture from strips (the vision model) and, with an audio-visual model, the sound from the scene's video,
+        // at the same time (docs/design/feedback.md#how-a-film-is-watched, step 3)
+        const picture = (async () => {
           throwIfAborted(ctx.signal);
           const strips: { label: string; data: Buffer }[] = [];
           for (const [i, span] of g.spans.entries())
@@ -360,13 +346,39 @@ export async function exportFeedback(deps: HandlerDeps, ctx: JobContext) {
               label: `${i}: ${span.label} (${span.start.toFixed(1)}–${span.end.toFixed(1)} s)`,
               data: await strip(deps, file, span, join(dir, `strip-${k}-${i}.jpg`), ctx.signal),
             });
-          const input = sceneInput(docs, g.clipId, g.spans, neighbours, signals);
-          review.output = await deps.llm.feedbackScene(input, strips, ctx.signal);
-        } catch (err) {
-          if (ctx.signal.aborted) throw err;
-          review.error = (err as Error).message.slice(0, 1000);
+          return deps.llm.feedbackScene(
+            sceneInput(docs, g.clipId, g.spans, neighbours, signals),
+            strips,
+            ctx.signal,
+          );
+        })();
+        const heard = listening
+          ? (async () => {
+              const video = await sceneVideo(deps, file, review, join(dir, `scene-${k}.mp4`), ctx.signal);
+              if (!video) return null;
+              const input = sceneInput(docs, g.clipId, g.spans, neighbours, signals, true);
+              return deps.llm.feedbackListen(input, video, ctx.signal);
+            })()
+          : Promise.resolve(null);
+        const [seen, listenedTo] = await Promise.allSettled([picture, heard]);
+        if (ctx.signal.aborted) throw ctx.signal.reason ?? new Error('aborted');
+        if (seen.status === 'rejected') {
+          review.error = (seen.reason as Error).message.slice(0, 1000);
           log.warn({ clipId: g.clipId, err: review.error, exportId, feedbackId }, 'scene feedback failed');
         }
+        if (listenedTo.status === 'rejected')
+          log.warn(
+            {
+              clipId: g.clipId,
+              err: (listenedTo.reason as Error).message.slice(0, 500),
+              exportId,
+              feedbackId,
+            },
+            'listening to the scene failed',
+          );
+        const heardOut = listenedTo.status === 'fulfilled' ? listenedTo.value : null;
+        review.output = mergeSceneOutputs(seen.status === 'fulfilled' ? seen.value : null, heardOut);
+        review.listened = !!heardOut;
         done++;
         ctx.progress(0.2 + (0.65 * done) / groups.length, 1, `watched ${done}/${groups.length} scenes`);
         return review;
@@ -472,7 +484,8 @@ export async function exportFeedback(deps: HandlerDeps, ctx: JobContext) {
         error: undefined,
         createdAt: current?.createdAt ?? now,
         updatedAt: now,
-        model: watching ? (listened ? deps.llm.omni!.model : deps.llm.vision.model) : null,
+        model: watching ? deps.llm.vision.model : null,
+        listener: listened ? (deps.llm.omni?.model ?? null) : null,
         listened,
         timelineCommit: exp.timelineCommit,
         durationSec,

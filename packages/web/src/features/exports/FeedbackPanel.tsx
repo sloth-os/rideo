@@ -35,13 +35,14 @@ function dimensionLabel(id: string): string {
   return FEEDBACK_DIMENSIONS.find((d) => d.id === id)?.label ?? id;
 }
 
-/** Who watched the film, whether it was heard, and how many of the script's lines were (docs/design/feedback.md). */
+/** Who watched the film, who heard it, and how many of the script's lines were heard (docs/design/feedback.md). */
 function Heard({ fb }: { fb: Feedback }) {
   if (!fb.model) return null;
   const d = fb.signals.dialogue;
   return (
     <p className="text-[12px] text-muted" data-testid="feedback-heard">
-      {fb.listened ? 'Watched and heard' : 'Watched'} by {fb.model}
+      Watched by {fb.model}
+      {fb.listened && fb.listener ? ` and heard by ${fb.listener}` : ''}
       {d?.lines ? ` · ${d.heard} of ${d.lines} lines heard` : ''}
     </p>
   );

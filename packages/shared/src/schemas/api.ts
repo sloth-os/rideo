@@ -69,6 +69,7 @@ export const ProjectSettingsPatchSchema = z
         /** docs/design/continuity.md#quality-checks-in-the-gate */
         qualityChecks: z.boolean(),
         qualityThreshold: z.number().min(0).max(1),
+        castOnly: z.boolean(),
       })
       .partial(),
     /** Dialogue audio (docs/design/dialogue.md#from-lines-to-audio) and its level (docs/design/continuity.md). */

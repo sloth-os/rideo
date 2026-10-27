@@ -12,6 +12,7 @@ import {
   feedbackIdFor,
   feedbackMarkdown,
   framingRuns,
+  mergeSceneOutputs,
   overallScore,
   parsePrices,
   parseSignalLog,
@@ -118,6 +119,7 @@ describe('feedback signals (docs/design/feedback.md#how-a-film-is-watched)', () 
       physics: 0.2,
       continuity: null,
       extras: [],
+      others: [],
       sound: null,
       issues: [],
     };
@@ -507,13 +509,14 @@ describe('listening feedback (docs/design/feedback.md#how-a-film-is-watched)', (
       status: 'succeeded',
       createdAt: '2026-10-25T00:00:00.000Z',
       updatedAt: '2026-10-25T00:00:00.000Z',
-      model: 'omni-x',
+      model: 'vision-x',
+      listener: 'omni-x',
       listened: true,
       ...out,
       signals,
     });
     const md = feedbackMarkdown(fb, { title: 'T' });
-    expect(md).toContain('watched and heard by omni-x');
+    expect(md).toContain('watched by vision-x, heard by omni-x');
     expect(md).toContain('Lines heard: 1 of 2.');
   });
 
@@ -564,5 +567,35 @@ describe('listening feedback (docs/design/feedback.md#how-a-film-is-watched)', (
     expect(seen.scores.dialogue).toBeNull();
     expect(seen.scores.sound).toBeNull();
     expect(seen.scenes[0]!.scores).not.toHaveProperty('dialogue');
+  });
+
+  it('makes one scene review of the picture from strips and the sound heard in the video', () => {
+    const picture = output({
+      scores: { storytelling: 7, continuity: 4, dialogue: 9, sound: 9 },
+      summary: 'Clear blocking; the skis change decals.',
+      issues: [
+        { shot: 1, dimension: 'continuity', severity: 'major', title: 'Decals change', detail: '', at: 0.85 },
+        { shot: 1, dimension: 'sound', severity: 'minor', title: 'Guessed from stills', detail: '', at: 0.5 },
+      ],
+    });
+    const heard = output({
+      scores: { dialogue: 6, sound: 8, continuity: 1 },
+      summary: 'Every line but one.',
+      transcript: [{ time: 1.2, speaker: 'Sammy', text: 'Wow!' }],
+      issues: [
+        { shot: 0, dimension: 'dialogue', severity: 'major', title: 'Mumbled', detail: '', at: 0.5, time: 3 },
+        { shot: 0, dimension: 'continuity', severity: 'critical', title: 'Teleports', detail: '', at: 0.5 },
+      ],
+    });
+    const merged = mergeSceneOutputs(picture, heard)!;
+    // The picture's scores but dialogue and sound; the sound's dialogue and sound only
+    expect(merged.scores).toEqual({ storytelling: 7, continuity: 4, dialogue: 6, sound: 8 });
+    expect(merged.issues.map((i) => i.title)).toEqual(['Decals change', 'Mumbled']);
+    expect(merged.transcript).toEqual([{ time: 1.2, speaker: 'Sammy', text: 'Wow!' }]);
+    expect(merged.summary).toBe('Clear blocking; the skis change decals. Heard: Every line but one.');
+    // Strips alone: no heard scores; nothing at all: no review
+    expect(mergeSceneOutputs(picture, null)!.scores).toEqual({ storytelling: 7, continuity: 4 });
+    expect(mergeSceneOutputs(null, heard)!.scores).toEqual({ dialogue: 6, sound: 8 });
+    expect(mergeSceneOutputs(null, null)).toBeNull();
   });
 });

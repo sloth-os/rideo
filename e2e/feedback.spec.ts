@@ -32,13 +32,18 @@ test('a story export is watched by itself: scores, issues, recommendations appli
   await expect(continuity.locator('input[name="promptVersion"]')).toBeChecked();
   await expect(continuity.locator('input[name="qualityChecks"]')).toBeChecked();
   await expect(continuity.locator('input[name="feedbackAuto"]')).toBeChecked();
+  // A film with only its cast (docs/design/continuity.md#quality-checks-in-the-gate): off until asked for
+  const castOnly = continuity.locator('input[name="castOnly"]');
+  await expect(castOnly).not.toBeChecked();
+  await castOnly.check();
   await page.getByTestId('dialogue-level').selectOption('B1');
   await page.getByTestId('settings-save').click();
   await expect
-    .poll(
-      async () => (await api.call<any>('GET', `/projects/${pid}/state`)).docs.project.settings.dialogue.level,
-    )
-    .toBe('B1');
+    .poll(async () => {
+      const settings = (await api.call<any>('GET', `/projects/${pid}/state`)).docs.project.settings;
+      return [settings.dialogue.level, settings.consistency.castOnly];
+    })
+    .toEqual(['B1', true]);
 
   await page.goto(`/p/${pid}/editor`);
   await expect(page.getByTestId('live-status')).toHaveAttribute('data-status', 'live');

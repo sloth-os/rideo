@@ -191,8 +191,9 @@ export async function shotGenerate(deps: HandlerDeps, ctx: JobContext) {
       const qualityChecks = settings.consistency.qualityChecks === true;
       // Who must not be in the frames: the clip's cast who are not in this shot
       const absent = absentCast(shotCtx.offscreen, docs.characters);
+      const castOnly = settings.consistency.castOnly === true;
       const keyframeQuality = qualityChecks
-        ? { threshold: settings.consistency.qualityThreshold, absent }
+        ? { threshold: settings.consistency.qualityThreshold, absent, castOnly }
         : undefined;
 
       // R5: continuity chaining from the previous shot's passing take.
@@ -495,6 +496,7 @@ export async function shotGenerate(deps: HandlerDeps, ctx: JobContext) {
                   sceneReference: sceneRef?.png,
                   temporal,
                   absent,
+                  castOnly,
                 },
               }
             : {}),

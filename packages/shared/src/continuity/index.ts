@@ -177,6 +177,8 @@ export function aggregateQuality(input: {
   frames: QualityFrame[];
   temporal: { jumps: number[]; maxScore: number } | null;
   threshold: number;
+  /** A film with only its cast: other figures fail too. */
+  castOnly?: boolean;
 }): QualityVerdict {
   const physicsScores = input.frames.flatMap((f) => (f.physics ? [clamp01(f.physics.score)] : []));
   const continuityScores = input.frames.flatMap((f) => (f.continuity ? [clamp01(f.continuity.score)] : []));
@@ -196,16 +198,26 @@ export function aggregateQuality(input: {
   const extras = [...new Set(input.frames.flatMap((f) => f.extras ?? []))].slice(0, 10);
   for (const name of extras)
     issues.add(`${name} is in the frame, though the shot is not theirs`.slice(0, 500));
-  for (const o of new Set(input.frames.flatMap((f) => f.others ?? [])))
-    issues.add(`another figure in the frame: ${o}`.slice(0, 500));
+  const others = [...new Set(input.frames.flatMap((f) => f.others ?? []))].slice(0, 10);
+  for (const o of others)
+    issues.add(
+      `another figure in the frame${input.castOnly ? ' (the film has only its cast)' : ''}: ${o}`.slice(
+        0,
+        500,
+      ),
+    );
   const passed =
-    (physics === null || physics >= input.threshold) && !input.temporal?.jumps.length && !extras.length;
+    (physics === null || physics >= input.threshold) &&
+    !input.temporal?.jumps.length &&
+    !extras.length &&
+    !(input.castOnly && others.length);
   return {
     passed,
     temporal: input.temporal,
     physics,
     continuity,
     extras,
+    others,
     sound: null,
     issues: [...issues].slice(0, 20),
   };
@@ -326,6 +338,7 @@ export function withSound(
     physics: null,
     continuity: null,
     extras: [],
+    others: [],
     sound: null,
     issues: [],
   };

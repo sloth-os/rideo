@@ -498,7 +498,16 @@ describe('the sound check (docs/design/continuity.md#quality-checks-in-the-gate)
       temporal: null,
       threshold: 0.5,
     });
-    expect(others).toMatchObject({ passed: true, extras: [] });
+    expect(others).toMatchObject({ passed: true, extras: [], others: ['a bird'] });
+    // A film with only its cast: the bird fails the take (docs/design/continuity.md#quality-checks-in-the-gate)
+    const castOnly = aggregateQuality({
+      frames: [{ physics: { score: 0.9 }, others: ['a bird'] }],
+      temporal: null,
+      threshold: 0.5,
+      castOnly: true,
+    });
+    expect(castOnly).toMatchObject({ passed: false, others: ['a bird'] });
+    expect(castOnly.issues).toEqual(['another figure in the frame (the film has only its cast): a bird']);
     const sammy = f.character({ name: 'Sammy' });
     expect(absentCast(['Sammy', 'Nobody'], { [sammy.id]: sammy })).toEqual([
       { name: 'Sammy', look: compactIdentity(sammy) },

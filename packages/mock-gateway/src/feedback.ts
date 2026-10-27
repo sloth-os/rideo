@@ -47,12 +47,8 @@ export function soundCheck(
   };
 }
 
-export function feedbackScene(
-  input: FeedbackSceneInput,
-  strips: number,
-  watched = false,
-): FeedbackSceneOutput {
-  const scores: Scores & { dialogue?: number; sound?: number } = {
+export function feedbackScene(input: FeedbackSceneInput, strips: number): FeedbackSceneOutput {
+  const scores: Scores = {
     storytelling: 7,
     continuity: 7.5,
     character: 8,
@@ -98,29 +94,12 @@ export function feedbackScene(
       at: Math.min(1, Math.max(0, (at - shot.start) / Math.max(0.1, shot.end - shot.start))),
     });
   }
-  // Watching the video: the lines are heard (but not a mumbling speaker's), and dialogue and sound are scored.
-  const transcript: FeedbackSceneOutput['transcript'] = [];
-  if (watched) {
-    let mumbled = 0;
-    for (const shot of input.shots) {
-      if (MUMBLES.test(shot.description)) {
-        mumbled += shot.dialogue.length;
-        continue;
-      }
-      for (const [k, d] of shot.dialogue.entries())
-        transcript.push({ time: (shot.video?.from ?? 0) + 0.3 + k, speaker: d.character, text: d.line });
-    }
-    scores.dialogue = mumbled ? 4 : 8;
-    scores.sound = 7;
-  }
   const worst = [...shotScore.entries()].sort((a, b) => a[1] - b[1] || a[0] - b[0])[0];
   const worstShot = worst ? input.shots.find((s) => s.index === worst[0]) : undefined;
   return {
     scores,
-    transcript,
-    summary: watched
-      ? `Scene ${input.scene.number} (${input.scene.heading}) watched and heard: ${input.shots.length} shot(s), ${transcript.length} line(s) heard.`
-      : `Scene ${input.scene.number} (${input.scene.heading}) seen in ${strips} strip(s): ${input.shots.length} shot(s).`,
+    transcript: [],
+    summary: `Scene ${input.scene.number} (${input.scene.heading}) seen in ${strips} strip(s): ${input.shots.length} shot(s).`,
     strengths: ['The cast stays recognisable from shot to shot.'],
     issues,
     recommendations: [
@@ -148,6 +127,43 @@ export function feedbackScene(
         action: { kind: 'note' as const },
       },
     ],
+  };
+}
+
+/**
+ * `feedback.listen`: hears every line of the scene's video except a mumbling speaker's, scores dialogue and sound, and
+ * recommends generating a mumbled shot again (docs/design/feedback.md#mock-gateway).
+ */
+export function feedbackListen(input: FeedbackSceneInput, watched: boolean): FeedbackSceneOutput {
+  const transcript: FeedbackSceneOutput['transcript'] = [];
+  const mumbled = input.shots.filter((s) => s.dialogue.length && MUMBLES.test(s.description));
+  if (watched)
+    for (const shot of input.shots) {
+      if (MUMBLES.test(shot.description)) continue;
+      for (const [k, d] of shot.dialogue.entries())
+        transcript.push({ time: (shot.video?.from ?? 0) + 0.3 + k, speaker: d.character, text: d.line });
+    }
+  return {
+    scores: { dialogue: mumbled.length ? 4 : 8, sound: 7 },
+    transcript,
+    summary: `Scene ${input.scene.number} heard: ${transcript.length} line(s).`,
+    strengths: ['Clear voices.'],
+    issues: mumbled.map((s) => ({
+      shot: s.index,
+      dimension: 'dialogue' as const,
+      severity: 'major' as const,
+      title: 'A line is mumbled',
+      detail: `${s.label}: the line cannot be understood.`,
+      time: (s.video?.from ?? 0) + 0.5,
+    })),
+    recommendations: mumbled.map((s) => ({
+      shot: s.index,
+      dimension: 'dialogue' as const,
+      priority: 1,
+      title: `Generate ${s.label} again with a clear line`,
+      detail: 'The speaker should say the line clearly, facing the camera.',
+      action: { kind: 'regenerate_shot' as const },
+    })),
   };
 }
 

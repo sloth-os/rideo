@@ -105,7 +105,9 @@ loop: a failure is reported on the Settings page and retried at the next start, 
 The **audio-visual model** (`omni`, [settings](settings.md)) is a model that watches a video and hears its sound in
 one call (`qwen3.8-omni-flash` through an OpenAI-compatible API, Gemini). Videos go inline, encoded small: H.264 with
 mono AAC, at most 7 MB (Qwen-Omni takes base64 under 10 MB). A five-second take at 360p is about 1,300 input tokens.
-Calls with video are metered as `vision`.
+Calls with video are metered as `vision`. Rideo asks it what is heard (`sound.check`, `feedback.listen`) and leaves
+the picture to the vision model: watching a long scene as one video, it reported cuts and jumps that no frame shows
+([how a film is watched](feedback.md#how-a-film-is-watched)).
 
 **Long calls.** OpenAI-compatible calls are streamed (`stream: true`, `stream_options: {include_usage: true}`; the
 answer is the concatenated `delta.content` of the events, the usage comes with the last one). The upstream sends its
@@ -179,7 +181,8 @@ Every LLM use is a **task** with an id, a zod output schema, a system prompt and
 | `sfx.plan` | the takes of the cut (length, description, action, location), `maxPerShot` | `{effects[{shot, description, at, durationSec, kind}]}` |
 | `frame.caption` | one frame (512 px wide), what it is from, who and what its source shows (with how they look), the cast | `{caption}` (≤ 300 characters, [search](search.md#the-index)) |
 | `sound.check` | the shot (description, action, its lines with each speaker's voice), the cast's voices, whether takes may carry music, and the take as a video with its sound (360p) | `{speech[{text, speaker, voice, lipSync?}], music, sounds[], score, issues[]}` ([quality checks](continuity.md#quality-checks-in-the-gate)) |
-| `feedback.scene` | the film, one scene with its neighbours, the cast, every shot with its take's reports, the signals inside the scene, a strip of three frames per shot, or the scene as a video with its sound when an audio-visual model is set | `{scores{dimension: 0–10}, summary, strengths[], issues[{shot, dimension, severity, title, detail, at, time?}], recommendations[{shot?, dimension, priority, title, detail, action?}], transcript[{time, speaker, text}]}` ([feedback](feedback.md#how-a-film-is-watched)) |
+| `feedback.scene` | the film, one scene with its neighbours, the cast, every shot with its take's reports, the signals inside the scene, a strip of three frames per shot | `{scores{dimension: 0–10}, summary, strengths[], issues[{shot, dimension, severity, title, detail, at}], recommendations[{shot?, dimension, priority, title, detail, action?}]}` ([feedback](feedback.md#how-a-film-is-watched)) |
+| `feedback.listen` | the same input, and the scene as a video with its sound (the audio-visual model) | `{scores{dialogue, sound}, summary, issues[{shot?, time?, dimension, …}], recommendations[…], transcript[{time, speaker, text}]}`, dialogue and sound only |
 | `feedback.film` | the project (logline, synopsis, outline), every scene's scores, summary and issues, the signals, the run's numbers | `{scores, summary, strengths[], recommendations[{dimension, priority, title, detail, scenes[], action?}], lessons[{area, title, detail}]}` |
 
 `runTask()`:

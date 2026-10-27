@@ -148,6 +148,13 @@ describe('feedback on an export', () => {
     await stack.api('PATCH', `/projects/${pid}`, { settings: { consistency: { qualityChecks: false } } });
     await stack.api('POST', `/projects/${pid}/feedback/${fb!.id}/recommendations/${settingsRec.id}/apply`);
     expect((await stateOf(pid)).docs.project.settings.consistency.qualityChecks).toBe(true);
+    // A film with only its cast is a setting like the others (docs/design/continuity.md#quality-checks-in-the-gate)
+    expect((await stateOf(pid)).docs.project.settings.consistency.castOnly).toBe(false);
+    await stack.api('PATCH', `/projects/${pid}`, { settings: { consistency: { castOnly: true } } });
+    expect((await stateOf(pid)).docs.project.settings.consistency).toMatchObject({
+      castOnly: true,
+      qualityChecks: true,
+    });
 
     // MCP sees the same feedback, and runs it again on request.
     const viaMcp = await call<Feedback>('feedback_get', { projectId: pid });
@@ -233,7 +240,9 @@ describe('listening feedback (an audio-visual model)', () => {
     await editor.stop();
 
     const [fb] = await heard.api<Feedback[]>('GET', `/projects/${pid}/feedback`);
-    expect(fb).toMatchObject({ status: 'succeeded', model: 'mock-omni', listened: true });
+    // The picture seen in strips by the vision model, the sound heard by the audio-visual model
+    expect(fb).toMatchObject({ status: 'succeeded', listener: 'mock-omni', listened: true });
+    expect(fb!.model).not.toBe('mock-omni');
     expect(fb!.scores.dialogue).toBe(4);
     expect(fb!.scores.sound).not.toBeNull();
     const voiced = clip.shots.flatMap((s) => s.dialogue.filter((d) => d.characterId));
@@ -248,7 +257,7 @@ describe('listening feedback (an audio-visual model)', () => {
     expect(regenerate).toBeTruthy();
     expect(fb!.retrospective.map((r) => r.rule)).toContain('undelivered_lines');
     const md = await (await fetch(`${heard.url}/api/projects/${pid}/media/${fb!.report!.path}`)).text();
-    expect(md).toContain('watched and heard by mock-omni');
+    expect(md).toContain(`watched by ${fb!.model}, heard by mock-omni`);
     expect(md).toContain(`Lines heard: ${voiced.length - 1} of ${voiced.length}.`);
   });
 });

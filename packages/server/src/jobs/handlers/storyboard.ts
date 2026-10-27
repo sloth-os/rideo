@@ -65,6 +65,7 @@ export async function shotBoard(deps: HandlerDeps, ctx: JobContext) {
             quality: {
               threshold: settings.consistency.qualityThreshold,
               absent: absentCast(shotCtx.offscreen, docs.characters),
+              castOnly: settings.consistency.castOnly === true,
             },
           }
         : {}),

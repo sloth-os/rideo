@@ -380,9 +380,10 @@ describe('structured tasks', () => {
     expect(heard).toMatchObject({ speech: [{ text: 'Hello', speaker: 'Rosie' }], music: false, score: 0.9 });
     expect(omni.calls[0]!.system).toMatch(/^rideo-task: sound\.check/);
     expect(omni.calls[0]!.parts.find((p) => p.type === 'video')).toMatchObject({ mime: 'video/mp4' });
-    const scene = await tasks.feedbackScene({} as never, [], undefined, Buffer.from('mp4'));
+    const scene = await tasks.feedbackListen({} as never, Buffer.from('mp4'));
     expect(scene.transcript).toEqual([{ time: 1, speaker: 'Rosie', text: 'Hi' }]);
-    expect(omni.calls[1]!.system).toContain('the scene itself as a video with its sound');
+    expect(omni.calls[1]!.system).toMatch(/^rideo-task: feedback\.listen/);
+    expect(omni.calls[1]!.system).toContain('Another reviewer judges the picture');
     expect(text.calls).toHaveLength(0);
     // Strips still go to the vision model with the prompt that cannot hear
     await tasks.feedbackScene({} as never, [{ label: '0: C1·S1', data: Buffer.from('jpg') }]);

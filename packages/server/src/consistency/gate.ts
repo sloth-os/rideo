@@ -40,6 +40,8 @@ export interface VerifyInput {
     sceneReference?: Buffer;
     /** The clip's cast who must not be in the frames (docs/design/continuity.md#quality-checks-in-the-gate). */
     absent?: { name: string; look: string }[];
+    /** A film with only its cast: other people or animals fail too. */
+    castOnly?: boolean;
     temporal: { jumps: number[]; maxScore: number } | null;
   };
 }
@@ -50,6 +52,7 @@ function qualityOf(input: VerifyInput, frames: Parameters<typeof aggregateQualit
     frames,
     temporal: input.quality.temporal,
     threshold: input.quality.threshold,
+    castOnly: input.quality.castOnly,
   });
   if (q.temporal)
     input.metrics?.qualityChecks.inc({

@@ -295,6 +295,43 @@ export function signalIssues(signals: FeedbackSignals, spans: FeedbackShotSpan[]
   return out;
 }
 
+/** The dimensions a scene's sound review answers for (`feedback.listen`). */
+const HEARD_ONLY = new Set<string>(['dialogue', 'sound']);
+
+/**
+ * One scene's review from its two halves (docs/design/feedback.md#how-a-film-is-watched, step 3): the picture from the
+ * strips (the vision model) and what was heard from the scene's video (the audio-visual model). Each keeps to what it
+ * judges: the picture's sound claims and the sound's picture claims are dropped.
+ */
+export function mergeSceneOutputs(
+  picture: FeedbackSceneOutput | null,
+  heard: FeedbackSceneOutput | null,
+): FeedbackSceneOutput | null {
+  if (!picture && !heard) return null;
+  const seen = <T extends { dimension: string }>(xs: T[] | undefined) =>
+    (xs ?? []).filter((x) => !HEARD_ONLY.has(x.dimension));
+  const listened = <T extends { dimension: string }>(xs: T[] | undefined) =>
+    (xs ?? []).filter((x) => HEARD_ONLY.has(x.dimension));
+  const scores: FeedbackSceneOutput['scores'] = { ...(picture?.scores ?? {}) };
+  delete scores.dialogue;
+  delete scores.sound;
+  if (heard) {
+    if (typeof heard.scores.dialogue === 'number') scores.dialogue = heard.scores.dialogue;
+    if (typeof heard.scores.sound === 'number') scores.sound = heard.scores.sound;
+  }
+  return {
+    scores,
+    summary: [picture?.summary, heard?.summary ? `Heard: ${heard.summary}` : '']
+      .filter(Boolean)
+      .join(' ')
+      .slice(0, 3000),
+    strengths: [...(picture?.strengths ?? []), ...(heard?.strengths ?? [])].slice(0, 10),
+    issues: [...seen(picture?.issues), ...listened(heard?.issues)],
+    recommendations: [...seen(picture?.recommendations), ...listened(heard?.recommendations)],
+    transcript: heard?.transcript ?? [],
+  };
+}
+
 /** Seconds around a shot in which its lines may be heard (the model's times are approximate). */
 const LINE_WINDOW_SEC = 1;
 
@@ -645,7 +682,7 @@ export function feedbackMarkdown(
   const score = (v: number | null | undefined) => (typeof v === 'number' ? `${v.toFixed(1)}/10` : '–');
   lines.push(`# Feedback: ${ctx.title}`, '');
   lines.push(
-    `Export \`${fb.exportId}\` · ${feedbackTime(fb.durationSec)} · ${fb.model ? `${fb.listened ? 'watched and heard' : 'watched'} by ${fb.model}` : 'measured only (no vision model)'} · ${fb.updatedAt.slice(0, 16).replace('T', ' ')}`,
+    `Export \`${fb.exportId}\` · ${feedbackTime(fb.durationSec)} · ${fb.model ? `watched by ${fb.model}${fb.listened && fb.listener ? `, heard by ${fb.listener}` : ''}` : 'measured only (no vision model)'} · ${fb.updatedAt.slice(0, 16).replace('T', ' ')}`,
     '',
   );
   const d = fb.signals.dialogue;

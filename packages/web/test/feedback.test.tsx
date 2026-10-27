@@ -166,7 +166,8 @@ describe('feedback on the export card (docs/design/feedback.md#surfaces)', () =>
   it('says when the film was heard and how many lines were', () => {
     const heard = FeedbackSchema.parse({
       ...feedback,
-      model: 'qwen3.8-omni-flash',
+      model: 'qwen3.8-max',
+      listener: 'qwen3.8-omni-flash',
       listened: true,
       scores: { ...feedback.scores, dialogue: 5 },
       signals: { ...feedback.signals, dialogue: { lines: 12, heard: 10, missing: [] } },
@@ -174,7 +175,7 @@ describe('feedback on the export card (docs/design/feedback.md#surfaces)', () =>
     useProject.setState({ docs: { ...useProject.getState().docs!, feedback: { [heard.id]: heard } } });
     render(<FeedbackSummary e={exportDoc} projectId={useProject.getState().projectId!} />);
     expect(screen.getByTestId('feedback-heard').textContent).toBe(
-      'Watched and heard by qwen3.8-omni-flash · 10 of 12 lines heard',
+      'Watched by qwen3.8-max and heard by qwen3.8-omni-flash · 10 of 12 lines heard',
     );
     expect(screen.getByTestId('feedback-score-dialogue').textContent).toContain('5.0');
   });

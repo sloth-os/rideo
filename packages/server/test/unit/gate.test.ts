@@ -74,4 +74,26 @@ describe('verifyFrames', () => {
       'unverified',
     );
   });
+
+  it('fails a take with another figure in frame only in a film with only its cast', async () => {
+    const withFox: ConsistencyJudge = {
+      id: 'fake',
+      judge: async (req) => ({
+        ...(await judgeWith(0.9).judge(req)),
+        quality: req.frames.map(() => ({
+          physics: { score: 0.9, issues: [] },
+          extras: [],
+          others: ['a fox'],
+        })),
+      }),
+    };
+    const quality = { threshold: 0.5, temporal: null };
+    const open = await verifyFrames({ ...base, judge: withFox, quality });
+    expect(open.quality).toMatchObject({ passed: true, others: ['a fox'] });
+    const castOnly = await verifyFrames({ ...base, judge: withFox, quality: { ...quality, castOnly: true } });
+    expect(castOnly.quality).toMatchObject({ passed: false, others: ['a fox'] });
+    expect(castOnly.quality!.issues).toContain(
+      'another figure in the frame (the film has only its cast): a fox',
+    );
+  });
 });

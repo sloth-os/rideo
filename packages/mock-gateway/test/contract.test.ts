@@ -416,9 +416,18 @@ describe('proxy LLM formats', () => {
       stripCount: 0,
       listening: true,
     };
-    const out = FeedbackSceneOutputSchema.parse(await chat('feedback.scene', scene, [video]));
+    const out = FeedbackSceneOutputSchema.parse(await chat('feedback.listen', scene, [video]));
     expect(out.transcript).toEqual([{ time: 0.3, speaker: 'Rosie', text: 'Hi Sammy!' }]);
-    expect(out.scores).toMatchObject({ dialogue: 4, sound: 7 });
+    // Only what is heard: dialogue and sound, and the mumbled shot to generate again
+    expect(out.scores).toEqual({ dialogue: 4, sound: 7 });
+    expect(out.issues).toMatchObject([{ shot: 1, dimension: 'dialogue', time: 5.5 }]);
+    expect(out.recommendations).toMatchObject([{ shot: 1, action: { kind: 'regenerate_shot' } }]);
+    // The picture, from strips, says nothing about the sound
+    const seen = FeedbackSceneOutputSchema.parse(
+      await chat('feedback.scene', { ...scene, listening: false }),
+    );
+    expect(seen.scores).not.toHaveProperty('dialogue');
+    expect(seen.transcript).toEqual([]);
   });
 
   it('streams a chat completion when asked: content deltas, the usage last, then [DONE]', async () => {

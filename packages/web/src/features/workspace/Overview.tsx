@@ -199,6 +199,12 @@ function SettingsDialog({
               'qualityChecks',
             )}
             {toggle(
+              'Only the cast may appear: another person or animal fails the take',
+              s.consistency.castOnly,
+              (v) => setS({ ...s, consistency: { ...s.consistency, castOnly: v } }),
+              'castOnly',
+            )}
+            {toggle(
               'Watch each export and write feedback',
               s.feedback.auto,
               (v) => setS({ ...s, feedback: { auto: v } }),

@@ -339,6 +339,7 @@ export const LLM_TASKS = [
   'thumbnail.pick',
   'frame.caption',
   'feedback.scene',
+  'feedback.listen',
   'feedback.film',
 ] as const;
 export type LlmTaskId = (typeof LLM_TASKS)[number];
@@ -721,7 +722,8 @@ export interface FeedbackSceneInput {
   };
   previousScene: { heading: string; summary: string } | null;
   nextScene: { heading: string; summary: string } | null;
-  cast: { name: string; look: string }[];
+  /** The cast in the scene; with their voices when the scene is heard (`feedback.listen`). */
+  cast: { name: string; look: string; voice?: string }[];
   shots: {
     index: number;
     label: string;
@@ -747,7 +749,7 @@ export interface FeedbackSceneInput {
     black: { start: number; end: number }[];
   };
   stripCount: number;
-  /** The model gets the scene as a video with its sound instead of strips. */
+  /** The model hears the scene as a video with its sound (`feedback.listen`). */
   listening: boolean;
 }
 

@@ -71,6 +71,8 @@ export const QualityVerdictSchema = z.object({
   continuity: z.number().min(0).max(1).nullable().default(null),
   /** Cast members seen in the frames though the shot is not theirs. */
   extras: z.array(z.string().max(200)).max(10).default([]),
+  /** Other people or animals seen in the frames. */
+  others: z.array(z.string().max(200)).max(10).default([]),
   /** What the audio-visual model heard; null when the take was not listened to. */
   sound: SoundReportSchema.nullable().default(null),
   issues: z.array(z.string().max(500)).max(20).default([]),

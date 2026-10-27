@@ -128,3 +128,153 @@ requests all landed in `+Inf`. Its buckets now go to 300 s ([observability](desi
 
 **22. Storage round trips per request** (S, done) — nothing showed how many storage operations a request made. They
 are counted per request (`rideo_storage_ops_per_request`) and logged with their time on requests slower than 2 s.
+
+## The panda demo (October 2026, second run)
+
+A ten-minute film of two pandas skiing below Mount Fuji, with B1 dialogue voiced by the video model
+(`wan3.0-video-prime` at 1080p), Seedream 5.0 Pro for pictures, `qwen3.8-max` for writing and judging and
+`qwen3.8-omni-flash` as the audio-visual model, all through mm-gateway and the overloaded newapi proxy. Fixed while it
+ran:
+
+- **Long model calls** (done) — writing the outline and pilot scene of a ten-minute film took more than ten minutes,
+  and both mm-gateway's read timeout (600 s, including the wait for headers) and undici's 300 s header timeout cut it
+  off twice. OpenAI-compatible calls are streamed now ([long calls](design/ai-gateway.md#proxy-usage-llm-vision-stt-embeddings)).
+- **Provider watermarks** (done) — Seedream marked every reference "AI生成" in a corner; Rideo now asks for no visible
+  watermark ([provider watermarks](design/provenance.md#provider-watermarks)).
+- **Outfits** (done) — the writer split each outfit into single pieces and the references lost the jackets; version 2
+  asks for complete outfits ([outfits](design/continuity.md#storytelling)).
+- **A take's attempts** (done) — the report counted only the kept candidate's attempt number (1 when all three
+  attempts were equally bad), so insights' first-try count and `rideo_take_attempts` understated retries.
+- **A race in the direct panel** (done) — a lens and an aperture changed quickly undid each other (CI caught it once
+  version 2 plans gave every shot a lens).
+- **Figures in location references** (done) — the plush style made the image model put a fox, two bears and a red
+  panda on the slopes, and the chairlift's description put pandas in its reference; "reference sheet" painted
+  collages. References now ask for one picture with nobody in it ([elements](design/elements.md)). 8 of 26 element
+  references and 8 character references were thrown away before that.
+- **Output downloads** (done) — on the real-model CI run of October 25 two jobs failed at the same second
+  downloading their finished images from the provider's file host (`fetch failed`, not retried), after the images
+  were paid for. Downloads are now made up to three times, then fail as a retryable `gateway_error`.
+- **A ledger lost on a reload** (done) — a studio reload under load read the usage ledger as missing, and the next
+  write replaced $50 of history with a fresh ledger. Unreadable ledgers are no longer written over, a missing file is
+  read twice, and a missing ledger is rebuilt from the jobs, which still held all of it
+  ([usage ledger](design/observability.md#usage-ledger)).
+- **Judge answers that drift** (done) — `qwen3.8-max` now and then named a character instead of giving its id, or
+  put a sentence in the list of characters; after the repair round the take stayed unverified. Such verdicts are read
+  now, and mm-gateway's 502 for a failed upstream (`generation_service_error`) is retried like its other load
+  problems.
+- **Characters copied into singles** (done) — the scene reference frame shows the whole cast, and the image model
+  put Sammy into Rosie's close-up twice. Version 2 prompts now say who is in frame and who is not
+  ([who is in frame](design/continuity.md#prompts-version-2)).
+
+**23. Reasoning off for checks** (S) — `qwen3.8-max` reasons at length: a 200-word story took 3,167 completion
+tokens and 61 s, and every judge call of the demo about 2,500 output tokens and 60 s, so a take spent two minutes being
+judged. On the first 15 takes of the batch (`rideo_shot_step_seconds`, `rideo_llm_call_seconds`) an attempt took
+about 330 s: the keyframe 112 s (Seedream 53 s, the rest its judge), the video 107 s and its checks 110 s, with
+`consistency.judge` at 78 s a call, so judging was nearly half of it (`sound.check`, 26 s, runs alongside). Planning a
+clip took 8.5 minutes a call. Through mm-gateway and newapi, `enable_thinking: false` cut a small scoring task from
+12.4 s to 2.4 s (281 reasoning tokens to none). *How:* a reasoning setting per task family: off for checks and captions
+(`consistency.judge`, `sound.check`, `frame.caption`), the model's default for writing and feedback; sent as
+`enable_thinking: false` (Qwen), `thinkingConfig.thinkingBudget: 0` (Gemini), and dropped for good by an adapter once
+its upstream refuses it. Measure the judge's agreement with and without reasoning before turning it off.
+
+**24. Stream Gemini and Anthropic calls too** (S) — only OpenAI-compatible calls are streamed; a long Gemini or
+Anthropic answer still ends at the gateway's 600 s. *How:* `streamGenerateContent?alt=sse` and Messages streaming in
+their adapters, with the same idle timer.
+
+**25. Video parameters the gateway drops** (S, mm-gateway) — its DashScope adapter drops `negative_prompt` for video
+and maps no `generate_audio`, so a silent take cannot be asked for and exclusions only work as prompt text (version 2
+puts them there). Sources disagree on whether `wan3.0` takes a negative prompt at all.
+
+**26. The provider's prompt rewriting** (S) — Wan's `prompt_extend` is on by default: an LLM rewrites the prompt and
+may change the lines it should speak. *How:* measure the lines the sound check hears with `generation.enhancePrompt`
+off and on, and default to what keeps the words.
+
+**27. A faster judge** (S) — a judge call takes 19–23 s through the proxy with any of the vision models tried, more
+than the rest of a take's checks together. *How:* a judge model setting apart from vision (a flash model), or all of
+a take's frames in one smaller image.
+
+**28. A fallback endpoint per task family** (S–M) — the newapi proxy answered `503 system cpu overloaded` to every
+model for long stretches. *How:* an ordered list of endpoints per family (writing, judging, listening) used in turn,
+with the circuit breaker of item 20.
+
+**29. Provider moderation that refuses harmless output** (S) — on the real-model CI run of October 25, DashScope ended
+the footage analysis of a test pattern with `data_inspection_failed` ("output data may contain inappropriate
+content"), streamed as an error event, and the analysis fell back to its rules. *How:* recognize refusals
+(`data_inspection_failed`, `content_filter`) as their own error code, make the call once more at a lower temperature,
+and count them in `rideo_llm_calls_total{status="refused"}` so a flaky moderator shows on the dashboard.
+
+**30. The judge counts who should not be there** (S, done) — the judge scored only the characters a shot lists, so a
+frame with an extra cast member passed. With quality checks the judge is now told who must not be in the shot, an
+extra fails the frame (keyframes and storyboard frames included), and other figures are reported
+([quality checks](design/continuity.md#quality-checks-in-the-gate)).
+
+**31. Keep the video lane full** (S) — the batch keeps two clips in flight and each clip makes its first shot alone
+(its keyframe is the scene reference of the others), so with eight video slots only five to seven were busy at times.
+*How:* a lookahead setting (three clips by default when the lane is wider than a clip's parallel shots), and the next
+clip's first shot started while the current clip's others run.
+
+**32. Unattended batches and new elements** (S) — the batch stopped at 36 of 110 shots because an extension introduced
+a prop ("Resort trail lights") that a person must approve first, as designed; nobody was watching for twenty minutes.
+*How:* the Inbox already says so; add a push or webhook notification, and a project setting that approves a new
+element's first generated reference for unattended runs (the person reviews it later, the take records it).
+
+**33. Job records on a slow WebDAV server** (S) — right after a studio reload, OpenList answered `405 Method Not
+Allowed` to PUTs of two job records in `.rideo/jobs/`. *How:* retry `405` like other transient answers of that server
+(it is not a real refusal there) and keep the record in memory until it is written.
+
+**34. Long exports and browser blob memory** (M) — the editor tab keeps every rendered chunk as a blob until the film
+is joined. In a Chromium context without a disk-backed profile (Playwright's default, and incognito windows) the
+ninth minute of a 1080p film ended in `ERR_BLOB_OUT_OF_MEMORY` after chunk 19 of 19, and the render started over;
+five such attempts failed the export. A persistent profile, which pages blobs to disk, rendered it. *How:* write
+chunks to the origin private file system (OPFS) as they finish, or upload each chunk to the server and join them
+there, so memory does not grow with the length of the film; report the browser's storage quota before a long render.
+
+**35. A cast-only film** (S, done) — the brief said "only these two characters appear", yet the export has a
+red-haired girl with a snowboard in two shots, a human child in place of a panda in four, a brown bear and a dog
+creature: Wan widens a close-up late in the take and fills the new space with figures, and the judge reported
+them (`others`) without failing the take. Now `consistency.castOnly` (the project settings' "Only the cast may
+appear", off by default; feedback may recommend it) fails such a frame like an extra cast member
+([quality checks](design/continuity.md#quality-checks-in-the-gate)). Still open: turning it on when the brief asks for
+only its cast.
+
+**36. Feedback that sees and hears** (S, done) — the first feedback on the export let `qwen3.8-omni-flash` watch each
+scene as one video with its sound. It heard all 61 lines and who said them, but its picture findings were unreliable:
+for scene 2 (70 s, 14 shots on the beginner slope) it reported a critical "instant teleportation" for each of shots 2
+to 14, back and forth between the lodge and the slope, though only the first shot is near the lodge door. The vision
+model reading the frame strips
+(three labelled stills a shot) pinned each of its 138 issues to a shot and a moment, and they hold up when checked:
+the human child at 85 % of C2·S13, the decals that move from Rosie's skis to Sammy's in C1·S5, the stray cuts inside
+nominal single shots. Feedback now always judges the picture from strips and asks the audio-visual model only about
+dialogue and sound (`feedback.listen`), both at the same time ([how a film is watched](design/feedback.md#how-a-film-is-watched)).
+
+| Run | Model(s) | Overall | Continuity | Temporal | Character | Issues (critical) |
+|---|---|---|---|---|---|---|
+| Watched and heard as video | `qwen3.8-omni-flash` | 5.2 | 3 | 5 | 5 | 88 (28, 13 of them the teleports) |
+| Strips (picture only) | `qwen3.8-max` | 4.9 | 3 | 3 | 4 | 138 (15) |
+
+**37. Music under the takes** (S–M) — `generation.music` off and the version 2 sound line ("no music, no song, no
+humming") still left music under 21 of the 110 takes in the cut: 2 of the first 6 takes before that line, about 19
+of the 104 after. The sound check hears it, but it is advisory, so a five-second shot with its own tune makes the
+cut jump from one tune to the next. *How:* once the gateway passes `negative_prompt` (item 25) put "music" there; a
+project setting that retries takes with music like an unheard line (each retry is a paid 5 s take, $1.40 here); or,
+better, a source-separation step that keeps voices and effects and drops the music of the takes where it is heard.
+
+**38. Fixes the feedback cannot see the cost of** (S) — the strip review recommended regenerating 68 shots (27 at
+priority 1). Applying all of them is at least $100 at this run's prices ($1.45 an attempt), and some shots fail again
+for the same reason.
+*How:* each recommendation shows its estimated cost (attempts × the take's price, from `RIDEO_PRICES`) and the
+feedback panel offers "apply the priority 1 fixes" with the total; the retrospective then compares the scores before
+and after the fixes.
+
+### Run figures
+
+- **Cost:** $250.74 for 9 min 11 s (110 shots, 8 scenes): $27.31 a finished minute. 265 of the 840 generated video
+  seconds were attempts the gate discarded (32 %, about $74).
+- **Throughput:** raising `RIDEO_LANES` video from 4 to 8 (the provider allowed it) roughly tripled the rate; the
+  batch then finished 28 to 41 shots an hour. Even so shots waited 899 minutes in the queue against 858 running, and
+  the slowest tenth took over 13 minutes each (item 31).
+- **Export:** 1.05 GB at 1080p, −14.4 LUFS integrated, −1 dB true peak; the editor tab rendered it in 19 chunks once
+  it had a disk-backed profile (item 34).
+- **Flaky test:** `packages/web/test/settings.test.tsx` "never shows a secret" timed out under a loaded two-core box
+  and passes alone; watch it on CI.
+

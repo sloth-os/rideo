@@ -9,7 +9,7 @@ import {
   TASK_MARKER_PATTERN,
   VOICE_REFERENCE_LABEL,
 } from '@rideo/shared';
-import { feedbackFilm, feedbackScene, soundCheck } from './feedback';
+import { feedbackFilm, feedbackListen, feedbackScene, soundCheck } from './feedback';
 import {
   characterDescribe,
   clipPlan,
@@ -256,7 +256,10 @@ export function answer(req: ChatRequest, opts: ChatOptions = {}): string {
       out = frameCaption(input, imagesOf(req.parts));
       break;
     case 'feedback.scene':
-      out = feedbackScene(input, imagesOf(req.parts).length, videoCount > 0);
+      out = feedbackScene(input, imagesOf(req.parts).length);
+      break;
+    case 'feedback.listen':
+      out = feedbackListen(input, videoCount > 0);
       break;
     case 'sound.check':
       out = soundCheck(input, { watched: videoCount > 0, muffled: opts.muffled?.() ?? false });

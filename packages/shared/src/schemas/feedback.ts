@@ -147,6 +147,7 @@ export const FEEDBACK_SETTINGS = {
   judgeElements: { path: ['consistency', 'judgeElements'], schema: z.boolean() },
   storyboard: { path: ['storyboard', 'enabled'], schema: z.boolean() },
   promptVersion: { path: ['generation', 'promptVersion'], schema: z.literal(2) },
+  castOnly: { path: ['consistency', 'castOnly'], schema: z.boolean() },
 } as const;
 export type FeedbackSettingKey = keyof typeof FEEDBACK_SETTINGS;
 export const FeedbackSettingsPatchSchema = z
@@ -157,6 +158,7 @@ export const FeedbackSettingsPatchSchema = z
     judgeElements: FEEDBACK_SETTINGS.judgeElements.schema.optional(),
     storyboard: FEEDBACK_SETTINGS.storyboard.schema.optional(),
     promptVersion: FEEDBACK_SETTINGS.promptVersion.schema.optional(),
+    castOnly: FEEDBACK_SETTINGS.castOnly.schema.optional(),
   })
   .strict();
 export type FeedbackSettingsPatch = z.infer<typeof FeedbackSettingsPatchSchema>;
@@ -347,9 +349,11 @@ export const FeedbackSchema = z.object({
   error: z.string().max(4000).optional(),
   createdAt: IsoDateSchema,
   updatedAt: IsoDateSchema,
-  /** The vision or audio-visual model; null without a gateway. */
+  /** The vision model; null without a gateway. */
   model: z.string().max(200).nullable().default(null),
-  /** The scenes were watched with their sound (an audio-visual model). */
+  /** The audio-visual model that heard the scenes, if any. */
+  listener: z.string().max(200).nullable().default(null),
+  /** The scenes were heard (an audio-visual model). */
   listened: z.boolean().default(false),
   timelineCommit: z.string().nullable().default(null),
   durationSec: z.number().nonnegative().default(0),

@@ -114,7 +114,7 @@ export async function generateKeyframe(
     /** Variations offset the seed (docs/design/directing.md#variations-and-comparison). */
     variation?: number;
     /** Quality checks: physics and who must not be in the frame. */
-    quality?: { threshold: number; absent?: { name: string; look: string }[] };
+    quality?: { threshold: number; absent?: { name: string; look: string }[]; castOnly?: boolean };
     progress: (attempt: number) => void;
   },
 ): Promise<KeyframeResult> {
@@ -157,7 +157,14 @@ export async function generateKeyframe(
       log: ctx.log,
       signal: ctx.signal,
       ...(input.quality
-        ? { quality: { threshold: input.quality.threshold, temporal: null, absent: input.quality.absent } }
+        ? {
+            quality: {
+              threshold: input.quality.threshold,
+              temporal: null,
+              absent: input.quality.absent,
+              castOnly: input.quality.castOnly,
+            },
+          }
         : {}),
     });
     if (!best?.report || betterAttempt(out.report, best.report))
