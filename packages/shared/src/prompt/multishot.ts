@@ -79,7 +79,7 @@ function shotLine(ctx: ShotContext, k: number): string {
   const label = `Shot ${k + 1} (${Number(ctx.shot.durationSec.toFixed(1))} s):`;
   if (promptVersionOf(ctx.settings) >= 2) {
     const dialogue = dialogueBlockV2(ctx);
-    const inFrame = inFrameLine(ctx);
+    const inFrame = inFrameLine(ctx, 'video');
     return [
       label,
       ...shotBodyV2(ctx, 'video'),

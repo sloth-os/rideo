@@ -94,26 +94,41 @@ the same text.
 
 **The scene line.** Every shot of a scene starts with the same line built from the scene: `Scene: <location>,
 <time of day>; <continuity>.` The location and the light no longer depend on each shot's description remembering
-them.
+them. The video prompt of a shot that shows only part of the cast keeps the place and the time (`Scene: <location>,
+<time of day>.`): the continuity names every character's clothes and props, and Wan put the absent one into the shot.
 
-**Continuing the previous shot.** A cut inside a scene whose previous shot has an end state adds `Continues from the
-previous shot: <end state>.`; a continuous shot starts from the previous last frame as before (R5).
+**Continuing the previous shot.** A keyframe of a cut inside a scene whose previous shot has an end state adds
+`Continues from the previous shot: <end state>.`; a continuous shot starts from the previous last frame as before
+(R5). The video prompt leaves it out: its first frame already starts there, and Wan 3.0 played the line as a second
+shot (see [what the video model reads](#what-the-video-model-reads)).
 
-**Who is in frame.** A shot that shows only part of its clip's cast says so after its characters: `In frame: only
-Rosie; Sammy is out of frame.` (or `No characters in frame.` for a shot of none). The scene reference frame shows the
-whole cast, and a single often names the one it looks at ("her eyeline is toward Sammy"): in the panda demo the image
-model put Sammy into Rosie's close-up twice before the line was added. Like the scene reference, the line comes from
-the shot's neighbours, so the board's prompt hash leaves it out.
+**Who is in frame.** A shot that shows only part of its clip's cast says so after its characters. The keyframe names
+who is not there: `In frame: only Rosie; Sammy is out of frame.` (or `No characters in frame.` for a shot of none).
+The scene reference frame shows the whole cast, and a single often names the one it looks at ("her eyeline is toward
+Sammy"): in the panda demo the image model put Sammy into Rosie's close-up twice before the line was added. The video
+prompt names nobody else: `In frame: only Rosie; nobody else.` Like the scene reference, the line comes from the
+shot's neighbours, so the board's prompt hash leaves it out.
+
+**What the video model reads.** Wan 2.7 and later take the structure of a video from its prompt: "if you do not
+explicitly specify the shot structure, the model infers it from the prompt" ([Alibaba's Wan image-to-video
+guide](https://www.alibabacloud.com/help/en/model-studio/wan-image-to-video-guide)). In the panda demo's second pass
+13 of 27 regenerated shots failed all three attempts, most of them on a cut or a widening near the end of the take
+to whatever else the prompt described: Rosie's snowplow stop cut to "Sammy sits in the soft snow" (the previous
+shot's end state), her close-up cut to Sammy "in a low wedge", and Sammy's close-ups gained Rosie, drawn as a human
+girl in her pink jacket, from the scene line. So a single shot's video prompt opens with its structure (`One
+continuous shot, no cuts.`), leaves out the style's camera line (it lists wide, medium and tracking shots, a plan of
+several shots), the previous shot's end state and, when part of the cast is out of frame, the scene's continuity, and
+names only who is in frame. A multi-shot request keeps its own header and its cuts.
 
 **Video prompt blocks.** Following the prompt guides of current video models (Wan 3.0, Veo, Kling), the video prompt
 is a sequence of short blocks; a model given a first frame needs motion, story and sound more than a description of
 what it already sees:
 
 ```
-<style header> <scene line>
-One continuous shot, no cuts. <description>. Action: <action>. <continues from …>
+One continuous shot, no cuts. <style header without the camera style> <scene line>
+<description>. Action: <action>.
 Camera: <framing>, <move>; <lens>.
-Characters: <compact identity: name, who they are, what they wear> …  In frame: only <names>; <others> out of frame.
+Characters: <compact identity: name, who they are, what they wear> …  In frame: only <names>; nobody else.
 Dialogue: Sammy says, in a warm, bright young male voice: "We did it!" Lip sync.      | No dialogue.
 Sound: only the voices and the natural sounds of the place and the action; no music, no song, no humming.
 Physics: real weight, gravity and momentum; bodies, feet and equipment keep contact with the ground; objects keep their shape and number.
@@ -140,8 +155,9 @@ floating objects, sliding feet, objects passing through each other, sudden light
 own negative prompt, cut at 500 characters (the limit of Wan models).
 
 **Prompt rewriting.** Some providers rewrite prompts with their own LLM (Wan's `prompt_extend`, on by default), which
-can change a line of dialogue or drop a continuity detail. `settings.generation.enhancePrompt` sends the gateway's
-`enhance_prompt` (`null`, the default, leaves the provider's default).
+can change a line of dialogue, drop a continuity detail or plan more shots (Wan 2.6 made multi-shot videos only with
+it on). `settings.generation.enhancePrompt` sends the gateway's `enhance_prompt` (`null`, the default, leaves the
+provider's default); the panda demo's third pass turns it off.
 
 ## Scene reference frame
 

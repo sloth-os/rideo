@@ -266,6 +266,24 @@ for the same reason.
 feedback panel offers "apply the priority 1 fixes" with the total; the retrospective then compares the scores before
 and after the fixes.
 
+**39. What the video model reads** (S, done) — the second pass applied the strip review's 27 priority 1 shot
+regenerations with `consistency.castOnly` on ($84.52): 14 shots passed every check (11 at the first attempt) and 13
+failed all three attempts. The sheets of the failures show where they went: near the end of the take Wan cut or
+widened to whatever else the prompt described. Rosie's snowplow stop cut to "Sammy sits in the soft snow", the
+previous shot's end state that the prompt carried as `Continues from the previous shot`; her close-up cut to Sammy "in
+a low wedge", the same line; Sammy's close-ups gained Rosie, drawn as a human girl in her pink jacket, from the scene
+line that describes both outfits. Wan 2.7 and later infer the shot structure from the prompt when it is not stated,
+so a single shot's video prompt now opens with it and keeps only this shot: no camera-style list, no previous end
+state, no scene continuity when part of the cast is out of frame, and only the names of who is in frame
+([what the video model reads](design/continuity.md#what-the-video-model-reads)). Keyframes keep all of it.
+
+**40. A fix that fails its checks** (S) — a regenerated take replaces the cut's take when its identity passes, even
+when its quality checks fail. In the second pass that was right for some shots and wrong for others: the new
+take of C5·S9 failed only a jump check but had panda Rosie where the old one had a human child, while the new take of
+C4·S13 put a human girl on the chairlift where the old one had a stray cut. *How:* after a fix, the feedback panel
+shows each applied recommendation as fixed or not (the new take's checks), with the previous take one click away,
+and the next feedback on the export compares the two takes of each fixed shot.
+
 ### Run figures
 
 - **Cost:** $250.74 for 9 min 11 s (110 shots, 8 scenes): $27.31 a finished minute. 265 of the 840 generated video
@@ -275,6 +293,7 @@ and after the fixes.
   the slowest tenth took over 13 minutes each (item 31).
 - **Export:** 1.05 GB at 1080p, −14.4 LUFS integrated, −1 dB true peak; the editor tab rendered it in 19 chunks once
   it had a disk-backed profile (item 34).
-- **Flaky test:** `packages/web/test/settings.test.tsx` "never shows a secret" timed out under a loaded two-core box
-  and passes alone; watch it on CI.
+- **Flaky test:** `packages/web/test/settings.test.tsx` "never shows a secret" fails now and then in a full unit run
+  on a loaded two-core box (once in 42 ms, so an assertion, not a timeout) and passes alone and in loaded reruns; it
+  has not failed on CI. Capture its message the next time it fails.
 

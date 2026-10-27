@@ -74,6 +74,7 @@ describe('prompt version 2 (docs/design/continuity.md#prompts-version-2)', () =>
     expect(p).not.toContain('Scene:');
     expect(p).not.toContain('One continuous shot');
     expect(p).not.toContain('Physics:');
+    expect(p).toContain('camera style: slow, deliberate');
     expect(compileVideoRequest(ctx, { referenceUris: [], attempt: 0 }).parameters?.negative_prompt).toBe(
       BASE_NEGATIVE,
     );
@@ -84,11 +85,10 @@ describe('prompt version 2 (docs/design/continuity.md#prompts-version-2)', () =>
     ctx.shot.camera = { framing: 'wide', movement: 'tracking', lensMm: 24 };
     const p = compileShotPrompt(ctx, 'video');
     const order = [
-      'Cinematic shot',
+      'One continuous shot, no cuts. Cinematic shot',
       'Scene: Snowy slope, late afternoon; clear sky, sun low on the left.',
-      'One continuous shot, no cuts. Mira climbs the lighthouse stairs.',
+      'Mira climbs the lighthouse stairs.',
       'Action: She climbs, breathing hard.',
-      'Continues from the previous shot: Mira stands at the top, poles planted.',
       'Camera: wide shot, tracking shot; 24mm lens.',
       'Characters (keep identities exactly as in the first frame and the reference images): Mira:',
       'Dialogue: Mira says, in a',
@@ -103,6 +103,11 @@ describe('prompt version 2 (docs/design/continuity.md#prompts-version-2)', () =>
       expect(i, part).toBeGreaterThan(at);
       at = i;
     }
+    // Nothing the model could play as another shot (docs/design/continuity.md#what-the-video-model-reads): no list
+    // of camera styles, no previous shot's end state
+    expect(p).not.toContain('camera style');
+    expect(p).not.toContain('Continues from the previous shot');
+    expect(p).not.toContain('Mira stands at the top');
     // The compact identity says who is who without the face (the first frame shows it).
     expect(p).not.toContain('face: oval face');
     expect(compileShotPrompt(ctx, 'keyframe')).toContain('face: oval face');
@@ -251,7 +256,10 @@ describe('prompt version 2 (docs/design/continuity.md#prompts-version-2)', () =>
     expect(ctx.offscreen).toEqual(['Sammy']);
     expect(inFrameLine(ctx)).toBe('In frame: only Rosie; Sammy is out of frame.');
     expect(compileShotPrompt(ctx, 'keyframe')).toContain('In frame: only Rosie; Sammy is out of frame.');
-    expect(compileShotPrompt(ctx, 'video')).toContain('In frame: only Rosie; Sammy is out of frame.');
+    // The video prompt names nobody who is not in the shot
+    const video = compileShotPrompt(ctx, 'video');
+    expect(video).toContain('In frame: only Rosie; nobody else.');
+    expect(video).not.toContain('Sammy');
     expect(inFrameLine(shotContextOf(insert, docs))).toBe('No characters in frame.');
     expect(inFrameLine(shotContextOf(both, docs))).toBeNull();
     expect(compileShotPrompt(shotContextOf(both, docs), 'keyframe')).not.toContain('In frame');
@@ -268,7 +276,18 @@ describe('prompt version 2 (docs/design/continuity.md#prompts-version-2)', () =>
     expect((req.input[0] as { text: string }).text).toContain(
       'Shot 2 (5 s): Rosie points at the chart. Action:',
     );
-    expect((req.input[0] as { text: string }).text).toContain('In frame: only Rosie; Sammy is out of frame.');
+    expect((req.input[0] as { text: string }).text).toContain('In frame: only Rosie; nobody else.');
+  });
+
+  it('keeps the scene’s continuity out of the video prompt of a shot without the whole cast', () => {
+    const ctx = ctxV2({ offscreen: ['Sammy'] });
+    ctx.scene = { ...ctx.scene!, continuity: 'Sammy wears his blue jacket; Mira wears her red one' };
+    const video = compileShotPrompt(ctx, 'video');
+    expect(video).toContain('Scene: Snowy slope, late afternoon.');
+    expect(video).not.toContain('Sammy');
+    const keyframe = compileShotPrompt(ctx, 'keyframe');
+    expect(keyframe).toContain('Scene: Snowy slope, late afternoon; Sammy wears his blue jacket');
+    expect(keyframe).toContain('Continues from the previous shot: Mira stands at the top, poles planted.');
   });
 
   it('keeps multi-shot segments free of the no-cut line', () => {

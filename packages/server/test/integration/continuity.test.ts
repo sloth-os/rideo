@@ -137,7 +137,9 @@ describe('continuity-aware generation (prompt version 2)', () => {
     }
     // Video prompts are blocks; lines carry their voice; silent shots say so.
     const video = requestOf(takes[0]!.gatewayTaskIds.at(-1)!);
-    expect(video.input[0].text).toContain('One continuous shot, no cuts.');
+    // The structure first, nothing that reads as another shot (docs/design/continuity.md#what-the-video-model-reads)
+    expect(video.input[0].text).toMatch(/^One continuous shot, no cuts\. /);
+    expect(video.input[0].text).not.toContain('camera style');
     expect(video.input[0].text).toContain('Scene: ');
     expect(video.input[0].text).toContain('Physics:');
     expect(video.parameters.negative_prompt).toContain('morphing');
@@ -153,6 +155,9 @@ describe('continuity-aware generation (prompt version 2)', () => {
       const t = s.takes.find((x) => x.id === s.selectedTakeId)!;
       const image = requestOf(t.gatewayTaskIds[0]!);
       expect(image.input[0].text).toContain('The last image is the scene reference');
+      // The previous shot's end state conditions the keyframe, never the video that starts from it
+      expect(image.input[0].text).toContain('Continues from the previous shot:');
+      expect(requestOf(t.gatewayTaskIds.at(-1)!).input[0].text).not.toContain('Continues from the previous shot');
       expect(image.input.filter((p: { type: string }) => p.type === 'image').length).toBe(
         t.request.referenceCount + 1,
       );

@@ -116,6 +116,8 @@ export function styleHeader(
   screenplay: Pick<Screenplay, 'style'> | null,
   settings: Pick<ProjectSettings, 'aspectRatio'>,
   mode: 'still' | 'motion',
+  /** The style's camera line (a single shot's version 2 video prompt leaves it out: it lists several kinds of shot). */
+  opts: { camera?: boolean } = {},
 ): string {
   const s = screenplay?.style;
   const parts = [
@@ -126,7 +128,8 @@ export function styleHeader(
   if (clean(s?.visual)) parts.push(`visual style: ${clean(s?.visual)}`);
   if (clean(s?.palette)) parts.push(`palette: ${clean(s?.palette)}`);
   if (clean(s?.lighting)) parts.push(`lighting: ${clean(s?.lighting)}`);
-  if (mode === 'motion' && clean(s?.camera)) parts.push(`camera style: ${clean(s?.camera)}`);
+  if (mode === 'motion' && opts.camera !== false && clean(s?.camera))
+    parts.push(`camera style: ${clean(s?.camera)}`);
   return `${parts.join('; ')}.`;
 }
 
@@ -173,14 +176,23 @@ export interface ShotContext {
   offscreen?: string[];
 }
 
-/** Version 2: who is in frame, when the shot shows only part of its clip's cast; null otherwise. */
-export function inFrameLine(ctx: Pick<ShotContext, 'characters' | 'offscreen'>): string | null {
+/**
+ * Version 2: who is in frame, when the shot shows only part of its clip's cast; null otherwise. A keyframe names who is
+ * not there; a video prompt names nobody else, since Wan put a named absent character into the shot
+ * (docs/design/continuity.md#prompts-version-2).
+ */
+export function inFrameLine(
+  ctx: Pick<ShotContext, 'characters' | 'offscreen'>,
+  mode: 'keyframe' | 'video' = 'keyframe',
+): string | null {
   const away = ctx.offscreen ?? [];
   if (!away.length) return null;
   if (!ctx.characters.length) return 'No characters in frame.';
   const list = (names: string[]) =>
     names.length < 3 ? names.join(' and ') : `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`;
-  return `In frame: only ${list(ctx.characters.map((c) => c.name))}; ${list(away)} ${away.length === 1 ? 'is' : 'are'} out of frame.`;
+  const here = list(ctx.characters.map((c) => c.name));
+  if (mode === 'video') return `In frame: only ${here}; nobody else.`;
+  return `In frame: only ${here}; ${list(away)} ${away.length === 1 ? 'is' : 'are'} out of frame.`;
 }
 
 export function promptVersionOf(settings: Pick<ProjectSettings, 'generation'>): PromptVersion {
@@ -225,15 +237,19 @@ export function elementLines(elements: Element[]): string[] {
   return lines;
 }
 
-/** The scene line of version 2: the same for every shot of a scene. */
+/**
+ * The scene line of version 2: the same for every shot of a scene. `placeOnly` keeps the place and the time without the
+ * continuity, which names every character (a video prompt of a shot without the whole cast).
+ */
 export function sceneLine(
   scene: ShotContext['scene'],
   location: Pick<Element, 'name'> | undefined,
+  opts: { placeOnly?: boolean } = {},
 ): string | null {
   if (!scene) return null;
   const place = clean(scene.location) || clean(location?.name) || clean(scene.heading);
   const where = [place, clean(scene.timeOfDay)].filter(Boolean).join(', ');
-  const state = clean(scene.continuity);
+  const state = opts.placeOnly ? '' : clean(scene.continuity);
   if (!where && !state) return null;
   return `Scene: ${[where, state].filter(Boolean).join('; ')}.`;
 }
@@ -272,8 +288,9 @@ export function shotBodyV2(
     lines.push(`${clean(shot.description)}.`);
     if (mode === 'video' && clean(shot.action)) lines.push(`Action: ${clean(shot.action)}.`);
   }
+  // Keyframes only: the video starts from that frame, and Wan played the line as a second shot
   const previous = clean(ctx.previousEndState ?? '');
-  if (previous && shot.continuity !== 'continuous')
+  if (mode === 'keyframe' && previous && shot.continuity !== 'continuous')
     lines.push(`Continues from the previous shot: ${previous}.`);
   const move = cameraMove(shot.camera.move);
   const lens = lensFragment(shot.camera);
@@ -314,20 +331,24 @@ export function soundBlockV2(settings: Pick<ProjectSettings, 'generation' | 'dia
     : 'Sound: only the voices and the natural sounds of the place and the action; no music, no song, no humming.';
 }
 
+/** The first words of a single shot's version 2 video prompt. */
+export const ONE_SHOT_LINE = 'One continuous shot, no cuts.';
+
 function compileShotPromptV2(
   ctx: ShotContext,
   mode: 'keyframe' | 'video',
   opts: { motionReference?: boolean },
 ): string {
   const { shot, settings } = ctx;
+  const video = mode === 'video';
   const location = (ctx.elements ?? []).find((e) => e.kind === 'location');
-  const lines: string[] = [styleHeader(ctx.screenplay, settings, mode === 'keyframe' ? 'still' : 'motion')];
-  const sceneText = sceneLine(ctx.scene, location);
+  // A video prompt describes this one shot: its structure first, as Wan reads the structure from the prompt, and
+  // nothing a model could play as another shot (docs/design/continuity.md#what-the-video-model-reads)
+  const lines: string[] = video ? [ONE_SHOT_LINE] : [];
+  lines.push(styleHeader(ctx.screenplay, settings, video ? 'motion' : 'still', { camera: !video }));
+  const sceneText = sceneLine(ctx.scene, location, { placeOnly: video && !!ctx.offscreen?.length });
   if (sceneText) lines.push(sceneText);
-  const body = shotBodyV2(ctx, mode, opts);
-  // One take, so no stray cut inside it (docs/design/continuity.md#prompts-version-2).
-  if (mode === 'video') body[0] = `One continuous shot, no cuts. ${body[0]}`;
-  lines.push(...body);
+  lines.push(...shotBodyV2(ctx, mode, opts));
   if (ctx.characters.length) {
     lines.push(
       mode === 'keyframe'
@@ -335,7 +356,7 @@ function compileShotPromptV2(
         : `Characters (keep identities exactly as in the first frame and the reference images): ${ctx.characters.map((c) => compactIdentity(c, shot)).join(' ')}`,
     );
   }
-  const inFrame = inFrameLine(ctx);
+  const inFrame = inFrameLine(ctx, mode);
   if (inFrame) lines.push(inFrame);
   lines.push(...elementLines(ctx.elements ?? []));
   if (mode === 'keyframe') {
