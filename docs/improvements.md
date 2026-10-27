@@ -254,6 +254,14 @@ dialogue and sound (`feedback.listen`), both at the same time ([how a film is wa
 |---|---|---|---|---|---|---|
 | Watched and heard as video | `qwen3.8-omni-flash` | 5.2 | 3 | 5 | 5 | 88 (28, 13 of them the teleports) |
 | Strips (picture only) | `qwen3.8-max` | 4.9 | 3 | 3 | 4 | 138 (15) |
+| After the fixes of items 39–41: strips, and heard | `qwen3.8-max`, `qwen3.8-omni-flash` | 6.0 | 4 | 4 | 7 | 144 (11; 116 about the picture) |
+
+The second export, after the three passes, scored 6.0 against the 4.9 of the same strip review of the first: the
+humans, the bear and the dog are gone (character 4 → 7), editing went from 3 to 5, and the measured stray cuts inside
+shots fell from 10 to 3; all 61 lines are still heard. Scores of a model vary from run to run; the cut count is
+measured. What it still finds: the chairlift scene (the pair apart on the chair, skis in their paws), inserts that
+widen at the end (fixed in the second pass with the earlier prompts), props that change inside a scene (the size
+chart's text, poles, decals) and the same 5-second length for every shot.
 
 **37. Music under the takes** (S–M) — `generation.music` off and the version 2 sound line ("no music, no song, no
 humming") still left music under 21 of the 110 takes in the cut: 2 of the first 6 takes before that line, about 19
@@ -299,13 +307,16 @@ cast ([actions](design/feedback.md#actions)).
 
 ### Run figures
 
-- **Cost:** $250.74 for 9 min 11 s (110 shots, 8 scenes): $27.31 a finished minute. 265 of the 840 generated video
-  seconds were attempts the gate discarded (32 %, about $74).
+- **Cost:** $250.74 for the first export of 9 min 11 s (110 shots, 8 scenes): $27.31 a finished minute. 265 of the 840
+  generated video seconds were attempts the gate discarded (32 %, about $74). The fixes added $118.17 (40 shots
+  regenerated, 27 then 13), so the film cost $370.39 in all, about $40 a finished minute, with 470 of 1,245 video
+  seconds discarded (38 %, $131.60).
 - **Throughput:** raising `RIDEO_LANES` video from 4 to 8 (the provider allowed it) roughly tripled the rate; the
   batch then finished 28 to 41 shots an hour. Even so shots waited 899 minutes in the queue against 858 running, and
   the slowest tenth took over 13 minutes each (item 31).
 - **Export:** 1.05 GB at 1080p, −14.4 LUFS integrated, −1 dB true peak; the editor tab rendered it in 19 chunks once
-  it had a disk-backed profile (item 34).
+  it had a disk-backed profile (item 34). The second export took 85 minutes: 49 to render in the tab, 27 to watermark
+  on the server, then the upload; its feedback, picture and sound together, 30 minutes more.
 - **Flaky test:** `packages/web/test/settings.test.tsx` "never shows a secret" fails now and then in a full unit run
   on a loaded two-core box (once in 42 ms, so an assertion, not a timeout) and passes alone and in loaded reruns; it
   has not failed on CI. Capture its message the next time it fails.
