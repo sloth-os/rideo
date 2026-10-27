@@ -157,7 +157,9 @@ describe('continuity-aware generation (prompt version 2)', () => {
       expect(image.input[0].text).toContain('The last image is the scene reference');
       // The previous shot's end state conditions the keyframe, never the video that starts from it
       expect(image.input[0].text).toContain('Continues from the previous shot:');
-      expect(requestOf(t.gatewayTaskIds.at(-1)!).input[0].text).not.toContain('Continues from the previous shot');
+      expect(requestOf(t.gatewayTaskIds.at(-1)!).input[0].text).not.toContain(
+        'Continues from the previous shot',
+      );
       expect(image.input.filter((p: { type: string }) => p.type === 'image').length).toBe(
         t.request.referenceCount + 1,
       );
