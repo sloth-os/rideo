@@ -59,10 +59,11 @@ test('a story export is watched by itself: scores, issues, recommendations appli
   const dialog = page.getByTestId('feedback-dialog');
   await expect(dialog.getByTestId('feedback-video')).toBeVisible();
 
-  // Apply the shot regeneration; dismiss the note.
+  // Apply the shot regeneration (it says who will be in frame); dismiss the note.
   const regenerate = dialog
     .locator('[data-testid="feedback-recommendation"][data-kind="regenerate_shot"]')
     .first();
+  await expect(regenerate.getByTestId('recommendation-cast')).toContainText('In frame:');
   await regenerate.getByTestId('apply-recommendation').click();
   await expect(regenerate).toHaveAttribute('data-status', 'applied');
   const note = dialog.locator('[data-testid="feedback-recommendation"][data-kind="note"]').first();

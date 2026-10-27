@@ -1,5 +1,6 @@
 import {
   type Actor,
+  castIdsOf,
   docPath,
   type Export,
   FEEDBACK_SETTINGS,
@@ -171,12 +172,15 @@ export class FeedbackService extends Service {
               ...(action.movement ? { movement: action.movement } : {}),
             }
           : undefined;
-      if (action.description || action.action || action.negativePrompt || camera)
+      // Who is in frame after the change: the gate checks the shot's cast (docs/design/feedback.md#actions)
+      const cast = action.characters?.length ? castIdsOf(action.characters, docs.characters) : [];
+      if (action.description || action.action || action.negativePrompt || camera || cast.length)
         await this.services.clips.updateShot(actor, projectId, clip.id, shot.id, {
           ...(action.description ? { description: action.description } : {}),
           ...(action.action ? { action: action.action } : {}),
           ...(action.negativePrompt ? { negativePrompt: action.negativePrompt } : {}),
           ...(camera ? { camera } : {}),
+          ...(cast.length ? { characterIds: cast } : {}),
         });
       job = await this.services.clips.regenerateShot(actor, projectId, clip.id, shot.id, { swapInCut: true });
     } else if (action.kind === 'replan_scene') {

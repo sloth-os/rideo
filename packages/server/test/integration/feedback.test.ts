@@ -123,6 +123,11 @@ describe('feedback on an export', () => {
     const fixed = clip.shots.find((s) => s.id === jumpy.id)!;
     expect(fixed.description).toContain('Steady camera, feet planted on the ground.');
     expect(fixed.negativePrompt).toBe('floating, jump cut');
+    // The fix names who is in frame: the shot's cast becomes them (docs/design/feedback.md#actions)
+    const named = regenerate.action?.kind === 'regenerate_shot' ? (regenerate.action.characters ?? []) : [];
+    expect(named.length).toBeGreaterThan(0);
+    const people = (await stateOf(pid)).docs.characters as Record<string, { name: string }>;
+    expect(fixed.characterIds.map((id) => people[id]!.name).sort()).toEqual([...named].sort());
     expect(fixed.takes.find((t) => t.id === fixed.selectedTakeId)!.consistency.quality?.passed).toBe(true);
     // The new take replaces the old one in the cut.
     const cut = await stack.api<any>('GET', `/projects/${pid}/timeline`);

@@ -186,8 +186,11 @@ and maps no `generate_audio`, so a silent take cannot be asked for and exclusion
 puts them there). Sources disagree on whether `wan3.0` takes a negative prompt at all.
 
 **26. The provider's prompt rewriting** (S) — Wan's `prompt_extend` is on by default: an LLM rewrites the prompt and
-may change the lines it should speak. *How:* measure the lines the sound check hears with `generation.enhancePrompt`
-off and on, and default to what keeps the words.
+may change the lines it should speak, and Wan 2.6 planned multi-shot videos only with it on. The third pass turned it
+off together with the prompt change of item 39, so its share of that result is unknown; one of its 13 takes then
+spoke an invented Chinese line in a shot without lines (the sound check flagged it). *How:* measure stray cuts and
+the lines the sound check hears with `generation.enhancePrompt` off and on, and default to what keeps the words and
+the single shot.
 
 **27. A faster judge** (S) — a judge call takes 19–23 s through the proxy with any of the vision models tried, more
 than the rest of a take's checks together. *How:* a judge model setting apart from vision (a flash model), or all of
@@ -275,7 +278,11 @@ a low wedge", the same line; Sammy's close-ups gained Rosie, drawn as a human gi
 line that describes both outfits. Wan 2.7 and later infer the shot structure from the prompt when it is not stated,
 so a single shot's video prompt now opens with it and keeps only this shot: no camera-style list, no previous end
 state, no scene continuity when part of the cast is out of frame, and only the names of who is in frame
-([what the video model reads](design/continuity.md#what-the-video-model-reads)). Keyframes keep all of it.
+([what the video model reads](design/continuity.md#what-the-video-model-reads)). Keyframes keep all of it. In the third
+pass, with these prompts and the provider's prompt rewriting off (`generation.enhancePrompt: false`, item 26; the two
+were changed together), the 13 failed shots were generated again ($33.65): 8 passed at the first attempt and their
+sheets show what the fixes asked for (Rosie stays in her shot to the stop, the close-ups hold, no human on the
+chairlift), 4 failed only the cast check (item 41) and 1 kept its earlier take.
 
 **40. A fix that fails its checks** (S) — a regenerated take replaces the cut's take when its identity passes, even
 when its quality checks fail. In the second pass that was right for some shots and wrong for others: the new
@@ -283,6 +290,12 @@ take of C5·S9 failed only a jump check but had panda Rosie where the old one ha
 C4·S13 put a human girl on the chairlift where the old one had a stray cut. *How:* after a fix, the feedback panel
 shows each applied recommendation as fixed or not (the new take's checks), with the previous take one click away,
 and the next feedback on the export compares the two takes of each fixed shot.
+
+**41. Who is in frame after a fix** (S, done) — a fix that brings a character into the shot ("put Rosie's head and
+pink beanie at frame right") left the shot's cast as planned, so the gate counted that character as an extra: the
+other 4 shots of the third pass failed every attempt that way while their takes showed what was asked. A
+`regenerate_shot` action now names who is in frame after the change (`characters`), and applying it sets the shot's
+cast ([actions](design/feedback.md#actions)).
 
 ### Run figures
 

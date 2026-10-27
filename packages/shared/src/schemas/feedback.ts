@@ -199,6 +199,8 @@ export const FeedbackActionSchema = z.discriminatedUnion('kind', [
     negativePrompt: z.string().max(2000).optional(),
     framing: FeedbackFramingSchema.optional(),
     movement: FeedbackMovementSchema.optional(),
+    /** Who is in frame after the change, by name (docs/design/feedback.md#actions). */
+    characters: z.array(z.string().min(1).max(100)).max(10).optional(),
   }),
   z.object({ kind: z.literal('replan_scene'), clipId: IdSchema, direction: z.string().max(2000).optional() }),
   z.object({ kind: z.literal('settings'), patch: FeedbackSettingsPatchSchema }),

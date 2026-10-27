@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   addUsage,
   assembleFeedback,
+  castIdsOf,
   cutPoints,
   dialogueDelivery,
   emptyUsage,
@@ -541,7 +542,7 @@ describe('listening feedback (docs/design/feedback.md#how-a-film-is-watched)', (
             priority: 1,
             title: 'Sammy needs his line',
             detail: '',
-            action: { kind: 'regenerate_shot', action: 'Sammy speaks clearly' },
+            action: { kind: 'regenerate_shot', action: 'Sammy speaks clearly', characters: ['Sammy'] },
           },
         ],
       }),
@@ -553,11 +554,12 @@ describe('listening feedback (docs/design/feedback.md#how-a-film-is-watched)', (
       signals: FeedbackSignalsSchema.parse({ durationSec: 25, dialogue }),
       retrospective: [],
     });
-    expect(
-      listenedOut.recommendations.filter(
-        (r) => r.action?.kind === 'regenerate_shot' && r.action.shotId === spans[2]!.shotId,
-      ),
-    ).toHaveLength(1);
+    const kept = listenedOut.recommendations.filter(
+      (r) => r.action?.kind === 'regenerate_shot' && r.action.shotId === spans[2]!.shotId,
+    );
+    expect(kept).toHaveLength(1);
+    // Who is in frame after the fix travels with it (docs/design/feedback.md#actions)
+    expect(kept[0]!.action).toMatchObject({ characters: ['Sammy'] });
     const seen = assembleFeedback({
       scenes: [scene(false)],
       film: null,
@@ -597,5 +599,13 @@ describe('listening feedback (docs/design/feedback.md#how-a-film-is-watched)', (
     expect(mergeSceneOutputs(picture, null)!.scores).toEqual({ storytelling: 7, continuity: 4 });
     expect(mergeSceneOutputs(null, heard)!.scores).toEqual({ dialogue: 6, sound: 8 });
     expect(mergeSceneOutputs(null, null)).toBeNull();
+  });
+
+  it('finds the characters a fix names as in frame, ignoring case and unknown names', () => {
+    const rosie = f.character({ name: 'Rosie' });
+    const sammy = f.character({ name: 'Sammy' });
+    const cast = { [rosie.id]: rosie, [sammy.id]: sammy };
+    expect(castIdsOf([' rosie ', 'SAMMY', 'Rosie', 'Bao'], cast)).toEqual([rosie.id, sammy.id]);
+    expect(castIdsOf(['Bao'], cast)).toEqual([]);
   });
 });

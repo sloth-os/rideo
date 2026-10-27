@@ -295,6 +295,20 @@ export function signalIssues(signals: FeedbackSignals, spans: FeedbackShotSpan[]
   return out;
 }
 
+/**
+ * The project's characters a fix names as in frame (docs/design/feedback.md#actions), by name and ignoring case;
+ * names of no character are left out.
+ */
+export function castIdsOf(
+  names: string[],
+  characters: Record<string, Pick<Character, 'id' | 'name'>>,
+): string[] {
+  const byName = new Map(Object.values(characters).map((c) => [c.name.trim().toLowerCase(), c.id]));
+  return [
+    ...new Set(names.map((n) => byName.get(n.trim().toLowerCase())).filter((id): id is string => !!id)),
+  ];
+}
+
 /** The dimensions a scene's sound review answers for (`feedback.listen`). */
 const HEARD_ONLY = new Set<string>(['dialogue', 'sound']);
 
@@ -449,6 +463,7 @@ function mapAction(
       ...(a.negativePrompt ? { negativePrompt: a.negativePrompt } : {}),
       ...(a.framing ? { framing: a.framing } : {}),
       ...(a.movement ? { movement: a.movement } : {}),
+      ...(a.characters?.length ? { characters: a.characters } : {}),
     };
     return { kind: 'regenerate_shot', clipId: target.clipId, shotId: target.shotId, ...fields };
   }

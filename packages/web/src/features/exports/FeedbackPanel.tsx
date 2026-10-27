@@ -241,6 +241,12 @@ function Recommendation({
           {[r.action.description, r.action.action].filter(Boolean).join(' — ')}
         </p>
       ) : null}
+      {r.action?.kind === 'regenerate_shot' && r.action.characters?.length ? (
+        <p className="text-[12px] break-words" data-testid="recommendation-cast">
+          <span className="text-muted">In frame: </span>
+          {r.action.characters.join(', ')}
+        </p>
+      ) : null}
       {r.status === 'open' ? (
         <div className="flex flex-wrap gap-2">
           <Button

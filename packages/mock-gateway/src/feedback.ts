@@ -115,6 +115,8 @@ export function feedbackScene(input: FeedbackSceneInput, strips: number): Feedba
                 kind: 'regenerate_shot' as const,
                 description: `${worstShot.description} Steady camera, feet planted on the ground.`,
                 negativePrompt: 'floating, jump cut',
+                // the scene's whole cast in frame, so applying it changes who is in the shot
+                characters: input.cast.map((c) => c.name),
               },
             },
           ]

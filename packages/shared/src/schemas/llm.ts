@@ -608,6 +608,8 @@ export const LlmFeedbackActionSchema = z
     negativePrompt: optionalText(2000),
     framing: FeedbackFramingSchema.optional().catch(undefined),
     movement: FeedbackMovementSchema.optional().catch(undefined),
+    /** Who is in frame after a shot's change, by name. */
+    characters: z.array(z.string().min(1).max(100)).max(10).optional().catch(undefined),
     direction: optionalText(2000),
     /** The film call names a scene by its number. */
     scene: z.coerce.number().int().nonnegative().optional().catch(undefined),

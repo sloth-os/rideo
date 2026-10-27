@@ -121,10 +121,15 @@ type Feedback = {
 
 | `action.kind` | Fields | Applying it |
 |---|---|---|
-| `regenerate_shot` | `clipId`, `shotId`, `description?`, `action?`, `negativePrompt?`, `framing?`, `movement?` | updates the shot with the revised fields (the same service as the shot editor) and regenerates it (`shot.generate`, priority of a user regenerate); the new take is selected when it passes and replaces the old one in the cut |
+| `regenerate_shot` | `clipId`, `shotId`, `description?`, `action?`, `negativePrompt?`, `framing?`, `movement?`, `characters?` | updates the shot with the revised fields (the same service as the shot editor) and regenerates it (`shot.generate`, priority of a user regenerate); `characters` names who is in frame after the change, the shot's cast becomes those of the project's characters; the new take is selected when it passes and replaces the old one in the cut |
 | `replan_scene` | `clipId`, `direction?` | re-plans the scene's shots (`clip.plan` with the direction added to the scene) and generates them |
 | `settings` | `patch` (project settings) | applies the patch (for example quality checks on, a higher threshold, the storyboard on, cast only) |
 | `note` | – | nothing to apply: the recommendation is advice for the editor or the next film |
+
+**Who is in frame.** A fix may bring a character into the shot ("put Rosie's head and pink beanie at frame right") or
+take one out. Without `characters` the shot's cast stayed as planned, so the gate's cast check counted the character
+the fix asked for as an extra: in the panda demo's third pass four of thirteen fixes failed every attempt that way
+while their takes showed what the recommendations asked for.
 
 Applying or dismissing records who and when on the recommendation (a commit like any other edit). An action that no
 longer fits (the shot was deleted, the export's cut changed) fails with `feedback_stale` (409).
@@ -196,7 +201,7 @@ outcome}` (applied, dismissed, stale), and the language and vision calls under `
 
 `feedback.scene` answers from the input: scores lower for shots whose quality check failed or whose take is not
 `passed`, an issue for every signal inside the scene, and a `regenerate_shot` recommendation (with a revised
-description) for the lowest shot. `feedback.listen` scores `dialogue` and `sound` and hears every line except those of
+description, and the scene's whole cast in frame) for the lowest shot. `feedback.listen` scores `dialogue` and `sound` and hears every line except those of
 shots whose description says the speaker mumbles. `feedback.film` averages the scenes and adds one lesson.
 `sound.check` hears the shot's lines the same way, music when the description asks for it, and nothing in a shot
 without lines. Tests drive a full

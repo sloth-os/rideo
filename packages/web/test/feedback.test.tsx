@@ -94,6 +94,7 @@ const feedback: Feedback = FeedbackSchema.parse({
         clipId: 'clp_0000000000aaaaaa',
         shotId: 'sht_0000000000aaaaaa',
         action: 'She carves left',
+        characters: ['Rosie', 'Sammy'],
       },
     },
     { id: 'r2', priority: 3, dimension: 'editing', title: 'Trim the last hold', action: { kind: 'note' } },
@@ -147,6 +148,7 @@ describe('feedback on the export card (docs/design/feedback.md#surfaces)', () =>
     const recs = within(dialog).getAllByTestId('feedback-recommendation');
     expect(recs).toHaveLength(2);
     expect(recs[0]!.textContent).toContain('Revised: She carves left');
+    expect(within(recs[0]!).getByTestId('recommendation-cast').textContent).toBe('In frame: Rosie, Sammy');
     fireEvent.click(within(recs[0]!).getByTestId('apply-recommendation'));
     await waitFor(() => expect(calls.some((c) => c.url.endsWith('/recommendations/r1/apply'))).toBe(true));
     fireEvent.click(within(recs[1]!).getByTestId('dismiss-recommendation'));
