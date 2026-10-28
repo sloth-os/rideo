@@ -151,6 +151,22 @@ old one had a stray cut). Which of two flawed takes is better is a person's call
 The outcome is derived from the documents (`fixOutcome`, shared), so the REST API, MCP and the panel agree, and a
 take a person put in the cut later shows as theirs.
 
+### What a fix costs
+
+The panda demo's strip review recommended regenerating 68 shots, 27 of them at priority 1: at least $100 at that run's
+prices, with nothing on the screen to say so. When the feedback is written, each `regenerate_shot` and `replan_scene`
+recommendation gets an `estimate {usd, videoSeconds, attempts}` (`fixEstimate`, shared):
+
+- the video seconds are the shot's length (a re-planned scene's shots together) times `attempts`, the mean attempts of
+  the project's selected takes (at least 1): what a shot of this film has cost so far;
+- the dollars price those seconds with the project's pinned video model (`settings.models.video`, else the model of
+  the shot's take) and add a keyframe image per attempt for a shot without an approved storyboard frame, from
+  `RIDEO_PRICES`; `usd` is null when the video model has no price;
+- a `settings` change or a `note` costs nothing and has no estimate.
+
+The panel shows `≈ $1.65 · 6 s of video` on each recommendation and, above the list, **Apply the priority 1 fixes**
+with their count and total (the open priority 1 recommendations with an action, applied one after the other).
+
 ## Retrospective: improvements after every project
 
 The retrospective turns the run into a list of improvements, so every finished project leaves behind what to do
@@ -205,7 +221,8 @@ recommendation need `project.edit`; a `settings` action also needs `project.mana
 
 **UI.** Each export card shows its feedback: the overall score, a bar per dimension, the summary and *Show feedback*,
 which opens the full feedback (scenes, issues with *Play from here* on the export, recommendations with *Apply* and
-*Dismiss*, the retrospective, *Download report*). Long lists scroll inside the panel; on phones the panel takes the
+*Dismiss*, their estimated cost and *Apply the priority 1 fixes* ([what a fix costs](#what-a-fix-costs)), the
+retrospective, *Download report*). Long lists scroll inside the panel; on phones the panel takes the
 screen. The Inbox announces finished feedback (`Feedback ready`).
 
 ## Observability

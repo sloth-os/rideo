@@ -68,6 +68,12 @@ test('a story export is watched by itself: scores, issues, recommendations appli
     .locator('[data-testid="feedback-recommendation"][data-kind="regenerate_shot"]')
     .first();
   await expect(regenerate.getByTestId('recommendation-cast')).toContainText('In frame:');
+  // What the fix costs, and the priority 1 fixes together (docs/design/feedback.md#what-a-fix-costs)
+  await expect(regenerate.getByTestId('recommendation-estimate')).toHaveText(
+    /^≈ \$\d+\.\d\d · \d+ s of video$/,
+  );
+  await expect(dialog.getByTestId('priority-fixes')).toContainText(/priority 1 fix(es)? · ≈ \$\d+\.\d\d/);
+  await expect(dialog.getByTestId('apply-priority-fixes')).toBeEnabled();
   await regenerate.getByTestId('apply-recommendation').click();
   await expect(regenerate).toHaveAttribute('data-status', 'applied');
   // The fix's take passed its checks and replaced the old one in the cut (docs/design/feedback.md#when-a-fix-does-not-pass)

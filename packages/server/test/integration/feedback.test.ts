@@ -10,7 +10,16 @@ import { ApiError, expectSucceeded, readyStoryProject, type Stack, startStack } 
 let stack: Stack;
 let client: Client;
 beforeAll(async () => {
-  stack = await startStack({ gw: await startMockGateway({ latencyMs: 20 }) });
+  stack = await startStack({
+    gw: await startMockGateway({ latencyMs: 20 }),
+    // Prices for the estimates of the fixes (docs/design/feedback.md#what-a-fix-costs)
+    env: {
+      RIDEO_PRICES: JSON.stringify({
+        'mock-video-v1': { videoSecond: 0.25 },
+        'mock-image-v1': { image: 0.05 },
+      }),
+    },
+  });
   client = new Client({ name: 'Claude Code', version: '1.0.0' });
   await client.connect(new StreamableHTTPClientTransport(new URL(`${stack.url}/mcp`)));
 }, 60_000);
@@ -100,6 +109,10 @@ describe('feedback on an export', () => {
     // Recommendations: regenerate the jumpy shot first.
     const regenerate = fb!.recommendations.find((r) => r.action?.kind === 'regenerate_shot')!;
     expect(regenerate.action).toMatchObject({ clipId: clip.id, shotId: jumpy.id });
+    // What the fix costs: the shot's seconds times the takes' mean attempts, at the mock models' prices
+    expect(regenerate.estimate?.videoSeconds).toBeGreaterThanOrEqual(jumpy.durationSec);
+    expect(regenerate.estimate?.usd).toBeGreaterThan(0);
+    expect(fb!.recommendations.find((r) => r.action?.kind === 'note')!.estimate).toBeUndefined();
     expect(fb!.recommendations[0]!.priority).toBe(1);
     expect(fb!.retrospective.map((r) => r.rule ?? r.source)).toEqual(
       expect.arrayContaining(['quality_failures', 'unexpected_cuts', 'vision']),

@@ -16,7 +16,9 @@ import {
   type FeedbackShotSpan,
   type FeedbackSignals,
   feedbackMarkdown,
+  fixEstimate,
   framingRuns,
+  meanAttempts,
   mergeSceneOutputs,
   type ProjectDocs,
   rushedLines,
@@ -465,6 +467,12 @@ export async function exportFeedback(deps: HandlerDeps, ctx: JobContext) {
       // 5. Assembly, the retrospective and the report.
       ctx.progress(0.95, 1, 'writing the feedback');
       const assembled = assembleFeedback({ scenes, film, signals, retrospective: [] });
+      // What each fix is expected to cost (docs/design/feedback.md#what-a-fix-costs)
+      const attempts = meanAttempts(docs.clips);
+      assembled.recommendations = assembled.recommendations.map((r) => {
+        const estimate = fixEstimate(r.action, docs, deps.config.prices, attempts);
+        return estimate ? { ...r, estimate } : r;
+      });
       const retro = retrospective({
         docs,
         usage,

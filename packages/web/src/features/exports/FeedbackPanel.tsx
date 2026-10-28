@@ -195,6 +195,58 @@ export function FeedbackSummary({ e, projectId }: { e: Export; projectId: string
 
 type Tab = 'recommendations' | 'issues' | 'scenes' | 'retrospective';
 
+/** `≈ $1.65 · 6 s of video` (docs/design/feedback.md#what-a-fix-costs). */
+function estimateText(e: NonNullable<FeedbackRecommendation['estimate']>): string {
+  const seconds = `${Math.round(e.videoSeconds)} s of video`;
+  return e.usd === null ? `≈ ${seconds} (no price for the model)` : `≈ $${e.usd.toFixed(2)} · ${seconds}`;
+}
+
+/** The open priority 1 fixes and their total, applied one after the other (docs/design/feedback.md#what-a-fix-costs). */
+function PriorityFixes({ fb, projectId }: { fb: Feedback; projectId: string }) {
+  const [busy, setBusy] = useState(false);
+  const open = fb.recommendations.filter(
+    (r) => r.priority === 1 && r.status === 'open' && r.action && r.action.kind !== 'note',
+  );
+  if (!open.length) return null;
+  const priced = open.filter((r) => r.estimate?.usd != null);
+  const total = priced.reduce((sum, r) => sum + (r.estimate?.usd ?? 0), 0);
+  const applyAll = async () => {
+    setBusy(true);
+    let applied = 0;
+    try {
+      for (const r of open) {
+        await api.applyRecommendation(projectId, fb.id, r.id);
+        applied++;
+      }
+      toast(`Applied ${applied} priority 1 fix${applied === 1 ? '' : 'es'}: the work is queued`);
+    } catch (err) {
+      reportError(err);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div
+      className="mb-3 flex flex-wrap items-center gap-2 rounded-[var(--radius-control)] border border-border p-2.5"
+      data-testid="priority-fixes"
+    >
+      <p className="min-w-0 flex-1 text-[13px] break-words">
+        {open.length} priority 1 fix{open.length === 1 ? '' : 'es'}
+        {priced.length ? ` · ≈ $${total.toFixed(2)}${priced.length < open.length ? ' and more' : ''}` : ''}
+      </p>
+      <Button
+        size="sm"
+        variant="primary"
+        loading={busy}
+        onClick={applyAll}
+        data-testid="apply-priority-fixes"
+      >
+        Apply the priority 1 fixes
+      </Button>
+    </div>
+  );
+}
+
 function Recommendation({
   r,
   fb,
@@ -253,6 +305,11 @@ function Recommendation({
       </div>
       <p className="text-[13px] font-medium break-words">{r.title}</p>
       {r.detail ? <p className="text-[12px] break-words text-muted">{r.detail}</p> : null}
+      {r.estimate && r.status === 'open' ? (
+        <p className="text-[12px] text-muted" data-testid="recommendation-estimate">
+          {estimateText(r.estimate)}
+        </p>
+      ) : null}
       {r.action?.kind === 'regenerate_shot' && (r.action.description || r.action.action) ? (
         <p className="text-[12px] break-words">
           <span className="text-muted">Revised: </span>
@@ -428,14 +485,17 @@ export function FeedbackDialog({
           ))}
         </div>
         {tab === 'recommendations' ? (
-          <ul className="space-y-2">
-            {live.recommendations.map((r) => (
-              <Recommendation key={r.id} r={r} fb={live} projectId={projectId} />
-            ))}
-            {!live.recommendations.length ? (
-              <p className="text-[13px] text-muted">No recommendations.</p>
-            ) : null}
-          </ul>
+          <>
+            <PriorityFixes fb={live} projectId={projectId} />
+            <ul className="space-y-2">
+              {live.recommendations.map((r) => (
+                <Recommendation key={r.id} r={r} fb={live} projectId={projectId} />
+              ))}
+              {!live.recommendations.length ? (
+                <p className="text-[13px] text-muted">No recommendations.</p>
+              ) : null}
+            </ul>
+          </>
         ) : null}
         {tab === 'issues' ? (
           <ul className="space-y-1.5">

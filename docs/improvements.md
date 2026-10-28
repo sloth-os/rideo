@@ -270,12 +270,12 @@ cut jump from one tune to the next. *How:* once the gateway passes `negative_pro
 project setting that retries takes with music like an unheard line (each retry is a paid 5 s take, $1.40 here); or,
 better, a source-separation step that keeps voices and effects and drops the music of the takes where it is heard. *Partly done:* `consistency.rejectMusic` (off by default; a toggle in the project settings) fails a take whose sound check hears music, so it is generated again like a take whose line is not heard ([quality checks](design/continuity.md#quality-checks-in-the-gate)); Wan 3.0's own words for no music ("No BGM") are in the sound line since 2e039ff. Source separation is still to come.
 
-**38. Fixes the feedback cannot see the cost of** (S) — the strip review recommended regenerating 68 shots (27 at
+**38. Fixes the feedback cannot see the cost of** (S, done) — the strip review recommended regenerating 68 shots (27 at
 priority 1). Applying all of them is at least $100 at this run's prices ($1.45 an attempt), and some shots fail again
 for the same reason.
 *How:* each recommendation shows its estimated cost (attempts × the take's price, from `RIDEO_PRICES`) and the
 feedback panel offers "apply the priority 1 fixes" with the total; the retrospective then compares the scores before
-and after the fixes.
+and after the fixes. *Done:* each regenerate or re-plan recommendation carries its estimate (the shot's seconds times the project's mean attempts, priced with the pinned models), and the panel offers *Apply the priority 1 fixes* with their total ([what a fix costs](design/feedback.md#what-a-fix-costs)). Comparing the scores before and after the fixes is the next feedback's job (the Insights view lists each export's).
 
 **39. What the video model reads** (S, done) — the second pass applied the strip review's 27 priority 1 shot
 regenerations with `consistency.castOnly` on ($84.52): 14 shots passed every check (11 at the first attempt) and 13

@@ -165,6 +165,42 @@ describe('feedback on the export card (docs/design/feedback.md#surfaces)', () =>
     );
   });
 
+  it('shows what each fix costs and applies the priority 1 fixes together (docs/design/feedback.md#what-a-fix-costs)', async () => {
+    const projectId = useProject.getState().projectId!;
+    const priced = FeedbackSchema.parse({
+      ...feedback,
+      recommendations: [
+        { ...feedback.recommendations[0], estimate: { usd: 1.65, videoSeconds: 6, attempts: 1.5 } },
+        {
+          ...feedback.recommendations[0],
+          id: 'r3',
+          title: 'Generate C1·S1 again',
+          estimate: { usd: null, videoSeconds: 4, attempts: 1 },
+        },
+        feedback.recommendations[1],
+      ],
+    });
+    const docs = f.docs({ exports: { [exportDoc.id]: exportDoc }, feedback: { [priced.id]: priced } });
+    useProject.setState({ ...emptySlice, projectId, docs, workflow: evaluateWorkflow(docs) });
+    render(<FeedbackSummary e={exportDoc} projectId={projectId} />);
+    fireEvent.click(screen.getByTestId('show-feedback'));
+    const estimates = screen.getAllByTestId('recommendation-estimate');
+    expect(estimates.map((e) => e.textContent)).toEqual([
+      '≈ $1.65 · 6 s of video',
+      '≈ 4 s of video (no price for the model)',
+    ]);
+    const bar = screen.getByTestId('priority-fixes');
+    expect(bar.textContent).toContain('2 priority 1 fixes · ≈ $1.65 and more');
+    fireEvent.click(within(bar).getByTestId('apply-priority-fixes'));
+    await waitFor(() =>
+      expect(
+        calls
+          .filter((c) => c.url.includes('/recommendations/') && c.url.endsWith('/apply'))
+          .map((c) => c.url.split('/').at(-2)),
+      ).toEqual(['r1', 'r3']),
+    );
+  });
+
   it('says whether an applied fix passed, and puts a take that did not in the cut on request', async () => {
     const projectId = useProject.getState().projectId!;
     const clip = f.clip({ id: 'clp_0000000000aaaaaa' });

@@ -8,6 +8,7 @@ import {
   type Feedback,
   type FeedbackAction,
   type FeedbackDimension,
+  type FeedbackEstimate,
   type FeedbackIssue,
   type FeedbackRecommendation,
   type FeedbackScores,
@@ -24,6 +25,7 @@ import type {
   VisionScores,
 } from '../schemas/llm';
 import type { Timeline, VideoItem } from '../schemas/timeline';
+import type { Prices } from '../schemas/usage';
 import { itemEnd, primaryTrack } from '../timeline/ops';
 
 /**
@@ -887,5 +889,59 @@ export function fixOutcome(
     takeId: take.id,
     inCut,
     issues: fixed ? [] : [...identity, ...(take.consistency.quality?.issues ?? [])].slice(0, 6),
+  };
+}
+
+/** The mean video attempts of the project's selected takes, at least 1: what a shot of this film has cost so far. */
+export function meanAttempts(clips: Record<string, Clip>): number {
+  const attempts = Object.values(clips).flatMap((c) =>
+    c.shots.flatMap((s) => {
+      const t = s.takes.find((x) => x.id === s.selectedTakeId);
+      return t ? [Math.max(1, t.consistency.attempts)] : [];
+    }),
+  );
+  return attempts.length ? attempts.reduce((a, b) => a + b, 0) / attempts.length : 1;
+}
+
+const round2 = (n: number) => Math.round(n * 100) / 100;
+
+/**
+ * What applying a recommendation is expected to cost (docs/design/feedback.md#what-a-fix-costs): its shots' seconds
+ * times the expected attempts, priced with the pinned video model (else the take's), plus a keyframe per attempt for a
+ * shot without an approved storyboard frame. Null for an action that generates nothing.
+ */
+export function fixEstimate(
+  action: FeedbackAction | null,
+  docs: {
+    clips: Record<string, Clip>;
+    project: { settings: { models?: { image?: string; video?: string } } };
+  },
+  prices: Prices,
+  attempts: number,
+): FeedbackEstimate | null {
+  if (!action || (action.kind !== 'regenerate_shot' && action.kind !== 'replan_scene')) return null;
+  const clip = docs.clips[action.clipId];
+  const shots =
+    action.kind === 'regenerate_shot'
+      ? (clip?.shots ?? []).filter((s) => s.id === action.shotId)
+      : (clip?.shots ?? []);
+  if (!shots.length) return null;
+  const n = Math.max(1, attempts);
+  const takes = shots.flatMap((s) => {
+    const t = s.takes.find((x) => x.id === s.selectedTakeId) ?? s.takes.at(-1);
+    return t ? [t] : [];
+  });
+  const pinned = (m: string | undefined) => (m && m !== 'auto' ? m : undefined);
+  const models = docs.project.settings.models ?? {};
+  const videoModel = pinned(models.video) ?? takes.find((t) => t.request.videoModel)?.request.videoModel;
+  const imageModel = pinned(models.image) ?? takes.find((t) => t.request.imageModel)?.request.imageModel;
+  const videoSeconds = round2(shots.reduce((sum, s) => sum + s.durationSec, 0) * n);
+  const keyframes = shots.filter((s) => !s.board?.approved).length * n;
+  const videoPrice = videoModel ? prices[videoModel]?.videoSecond : undefined;
+  const imagePrice = (imageModel ? prices[imageModel]?.image : undefined) ?? 0;
+  return {
+    usd: videoPrice === undefined ? null : round2(videoSeconds * videoPrice + keyframes * imagePrice),
+    videoSeconds,
+    attempts: round2(n),
   };
 }

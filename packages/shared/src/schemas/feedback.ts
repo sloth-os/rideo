@@ -220,8 +220,17 @@ export const FeedbackRecommendationSchema = z.object({
   appliedAt: IsoDateSchema.optional(),
   appliedBy: ActorSchema.optional(),
   jobId: IdSchema.optional(),
+  /** What applying it is expected to cost, at the prices when the feedback was written (docs/design/feedback.md#what-a-fix-costs). */
+  estimate: z
+    .object({
+      usd: z.number().nonnegative().nullable(),
+      videoSeconds: z.number().nonnegative(),
+      attempts: z.number().positive(),
+    })
+    .optional(),
 });
 export type FeedbackRecommendation = z.infer<typeof FeedbackRecommendationSchema>;
+export type FeedbackEstimate = NonNullable<FeedbackRecommendation['estimate']>;
 
 export const RetrospectiveAreaSchema = z.enum(['quality', 'cost', 'performance', 'reliability', 'ux']);
 export type RetrospectiveArea = z.infer<typeof RetrospectiveAreaSchema>;

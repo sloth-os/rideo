@@ -15,8 +15,10 @@ import {
   FeedbackSignalsSchema,
   feedbackIdFor,
   feedbackMarkdown,
+  fixEstimate,
   fixOutcome,
   framingRuns,
+  meanAttempts,
   mergeSceneOutputs,
   overallScore,
   parsePrices,
@@ -718,5 +720,47 @@ describe('the outcome of a shot fix (docs/design/feedback.md#when-a-fix-does-not
       },
     };
     expect(takePassesChecks(overridden, old, { [mira.id]: mira })).toBe(true);
+  });
+});
+
+describe('what a fix costs (docs/design/feedback.md#what-a-fix-costs)', () => {
+  it('prices a shot’s seconds times the attempts with the pinned models, a keyframe without an approved frame', () => {
+    const take = (attempts: number) =>
+      f.take({
+        request: { ...f.take().request, videoModel: 'wan3.0-video-prime', imageModel: 'seedream' },
+        consistency: f.report({ attempts }),
+      });
+    const a = take(1);
+    const b = take(2);
+    const one = f.shot({ durationSec: 4, takes: [a], selectedTakeId: a.id });
+    const two = f.shot({ index: 1, durationSec: 6, takes: [b], selectedTakeId: b.id });
+    const clip = f.clip({ shots: [one, two] });
+    const docs = {
+      clips: { [clip.id]: clip },
+      project: { settings: { models: { image: 'auto', video: 'auto' } } },
+    };
+    const prices = { 'wan3.0-video-prime': { videoSecond: 0.28 }, seedream: { image: 0.045 } };
+    expect(meanAttempts(docs.clips)).toBe(1.5);
+    const regenerate = { kind: 'regenerate_shot' as const, clipId: clip.id, shotId: one.id };
+    // 4 s x 1.5 attempts = 6 s of video at $0.28, and 1.5 keyframes at $0.045
+    expect(fixEstimate(regenerate, docs, prices, 1.5)).toEqual({ usd: 1.75, videoSeconds: 6, attempts: 1.5 });
+    // An approved storyboard frame is the first frame: no keyframe to pay for
+    const boarded = { ...one, board: { ...(one.board ?? {}), approved: true } as never };
+    const withBoard = { ...docs, clips: { [clip.id]: { ...clip, shots: [boarded, two] } } };
+    expect(fixEstimate(regenerate, withBoard, prices, 1.5)?.usd).toBe(1.68);
+    // A re-planned scene: all its shots
+    expect(fixEstimate({ kind: 'replan_scene', clipId: clip.id }, docs, prices, 1)).toEqual({
+      usd: 2.89,
+      videoSeconds: 10,
+      attempts: 1,
+    });
+    // A pinned model wins over the take's; an unpriced one has no dollars
+    const pinned = { ...docs, project: { settings: { models: { image: 'auto', video: 'kling' } } } };
+    expect(fixEstimate(regenerate, pinned, prices, 1)).toEqual({ usd: null, videoSeconds: 4, attempts: 1 });
+    // Nothing generated, nothing estimated
+    expect(fixEstimate({ kind: 'note' }, docs, prices, 1)).toBeNull();
+    expect(fixEstimate(null, docs, prices, 1)).toBeNull();
+    expect(fixEstimate({ ...regenerate, shotId: 'sht_0000000000zzzzzz' }, docs, prices, 1)).toBeNull();
+    expect(meanAttempts({})).toBe(1);
   });
 });
