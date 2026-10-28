@@ -208,21 +208,28 @@ describe('settings page (docs/design/settings.md)', () => {
 
   it('never shows a secret: set, replaced or removed', async () => {
     page('/settings#gateway');
-    const key = await screen.findByTestId('setting-MM_GATEWAY_API_KEY');
-    expect(within(key).getByTestId('setting-secret-set').textContent).toMatch(/Set/);
-    expect(key.querySelector('input')).toBeNull();
-    fireEvent.click(within(key).getByTestId('setting-secret-replace'));
-    const input = key.querySelector('input') as HTMLInputElement;
+    // Looked up at every step: a later render may replace the node found first, and a click on a detached node
+    // reaches nothing (this test failed now and then on loaded runs)
+    const key = () => screen.getByTestId('setting-MM_GATEWAY_API_KEY');
+    await screen.findByTestId('setting-MM_GATEWAY_API_KEY');
+    expect(within(key()).getByTestId('setting-secret-set').textContent).toMatch(/Set/);
+    expect(key().querySelector('input')).toBeNull();
+    fireEvent.click(within(key()).getByTestId('setting-secret-replace'));
+    const input = await waitFor(() => {
+      const found = key().querySelector('input');
+      expect(found).toBeTruthy();
+      return found as HTMLInputElement;
+    });
     expect(input.type).toBe('password');
     expect(input.value).toBe('');
     fireEvent.change(input, { target: { value: 'new-key' } });
-    fireEvent.click(within(key).getByTestId('setting-secret-toggle'));
-    expect((key.querySelector('input') as HTMLInputElement).type).toBe('text');
+    fireEvent.click(within(key()).getByTestId('setting-secret-toggle'));
+    expect((key().querySelector('input') as HTMLInputElement).type).toBe('text');
     expect(screen.getByTestId('settings-savebar').textContent).toMatch(/1 unsaved change/);
-    fireEvent.click(within(key).getByText('Cancel'));
+    fireEvent.click(within(key()).getByText('Cancel'));
     expect(screen.queryByTestId('settings-savebar')).toBeNull();
-    fireEvent.click(within(key).getByTestId('setting-secret-remove'));
-    expect(within(key).getByTestId('setting-secret-removing')).toBeTruthy();
+    fireEvent.click(within(key()).getByTestId('setting-secret-remove'));
+    expect(within(key()).getByTestId('setting-secret-removing')).toBeTruthy();
     fireEvent.click(screen.getByTestId('settings-save'));
     await waitFor(() => expect(calls.some((c) => c.init?.method === 'PUT')).toBe(true));
     expect(JSON.parse(String(calls.find((c) => c.init?.method === 'PUT')!.init!.body))).toEqual({

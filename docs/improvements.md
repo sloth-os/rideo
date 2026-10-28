@@ -323,7 +323,8 @@ cast ([actions](design/feedback.md#actions)).
   Cannot read properties of null (reading 'type')` right after *Replace*): the page asks for its settings again every
   2 s while API keys register, and every new answer ended a replacement in progress, so an answer landing at the click
   took the field away, in the studio as in the test. A replacement now ends only when the settings were saved
-  (`updatedAt`).
+  (`updatedAt`). It failed once more in a loaded run after that: the test held the field's node across renders, and a
+  later render may replace it (a click on a detached node reaches nothing); it now looks the field up at every step.
 
 
 ## The swimming demo (October 28, 2026)
