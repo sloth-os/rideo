@@ -2,8 +2,9 @@ import { isStillMedia, type MediaRef } from '@rideo/shared';
 import type { MediaPool } from './media-pool';
 
 /**
- * Waveforms and filmstrips of the timeline lanes (docs/design/editor.md#waveforms-and-filmstrips): computed in the
- * tab with WebCodecs from the original or the local proxy, kept per media hash for the session.
+ * Waveforms and filmstrips of the timeline lanes (docs/design/editor.md#waveforms-and-filmstrips): from the take's
+ * lane files the server made, else computed in the tab with WebCodecs from the original or the local proxy; kept per
+ * media hash for the session.
  */
 
 /** Peaks per second of a waveform. */
@@ -11,14 +12,48 @@ export const PEAKS_PER_SEC = 100;
 
 const peaks = new Map<string, Promise<Float32Array | null>>();
 const thumbs = new Map<string, Promise<ImageBitmap | null>>();
+const sprites = new Map<string, Promise<ImageBitmap>>();
 
 /** The loudest sample of every 10 ms of a file's sound (0–1), or null when it has none. */
 export function waveformPeaks(pool: MediaPool, media: MediaRef): Promise<Float32Array | null> {
   let p = peaks.get(media.hash);
   if (!p) {
-    p = computePeaks(pool, media);
+    p = media.lanes?.peaks
+      ? lanePeaks(pool, media).catch(() => computePeaks(pool, media))
+      : computePeaks(pool, media);
     peaks.set(media.hash, p);
     p.catch(() => peaks.delete(media.hash));
+  }
+  return p;
+}
+
+/** The server's peaks of a take (0–255 at their own rate), at `PEAKS_PER_SEC` and 0–1. */
+async function lanePeaks(pool: MediaPool, media: MediaRef): Promise<Float32Array | null> {
+  const res = await pool.fetchMedia(media.lanes!.peaks!.path);
+  if (!res.ok) throw new Error(`lane peaks: ${res.status}`);
+  const body = (await res.json()) as { perSec: number; peaks: number[] };
+  if (!body.peaks.length || !(body.perSec > 0)) return null;
+  const out = new Float32Array(Math.max(1, Math.ceil((body.peaks.length / body.perSec) * PEAKS_PER_SEC)));
+  for (let k = 0; k < out.length; k++) {
+    const i = Math.min(body.peaks.length - 1, Math.floor((k / PEAKS_PER_SEC) * body.perSec));
+    out[k] = (body.peaks[i] ?? 0) / 255;
+  }
+  return out;
+}
+
+/** The server's filmstrip sprite of a take, decoded once. */
+function laneSprite(pool: MediaPool, media: MediaRef): Promise<ImageBitmap> {
+  let p = sprites.get(media.hash);
+  if (!p) {
+    p = pool
+      .fetchMedia(media.lanes!.strip!.path)
+      .then((res) => {
+        if (!res.ok) throw new Error(`lane strip: ${res.status}`);
+        return res.blob();
+      })
+      .then((blob) => createImageBitmap(blob));
+    sprites.set(media.hash, p);
+    p.catch(() => sprites.delete(media.hash));
   }
   return p;
 }
@@ -53,6 +88,13 @@ export function thumbnailAt(pool: MediaPool, media: MediaRef, time: number): Pro
   if (!p) {
     p = (async () => {
       if (isStillMedia(media)) return createImageBitmap(await pool.image(media));
+      // A tile of the take's filmstrip, when the server made one
+      const strip = media.lanes?.strip;
+      const sprite = strip ? await laneSprite(pool, media).catch(() => null) : null;
+      if (strip && sprite) {
+        const k = Math.min(strip.tiles - 1, Math.max(0, Math.floor(t / strip.everySec)));
+        return createImageBitmap(sprite, k * strip.tileWidth, 0, strip.tileWidth, strip.tileHeight);
+      }
       const entry = await pool.get(media);
       const frame = await entry.video?.getCanvas(t);
       return frame ? createImageBitmap(frame.canvas) : null;

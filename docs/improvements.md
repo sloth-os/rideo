@@ -89,10 +89,10 @@ commits pile up as files on the WebDAV server. *How:* a weekly low-priority GC j
 
 ## Editor and exports in the browser
 
-**14. Waveforms and filmstrips without downloading the clips** (M) — a waveform decodes a clip's whole sound track and
+**14. Waveforms and filmstrips without downloading the clips** (M, done) — a waveform decodes a clip's whole sound track and
 a filmstrip decodes its frames: drawing every lane of the 118-shot cut reads about 400 MB, even now that blocks load
 when they come on screen. *How:* the server writes peaks (a few KB) and a thumbnail strip when a take or an
-upload is made, as it writes posters; the tab draws those and decodes only media without them.
+upload is made, as it writes posters; the tab draws those and decodes only media without them. *Done:* a finished take carries its lane files (`media/lanes/<hash12>-peaks.json`, 100 peaks a second, and a filmstrip sprite of a frame a second at 72 px), and the tab draws its waveform and filmstrip from them; it decodes only media without them (uploads, older takes, music and effects) ([waveforms and filmstrips](design/editor.md#waveforms-and-filmstrips)). Uploads stay the tab's, as their posters do: the server never decodes them for editing.
 
 **15. Exports that do not hold every input in memory** (M) — an export loads every input as a Blob before its
 soundtrack (an ffmpeg export before its first chunk): about 400 MB for the 118 shots. *How:* render the soundtrack chunk by chunk and join the pieces, or load

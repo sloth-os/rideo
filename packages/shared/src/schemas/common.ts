@@ -51,6 +51,21 @@ export const MediaRefSchema = z.object({
   videoCodec: z.string().max(50).optional(),
   audioCodec: z.string().max(50).optional(),
   poster: z.object({ path: MediaPathSchema, mime: z.string() }).optional(),
+  /** The editor's waveform peaks and filmstrip, made by the server (docs/design/editor.md#waveforms-and-filmstrips). */
+  lanes: z
+    .object({
+      peaks: z.object({ path: MediaPathSchema, perSec: z.number().positive() }).optional(),
+      strip: z
+        .object({
+          path: MediaPathSchema,
+          everySec: z.number().positive(),
+          tiles: z.number().int().positive(),
+          tileWidth: z.number().int().positive(),
+          tileHeight: z.number().int().positive(),
+        })
+        .optional(),
+    })
+    .optional(),
 });
 export type MediaRef = z.infer<typeof MediaRefSchema>;
 

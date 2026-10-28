@@ -215,12 +215,21 @@ them with a count, and removes them all in one op (ranges padded by 30 ms and me
 
 ## Waveforms and filmstrips
 
-Timeline items show their sound as a **waveform** (peaks per 10 ms, decoded with WebCodecs `AudioBufferSink` from
-the original or the local proxy) and their picture as a **filmstrip** (thumbnails every few seconds at the
-lane's height, `CanvasSink`); both are computed in the tab, kept per media hash for the session, and drawn for the
+Timeline items show their sound as a **waveform** (the loudest sample of every 10 ms) and their picture as a
+**filmstrip** (thumbnails along the lane at its height), kept per media hash for the session and drawn for the
 visible part of the lane. An item's waveform and filmstrip load when its block first comes on screen, so opening a
 cut of a hundred clips reads only the clips in view; the lanes read media two requests at a time, the preview three
 ([media requests](engine-performance.md#media-requests)).
+
+**Made by the server.** Even so, drawing every lane of the panda demo's 118-shot cut decoded about 400 MB of clips in
+the tab. When a take is finished, the server writes its **lane files** next to its poster: it decodes its own takes
+for the poster and the checks already (uploads stay the tab's, as their posters do). They are
+`media/lanes/<hash12>-peaks.json` (the peaks as integers 0–255, 100 a second, a few KB) and
+`media/lanes/<hash12>-strip.jpg` (one frame a second at 72 px high, side by side, at most 120), named on the media
+(`MediaRef.lanes {peaks: {path, perSec}, strip: {path, everySec, tiles, tileWidth, tileHeight}}`). The tab draws
+those, a tile of the sprite for each thumbnail, and decodes only media without them (uploads, older takes, and music,
+effects and dialogue, which are small) with WebCodecs (`AudioBufferSink`, `CanvasSink`) from the original or the
+local proxy, as before. A lane file that cannot be made or read leaves the media to the tab.
 
 ## Where editing runs
 

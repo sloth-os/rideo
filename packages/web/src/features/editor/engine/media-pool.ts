@@ -55,6 +55,12 @@ export class MediaPool {
     } = {},
   ) {}
 
+  /** A small media file of the project (a take's lane files), through the pool's limited fetch. */
+  fetchMedia(path: string): Promise<Response> {
+    const url = mediaUrl(this.projectId, path);
+    return this.opts.fetchFn ? this.opts.fetchFn(url) : fetch(url);
+  }
+
   get(media: MediaRef): Promise<PoolEntry> {
     let p = this.entries.get(media.hash);
     if (!p) {

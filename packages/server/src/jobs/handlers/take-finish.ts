@@ -19,7 +19,7 @@ import { notFound } from '../../errors';
 import { extractLastFrame } from '../../media/frames';
 import { throwIfAborted } from '../../util/abort';
 import type { JobContext } from '../queue';
-import { commitAs, type HandlerDeps, withPoster } from './common';
+import { commitAs, type HandlerDeps, withLanes, withPoster } from './common';
 
 export interface FinishedTake {
   takeId: string;
@@ -103,6 +103,8 @@ export async function finishTake(
   let video = await deps.media.putFile(projectId, stored, { kind: 'takes', name, mime: 'video/mp4' });
   ctx.progress(0.96, 1, 'making the poster');
   video = await withPoster(deps, projectId, stored, video, ctx.signal);
+  // The editor draws its lanes from these instead of decoding the take (docs/design/editor.md#waveforms-and-filmstrips)
+  video = await withLanes(deps, projectId, stored, video, ctx.signal);
   const lastPath = await extractLastFrame(
     deps.ff,
     stored,

@@ -184,5 +184,21 @@ describe('a scene watched before the edit', () => {
       (await stack.api<Job[]>('GET', `/projects/${pid}/jobs`)).some((j) => j.kind === 'clip.review'),
     ).toBe(false);
     expect((await docsOf(pid)).clips[clip.id].review).toBeNull();
+    // Every take carries the editor's lane files (docs/design/editor.md#waveforms-and-filmstrips)
+    const take = (await docsOf(pid)).clips[clip.id].shots[0].takes[0];
+    const strip = take.video.lanes.strip;
+    expect(strip).toMatchObject({ everySec: 1, tileHeight: 72, tiles: Math.ceil(take.video.durationSec) });
+    const sprite = await fetch(`${stack.url}/api/projects/${pid}/media/${strip.path}`);
+    expect(sprite.headers.get('content-type')).toBe('image/jpeg');
+    expect((await sprite.arrayBuffer()).byteLength).toBeGreaterThan(500);
+    if (take.video.hasAudio) {
+      const body = (await (
+        await fetch(`${stack.url}/api/projects/${pid}/media/${take.video.lanes.peaks.path}`)
+      ).json()) as { perSec: number; peaks: number[] };
+      expect(body.perSec).toBe(100);
+      // (a sound track may end a little before the picture)
+      expect(body.peaks.length).toBeGreaterThan(take.video.durationSec * 100 * 0.8);
+      expect(Math.max(...body.peaks)).toBeLessThanOrEqual(255);
+    }
   });
 });

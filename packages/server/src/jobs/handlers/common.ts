@@ -1,4 +1,5 @@
-import { rm } from 'node:fs/promises';
+import { rm, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import type { GatewayTask, MediaRef, ProjectDocs } from '@rideo/shared';
 import type { AiReviewService } from '../../domain/ai-review';
 import type { ClipService } from '../../domain/clips';
@@ -14,6 +15,7 @@ import type { StoryboardService } from '../../domain/storyboard';
 import type { VoiceService } from '../../domain/voices';
 import type { WorkflowService } from '../../domain/workflow';
 import type { GenerateOptions } from '../../gateway/gateway-client';
+import { LANE_PEAKS_PER_SEC, makePeaks, makeStrip } from '../../media/lanes';
 import { makePoster } from '../../media/poster';
 import type { Tx } from '../../vcs/repo';
 import type { JobContext } from '../queue';
@@ -72,6 +74,61 @@ export function gatewayOptions(
     onTask: (t: GatewayTask) =>
       ctx.gatewayTask({ modality, id: t.id, status: t.status, idempotencyKey, model: t.model || undefined }),
   };
+}
+
+/**
+ * Adds the editor's lane files to stored media (docs/design/editor.md#waveforms-and-filmstrips): its waveform peaks
+ * and its filmstrip, so the tab does not decode the whole file to draw its lanes. Best effort: media without them is
+ * drawn by the tab, as before.
+ */
+export async function withLanes(
+  deps: Deps,
+  projectId: string,
+  local: string,
+  ref: MediaRef,
+  signal?: AbortSignal,
+): Promise<MediaRef> {
+  if (!/^(video|audio)\//.test(ref.mime)) return ref;
+  const stem = ref.hash.slice(0, 12);
+  try {
+    return await deps.media.withTmpDir(async (dir) => {
+      const lanes: NonNullable<MediaRef['lanes']> = {};
+      const peaks =
+        ref.hasAudio === false ? null : await makePeaks(deps.ff, local, dir, signal).catch(() => null);
+      if (peaks?.length) {
+        const file = join(dir, 'peaks.json');
+        await writeFile(file, JSON.stringify({ perSec: LANE_PEAKS_PER_SEC, peaks }));
+        const stored = await deps.media.putFile(projectId, file, {
+          kind: 'lanes',
+          name: 'peaks',
+          stem: `${stem}-peaks`,
+          mime: 'application/json',
+          probe: false,
+        });
+        lanes.peaks = { path: stored.path, perSec: LANE_PEAKS_PER_SEC };
+      }
+      const strip = ref.mime.startsWith('video/') ? await makeStrip(deps.ff, local, dir, ref, signal) : null;
+      if (strip) {
+        const stored = await deps.media.putFile(projectId, strip.file, {
+          kind: 'lanes',
+          name: 'strip',
+          stem: `${stem}-strip`,
+          mime: 'image/jpeg',
+          probe: false,
+        });
+        const { file: _, ...shape } = strip;
+        lanes.strip = { path: stored.path, ...shape };
+      }
+      return lanes.peaks || lanes.strip ? { ...ref, lanes } : ref;
+    });
+  } catch (err) {
+    if (signal?.aborted) throw err;
+    deps.log?.warn?.(
+      { projectId, path: ref.path, err: (err as Error).message },
+      'could not make the lane files',
+    );
+    return ref;
+  }
 }
 
 /** Adds the JPEG poster to a stored video (generated takes; there are no server-side proxies). */

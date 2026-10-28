@@ -122,6 +122,7 @@ All paths are under `RIDEO_WEBDAV_ROOT` (default `/rideo`).
 │   │   ├── keyframes/c<clip>-s<shot>-<hash12>.png
 │   │   ├── takes/c<clip>-s<shot>-<hash12>.mp4        watermarked originals
 │   │   ├── posters/<hash12>.jpg                       posters (generated takes: server; uploads: browser)
+│   │   ├── lanes/<hash12>-peaks.json|-strip.jpg       the editor's waveform peaks and filmstrip of a take
 │   │   ├── frames/<hash12>.png                       sampled frames (judge evidence, last frames)
 │   │   ├── music/<slug>-<hash12>.<ext>                generated music and score cues
 │   │   ├── sfx/<slug>-<hash12>.mp3                    generated sound effects

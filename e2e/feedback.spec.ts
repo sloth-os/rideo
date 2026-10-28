@@ -49,8 +49,20 @@ test('a story export is watched by itself: scores, issues, recommendations appli
     })
     .toEqual(['B1', true, true]);
 
+  // On a wide screen the lanes draw from the takes' lane files, not the takes
+  // (docs/design/editor.md#waveforms-and-filmstrips); a phone lists the items without lanes
+  const wide = (page.viewportSize()?.width ?? 1280) >= 768;
+  const laneFile = wide
+    ? page.waitForRequest(
+        (r) => /\/media\/media\/lanes\/[0-9a-f]{12}-(peaks\.json|strip\.jpg)$/.test(r.url()),
+        {
+          timeout: 60_000,
+        },
+      )
+    : null;
   await page.goto(`/p/${pid}/editor`);
   await expect(page.getByTestId('live-status')).toHaveAttribute('data-status', 'live');
+  if (laneFile) await laneFile;
   await exportInThisTab(page, { quality: 'draft', engine: 'ffmpeg' });
   await page.goto(`/p/${pid}/exports`);
   const card = page.locator('[data-entity^="export:"]').first();

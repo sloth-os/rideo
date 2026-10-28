@@ -54,7 +54,9 @@ export type MediaKind =
   | 'masks'
   | 'brand'
   /** Feedback reports (docs/design/feedback.md#the-report). */
-  | 'reports';
+  | 'reports'
+  /** The editor's waveform peaks and filmstrips (docs/design/editor.md#waveforms-and-filmstrips). */
+  | 'lanes';
 
 export interface PutOptions {
   kind: MediaKind;
