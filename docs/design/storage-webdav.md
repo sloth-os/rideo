@@ -141,6 +141,7 @@ All paths are under `RIDEO_WEBDAV_ROOT` (default `/rideo`).
 │       ├── objects/ab/cdef….json content-addressed blobs, trees, commits
 │       ├── worktree.json         work-tree index (hash + etag of each materialized file)
 │       ├── summary.json          what the project list and the Inbox show (a cache, rebuilt when missing or behind)
+│       ├── logs/<branch>.json    the branch's last 200 commit summaries (a cache, caught up when behind)
 │       └── jobs/<jobId>.json     job records (operational, not versioned)
 ├── accounts/users/<userId>.json   people of the studio (docs/design/accounts.md)
 ├── accounts/tokens/<tokenId>.json agent tokens (the secret's SHA-256 only)

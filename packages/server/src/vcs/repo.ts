@@ -3,6 +3,7 @@ import {
   type BranchInfo,
   type CommitChange,
   type CommitSummary,
+  CommitSummarySchema,
   type Diff,
   type DiffEntry,
   jsonDiff,
@@ -10,6 +11,7 @@ import {
   type TagInfo,
   validateDoc,
 } from '@rideo/shared';
+import { z } from 'zod';
 import { AppError, conflict, invalid, notFound } from '../errors';
 import type { StorageBackend } from '../storage/backend';
 import type { Layout } from '../storage/layout';
@@ -124,6 +126,19 @@ function diffFlat(a: ReadonlyMap<string, string>, b: ReadonlyMap<string, string>
 /** Git-like repository for one project's documents (docs/design/version-control.md). */
 /** Documents read at once while a project loads (docs/design/storage-webdav.md#slow-and-flaky-servers). */
 const LOAD_CONCURRENCY = 12;
+/** Commit summaries a branch's recent log holds (docs/design/version-control.md#caching). */
+export const RECENT_LOG = 200;
+/** How long after a burst of commits a branch's recent log is written. */
+const RECENT_LOG_WRITE_MS = 3000;
+
+/** A branch's recent log: its tip and its last commit summaries, newest first (without branch or tags). */
+const RecentLogSchema = z.object({
+  version: z.literal(1),
+  branch: z.string(),
+  tip: z.string().nullable(),
+  commits: z.array(CommitSummarySchema).max(RECENT_LOG),
+});
+type RecentLog = z.infer<typeof RecentLogSchema>;
 
 export class Repository {
   readonly objects: ObjectStore;
@@ -135,6 +150,10 @@ export class Repository {
   private headBranch: string | null = null;
   /** Tags, read once: they change only through this repository (createTag). */
   private tags: Promise<TagInfo[]> | null = null;
+  /** Each branch's recent log, once read or made, and the reads and writes of their files. */
+  private readonly recent = new Map<string, RecentLog>();
+  private readonly recentLoading = new Map<string, Promise<RecentLog>>();
+  private readonly recentWrites = new Map<string, NodeJS.Timeout>();
   materializer?: Materializer;
   onCommit?: (e: CommitEvent) => void;
   onHead?: (branch: string, commit: string | null) => void;
@@ -373,6 +392,7 @@ export class Repository {
     const [id] = await this.objects.putAll([commit, ...blobs, ...trees]);
     await this.writeRef(state.branch, id!);
     this.flatCache.set(id!, flat);
+    this.followRecent(state.branch, state.commit, summaryOf(id!, commit), replaces);
     state.commit = id!;
     state.flat = flat;
     for (const [p, d] of Object.entries(changedDocs)) {
@@ -423,19 +443,42 @@ export class Repository {
     throw notFound(`commit ${ref}`);
   }
 
+  /**
+   * The branch's history, newest first: from its recent log (docs/design/version-control.md#caching), then walked
+   * from the objects for what lies beyond it.
+   */
   async log(
     opts: { branch?: string; path?: string; limit?: number; before?: string } = {},
   ): Promise<CommitSummary[]> {
     const branch = opts.branch ?? (await this.currentBranch());
     const limit = Math.min(Math.max(opts.limit ?? 50, 1), 500);
-    let id = opts.before
-      ? ((await this.objects.get<CommitObject>(await this.resolve(opts.before))).parents[0] ?? null)
-      : await this.readRef(branch);
     const tags = await this.tagsByCommit();
     const out: CommitSummary[] = [];
+    const take = (s: CommitSummary) => {
+      if (opts.path && !s.changes.some((ch) => ch.path === opts.path)) return;
+      const t = tags.get(s.id);
+      out.push({ ...s, branch, ...(t ? { tags: t } : {}) });
+    };
+    let id: string | null | undefined;
     let scanned = 0;
+    const recent = await this.recentLog(branch).catch(() => null);
+    const before = opts.before ? await this.resolve(opts.before) : null;
+    const from = recent ? (before ? recent.commits.findIndex((c) => c.id === before) + 1 : 0) : 0;
+    if (recent && (!before || from > 0)) {
+      for (const s of recent.commits.slice(from)) {
+        if (out.length >= limit) return out;
+        take(s);
+        scanned++;
+      }
+      // Beyond the window: walked from the oldest summary held
+      id = recent.commits.length ? (recent.commits.at(-1)!.parents[0] ?? null) : null;
+    } else {
+      id = before
+        ? ((await this.objects.get<CommitObject>(before)).parents[0] ?? null)
+        : await this.readRef(branch);
+    }
     while (id && out.length < limit && scanned < 10_000) {
-      const c = await this.objects.get<CommitObject>(id);
+      const c: CommitObject = await this.objects.get<CommitObject>(id);
       if (!opts.path || c.changes.some((ch) => ch.path === opts.path)) {
         const s = summaryOf(id, c, branch);
         const t = tags.get(id);
@@ -445,6 +488,102 @@ export class Repository {
       scanned++;
     }
     return out;
+  }
+
+  /**
+   * A branch's recent log caught up with its tip (docs/design/version-control.md#caching): from memory; else from its
+   * file, with the commits from the tip down to the first one the file holds put in front; else walked from the
+   * objects. Callers that arrive while it is read share the read.
+   */
+  private async recentLog(branch: string): Promise<RecentLog> {
+    const tip = await this.readRef(branch);
+    const hit = this.recent.get(branch);
+    if (hit && hit.tip === tip) return hit;
+    let load = this.recentLoading.get(branch);
+    if (!load) {
+      load = this.loadRecent(branch, tip, hit).finally(() => this.recentLoading.delete(branch));
+      this.recentLoading.set(branch, load);
+    }
+    return load;
+  }
+
+  private async loadRecent(branch: string, tip: string | null, known?: RecentLog): Promise<RecentLog> {
+    const held = known ?? (await this.readRecentFile(branch));
+    const ids = new Map((held?.commits ?? []).map((c, i) => [c.id, i]));
+    const fresh: CommitSummary[] = [];
+    let id = tip;
+    let at = -1;
+    while (id && fresh.length < RECENT_LOG) {
+      at = ids.get(id) ?? -1;
+      if (at >= 0) break;
+      const c = await this.objects.get<CommitObject>(id);
+      fresh.push(summaryOf(id, c));
+      id = c.parents[0] ?? null;
+    }
+    const commits = at >= 0 && held ? [...fresh, ...held.commits.slice(at)].slice(0, RECENT_LOG) : fresh;
+    const log: RecentLog = { version: 1, branch, tip, commits };
+    this.recent.set(branch, log);
+    if (fresh.length || !held) this.scheduleRecentWrite(branch);
+    return log;
+  }
+
+  private async readRecentFile(branch: string): Promise<RecentLog | null> {
+    try {
+      const raw = await this.storage.read(this.layout.recentLog(this.projectId, branch));
+      if (!raw) return null;
+      const parsed = RecentLogSchema.safeParse(JSON.parse(raw.toString('utf8')));
+      return parsed.success && parsed.data.branch === branch ? parsed.data : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** A commit on `branch` whose parent tip was `previous`: the recent log in memory takes it in front. */
+  private followRecent(
+    branch: string,
+    previous: string | null,
+    summary: CommitSummary,
+    replaces: string | undefined,
+  ): void {
+    const log = this.recent.get(branch);
+    if (!log) return;
+    // Behind (another process moved the branch): caught up when next read
+    if (log.tip !== previous) {
+      this.recent.delete(branch);
+      return;
+    }
+    const kept = replaces ? log.commits.filter((c) => c.id !== replaces) : log.commits;
+    this.recent.set(branch, { ...log, tip: summary.id, commits: [summary, ...kept].slice(0, RECENT_LOG) });
+    this.scheduleRecentWrite(branch);
+  }
+
+  private scheduleRecentWrite(branch: string): void {
+    clearTimeout(this.recentWrites.get(branch));
+    const timer = setTimeout(() => {
+      this.recentWrites.delete(branch);
+      void this.writeRecent(branch);
+    }, RECENT_LOG_WRITE_MS);
+    timer.unref?.();
+    this.recentWrites.set(branch, timer);
+  }
+
+  private async writeRecent(branch: string): Promise<void> {
+    const log = this.recent.get(branch);
+    if (!log) return;
+    // Best effort: a lost write leaves the file behind, and a behind file is caught up when read
+    await this.storage
+      .write(this.layout.recentLog(this.projectId, branch), JSON.stringify(log), {
+        contentType: 'application/json',
+      })
+      .catch(() => undefined);
+  }
+
+  /** Writes the recent logs waiting to be written (shutdown). */
+  async flushRecent(): Promise<void> {
+    const queued = [...this.recentWrites.keys()];
+    for (const b of queued) clearTimeout(this.recentWrites.get(b));
+    this.recentWrites.clear();
+    await Promise.all(queued.map((b) => this.writeRecent(b)));
   }
 
   async show(ref: string): Promise<CommitSummary> {

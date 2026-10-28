@@ -353,14 +353,20 @@ export class ProjectRegistry {
     return gone;
   }
 
-  /** Writes what the work trees and the summaries have queued, waiting at most `ms` (shutdown). */
+  /** Writes what the work trees, the recent logs and the summaries have queued, waiting at most `ms` (shutdown). */
   async flush(ms: number): Promise<void> {
     const queued = [...this.digestWrites.keys()];
     for (const id of queued) clearTimeout(this.digestWrites.get(id));
     this.digestWrites.clear();
     await Promise.all([
       ...[...this.handles.values()].map((h) => h.worktree.flush(ms)),
-      Promise.race([Promise.all(queued.map((id) => this.writeDigest(id))), sleep(ms)]),
+      Promise.race([
+        Promise.all([
+          ...queued.map((id) => this.writeDigest(id)),
+          ...[...this.handles.values()].map((h) => h.repo.flushRecent()),
+        ]),
+        sleep(ms),
+      ]),
     ]);
   }
 

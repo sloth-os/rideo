@@ -46,10 +46,10 @@ together and shows nothing until both answer (`web/src/store/project.ts`), and t
 26.5 s. *How:* render from `/state` and fetch history in the background; on the server, read the recent log into the
 commit cache when a project loads. *Done:* a page renders from `/state` and the history fills in when it arrives; opening a project's state reads its recent log into the object cache in the background ([maintenance](design/storage-webdav.md#maintenance)).
 
-**4. A recent-log file per branch** (M) — a log walk reads one commit object at a time (a commit names its parent, so
+**4. A recent-log file per branch** (M, done) — a log walk reads one commit object at a time (a commit names its parent, so
 the next read waits for the last), so 100 commits cost 100 round trips on a cold cache. *How:*
 `.rideo/logs/<branch>.json` with the last 200 commit summaries, written behind the commit like the work tree; a cache,
-rebuilt from the objects when it is missing or behind the ref.
+rebuilt from the objects when it is missing or behind the ref. *Done:* each branch's last 200 commit summaries are kept in memory and in `.rideo/logs/<branch>.json`, follow every commit (a coalesced one takes the place of the tip it replaces) and are written behind them; a file behind the tip is caught up by reading only the newer commits, and older pages go on with the walk ([the recent log](design/version-control.md#caching)).
 
 **5. The project list and the Inbox from summaries** (M, done) — `GET /api/projects` and `GET /api/inbox` load every
 project's whole document set, one project after another, walk its log, and list the projects folder on every call

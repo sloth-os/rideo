@@ -12,7 +12,7 @@ import { AppError } from '../../src/errors';
 import { Metrics } from '../../src/metrics';
 import { Layout } from '../../src/storage/layout';
 import { MemoryBackend } from '../../src/storage/memory';
-import { type CommitEvent, Repository } from '../../src/vcs/repo';
+import { type CommitEvent, RECENT_LOG, Repository } from '../../src/vcs/repo';
 import { Worktree } from '../../src/vcs/worktree';
 
 const user = { kind: 'user' as const, id: 'local', name: 'You' };
@@ -533,5 +533,120 @@ describe('work tree in the background (docs/design/storage-webdav.md#external-ed
     );
     const scan = await wt2.scan((await fresh.snapshot()).docs);
     expect((scan.changes['screenplay.json'] as Screenplay).title).toBe('Edited in Finder');
+  });
+});
+
+/** A store that counts reads of commit objects. */
+class ObjectCounting extends MemoryBackend {
+  objectReads = 0;
+  override async read(path: string): Promise<Buffer | null> {
+    if (path.includes('/.rideo/objects/')) this.objectReads++;
+    return super.read(path);
+  }
+}
+
+describe('the recent log (docs/design/version-control.md#caching)', () => {
+  /** A repository with `n` commits after its first, each on its own document; returns their ids, newest first. */
+  async function history(store: MemoryBackend, n: number, opts: { coalesce?: boolean } = {}) {
+    let now = Date.parse('2026-10-28T10:00:00Z');
+    const r = new Repository(store, layout, project.id, {
+      coalesceWindowMs: 30_000,
+      now: () => new Date(now),
+    });
+    await r.init({ 'project.json': project }, user, 'Create project');
+    for (let i = 0; i < n; i++) {
+      // Coalesced edits land within the coalescing window
+      now += opts.coalesce ? 1_000 : 60_000;
+      await r.transact(
+        (tx) => {
+          const id = `chr_${String(i).padStart(10, '0')}`;
+          tx.set(docPath.character(id), f.character({ id }));
+        },
+        {
+          actor: user,
+          message: `Character ${i}`,
+          ...(opts.coalesce ? { coalesce: { key: 'same' } } : {}),
+        },
+      );
+    }
+    return { r, ids: (await r.log({ limit: 500 })).map((c) => c.id) };
+  }
+
+  it('lets a cold process read a branch’s history from its file, not one commit object after another', async () => {
+    const store = new ObjectCounting();
+    const { r, ids } = await history(store, 30);
+    await r.flushRecent();
+    const cold = new Repository(store, layout, project.id);
+    store.objectReads = 0;
+    const log = await cold.log({ limit: 20 });
+    expect(log.map((c) => c.id)).toEqual(ids.slice(0, 20));
+    expect(log[0]).toMatchObject({ branch: 'main', message: 'Character 29' });
+    expect(store.objectReads).toBe(0);
+    // Paging inside the window reads nothing either
+    expect((await cold.log({ before: ids[19], limit: 5 })).map((c) => c.id)).toEqual(ids.slice(20, 25));
+    expect(store.objectReads).toBe(0);
+  });
+
+  it('catches up from the tip when its file is behind, and follows commits in memory', async () => {
+    const store = new ObjectCounting();
+    const { r, ids } = await history(store, 10);
+    await r.flushRecent();
+    // Three commits the file does not have (written by a process that stopped before writing it)
+    const other = new Repository(store, layout, project.id);
+    for (let i = 0; i < 3; i++)
+      await other.transact(
+        (tx) => {
+          const id = `chr_9${String(i).padStart(9, '0')}`;
+          tx.set(docPath.character(id), f.character({ id }));
+        },
+        {
+          actor: agent,
+          message: `Later ${i}`,
+        },
+      );
+    const cold = new Repository(store, layout, project.id);
+    store.objectReads = 0;
+    const log = await cold.log({ limit: 5 });
+    expect(log.map((c) => c.message)).toEqual([
+      'Later 2',
+      'Later 1',
+      'Later 0',
+      'Character 9',
+      'Character 8',
+    ]);
+    expect(log.slice(3).map((c) => c.id)).toEqual(ids.slice(0, 2));
+    expect(store.objectReads).toBe(3);
+    // A commit here is in the log at once, without reading anything
+    await cold.transact(
+      (tx) => {
+        const id = 'chr_cut0000000';
+        tx.set(docPath.character(id), f.character({ id }));
+      },
+      { actor: user, message: 'Cut' },
+    );
+    store.objectReads = 0;
+    expect((await cold.log({ limit: 1 }))[0]!.message).toBe('Cut');
+    expect(store.objectReads).toBe(0);
+  });
+
+  it('keeps a coalesced commit in place of the tip it replaces', async () => {
+    const store = new MemoryBackend();
+    const { r } = await history(store, 3, { coalesce: true });
+    const log = await r.log({ limit: 10 });
+    // The three coalesced edits are one commit after the first
+    expect(log.map((c) => c.message)).toEqual(['Character 0', 'Create project']);
+    expect(log[0]!.meta?.coalescedCount).toBe(3);
+  });
+
+  it('pages and filters by path past the window, as the walk does', async () => {
+    const store = new MemoryBackend();
+    const { r, ids } = await history(store, RECENT_LOG + 20);
+    expect(ids).toHaveLength(RECENT_LOG + 21);
+    const page = await r.log({ before: ids[RECENT_LOG - 3], limit: 10 });
+    expect(page.map((c) => c.id)).toEqual(ids.slice(RECENT_LOG - 2, RECENT_LOG + 8));
+    const path = docPath.character(`chr_${String(5).padStart(10, '0')}`);
+    expect((await r.log({ path, limit: 5 })).map((c) => c.message)).toEqual(['Character 5']);
+    const old = await r.log({ path: 'project.json', limit: 5 });
+    expect(old.map((c) => c.message)).toEqual(['Create project']);
   });
 });

@@ -122,6 +122,36 @@ describe('the project list and the Inbox (docs/design/storage-webdav.md#slow-and
   });
 });
 
+describe('the recent log (docs/design/version-control.md#caching)', () => {
+  it('reads a project’s history after a restart from its file, not one commit after another', async () => {
+    const p = await stack.api<{ id: string }>('POST', '/projects', {
+      kind: 'story',
+      title: 'Logged',
+      brief: { prompt: 'a keeper of letters' },
+    });
+    for (let i = 0; i < 6; i++) await stack.api('PATCH', `/projects/${p.id}`, { title: `Logged ${i}` });
+    const before = await stack.api<{ id: string; message: string }[]>(
+      'GET',
+      `/projects/${p.id}/history?limit=50`,
+    );
+    expect(before.length).toBeGreaterThanOrEqual(7);
+    await expect
+      .poll(async () => (await fetch(`${dav.url}/studio/projects/${p.id}/.rideo/logs/main.json`)).status, {
+        timeout: 15_000,
+        interval: 250,
+      })
+      .toBe(200);
+    await quiet();
+    await stack.restart();
+    // (the restart warms the recently used projects in the background: let it finish)
+    await quiet();
+    dav.log.length = 0;
+    const after = await stack.api<{ id: string }[]>('GET', `/projects/${p.id}/history?limit=50`);
+    expect(after.map((c) => c.id)).toEqual(before.map((c) => c.id));
+    expect(dav.log.filter((l) => l.includes('/.rideo/objects/'))).toEqual([]);
+  });
+});
+
 describe('a server that cannot move a folder to another folder', () => {
   it('deletes a project by renaming its folder where it is', async () => {
     const p = await stack.api<{ id: string }>('POST', '/projects', {

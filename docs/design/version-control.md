@@ -138,3 +138,13 @@ state: the project's existence is looked up once per process
 ([slow and flaky servers](storage-webdav.md#slow-and-flaky-servers)), the checked-out branch's tip comes from
 memory (it moves only through this process), and tags are read once and kept up to date by `createTag` (one tag
 is created at a time). The coalescing check reads the cached tags.
+
+**The recent log.** A commit names only its parent, so walking the history reads one commit object after another:
+100 commits were 100 round trips on a cold cache. Each branch's last 200 commit summaries are kept in memory and in
+`.rideo/logs/<branch>.json` (`{branch, tip, commits}`, newest first), updated by every commit (a coalesced commit
+takes the place of the tip it replaces) and written a few seconds behind a burst of commits, like the work tree.
+`log` reads them: the file once per process, then memory. When the file is behind the branch's tip (another process
+committed, or the write was lost), the commits from the tip down to the first one the file has are read and put in
+front; when none is met within 200 commits, or the file is missing or unreadable, the log is walked from the objects
+and the file written again. A page older than the window (`before`, a path filter that runs past it) goes on with the
+walk from the oldest summary held.
