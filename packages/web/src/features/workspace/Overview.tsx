@@ -5,6 +5,7 @@ import {
   formatDuration,
   isTerminalJob,
   type ProjectSettings,
+  withSettingsDefaults,
   workflowFor,
 } from '@rideo/shared';
 import {
@@ -57,7 +58,8 @@ function SettingsDialog({
   settings: ProjectSettings;
   projectId: string;
 }) {
-  const [s, setS] = useState(settings);
+  // An older project's settings lack what was added since: the dialog shows (and saves) the defaults that apply
+  const [s, setS] = useState(() => withSettingsDefaults(settings));
   const [busy, setBusy] = useState(false);
   const save = async () => {
     setBusy(true);

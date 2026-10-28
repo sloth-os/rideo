@@ -176,7 +176,9 @@ holds whether the new take came from a fix, a scene review or a person, and afte
 The results are on the document (`retakes`, with `previousFeedbackId`), in the report (*What changed since the last
 feedback*), in the retrospective (rule `retake_results`: how many shots with a new take got better, stayed the same or
 got worse, naming the worse ones) and on the panel under the scores (`23 shots have a new take since the last
-feedback: 15 better · 6 same · 2 worse`).
+feedback: 15 better · 6 same · 2 worse`). Stored documents are read as they were written, so a feedback
+from before this comparison has no `retakes` and every reader takes it as none (the Exports page once failed to
+render for such a project, and the tab's editor worker with it).
 
 ### What a fix costs
 

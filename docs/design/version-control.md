@@ -45,6 +45,10 @@ Versioned document paths:
 | `analyses/<analysisId>.json` | footage analysis and suggestions |
 | `exports/<exportId>.json` | export records |
 
+Documents are read and served as they were written: a field added since is missing from an older document, so every
+reader takes a missing field as its schema default (a feedback without `retakes` has none), and the project settings
+dialog fills an older project's settings with their defaults (`ProjectSettingsSchema`) before it shows them.
+
 ## Refs
 
 | File | Content |

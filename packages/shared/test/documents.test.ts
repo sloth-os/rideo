@@ -9,9 +9,11 @@ import {
   isId,
   jsonDiff,
   newId,
+  ProjectSettingsSchema,
   renderScreenplayMarkdown,
   slugify,
   validateDoc,
+  withSettingsDefaults,
 } from '../src';
 import * as f from '../src/testing/fixtures';
 
@@ -52,6 +54,24 @@ describe('document registry', () => {
       [docPath.character(c.id), c],
     ]);
     expect(rebuilt.characters[c.id]).toEqual(c);
+  });
+});
+
+describe('documents written by an older version (docs/design/version-control.md#objects)', () => {
+  it('fills an older project’s settings with the defaults of what was added since', () => {
+    const current = ProjectSettingsSchema.parse({});
+    // as an older version wrote them: no scene reviews, no cast-only check, no music check
+    const { scenes: _s, sceneFixes: _f, ...review } = current.review;
+    const { castOnly: _c, rejectMusic: _m, ...consistency } = current.consistency;
+    const older = { ...current, review, consistency } as typeof current;
+    const filled = withSettingsDefaults(older);
+    expect(filled.review).toMatchObject({ scenes: true, sceneFixes: 3 });
+    expect(filled.consistency).toMatchObject({ castOnly: false, rejectMusic: false });
+    // what the project set stays
+    expect(withSettingsDefaults({ ...older, targetDurationSec: 300 }).targetDurationSec).toBe(300);
+    // settings that do not validate are left as they are
+    const odd = { ...older, targetDurationSec: -1 } as typeof current;
+    expect(withSettingsDefaults(odd)).toBe(odd);
   });
 });
 

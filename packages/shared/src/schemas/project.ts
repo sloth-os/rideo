@@ -160,6 +160,15 @@ export const ProjectSettingsSchema = z.object({
 });
 export type ProjectSettings = z.infer<typeof ProjectSettingsSchema>;
 
+/**
+ * An older project's settings with the defaults of what was added since: documents are read as they were written
+ * (docs/design/version-control.md#objects). Settings that do not validate are returned as they are.
+ */
+export function withSettingsDefaults(settings: ProjectSettings): ProjectSettings {
+  const parsed = ProjectSettingsSchema.safeParse(settings);
+  return parsed.success ? parsed.data : settings;
+}
+
 export const ApprovalSchema = z.object({ at: IsoDateSchema, actor: ActorSchema, tag: z.string().optional() });
 export type Approval = z.infer<typeof ApprovalSchema>;
 

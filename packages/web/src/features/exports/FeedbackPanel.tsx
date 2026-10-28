@@ -55,9 +55,11 @@ function Heard({ fb }: { fb: Feedback }) {
  * with `list`, each shot's issues before and after.
  */
 function Retakes({ fb, list }: { fb: Feedback; list?: boolean }) {
-  if (!fb.retakes.length) return null;
-  const c = retakeCounts(fb.retakes);
-  const n = fb.retakes.length;
+  // A feedback from before the comparison has none (documents are read as they were written)
+  const retakes = fb.retakes ?? [];
+  if (!retakes.length) return null;
+  const c = retakeCounts(retakes);
+  const n = retakes.length;
   return (
     <div className="space-y-1">
       <p className="text-[12px] text-muted" data-testid="feedback-retakes">
@@ -66,7 +68,7 @@ function Retakes({ fb, list }: { fb: Feedback; list?: boolean }) {
       </p>
       {list ? (
         <ul className="flex flex-wrap gap-1.5 text-[12px]" aria-label="New takes">
-          {fb.retakes.map((r) => (
+          {retakes.map((r) => (
             <li key={r.shotId} data-testid="feedback-retake" data-outcome={r.outcome}>
               <Badge
                 tone={r.outcome === 'better' ? 'success' : r.outcome === 'worse' ? 'danger' : 'neutral'}

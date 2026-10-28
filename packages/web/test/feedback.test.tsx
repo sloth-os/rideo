@@ -267,6 +267,21 @@ describe('feedback on the export card (docs/design/feedback.md#surfaces)', () =>
     expect(screen.getByTestId('feedback-score-dialogue').textContent).toContain('5.0');
   });
 
+  it('shows a feedback written before what-changed was compared (docs/design/version-control.md#objects)', () => {
+    // as stored then: no `retakes`, no `previousFeedbackId`
+    const { retakes: _r, previousFeedbackId: _p, ...older } = feedback;
+    useProject.setState({
+      docs: { ...useProject.getState().docs!, feedback: { [feedback.id]: older as typeof feedback } },
+    });
+    render(<FeedbackSummary e={exportDoc} projectId={useProject.getState().projectId!} />);
+    expect(screen.getByTestId('feedback-overall').textContent).toBe('6.4/10');
+    expect(screen.queryByTestId('feedback-retakes')).toBeNull();
+    fireEvent.click(screen.getByTestId('show-feedback'));
+    expect(
+      within(screen.getByTestId('feedback-dialog')).getAllByTestId('feedback-recommendation'),
+    ).toHaveLength(2);
+  });
+
   it('offers feedback on an export without any', async () => {
     useProject.setState({ docs: { ...useProject.getState().docs!, feedback: {} } });
     render(<FeedbackSummary e={exportDoc} projectId={useProject.getState().projectId!} />);
