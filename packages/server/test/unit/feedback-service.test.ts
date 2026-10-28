@@ -207,6 +207,7 @@ describe('the scene reviewers’ input (docs/design/feedback.md#how-a-film-is-wa
       shotIndex: i,
       start: 30 + i * 5,
       end: 35 + i * 5,
+      clean: { start: 30 + i * 5, end: 35 + i * 5 },
     }));
     const signals = FeedbackSignalsSchema.parse({ durationSec: 60 });
     const neighbours = { previous: null, next: null };

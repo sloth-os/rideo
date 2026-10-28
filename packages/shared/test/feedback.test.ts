@@ -95,6 +95,33 @@ describe('feedback signals (docs/design/feedback.md#how-a-film-is-watched)', () 
     ]);
   });
 
+  it('samples each shot within its clean part: no transition blends it with a neighbour', () => {
+    const { clips, timeline } = fixture();
+    const spans = shotSpans(timeline, clips);
+    // A transition that starts on the cut: the incoming shot is clean after it
+    expect(spans[3]!.clean).toEqual({ start: 15, end: 20 });
+    expect(spans[4]!.clean).toEqual({ start: 20.5, end: 25 });
+    // A crossfade that overlaps the outgoing shot (as the story's scene crossfades do): both sides leave it out
+    const items = (timeline.tracks[0]!.items as { start: number }[]).map((i, k) =>
+      k === 4 ? { ...i, start: 19.5 } : i,
+    );
+    const overlapped = shotSpans(
+      { ...timeline, tracks: [{ ...timeline.tracks[0]!, items }] } as Timeline,
+      clips,
+    );
+    expect(overlapped[3]!.clean).toEqual({ start: 15, end: 19.5 });
+    expect(overlapped[4]!.clean).toEqual({ start: 20, end: 24.5 });
+    // A shot whose clean part would be too short is sampled whole
+    const short = (timeline.tracks[0]!.items as { start: number; out: number }[]).map((i, k) =>
+      k === 4 ? { ...i, start: 19.6, out: 0.8 } : i,
+    );
+    const tiny = shotSpans(
+      { ...timeline, tracks: [{ ...timeline.tracks[0]!, items: short }] } as Timeline,
+      clips,
+    );
+    expect(tiny[4]!.clean).toEqual({ start: 19.6, end: 20.4 });
+  });
+
   it('keeps scene changes away from the cuts as jumps inside shots', () => {
     const { timeline } = fixture();
     const changes = [

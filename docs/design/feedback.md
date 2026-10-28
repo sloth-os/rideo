@@ -44,7 +44,10 @@ the dimensions that have a score.
    the length against the target. Signals become issues on their own (`source: signal`).
 2. **Frames, and the scene with its sound.** For every video item of the render timeline, frames at 15%, 50% and 85%
    of the item, 384 px wide, side by side in one labelled strip (`Shot C3·S2, 41.0–46.0 s`). Consecutive strips show
-   each cut from both sides. With an audio-visual model, each scene is also cut from the export as a video with its
+   each cut from both sides. The frames come from the item's clean part (`clean`): its own incoming transition and the
+   next item's, where two shots are blended, are left out (unless that leaves less than half a second). The swimming
+   film's second feedback sampled 85% of short scene exits inside the 0.5 s crossfade into the next scene and called
+   the blend a critical ghost double exposure, twice. With an audio-visual model, each scene is also cut from the export as a video with its
    sound: 480p (360p past 90 s), H.264 CRF 32, mono AAC at 48 kb/s, at most 7 MB (a longer scene is encoded at the
    bitrate that fits; one that still does not fit is not heard).
 3. **Scenes.** The picture: `feedback.scene`, one vision call per clip, with the film (title, logline, genre, tone,

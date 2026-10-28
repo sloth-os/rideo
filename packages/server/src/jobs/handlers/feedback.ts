@@ -69,8 +69,10 @@ async function strip(
   out: string,
   signal: AbortSignal,
 ): Promise<Buffer> {
-  const len = Math.max(0.1, span.end - span.start);
-  const times = STRIP_AT.map((f) => Math.max(0, span.start + f * len));
+  // Within the shot's clean part: a transition blends it with its neighbour (docs/design/feedback.md)
+  const { start, end } = span.clean;
+  const len = Math.max(0.1, end - start);
+  const times = STRIP_AT.map((f) => Math.max(0, start + f * len));
   const args: string[] = [];
   for (const t of times) args.push('-ss', t.toFixed(3), '-i', file);
   const scaled = times.map((_, i) => `[${i}:v]scale=${STRIP_WIDTH}:-2,setsar=1[v${i}]`).join(';');

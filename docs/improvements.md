@@ -362,3 +362,9 @@ a duplicated ball. The judge samples the same three moments (15, 50 and 85 %) th
 those frames, but it could only report cast members who should not be in the shot and other figures. It now lists
 anyone or anything shown twice, a see-through ghost included (`duplicates`), and such a take fails its quality checks
 and is generated again ([quality checks](design/continuity.md#quality-checks-in-the-gate)).
+
+**48. Feedback that called the edit's dissolves ghosts** (S, done) — after 23 priority 1 fixes, each of which passed
+every check and went into the cut, the second feedback still scored 6.2 and called two scene exits critical "ghost
+double exposures", both shots just regenerated without ghosts. Its strips sampled 85% of short last shots inside the
+0.5 s crossfade into the next scene, where the cut blends two shots. A strip now samples each shot's clean part,
+without its own transition or the next one's ([how a film is watched](design/feedback.md#how-a-film-is-watched)).

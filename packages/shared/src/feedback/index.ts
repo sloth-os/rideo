@@ -44,6 +44,8 @@ export interface FeedbackShotSpan {
   shotIndex: number;
   start: number;
   end: number;
+  /** The part not blended with a neighbour by a transition: what the strip samples (docs/design/feedback.md). */
+  clean: { start: number; end: number };
 }
 
 export function shotLabel(clipIndex: number, shotIndex: number): string {
@@ -51,13 +53,25 @@ export function shotLabel(clipIndex: number, shotIndex: number): string {
 }
 
 /** The takes of the cut's primary track that belong to a known clip and shot, in time order. */
+/** Shorter than this, a shot's clean part is not trusted and the strip samples the whole item. */
+const CLEAN_MIN_SEC = 0.5;
+
 export function shotSpans(timeline: Timeline, clips: Record<string, Clip>): FeedbackShotSpan[] {
+  const items = [...(primaryTrack(timeline).items as VideoItem[])].sort((a, b) => a.start - b.start);
   const out: FeedbackShotSpan[] = [];
-  for (const item of primaryTrack(timeline).items as VideoItem[]) {
+  for (const [n, item] of items.entries()) {
     if (item.kind !== 'video' || item.source.type !== 'take') continue;
     const clip = clips[item.source.clipId];
     const shot = clip?.shots.find((s) => s.id === (item.source as { shotId: string }).shotId);
     if (!clip || !shot) continue;
+    const start = round3(item.start);
+    const end = round3(itemEnd(item));
+    // Its own incoming transition, and the next item's where the two overlap, blend two shots
+    const next = items[n + 1];
+    const cleanStart = round3(start + (item.transitionIn?.duration ?? 0));
+    const cleanEnd = round3(next && next.start < end ? Math.max(next.start, cleanStart) : end);
+    const clean =
+      cleanEnd - cleanStart >= CLEAN_MIN_SEC ? { start: cleanStart, end: cleanEnd } : { start, end };
     out.push({
       clipId: clip.id,
       shotId: shot.id,
@@ -65,8 +79,9 @@ export function shotSpans(timeline: Timeline, clips: Record<string, Clip>): Feed
       label: shotLabel(clip.index, shot.index),
       clipIndex: clip.index,
       shotIndex: shot.index,
-      start: round3(item.start),
-      end: round3(itemEnd(item)),
+      start,
+      end,
+      clean,
     });
   }
   return out.sort((a, b) => a.start - b.start);
