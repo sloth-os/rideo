@@ -176,7 +176,18 @@ little of it to be worth the risk ([garbage collection](version-control.md#garba
 
 The server's ffmpeg (generation and watermarking) needs local files. `MediaStore.localPath(ref)` downloads a media file once into
 `${RIDEO_DATA_DIR}/cache/media/<hash>.<ext>`, verifies the hash, and serves it from there. The cache is an
-LRU bounded by `RIDEO_CACHE_MAX_BYTES` (default 5 GiB). It is only a cache: deleting it loses nothing.
+LRU bounded by `RIDEO_CACHE_MAX_BYTES` (default 5 GiB). It is only a cache: deleting it loses nothing, except an
+upload still waiting (below).
+
+**An export ready before its upload.** Finishing used to upload the export to WebDAV before the export was ready:
+about 6 minutes for the panda demo's 419 MB on OpenList. Now the export is ready once its file is in the cache: the
+studio serves media from the cache first, so the export plays, downloads and gets its feedback at once, while the
+file is written to WebDAV in the background (`MediaStore.putFileBehind`). A waiting upload is listed in
+`${RIDEO_DATA_DIR}/uploads.json` and its cached file is never evicted until the upload ends; a restart resumes the
+list. A failed upload is tried again 30 s later, then twice as long each time, up to every 10 minutes. The export's
+`upload` is `pending` until the file is on WebDAV, then `done` (null on exports finished before), and the export card
+says *Uploading to storage…* meanwhile. `rideo_media_uploads_pending` counts the waiting uploads and
+`rideo_media_uploads_total{outcome}` the finished and retried ones.
 
 Web Push keys and devices ([installable app](pwa.md)) are kept in `${RIDEO_DATA_DIR}/push/` (`vapid.json`, and
 `<userId>.json` with each person's subscriptions).

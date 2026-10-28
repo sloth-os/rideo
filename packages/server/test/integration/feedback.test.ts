@@ -89,6 +89,12 @@ describe('feedback on an export', () => {
     expect(done.status).toBe('succeeded');
     const fbJob = expectSucceeded(await feedbackJob(pid));
     await editor.stop();
+    // Ready before it reached storage, which it does in the background (docs/design/storage-webdav.md#local-cache-and-staging)
+    await expect
+      .poll(async () => (await stateOf(pid)).docs.exports[done.id].upload, { timeout: 30_000 })
+      .toBe('done');
+    const log = await stack.api<{ message: string }[]>('GET', `/projects/${pid}/history?limit=30`);
+    expect(log.some((c) => c.message.startsWith('Export written to storage'))).toBe(true);
 
     const [fb] = await stack.api<Feedback[]>('GET', `/projects/${pid}/feedback`);
     expect(fb).toMatchObject({ exportId: done.id, status: 'succeeded', jobId: fbJob.id });

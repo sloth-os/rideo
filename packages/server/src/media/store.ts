@@ -6,7 +6,9 @@ import { pipeline } from 'node:stream/promises';
 import type { MediaRef, Probe } from '@rideo/shared';
 import { slugify } from '@rideo/shared';
 import mime from 'mime-types';
+import { z } from 'zod';
 import { AppError } from '../errors';
+import type { Metrics } from '../metrics';
 import type { StorageBackend } from '../storage/backend';
 import type { Layout } from '../storage/layout';
 import { sleep } from '../util/abort';
@@ -111,11 +113,31 @@ function parseDataUri(uri: string): { mime: string; data: Buffer } | null {
 /** Tries of a gateway output download (docs/design/ai-gateway.md#sdk-usage). */
 const DOWNLOAD_TRIES = 3;
 
+/** A cached file waiting to be written to storage (docs/design/storage-webdav.md#local-cache-and-staging). */
+const PendingUploadSchema = z.object({
+  projectId: z.string(),
+  path: z.string(),
+  cacheName: z.string(),
+  mime: z.string(),
+  size: z.number().int().nonnegative(),
+  since: z.string(),
+  attempts: z.number().int().nonnegative(),
+});
+type PendingUpload = z.infer<typeof PendingUploadSchema>;
+/** The first wait after a failed upload; it doubles up to the longest. */
+const UPLOAD_RETRY_MS = 30_000;
+const UPLOAD_RETRY_MAX_MS = 600_000;
+
 export class MediaStore {
   private readonly cacheDir: string;
   readonly tmpDir: string;
   private cacheIndex: Map<string, { size: number; used: number }> | null = null;
   private cacheBytes = 0;
+  /** Uploads behind a ready file, by `<projectId>:<path>`: their cached files are never evicted. */
+  private readonly pending = new Map<string, PendingUpload>();
+  private readonly uploading = new Set<string>();
+  /** A file waited for has reached storage. */
+  onUploaded?: (projectId: string, path: string) => void;
 
   constructor(
     private readonly deps: {
@@ -124,9 +146,12 @@ export class MediaStore {
       ff: Ffmpeg;
       dataDir: string;
       maxCacheBytes: number;
-      log?: { warn: (o: unknown, m?: string) => void };
+      log?: { warn: (o: unknown, m?: string) => void; info?: (o: unknown, m?: string) => void };
       /** The wait between download tries (tests); else a second, then two. */
       downloadRetryMs?: number;
+      metrics?: Metrics;
+      /** The first wait after a failed background upload (tests); else 30 s. */
+      uploadRetryMs?: number;
     },
   ) {
     this.cacheDir = join(deps.dataDir, 'cache', 'media');
@@ -144,6 +169,44 @@ export class MediaStore {
       this.cacheIndex.set(name, { size: st.size, used: st.atimeMs });
       this.cacheBytes += st.size;
     }
+    // Uploads a restart interrupted (resumed by `resumeUploads`)
+    try {
+      const raw = JSON.parse(await readFile(this.uploadsFile, 'utf8')) as unknown[];
+      for (const u of raw) {
+        const up = PendingUploadSchema.safeParse(u);
+        if (up.success && this.cacheIndex.has(up.data.cacheName))
+          this.pending.set(`${up.data.projectId}:${up.data.path}`, up.data);
+      }
+    } catch {
+      // none waiting
+    }
+    this.deps.metrics?.mediaUploadsPending.set({}, this.pending.size);
+  }
+
+  private get uploadsFile(): string {
+    return join(this.deps.dataDir, 'uploads.json');
+  }
+
+  private async savePending(): Promise<void> {
+    const tmp = `${this.uploadsFile}.${randomHex(4)}.tmp`;
+    await writeFile(tmp, JSON.stringify([...this.pending.values()]));
+    await rename(tmp, this.uploadsFile);
+    this.deps.metrics?.mediaUploadsPending.set({}, this.pending.size);
+  }
+
+  /** Files ready in the cache and not yet on storage. */
+  pendingUploads(): { projectId: string; path: string; since: string; attempts: number }[] {
+    return [...this.pending.values()].map(({ projectId, path, since, attempts }) => ({
+      projectId,
+      path,
+      since,
+      attempts,
+    }));
+  }
+
+  /** Starts the uploads waiting from the last run (after `onUploaded` is set). */
+  resumeUploads(): void {
+    for (const key of this.pending.keys()) void this.upload(key);
   }
 
   /** A unique scratch path (caller deletes it, or it is swept on restart). */
@@ -174,9 +237,12 @@ export class MediaStore {
   }
 
   private async evict(): Promise<void> {
+    const waiting = new Set([...this.pending.values()].map((u) => u.cacheName));
     const entries = [...this.cacheIndex!.entries()].sort((a, b) => a[1].used - b[1].used);
     for (const [name, e] of entries) {
       if (this.cacheBytes <= this.deps.maxCacheBytes * 0.9) break;
+      // The only copy of a file waiting for its upload
+      if (waiting.has(name)) continue;
       await rm(join(this.cacheDir, name), { force: true });
       this.cacheIndex!.delete(name);
       this.cacheBytes -= e.size;
@@ -218,6 +284,99 @@ export class MediaStore {
           ? mediaFields(opts.probe, mimeType)
           : await this.probeRef(file, mimeType);
     return { path, hash, mime: mimeType, size, ...probe };
+  }
+
+  /**
+   * Like `putFile`, without waiting for storage (docs/design/storage-webdav.md#local-cache-and-staging): the file is
+   * in the cache (served from there) when this returns, and written to storage in the background, again after a
+   * failure, and after a restart; `onUploaded` says when it is there.
+   */
+  async putFileBehind(
+    projectId: string,
+    file: string,
+    opts: PutOptions & {
+      /** false: the upload waits for `startUpload` (after the document that says it is pending is committed). */
+      start?: boolean;
+    },
+  ): Promise<MediaRef> {
+    const hash = await sha256File(file);
+    const size = (await stat(file)).size;
+    const mimeType = opts.mime ?? mimeFor(file);
+    const ext = extFor(mimeType, file);
+    const stem = opts.stem ?? `${slugify(opts.name, 48)}-${hash.slice(0, 12)}`;
+    const path = `media/${opts.kind}/${stem}.${ext}`;
+    const cacheName = this.cacheName(hash, path);
+    const key = `${projectId}:${path}`;
+    // Listed (and so never evicted) before it enters the cache
+    this.pending.set(key, {
+      projectId,
+      path,
+      cacheName,
+      mime: mimeType,
+      size,
+      since: new Date().toISOString(),
+      attempts: 0,
+    });
+    if (!this.cacheIndex?.has(cacheName)) {
+      await copyFile(file, join(this.cacheDir, cacheName));
+      await this.touchCache(cacheName, size);
+    }
+    await this.savePending();
+    const probe =
+      opts.probe === false
+        ? {}
+        : typeof opts.probe === 'object'
+          ? mediaFields(opts.probe, mimeType)
+          : await this.probeRef(file, mimeType);
+    if (opts.start !== false) void this.upload(key);
+    return { path, hash, mime: mimeType, size, ...probe };
+  }
+
+  /** Starts a waiting upload (`putFileBehind` with `start: false`). */
+  startUpload(projectId: string, path: string): void {
+    void this.upload(`${projectId}:${path}`);
+  }
+
+  private async upload(key: string): Promise<void> {
+    const up = this.pending.get(key);
+    if (!up || this.uploading.has(key)) return;
+    this.uploading.add(key);
+    try {
+      const target = this.deps.layout.media(up.projectId, up.path);
+      const there = await this.deps.storage.stat(target).catch(() => null);
+      if (!there || there.size !== up.size)
+        await this.deps.storage.write(target, createReadStream(join(this.cacheDir, up.cacheName)), {
+          contentType: up.mime,
+          size: up.size,
+        });
+      this.pending.delete(key);
+      await this.savePending();
+      this.deps.metrics?.mediaUploads.inc({ outcome: 'done' });
+      this.deps.log?.info?.(
+        { projectId: up.projectId, path: up.path, ms: Date.now() - Date.parse(up.since) },
+        'file written to storage behind its readiness',
+      );
+      this.onUploaded?.(up.projectId, up.path);
+    } catch (err) {
+      up.attempts++;
+      await this.savePending().catch(() => undefined);
+      const first = this.deps.uploadRetryMs ?? UPLOAD_RETRY_MS;
+      const wait = Math.min(UPLOAD_RETRY_MAX_MS, first * 2 ** (up.attempts - 1));
+      this.deps.metrics?.mediaUploads.inc({ outcome: 'retried' });
+      this.deps.log?.warn(
+        {
+          projectId: up.projectId,
+          path: up.path,
+          attempts: up.attempts,
+          waitMs: wait,
+          err: (err as Error).message,
+        },
+        'background upload failed; trying again',
+      );
+      setTimeout(() => void this.upload(key), wait).unref?.();
+    } finally {
+      this.uploading.delete(key);
+    }
   }
 
   async putBuffer(projectId: string, data: Buffer, opts: PutOptions): Promise<MediaRef> {

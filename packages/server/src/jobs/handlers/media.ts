@@ -235,12 +235,14 @@ async function publishExport(
   container: { mime: string; width?: number; height?: number } = { mime: 'video/mp4' },
 ) {
   const projectId = ctx.job.projectId;
-  const media = await deps.media.putFile(projectId, file, {
+  // Ready once it is in the cache: written to storage behind it (docs/design/storage-webdav.md#local-cache-and-staging)
+  const media = await deps.media.putFileBehind(projectId, file, {
     kind: 'exports',
     name: exp.id,
     mime: container.mime,
     // An archive has no media fields to probe.
     ...(container.mime === 'application/x-tar' ? { probe: false } : {}),
+    start: false,
   });
   if (watermarkId) {
     await deps.watermark.register({
@@ -263,6 +265,7 @@ async function publishExport(
     {
       status: 'succeeded',
       media,
+      upload: 'pending',
       watermarkId,
       contentCredentials,
       durationSec: media.durationSec ?? exp.durationSec,
@@ -273,6 +276,7 @@ async function publishExport(
     },
     `Export ${exp.id.slice(-6)} ready${watermarkId ? ` (watermark ${watermarkId})` : ''}`,
   );
+  deps.media.startUpload(projectId, media.path);
   const h = await deps.projects.existing(projectId);
   await h.repo
     .createTag({

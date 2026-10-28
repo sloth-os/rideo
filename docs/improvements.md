@@ -62,9 +62,9 @@ one commit per take override (94) and per editor operation. *How:* approve and o
 and MCP); the editor sends its queued edits as one request when several wait ("Saving N edits…"); on the server,
 transactions waiting on the project lock committed together.
 
-**7. Exports ready before the WebDAV upload ends** (M) — export finishing uploads the watermarked file to WebDAV before
+**7. Exports ready before the WebDAV upload ends** (M, done) — export finishing uploads the watermarked file to WebDAV before
 the export is ready: about 6 minutes for 419 MB. *How:* ready once the file is in the local media cache (served from
-there), uploaded in the background with retries, the export card saying so until the file is on WebDAV.
+there), uploaded in the background with retries, the export card saying so until the file is on WebDAV. *Done:* an export is ready once its file is in the server's cache (the studio serves media from there first) and is written to WebDAV in the background (`putFileBehind`): listed in `uploads.json`, never evicted while it waits, tried again after a failure and resumed after a restart; the export's `upload` is `pending` until then and the card says *Uploading to storage…* ([an export ready before its upload](design/storage-webdav.md#local-cache-and-staging)).
 
 **8. ETags from PUT answers** (S) — every work-tree batch lists each folder it wrote to, only to learn the new etags.
 *How:* take the ETag from the PUT answer when the server sends one (the `webdav` client's `putFileContents` does not

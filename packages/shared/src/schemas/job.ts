@@ -281,6 +281,11 @@ export const ExportSchema = z.object({
   /** What was rendered: the cut, or the storyboard's animatic (docs/design/storyboard.md#animatic). */
   source: z.enum(['timeline', 'animatic']).default('timeline'),
   media: MediaRefSchema.nullable().default(null),
+  /**
+   * The file's way to the storage server: `pending` while it is written in the background (the export plays from
+   * the server's cache meanwhile), then `done`; null on exports finished before (docs/design/storage-webdav.md#local-cache-and-staging).
+   */
+  upload: z.enum(['pending', 'done']).nullable().default(null),
   watermarkId: z.string().nullable().default(null),
   contentCredentials: ContentCredentialsStampSchema.nullable().default(null),
   disclosure: DisclosureStampSchema.nullable().default(null),

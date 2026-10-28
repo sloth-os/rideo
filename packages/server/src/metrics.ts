@@ -197,6 +197,16 @@ export class Metrics {
       'AI review recommendations applied (by a person or automatically) or dismissed, by stage, action and outcome',
     ),
   );
+  /** Exports written to storage behind their readiness (docs/design/storage-webdav.md#local-cache-and-staging). */
+  readonly mediaUploadsPending = this.add(
+    new Gauge('rideo_media_uploads_pending', 'Files ready in the cache and waiting to be written to storage'),
+  );
+  readonly mediaUploads = this.add(
+    new Counter(
+      'rideo_media_uploads_total',
+      'Background uploads of cached files to storage, by outcome (done, retried)',
+    ),
+  );
   readonly llmFallbacks = this.add(
     new Counter(
       'rideo_llm_fallbacks_total',

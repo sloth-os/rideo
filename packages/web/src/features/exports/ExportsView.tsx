@@ -118,6 +118,15 @@ function ExportCard({ e, projectId }: { e: Export; projectId: string }) {
             </Badge>
           ) : null}
           {e.durationSec ? <Badge>{formatDuration(e.durationSec)}</Badge> : null}
+          {e.upload === 'pending' ? (
+            <Badge
+              tone="info"
+              testid="export-uploading"
+              title="Ready here: it plays and downloads from the studio while it is written to the storage server"
+            >
+              Uploading to storage…
+            </Badge>
+          ) : null}
           {e.contentCredentials ? (
             <Badge tone="success" title={`C2PA manifest ${e.contentCredentials.manifest}`}>
               Content Credentials

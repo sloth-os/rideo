@@ -1,10 +1,12 @@
 import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { Actor, AutoActionId, Job, ProjectDocs } from '@rideo/shared';
+import type { Actor, AutoActionId, Export, Job, ProjectDocs } from '@rideo/shared';
 import {
   checkRequirement,
   dialogueMode,
+  docPath,
   elementsInUse,
+  SYSTEM_ACTOR,
   sortedClips,
   speakingCharacters,
   voiceOf,
@@ -159,6 +161,7 @@ export function createStudio(
     dataDir: config.dataDir,
     maxCacheBytes: config.cacheMaxBytes,
     log,
+    metrics,
   });
   // API keys set in Settings become gateway proxies; their calls use the studio's own gateway key
   // (docs/design/settings.md#registration-in-mm-gateway).
@@ -551,6 +554,22 @@ export function createStudio(
     async start() {
       await mkdir(join(config.dataDir), { recursive: true });
       await media.init();
+      // An export written to storage behind its readiness says so (docs/design/storage-webdav.md#local-cache-and-staging)
+      media.onUploaded = (projectId, path) =>
+        void projectsRegistry
+          .existing(projectId)
+          .then((h) =>
+            h.repo.transact(
+              (tx) => {
+                for (const e of tx.list<Export>('exports/'))
+                  if (e.media?.path === path && e.upload === 'pending')
+                    tx.set(docPath.export(e.id), { ...e, upload: 'done' });
+              },
+              { actor: SYSTEM_ACTOR, message: `Export written to storage (${path.split('/').pop()})` },
+            ),
+          )
+          .catch((err) => log.warn({ err, projectId, path }, 'could not mark the export written to storage'));
+      media.resumeUploads();
       await watermark.init();
       await c2pa.init();
       await accounts.init();

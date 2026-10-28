@@ -458,6 +458,7 @@ export class EditService extends Service {
       quality,
       source,
       media: null,
+      upload: null,
       watermarkId: null,
       contentCredentials: null,
       disclosure,

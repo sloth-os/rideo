@@ -407,7 +407,8 @@ concatenates them (concat demuxer), runs the watermark frame pipeline at the del
 the export's target ([post audio](post-audio.md#loudness)) and muxes it (AAC, or PCM for ProRes), bounded by the
 film's length (`-t`, never `-shortest`), publishes the stems as signed WAVs and the thumbnails when asked, writes
 provenance metadata, registers the watermark, publishes `media/exports/<exportId>-<hash12>.mp4` (`.mov`, `.tar`)
-and tags the commit. MP4 encodes follow the quality presets:
+and tags the commit. The export is ready once its file is in the server's cache; it reaches WebDAV in the background
+([an export ready before its upload](storage-webdav.md#local-cache-and-staging)). MP4 encodes follow the quality presets:
 
 | Preset | Video | Max size |
 |---|---|---|
