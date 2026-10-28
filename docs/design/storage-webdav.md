@@ -166,8 +166,8 @@ its own storage ([editor](editor.md#playback-compatibility-local-proxies)). Olde
 field still parse; the field is dropped.
 
 Media files are **write-once**: the filename embeds the hash, so a new version is always a new file, and
-every commit in the history still resolves its media. Unreferenced media can be removed with
-`POST /api/projects/:id/gc`, which keeps anything reachable from any branch or tag.
+every commit in the history still resolves its media. Nothing removes media a project no longer names; there is too
+little of it to be worth the risk ([garbage collection](version-control.md#garbage-collection)).
 
 ### Local cache and staging
 

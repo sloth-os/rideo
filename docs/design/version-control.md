@@ -114,10 +114,19 @@ rewrite of the whole array.
 
 ## Garbage collection
 
-`POST /api/projects/:id/gc` marks every commit reachable from any branch or tag, then their trees and
-blobs, then every `media/` path referenced by those documents or by active job records. It deletes
-unreachable objects and media older than one hour (a grace period for in-flight commits). GC is never run
-automatically.
+Rideo keeps every object and every media file of a project until the project is deleted (its folder is removed
+for good 7 days later, [maintenance](storage-webdav.md#maintenance)); nothing collects garbage. Objects are written
+once and only a commit that never reaches its ref, or a tip that a coalesced commit replaced, leaves any behind.
+Measured on the demo server on October 28, 2026, walking every branch and tag through its whole history:
+
+| Project | Commits | Objects | Unreachable | Media not named by the documents or job records |
+|---|---|---|---|---|
+| Sammy and Rosie Go Swimming | 503 | 1,964 | 0 | at most 31 of 810 files (16.5 MB of 2.1 GB, before the history is counted) |
+| Sammy and Rosie Ski Fuji | 604 | 2,390 | 3 (0.1 %) | |
+
+A collector would have to stop commits while it decides, never trust a lagging folder listing, and forget what the
+object store believes it wrote; for a tenth of a percent that risk is not worth taking. Measure again when a project's
+unreachable share passes a few percent.
 
 ## Caching
 

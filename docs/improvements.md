@@ -81,8 +81,8 @@ memory until a restart. *How:* drop project handles left idle for a while, or ve
 folder into another, are never emptied (a browser's trash is emptied after 7 days). *How:* a scheduled purge after
 7 days, with a metric and a log line per project removed. *Done:* a minute after start and then daily, deleted projects older than 7 days are removed for good (`rideo_trash_purged_total`).
 
-**12. Garbage collection on a schedule** (M) — GC runs only on request, so coalesced tips and objects of failed
-commits pile up as files on the WebDAV server. *How:* a weekly low-priority GC job per project, with the report kept.
+**12. Garbage collection on a schedule** (M, measured: not needed) — GC runs only on request, so coalesced tips and objects of failed
+commits pile up as files on the WebDAV server. *How:* a weekly low-priority GC job per project, with the report kept. *Not done:* no collector existed (the design described `POST /api/projects/:id/gc`, never built), and on the demo server nothing piles up: the swimming project's 1,964 objects are all reachable and Ski Fuji has 3 unreachable of 2,390 (0.1 %); at most 31 of the swimming project's 810 media files (16.5 MB of 2.1 GB) are named by neither its documents nor its jobs. A collector's risk (deleting what a lagging listing or an in-flight commit still needs) outweighs that, so the design now says nothing is collected ([garbage collection](design/version-control.md#garbage-collection)).
 
 **13. Warm projects after a restart** (S, done) — after a deploy the first person in pays for the cold caches (items 1–5).
 *How:* load the most recently used projects (documents and recent log) in the background at startup. *Done:* the three most recently used projects (kept in `recent-projects.json`) are warmed after a restart, documents and recent log (`rideo_projects_warmed_total`).
