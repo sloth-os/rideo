@@ -209,6 +209,18 @@ export function createStudio(
       ...(config.voiceJudge ? { audio: createAdapter(proxy, config.voiceJudge) } : {}),
       // The audio-visual model (docs/design/continuity.md#quality-checks-in-the-gate)
       ...(config.omni ? { omni: createAdapter(proxy, config.omni, config.llmTimeoutMs) } : {}),
+      // Each family's fallback on another provider (docs/design/ai-gateway.md#outages)
+      fallbacks: {
+        ...(config.fallbacks.text
+          ? { text: createAdapter(proxy, config.fallbacks.text, config.llmTimeoutMs) }
+          : {}),
+        ...(config.fallbacks.vision
+          ? { vision: createAdapter(proxy, config.fallbacks.vision, config.llmTimeoutMs) }
+          : {}),
+        ...(config.fallbacks.omni
+          ? { omni: createAdapter(proxy, config.fallbacks.omni, config.llmTimeoutMs) }
+          : {}),
+      },
     },
   );
   const gateway = new GatewayClient({

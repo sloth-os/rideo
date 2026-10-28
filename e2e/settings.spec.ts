@@ -146,6 +146,30 @@ test('the text model’s API base URL and key are set in Settings and registered
   await expect(omni.getByTestId('settings-endpoint-omni-result')).toHaveAttribute('data-ok', 'true');
   await noHorizontalScroll(page);
 
+  // a fallback on another provider: off until it has a base URL and a model, then vision's follows it with its key
+  // (docs/design/ai-gateway.md#outages)
+  const fallback = page.getByTestId('settings-endpoint-llmFallback');
+  await expect(fallback).toHaveAttribute('data-status', 'off');
+  await fallback
+    .locator('input[name="RIDEO_LLM_FALLBACK_PROXY_DOMAIN"]')
+    .fill(`https://fallback-${testInfo.project.name}.example.com/v1`);
+  await fallback.locator('input[name="RIDEO_LLM_FALLBACK_MODEL"]').fill('mock-fallback');
+  await fallback.locator('input[name="RIDEO_LLM_FALLBACK_API_KEY"]').fill('sk-e2e-fallback');
+  await page.getByTestId('settings-save').click();
+  await expect(page.getByTestId('settings-savebar')).toHaveCount(0, { timeout: 30_000 });
+  await expect(fallback).toHaveAttribute('data-status', 'registered');
+  const visionFallback = page.getByTestId('settings-endpoint-visionFallback');
+  await expect(visionFallback).toHaveAttribute('data-status', 'registered');
+  await expect(visionFallback.getByTestId('settings-endpoint-visionFallback-shared')).toContainText(
+    'Uses the text fallback’s key',
+  );
+  await fallback.getByTestId('settings-endpoint-llmFallback-test').click();
+  await expect(fallback.getByTestId('settings-endpoint-llmFallback-result')).toHaveAttribute(
+    'data-ok',
+    'true',
+  );
+  await noHorizontalScroll(page);
+
   // a new key replaces the old one in the gateway
   await llm.getByTestId('setting-RIDEO_LLM_API_KEY').getByTestId('setting-secret-replace').click();
   await llm.locator('input[name="RIDEO_LLM_API_KEY"]').fill('sk-e2e-second');

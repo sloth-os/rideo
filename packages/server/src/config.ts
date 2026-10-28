@@ -163,6 +163,19 @@ export const EnvSchema = z
     RIDEO_OMNI_PROXY_DOMAIN: str(),
     RIDEO_OMNI_API_KEY: str(),
     RIDEO_OMNI_MODEL: str(),
+    // Fallbacks on another provider while an endpoint is paused or overloaded (docs/design/ai-gateway.md#outages)
+    RIDEO_LLM_FALLBACK_PROVIDER: z.enum(['openai', 'gemini', 'anthropic']).optional(),
+    RIDEO_LLM_FALLBACK_PROXY_DOMAIN: str(),
+    RIDEO_LLM_FALLBACK_API_KEY: str(),
+    RIDEO_LLM_FALLBACK_MODEL: str(),
+    RIDEO_VISION_FALLBACK_PROVIDER: z.enum(['openai', 'gemini', 'anthropic']).optional(),
+    RIDEO_VISION_FALLBACK_PROXY_DOMAIN: str(),
+    RIDEO_VISION_FALLBACK_API_KEY: str(),
+    RIDEO_VISION_FALLBACK_MODEL: str(),
+    RIDEO_OMNI_FALLBACK_PROVIDER: z.enum(['openai', 'gemini', 'off']).optional(),
+    RIDEO_OMNI_FALLBACK_PROXY_DOMAIN: str(),
+    RIDEO_OMNI_FALLBACK_API_KEY: str(),
+    RIDEO_OMNI_FALLBACK_MODEL: str(),
     RIDEO_STT_PROXY_DOMAIN: str(),
     RIDEO_STT_API_KEY: str(),
     RIDEO_STT_MODEL: str(),
@@ -394,6 +407,12 @@ export interface Config {
    * (docs/design/continuity.md#quality-checks-in-the-gate); unset until a model is named.
    */
   omni?: ProxyApi & { provider: 'openai' | 'gemini'; model: string };
+  /** Each family's fallback on another provider (docs/design/ai-gateway.md#outages); unset unless configured. */
+  fallbacks: {
+    text?: LlmEndpoint;
+    vision?: LlmEndpoint;
+    omni?: ProxyApi & { provider: 'openai' | 'gemini'; model: string };
+  };
   /** Every AI endpoint with its base and API key (docs/design/settings.md#provider-endpoints-and-api-keys). */
   endpoints: ResolvedEndpoints;
   consistency: { judge: 'vision-llm' | 'off'; threshold: number; maxAttempts: number };
@@ -562,6 +581,11 @@ export function loadConfig(
     sfx: endpoints.sfx ? api(endpoints.sfx) : undefined,
     voiceJudge: endpoints.voiceJudge ? api(endpoints.voiceJudge) : undefined,
     omni: endpoints.omni ? api(endpoints.omni) : undefined,
+    fallbacks: {
+      ...(endpoints.llmFallback ? { text: api(endpoints.llmFallback) } : {}),
+      ...(endpoints.visionFallback ? { vision: api(endpoints.visionFallback) } : {}),
+      ...(endpoints.omniFallback ? { omni: api(endpoints.omniFallback) } : {}),
+    },
     endpoints,
     consistency: {
       judge: e.RIDEO_CONSISTENCY_JUDGE,

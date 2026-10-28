@@ -65,6 +65,10 @@ export const SETTING_ENDPOINT_IDS = [
   'tts',
   'sfx',
   'voiceJudge',
+  // Fallbacks for an endpoint that is paused or overloaded (docs/design/ai-gateway.md#outages)
+  'llmFallback',
+  'visionFallback',
+  'omniFallback',
 ] as const;
 export type SettingEndpointId = (typeof SETTING_ENDPOINT_IDS)[number];
 export const SettingEndpointIdSchema = z.enum(SETTING_ENDPOINT_IDS);
@@ -73,11 +77,15 @@ export interface SettingEndpoint {
   id: SettingEndpointId;
   group: 'ai' | 'audio';
   label: string;
+  /** How other cards name it (“the text fallback’s key”); the label in lower case when unset. */
+  short?: string;
   /** What the studio uses it for. */
   help: string;
   /** The provider select; endpoints without one speak `fixedProvider`'s API. */
   provider?: string;
   fixedProvider?: ProviderApiId;
+  /** The provider when the select is empty: OpenAI's API, or the parent endpoint's (`inherits`). */
+  providerFrom?: 'openai' | 'parent';
   /** The API base URL (or just its domain), its key and the model. */
   url: string;
   key: string;
@@ -107,6 +115,7 @@ export const SETTING_ENDPOINTS: readonly SettingEndpoint[] = [
     label: 'Text model',
     help: 'Writes screenplays, plans shots and scores, translates dialogue.',
     provider: 'RIDEO_LLM_PROVIDER',
+    providerFrom: 'openai',
     url: 'RIDEO_LLM_PROXY_DOMAIN',
     key: 'RIDEO_LLM_API_KEY',
     model: 'RIDEO_LLM_MODEL',
@@ -119,6 +128,7 @@ export const SETTING_ENDPOINTS: readonly SettingEndpoint[] = [
     label: 'Vision',
     help: 'Reads attachments and footage, judges every take’s consistency, captions frames for search.',
     provider: 'RIDEO_VISION_PROVIDER',
+    providerFrom: 'parent',
     url: 'RIDEO_VISION_PROXY_DOMAIN',
     key: 'RIDEO_VISION_API_KEY',
     model: 'RIDEO_VISION_MODEL',
@@ -132,6 +142,8 @@ export const SETTING_ENDPOINTS: readonly SettingEndpoint[] = [
     label: 'Audio-visual model',
     help: 'Watches video with its sound: checks that every take speaks its lines, and listens to the finished film for feedback.',
     provider: 'RIDEO_OMNI_PROVIDER',
+    // Audio input: Anthropic models do not take it (no path)
+    providerFrom: 'parent',
     url: 'RIDEO_OMNI_PROXY_DOMAIN',
     key: 'RIDEO_OMNI_API_KEY',
     model: 'RIDEO_OMNI_MODEL',
@@ -196,12 +208,60 @@ export const SETTING_ENDPOINTS: readonly SettingEndpoint[] = [
     label: 'Speaker check',
     help: 'An audio-capable model that checks who speaks in takes with native dialogue.',
     provider: 'RIDEO_VOICE_JUDGE_PROVIDER',
+    providerFrom: 'parent',
     url: 'RIDEO_VOICE_JUDGE_PROXY_DOMAIN',
     key: 'RIDEO_VOICE_JUDGE_API_KEY',
     model: 'RIDEO_VOICE_JUDGE_MODEL',
     inherits: 'vision',
     paths: { openai: CHAT_PATHS.openai, gemini: CHAT_PATHS.gemini },
     models: { openai: 'gpt-4o-audio-preview', gemini: 'gemini-2.5-flash' },
+  },
+  {
+    id: 'llmFallback',
+    group: 'ai',
+    label: 'Text model, fallback',
+    short: 'text fallback',
+    help: 'Takes the text model’s calls while it is paused or overloaded (another provider).',
+    provider: 'RIDEO_LLM_FALLBACK_PROVIDER',
+    providerFrom: 'openai',
+    url: 'RIDEO_LLM_FALLBACK_PROXY_DOMAIN',
+    key: 'RIDEO_LLM_FALLBACK_API_KEY',
+    model: 'RIDEO_LLM_FALLBACK_MODEL',
+    needsUrl: true,
+    needsModel: true,
+    paths: CHAT_PATHS,
+    models: {},
+  },
+  {
+    id: 'visionFallback',
+    group: 'ai',
+    label: 'Vision, fallback',
+    short: 'vision fallback',
+    help: 'Takes the judge’s and the other vision calls while vision is paused or overloaded.',
+    provider: 'RIDEO_VISION_FALLBACK_PROVIDER',
+    providerFrom: 'parent',
+    url: 'RIDEO_VISION_FALLBACK_PROXY_DOMAIN',
+    key: 'RIDEO_VISION_FALLBACK_API_KEY',
+    model: 'RIDEO_VISION_FALLBACK_MODEL',
+    inherits: 'llmFallback',
+    paths: CHAT_PATHS,
+    models: {},
+  },
+  {
+    id: 'omniFallback',
+    group: 'ai',
+    label: 'Audio-visual model, fallback',
+    short: 'audio-visual fallback',
+    help: 'Takes the sound checks and the listening while the audio-visual model is paused or overloaded.',
+    provider: 'RIDEO_OMNI_FALLBACK_PROVIDER',
+    providerFrom: 'parent',
+    url: 'RIDEO_OMNI_FALLBACK_PROXY_DOMAIN',
+    key: 'RIDEO_OMNI_FALLBACK_API_KEY',
+    model: 'RIDEO_OMNI_FALLBACK_MODEL',
+    inherits: 'visionFallback',
+    needsModel: true,
+    paths: { openai: CHAT_PATHS.openai, gemini: CHAT_PATHS.gemini },
+    models: {},
   },
 ];
 
@@ -297,10 +357,9 @@ export function resolveEndpoints(values: Values, opts: { gateway: boolean }): Re
     if (e.fixedProvider) provider = e.fixedProvider;
     else if (chosen === 'off') provider = undefined;
     else if (isProvider(chosen)) provider = chosen;
-    else if (e.id === 'llm') provider = 'openai';
-    else if (e.id === 'vision') provider = parent?.provider;
-    // The speaker check and the audio-visual model need audio input, which Anthropic models do not take (no path).
-    else if (e.id === 'voiceJudge' || e.id === 'omni') provider = parent?.provider;
+    else if (e.providerFrom === 'openai') provider = 'openai';
+    // The speaker check and the audio-visual models need audio input, which Anthropic models do not take (no path)
+    else if (e.providerFrom === 'parent') provider = parent?.provider;
     if (!provider || !e.paths[provider] || (e.needsModel && !v(e.model))) {
       out[e.id] = null;
       continue;
@@ -314,12 +373,18 @@ export function resolveEndpoints(values: Values, opts: { gateway: boolean }): Re
     const base =
       (rawUrl ? parseApiBase(rawUrl) : null) ??
       (sameAsParent ? parent.base : parseApiBase(PROVIDER_APIS[provider].domain)!);
+    const model = v(e.model) ?? e.models[provider] ?? parent?.model ?? '';
+    // No model, no endpoint: a fallback with no model of its own and none to inherit is off
+    if (!model) {
+      out[e.id] = null;
+      continue;
+    }
     out[e.id] = {
       id: e.id,
       provider,
       base,
       url: `${base.origin}/${base.prefix ?? PROVIDER_APIS[provider].version}`,
-      model: v(e.model) ?? e.models[provider] ?? parent?.model ?? '',
+      model,
       apiKey: v(e.key),
     };
   }

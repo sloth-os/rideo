@@ -192,6 +192,23 @@ Any job retry also waits as long as the provider's last `Retry-After` asked (up 
 its own backoff. `rideo_llm_paused{endpoint}` is 1 from an endpoint's first pause until it answers again, `rideo_llm_pauses_total{endpoint}`
 counts the pauses and `rideo_llm_calls_total{status="paused"}` the calls not made.
 
+**Fallbacks.** A pause only waits. When the swimming film's scene reviews ran on October 28 the newapi proxy answered
+`502` to the judge and the listener alike: both endpoints paused, two of five fixed takes stayed unverified and did
+not count as fixed. Each family of calls may have a fallback endpoint on another provider (Settings: *Text model,
+fallback*, *Vision, fallback*, *Audio-visual model, fallback*; [endpoints](settings.md#endpoints)):
+
+| Family | Its calls | Fallback |
+|---|---|---|
+| writing | text tasks (the text model) | `llmFallback` |
+| judging | tasks with images (vision) | `visionFallback` (its provider and base URL come from the text fallback when left empty) |
+| listening | tasks with video and sound (the audio-visual model) | `omniFallback` (likewise from the vision fallback; a model is required) |
+
+A call goes to its family's fallback when its endpoint is paused, or when the endpoint turned it away for load or
+failed to answer after its own retries; the fallback has a pause of its own. When both are paused the call fails as
+before and the job waits. A task whose first answer was invalid is repaired on the endpoint that gave it. Calls the
+fallback takes count as `rideo_llm_fallbacks_total{task}` and are logged (`LLM call sent to the fallback endpoint`);
+the job's usage names the model that answered.
+
 ## Enhancement
 
 Upscaling and frame interpolation of exports ([finishing](finishing.md#enhancement-upscale-and-frame-interpolation))

@@ -139,7 +139,10 @@ export async function probeEndpoint(
       case 'llm':
       case 'vision':
       case 'omni':
-      case 'voiceJudge': {
+      case 'voiceJudge':
+      case 'llmFallback':
+      case 'visionFallback':
+      case 'omniFallback': {
         const adapter = createAdapter(proxy, {
           ...api,
           provider: ep.provider as 'openai' | 'gemini' | 'anthropic',

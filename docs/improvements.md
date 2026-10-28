@@ -196,9 +196,9 @@ the single shot. *Done:* version 2 prompts send `enhance_prompt: false` unless t
 than the rest of a take's checks together. *How:* a judge model setting apart from vision (a flash model), or all of
 a take's frames in one smaller image. *Done* with item 23: a judge call is about 9 s.
 
-**28. A fallback endpoint per task family** (S–M) — the newapi proxy answered `503 system cpu overloaded` to every
+**28. A fallback endpoint per task family** (S–M, done) — the newapi proxy answered `503 system cpu overloaded` to every
 model for long stretches. *How:* an ordered list of endpoints per family (writing, judging, listening) used in turn,
-with the circuit breaker of item 20.
+with the circuit breaker of item 20. *Done:* each family (writing, judging, listening) may have a fallback endpoint on another provider (Settings: *Text model, fallback*, *Vision, fallback*, *Audio-visual model, fallback*); a call goes there when its endpoint is paused or turned it away after its retries (`rideo_llm_fallbacks_total{task}`), never for an invalid answer or a refusal ([fallbacks](design/ai-gateway.md#outages)). The demo server has none configured yet: all three families use the newapi proxy, and a fallback needs another provider's base URL, model and key.
 
 **29. Provider moderation that refuses harmless output** (S, done) — on the real-model CI run of October 25, DashScope ended
 the footage analysis of a test pattern with `data_inspection_failed` ("output data may contain inappropriate

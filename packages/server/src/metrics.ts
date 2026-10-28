@@ -197,6 +197,12 @@ export class Metrics {
       'AI review recommendations applied (by a person or automatically) or dismissed, by stage, action and outcome',
     ),
   );
+  readonly llmFallbacks = this.add(
+    new Counter(
+      'rideo_llm_fallbacks_total',
+      'Language, vision and listening calls sent to their family’s fallback endpoint, by task',
+    ),
+  );
   readonly clipReviews = this.add(
     new Counter(
       'rideo_clip_reviews_total',

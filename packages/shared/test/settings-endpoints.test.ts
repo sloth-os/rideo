@@ -133,6 +133,79 @@ describe('endpoints from settings (docs/design/settings.md#keys)', () => {
     expect(off.llm).not.toBeNull();
   });
 
+  it('resolves a fallback per family only when it is given a base URL and a model (docs/design/ai-gateway.md#outages)', () => {
+    // None configured: no fallback
+    const none = resolveEndpoints({ RIDEO_LLM_PROVIDER: 'openai' }, gw);
+    expect([none.llmFallback, none.visionFallback, none.omniFallback]).toEqual([null, null, null]);
+    // A base URL without a model is not enough
+    expect(
+      resolveEndpoints(
+        { RIDEO_LLM_FALLBACK_PROXY_DOMAIN: 'https://dashscope.aliyuncs.com/compatible-mode/v1' },
+        gw,
+      ).llmFallback,
+    ).toBeNull();
+    // The text fallback: vision's comes from it, the audio-visual one needs a model of its own
+    const e = resolveEndpoints(
+      {
+        RIDEO_LLM_PROXY_DOMAIN: 'https://newapi.example.org/v1',
+        RIDEO_LLM_MODEL: 'qwen3.8-max',
+        RIDEO_OMNI_MODEL: 'qwen3.8-omni-flash',
+        RIDEO_LLM_FALLBACK_PROXY_DOMAIN: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+        RIDEO_LLM_FALLBACK_MODEL: 'qwen-max',
+        RIDEO_LLM_FALLBACK_API_KEY: 'sk-fallback',
+      },
+      gw,
+    );
+    expect(e.llmFallback).toMatchObject({
+      provider: 'openai',
+      url: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+      model: 'qwen-max',
+      apiKey: 'sk-fallback',
+    });
+    expect(e.visionFallback).toMatchObject({
+      provider: 'openai',
+      url: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+      model: 'qwen-max',
+      apiKey: 'sk-fallback',
+    });
+    expect(e.omniFallback).toBeNull();
+    const omni = resolveEndpoints(
+      {
+        RIDEO_LLM_FALLBACK_PROXY_DOMAIN: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+        RIDEO_LLM_FALLBACK_MODEL: 'qwen-max',
+        RIDEO_VISION_FALLBACK_MODEL: 'qwen-vl-max',
+        RIDEO_OMNI_FALLBACK_MODEL: 'qwen3-omni-flash',
+      },
+      gw,
+    );
+    expect(omni.visionFallback?.model).toBe('qwen-vl-max');
+    expect(omni.omniFallback).toMatchObject({
+      provider: 'openai',
+      url: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+      model: 'qwen3-omni-flash',
+    });
+    // A vision fallback of its own, with no text fallback
+    const v = resolveEndpoints(
+      {
+        RIDEO_VISION_FALLBACK_PROVIDER: 'gemini',
+        RIDEO_VISION_FALLBACK_MODEL: 'gemini-2.5-flash',
+      },
+      gw,
+    );
+    expect(v.llmFallback).toBeNull();
+    expect(v.visionFallback).toMatchObject({ provider: 'gemini', model: 'gemini-2.5-flash' });
+    // Without a gateway there are none
+    expect(
+      resolveEndpoints(
+        {
+          RIDEO_LLM_FALLBACK_PROXY_DOMAIN: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+          RIDEO_LLM_FALLBACK_MODEL: 'qwen-max',
+        },
+        { gateway: false },
+      ).llmFallback,
+    ).toBeNull();
+  });
+
   it('shares a key with endpoints on the same origin, never across origins', () => {
     const e = resolveEndpoints(
       {

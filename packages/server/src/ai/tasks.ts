@@ -467,6 +467,15 @@ export const REASONING_OFF_TASKS: ReadonlySet<LlmTaskId> = new Set([
   'frame.caption',
 ]);
 
+/**
+ * A call that failed for load or an outage (paused, turned away after its retries, no answer): another provider may
+ * answer it (docs/design/ai-gateway.md#outages). An invalid answer, a refusal or another error is not.
+ */
+function failedForLoad(err: unknown): boolean {
+  if (err instanceof AppError) return err.code === 'llm_error' && err.retryable;
+  return turnedAway(err) !== null || isOutage(err);
+}
+
 /** A provider's moderation refusing an answer (docs/design/ai-gateway.md#refusals). */
 export const REFUSAL_PATTERN =
   /data_inspection_failed|content_filter|inappropriate content|content management policy|safety system/i;
@@ -499,8 +508,45 @@ export class LlmTasks {
       checkReasoning?: 'off' | 'model';
       /** Endpoints paused after failing calls in a row (docs/design/ai-gateway.md#outages). */
       pauses?: EndpointPauses;
+      /** Each family's fallback on another provider (docs/design/ai-gateway.md#outages). */
+      fallbacks?: { text?: LlmAdapter; vision?: LlmAdapter; omni?: LlmAdapter };
     } = {},
   ) {}
+
+  /** The fallback of an adapter's family: the text model's, vision's or the audio-visual model's. */
+  private fallbackOf(adapter: LlmAdapter): LlmAdapter | undefined {
+    const f = this.deps.fallbacks;
+    if (adapter === this.text) return f?.text;
+    if (adapter === this.vision) return f?.vision;
+    if (adapter === this.deps.omni) return f?.omni;
+    return undefined;
+  }
+
+  /** A call, sent to its family's fallback when its endpoint is paused or keeps failing; with the adapter that answered. */
+  private async completeOrFallBack(
+    task: LlmTaskId,
+    adapter: LlmAdapter,
+    req: LlmRequest,
+    counts: { retries: number },
+  ): Promise<{ res: LlmResponse; adapter: LlmAdapter }> {
+    try {
+      return { res: await this.complete(task, adapter, req, counts), adapter };
+    } catch (err) {
+      const fallback = this.fallbackOf(adapter);
+      if (!fallback || req.signal?.aborted || !failedForLoad(err)) throw err;
+      this.deps.metrics?.llmFallbacks.inc({ task });
+      this.deps.log?.info(
+        {
+          task,
+          from: `${adapter.endpoint ?? adapter.provider}/${adapter.model}`,
+          to: `${fallback.endpoint ?? fallback.provider}/${fallback.model}`,
+          err: errorText(err).slice(0, 200),
+        },
+        'LLM call sent to the fallback endpoint',
+      );
+      return { res: await this.complete(task, fallback, req, counts), adapter: fallback };
+    }
+  }
 
   /**
    * One adapter call, made again while the provider turns it away for load. A connection that drops or a call that
@@ -661,7 +707,7 @@ export class LlmTasks {
       this.deps.checkReasoning !== 'model' && REASONING_OFF_TASKS.has(task)
         ? ({ reasoning: 'off' } as const)
         : {};
-    let res = await this.complete(
+    const first = await this.completeOrFallBack(
       task,
       adapter,
       {
@@ -675,6 +721,9 @@ export class LlmTasks {
       },
       counts,
     );
+    // An invalid answer is repaired, and the call metered, on the endpoint that gave it
+    adapter = first.adapter;
+    let res = first.res;
     tokens.in += res.usage?.input ?? 0;
     tokens.out += res.usage?.output ?? 0;
     let parsed = tryParse(schema, res.text);

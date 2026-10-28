@@ -14,6 +14,7 @@ import {
   AudioWaveform,
   Captions,
   Clapperboard,
+  LifeBuoy,
   MessageSquareText,
   Mic,
   PlugZap,
@@ -37,6 +38,10 @@ const ICONS: Record<SettingEndpointId, ReactNode> = {
   tts: <Mic className="size-4" />,
   sfx: <AudioWaveform className="size-4" />,
   voiceJudge: <UserCheck className="size-4" />,
+  // Fallbacks on another provider (docs/design/ai-gateway.md#outages)
+  llmFallback: <LifeBuoy className="size-4" />,
+  visionFallback: <LifeBuoy className="size-4" />,
+  omniFallback: <LifeBuoy className="size-4" />,
 };
 
 const STATUS: Record<EndpointStatus['proxy'], { label: string; tone: Tone }> = {
@@ -98,7 +103,8 @@ export function EndpointCard({
   const layout = endpoint.provider ? [[provider, model], [url], [key]] : [[url], [model, key]];
   const calls = callsLine(endpoint, resolved);
   const ep = resolved[endpoint.id];
-  const shared = ep?.keyFrom ? settingEndpoint(ep.keyFrom).label.toLowerCase() : null;
+  const donor = ep?.keyFrom ? settingEndpoint(ep.keyFrom) : null;
+  const shared = donor ? (donor.short ?? donor.label.toLowerCase()) : null;
   const badge = dirty
     ? { label: 'Unsaved: save to apply', tone: 'warning' as Tone }
     : STATUS[status?.proxy ?? 'off'];

@@ -128,6 +128,9 @@ reached in one of two ways:
 | Sound effects (`sfx`) | `RIDEO_SFX_PROVIDER`, `_PROXY_DOMAIN`, `_API_KEY`, `_MODEL` | `api.elevenlabs.io` | `off` |
 | Speaker check (`voiceJudge`) | `RIDEO_VOICE_JUDGE_PROVIDER`, `_PROXY_DOMAIN`, `_API_KEY`, `_MODEL` | vision (not Anthropic) | `off` |
 | Audio-visual model (`omni`) | `RIDEO_OMNI_PROVIDER`, `_PROXY_DOMAIN`, `_API_KEY`, `_MODEL` | vision (provider and base URL; not Anthropic) | no model is set, or `off` |
+| Text model, fallback (`llmFallback`) | `RIDEO_LLM_FALLBACK_PROVIDER`, `_PROXY_DOMAIN`, `_API_KEY`, `_MODEL` | – | no base URL or no model ([fallbacks](ai-gateway.md#outages)) |
+| Vision, fallback (`visionFallback`) | `RIDEO_VISION_FALLBACK_PROVIDER`, `_PROXY_DOMAIN`, `_API_KEY`, `_MODEL` | the text fallback (provider and base URL) | no base URL or no model |
+| Audio-visual model, fallback (`omniFallback`) | `RIDEO_OMNI_FALLBACK_PROVIDER`, `_PROXY_DOMAIN`, `_API_KEY`, `_MODEL` | the vision fallback (provider and base URL; not Anthropic) | no base URL or no model |
 
 | Provider | Label | Default domain | API version | Credential header |
 |---|---|---|---|---|

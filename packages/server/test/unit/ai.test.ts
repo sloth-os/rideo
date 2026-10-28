@@ -733,3 +733,66 @@ describe('structured tasks', () => {
     expect(labels.slice(1)).toEqual(['Reference images for character chr_x (X):', 'Candidate frame 0:']);
   });
 });
+
+describe('fallback endpoints (docs/design/ai-gateway.md#outages)', () => {
+  const answer = '{"frames":[{"index":0,"characters":[]}]}';
+  const ask = (tasks: LlmTasks) =>
+    tasks.judge({ characters: [], frameCount: 1, shotDescription: 'x' } as never, new Map(), [
+      Buffer.from('png'),
+    ]);
+  const adapter = (model: string, complete: (r: LlmRequest) => Promise<{ text: string }>) => ({
+    provider: 'openai',
+    model,
+    endpoint: `${model}.example`,
+    complete,
+  });
+  const text = adapter('text', async () => ({ text: '{}' }));
+  const retry = { retries: 1, baseMs: 1, maxMs: 1 };
+
+  it('sends a call its endpoint turns away, or a paused endpoint’s, to the family’s fallback', async () => {
+    const metrics = new Metrics();
+    const seen: string[] = [];
+    const overloaded = adapter('primary', async () => {
+      seen.push('primary');
+      throw new LlmError('503', 503, true, 'system cpu overloaded');
+    });
+    const fallback = adapter('fallback', async () => {
+      seen.push('fallback');
+      return { text: answer };
+    });
+    const pauses = new EndpointPauses({ ...DEFAULT_PAUSES, failures: 2, baseMs: 60_000 }, { metrics });
+    const tasks = new LlmTasks(text, overloaded, { metrics, retry, pauses, fallbacks: { vision: fallback } });
+    // Turned away after its retries: the fallback answers
+    expect(await ask(tasks)).toBeTruthy();
+    expect(seen).toEqual(['primary', 'primary', 'fallback']);
+    // Now paused: the fallback answers without a call to it
+    seen.length = 0;
+    await ask(tasks);
+    expect(seen).toEqual(['fallback']);
+    expect(metrics.llmFallbacks.get({ task: 'consistency.judge' })).toBe(2);
+    // Another family has no fallback: its error as before
+    const lonely = new LlmTasks(overloaded, overloaded, { retry, fallbacks: { vision: fallback } });
+    await expect(lonely.reviewScreenplay({} as never)).rejects.toMatchObject({ status: 503 });
+  });
+
+  it('keeps an invalid answer or a refusal on its endpoint: only load goes to the fallback', async () => {
+    const metrics = new Metrics();
+    const seen: string[] = [];
+    const fallback = adapter('fallback', async () => {
+      seen.push('fallback');
+      return { text: answer };
+    });
+    const garbled = adapter('primary', async () => ({ text: 'not json' }));
+    await expect(
+      ask(new LlmTasks(text, garbled, { metrics, retry, fallbacks: { vision: fallback } })),
+    ).rejects.toMatchObject({ code: 'llm_invalid_output' });
+    const refusing = adapter('primary', async () => {
+      throw new LlmError('400', 400, false, '{"error":{"code":"data_inspection_failed"}}');
+    });
+    await expect(
+      ask(new LlmTasks(text, refusing, { metrics, retry, fallbacks: { vision: fallback } })),
+    ).rejects.toMatchObject({ code: 'llm_refused' });
+    expect(seen).toEqual([]);
+    expect(metrics.llmFallbacks.get({ task: 'consistency.judge' })).toBe(0);
+  });
+});
