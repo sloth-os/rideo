@@ -15,6 +15,7 @@ the result at its cuts with the same scene-cut detection the footage analysis us
 | the project's video model has `max_shots ≥ 2` (a pinned model; `auto` resolves to the first model) and `settings.generation.multiShot` is `auto` (default) | the model renders several shots |
 | the dialogue mode is not `native` | native audio is conditioned per speaker sample, shot by shot |
 | at least two consecutive shots need a take and have no directing controls that need a request of their own (an image start frame, an end frame, a motion reference) | those shots are generated alone |
+| a shot that joins a group has no approved storyboard frame (one may open a group: the frame starts the sequence) | an approved frame is where its shot starts, and a sequence starts only from its first shot's frame |
 | for a model whose limits say `exclusive_frames_and_references` (Wan 3.0): every shot of the group shows only characters of its first shot, and lasts at most 5 s | the request carries the first shot's frame and no references, so the model knows only the faces in that frame; Wan 3.0's guide gives each shot of a sequence 2–5 s |
 
 Groups take consecutive shots while the group has at most `max_shots` shots and its planned length fits

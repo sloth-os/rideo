@@ -1,5 +1,6 @@
 import {
   approvedElementReferences,
+  boardState,
   type Clip,
   dialogueDirection,
   dialogueMode,
@@ -188,7 +189,10 @@ export async function clipGenerate(deps: HandlerDeps, ctx: JobContext) {
           maxShots,
           maxDurationSec: limits?.max_duration_seconds ?? 10,
           eligible: (id) => !needsOwnRequest(todo.find((s) => s.id === id)!),
-          ...(limits?.exclusive_frames_and_references ? { joins: framedGroupJoins } : {}),
+          // An approved storyboard frame is where its shot starts: such a shot may open a group, never join one
+          joins: (first, next) =>
+            boardState(next, docs) !== 'approved' &&
+            (!limits?.exclusive_frames_and_references || framedGroupJoins(first, next)),
         })
       : todo.map((s) => [s.id]);
   const jobs: Job[] = [];

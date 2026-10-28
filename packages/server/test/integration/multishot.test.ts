@@ -129,6 +129,40 @@ describe('multi-shot generation', () => {
     await stack.api('POST', `/projects/${pid}/clips/${clip.id}/approve`);
   }, 300_000);
 
+  it('starts a sequence from an approved storyboard frame, and keeps one off a shot that would join', async () => {
+    const approveBoard = async (pid: string, clipId: string, shotId: string) => {
+      const job = await stack.api<Job>(
+        'POST',
+        `/projects/${pid}/clips/${clipId}/shots/${shotId}/board/generate`,
+      );
+      expectSucceeded(await stack.waitJob(pid, job.id));
+      await stack.api('POST', `/projects/${pid}/clips/${clipId}/shots/${shotId}/board/approve`, {
+        approved: true,
+      });
+    };
+    // the first shot's approved frame opens the sequence and is where it starts
+    const opens = await threeShotClip();
+    await approveBoard(opens.pid, opens.clip.id, opens.shots[0]!.id);
+    await generate(opens.pid, opens.clip.id);
+    let jobs = await jobsOf(opens.pid);
+    expect(jobs.filter((j) => j.kind === 'shot.group').map((j) => j.params.shotIds)).toEqual([
+      [opens.shots[0]!.id, opens.shots[1]!.id],
+    ]);
+    const first = [...(await clipNow(opens.pid, opens.clip.id)).shots].sort((a, b) => a.index - b.index)[0]!;
+    expect(first.takes.at(-1)!.request).toMatchObject({
+      firstFrameSource: 'storyboard',
+      multiShot: { index: 0 },
+    });
+
+    // the second shot's approved frame is where it starts: it does not join the first shot's sequence
+    const joins = await threeShotClip();
+    await approveBoard(joins.pid, joins.clip.id, joins.shots[1]!.id);
+    await generate(joins.pid, joins.clip.id);
+    jobs = await jobsOf(joins.pid);
+    expect(jobs.filter((j) => j.kind === 'shot.group')).toHaveLength(0);
+    expect(jobs.filter((j) => j.kind === 'shot.generate')).toHaveLength(3);
+  }, 300_000);
+
   it('generates shot by shot when turned off or when a shot needs its own request', async () => {
     const off = await threeShotClip({ generation: { multiShot: 'off' } });
     await generate(off.pid, off.clip.id);
