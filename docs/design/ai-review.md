@@ -106,8 +106,12 @@ badly (`VIDEO_MODEL_FACTS`: the shot lengths it renders, few people per shot, no
 It is told that the shot planner splits every scene into shots of that length later, so it judges whether each moment
 can be filmed in one shot, not how long the scene is: in the swimming demo's first review, without that sentence, the
 reviewer called its 30-second scenes a critical problem for a model of 2–10 s shots and asked for the outline to be
-rewritten as numbered shots. It answers scores, a summary, strengths, issues and recommendations, each scene named by
-its number.
+rewritten as numbered shots. Each outline beat says whether its scene is written yet (`written`): the screenplay job
+writes the opening scenes (at least the pilot) and production writes each later scene from its beat just before it is
+filmed ([batch generation](generation-pipeline.md#batch-generation)), so the reviewer judges unwritten beats as an
+outline and never asks for them to be written now; its second review of the swimming film, without that, failed on
+"only two scenes are written for a five-minute film". It answers scores, a summary, strengths, issues and
+recommendations, each scene named by its number.
 
 **Storyboard** (`storyboard.review`, lane `llm`, the vision model): one call per storyboarded scene with the scene
 (heading, continuity, summary), its neighbours, the cast's looks, and every shot in order (label, length, camera,

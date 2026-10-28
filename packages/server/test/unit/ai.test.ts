@@ -1,4 +1,5 @@
-import { ClipPlanOutputSchema } from '@rideo/shared';
+import { ClipPlanOutputSchema, newId } from '@rideo/shared';
+import * as f from '@rideo/shared/testing';
 import { describe, expect, it, vi } from 'vitest';
 import {
   AnthropicAdapter,
@@ -20,7 +21,7 @@ import {
 } from '../../src/ai/tasks';
 import { AppError } from '../../src/errors';
 import type { ProxyClient } from '../../src/gateway/proxy-client';
-import { VIDEO_MODEL_FACTS } from '../../src/jobs/handlers/ai-review';
+import { screenplayReviewInput, VIDEO_MODEL_FACTS } from '../../src/jobs/handlers/ai-review';
 import { Metrics } from '../../src/metrics';
 
 class FakeProxy {
@@ -445,6 +446,38 @@ describe('the screenplay reviewer (docs/design/ai-review.md#how-a-review-runs)',
     expect(VIDEO_MODEL_FACTS.weaknesses).toContain(
       'one take longer than ten seconds: it drifts and cuts itself (scenes are split into shorter shots)',
     );
+  });
+
+  it('knows which beats production writes later, and judges them as an outline', () => {
+    const scene = {
+      id: newId('scene'),
+      index: 0,
+      beatId: null,
+      heading: 'EXT. BEACH - MORNING',
+      location: 'Beach',
+      timeOfDay: 'morning',
+      summary: 'They arrive.',
+      action: 'They walk to the water.',
+      dialogue: [],
+      characterIds: [],
+      locationId: null,
+      elementIds: [],
+      estDurationSec: 30,
+      continuity: '',
+    };
+    const beats = [0, 1, 2].map((index) => ({
+      id: newId('beat'),
+      index,
+      title: `Beat ${index + 1}`,
+      summary: 'They swim.',
+      purpose: 'setup',
+      estDurationSec: 30,
+      sceneId: index === 0 ? scene.id : null,
+    }));
+    const docs = f.docs({ screenplay: f.screenplay({ outline: beats, scenes: [scene] }) });
+    const input = screenplayReviewInput(docs, { shotSeconds: { min: 2, max: 10 }, ...VIDEO_MODEL_FACTS });
+    expect(input.screenplay.outline.map((b) => b.written)).toEqual([true, false, false]);
+    expect(SYSTEM_PROMPTS['screenplay.review']).toContain('never ask for them to be written now');
   });
 });
 

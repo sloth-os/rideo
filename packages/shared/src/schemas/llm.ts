@@ -882,7 +882,15 @@ export interface ScreenplayReviewInput {
     genre: string;
     tone: string;
     style: string;
-    outline: { index: number; title: string; summary: string; purpose: string; estDurationSec: number }[];
+    /** `written`: the beat's scene is written; production writes the others from their beats later. */
+    outline: {
+      index: number;
+      title: string;
+      summary: string;
+      purpose: string;
+      estDurationSec: number;
+      written: boolean;
+    }[];
     scenes: {
       number: number;
       heading: string;

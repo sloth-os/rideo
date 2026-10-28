@@ -95,6 +95,8 @@ export function screenplayReviewInput(docs: ProjectDocs, video: VideoModelFacts)
         summary: b.summary.slice(0, 1500),
         purpose: b.purpose,
         estDurationSec: b.estDurationSec,
+        // A beat with a scene is written (as the batch reads it: nextUnwrittenBeats)
+        written: !!b.sceneId,
       })),
       scenes: [...sp.scenes].sort(byIndex).map((s, i) => ({
         number: i + 1,
