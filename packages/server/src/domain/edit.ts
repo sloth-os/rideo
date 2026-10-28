@@ -555,7 +555,6 @@ export class EditService extends Service {
         ? docPath.render(exp.id)
         : source === 'animatic'
           ? 'animatic.json'
-      upload: null,
           : 'timeline.json',
       disclosure: disclosure.label ? { text: disclosure.text, position: disclosure.position } : null,
       stems,
