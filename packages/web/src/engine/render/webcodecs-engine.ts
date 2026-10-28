@@ -25,7 +25,7 @@ export async function renderChunkWebCodecs(opts: {
   onFrame?: (frame: number) => void;
   /** What composited the chunk, once it is done. */
   onBackend?: (backend: 'webgpu' | 'canvas') => void;
-}): Promise<Blob> {
+}): Promise<Uint8Array> {
   const { timeline, chunk, caps } = opts;
   const { width, height } = opts.size;
   const fps = timeline.fps;
@@ -59,5 +59,5 @@ export async function renderChunkWebCodecs(opts: {
   } finally {
     compositor.dispose();
   }
-  return new Blob([target.buffer!], { type: mp4 ? 'video/mp4' : 'video/webm' });
+  return new Uint8Array(target.buffer!);
 }

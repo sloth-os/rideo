@@ -1,3 +1,4 @@
+import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
   AUDIO_ROLES,
@@ -14,6 +15,25 @@ import type { Ffmpeg } from './ffmpeg';
 
 const lossless = ['-ar', '48000', '-ac', '2', '-c:a', 'pcm_s24le'];
 const round2 = (v: number) => (Number.isFinite(v) ? Math.round(v * 100) / 100 : null);
+
+/**
+ * One lossless file from the staged pieces of a soundtrack or a stem, in order (docs/design/editor.md#soundtrack):
+ * the pieces are sample-exact windows of the film, so they join end to end.
+ */
+export async function joinPieces(
+  deps: { ff: Ffmpeg },
+  pieces: string[],
+  out: string,
+  signal?: AbortSignal,
+): Promise<string> {
+  if (pieces.length === 1) return pieces[0]!;
+  const list = `${out}.txt`;
+  await writeFile(list, pieces.map((p) => `file '${p.replace(/'/g, "'\\''")}'`).join('\n'));
+  await deps.ff.run(['-f', 'concat', '-safe', '0', '-i', list, '-c:a', 'flac', '-sample_fmt', 's16', out], {
+    signal,
+  });
+  return out;
+}
 
 /**
  * Loudness normalization of a rendered soundtrack and its stems (docs/design/post-audio.md#loudness): a measuring

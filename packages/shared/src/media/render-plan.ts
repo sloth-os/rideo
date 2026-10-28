@@ -20,9 +20,9 @@ import { adjustmentFilters, keyColorOption, XFADE_TRANSITIONS } from './color';
 
 /**
  * The render plan (docs/design/editor.md#rendering): the film is cut into frame-aligned chunks that never split
- * a transition or a fade; each chunk is one ffmpeg graph over input-seeked sources, and the soundtrack is one
- * graph for the whole film. The browser runs these graphs in ffmpeg.wasm; the server's reference worker runs
- * them with native ffmpeg.
+ * a transition or a fade; each chunk is one ffmpeg graph over input-seeked sources, and the soundtrack is a graph
+ * per window whose pieces join into the whole film's. The browser runs these graphs in ffmpeg.wasm; the server's
+ * reference worker runs them with native ffmpeg.
  */
 
 export interface RenderChunk {
@@ -127,6 +127,18 @@ export interface ChunkGraph {
   textFiles: { path: string; content: string }[];
   frames: number;
   size: RenderSize;
+  /** The media files the graph reads (docs/design/editor.md#memory): a tab loads these, not the whole film's. */
+  media: MediaRef[];
+}
+
+/** `opts` whose `inputPath` records every media file a graph reads. */
+function recording<O extends GraphInput>(opts: O): { opts: O; media: Map<string, MediaRef> } {
+  const media = new Map<string, MediaRef>();
+  const inputPath = (m: MediaRef) => {
+    media.set(m.hash, m);
+    return opts.inputPath(m);
+  };
+  return { opts: { ...opts, inputPath }, media };
 }
 
 export interface ChunkGraphOptions extends GraphInput {
@@ -424,7 +436,8 @@ function transformStream(
 }
 
 /** The video graph of one chunk (video only; the soundtrack is separate). */
-export function chunkGraph(t: Timeline, chunk: RenderChunk, opts: ChunkGraphOptions): ChunkGraph {
+export function chunkGraph(t: Timeline, chunk: RenderChunk, options: ChunkGraphOptions): ChunkGraph {
+  const { opts, media } = recording(options);
   const { width, height } = renderSize(t, opts.quality);
   const fps = t.fps;
   const len = chunk.frames / fps;
@@ -562,6 +575,7 @@ export function chunkGraph(t: Timeline, chunk: RenderChunk, opts: ChunkGraphOpti
     textFiles,
     frames: chunk.frames,
     size: { width, height },
+    media: [...media.values()],
   };
 }
 
@@ -601,36 +615,121 @@ export interface SoundtrackGraph {
   durationSec: number;
   /** With `stems`: the label of each stem's output, mapped to its own file (`stemOutputArgs`). */
   stems: Record<AudioRole, string> | null;
+  /** The media files the graph reads. */
+  media: MediaRef[];
+}
+
+/** The soundtrack's sample rate: its positions, trims, fades and delays are counted in these samples. */
+export const AUDIO_RATE = 48_000;
+/** A soundtrack window lasts about this long (docs/design/editor.md#soundtrack). */
+export const AUDIO_WINDOW_SEC = 60;
+/** `-t` reads this much more of a source than its part needs: the resampler sees past the last sample. */
+const READ_MARGIN_SEC = 0.1;
+
+const samplesAt = (sec: number) => Math.round(sec * AUDIO_RATE);
+
+export interface AudioWindow {
+  index: number;
+  /** Timeline seconds: whole seconds, but for the film's end. */
+  start: number;
+  end: number;
 }
 
 /**
- * The soundtrack of the whole film (as long as the video: `totalFrames / fps`). Each stem is mixed on its own bus,
- * the music bus is ducked under speech, and the buses are summed (docs/design/post-audio.md#stems).
+ * The soundtrack's windows (docs/design/editor.md#soundtrack): about `targetSec` each, on whole seconds. A boundary
+ * never falls inside a sound whose speed is not 1, whose `atempo` would start over on another phase: the nearest free
+ * second within half a window, else the first free one after it.
  */
-export function soundtrackGraph(t: Timeline, opts: GraphInput & { stems?: boolean }): SoundtrackGraph {
+export function planAudioWindows(t: Timeline, opts: { targetSec?: number } = {}): AudioWindow[] {
   const len = totalFrames(t) / t.fps;
-  const audio = audioSegments(t).filter((a) => a.media.hasAudio !== false);
+  const target = Math.max(2, Math.round(opts.targetSec ?? AUDIO_WINDOW_SEC));
+  const half = Math.floor(target / 2);
+  const sped = audioSegments(t).filter((a) => a.media.hasAudio !== false && Math.abs(a.speed - 1) > EPS);
+  const free = (sec: number) => !sped.some((a) => a.start < sec - EPS && sec < a.end - EPS);
+  const boundary = (desired: number) => {
+    for (let d = 0; d <= half; d++) {
+      if (free(desired - d)) return desired - d;
+      if (free(desired + d)) return desired + d;
+    }
+    let at = desired + half + 1;
+    while (at < len - EPS && !free(at)) at++;
+    return Math.min(at, len);
+  };
+  const windows: AudioWindow[] = [];
+  let from = 0;
+  do {
+    const to = len - from > target * 1.5 ? boundary(from + target) : len;
+    windows.push({ index: windows.length, start: from, end: to });
+    from = to;
+  } while (from < len - EPS);
+  return windows;
+}
+
+/** The staged pieces of the soundtrack and of each stem, one per window. */
+export const soundtrackPiece = (index: number) => `soundtrack-${String(index + 1).padStart(4, '0')}.flac`;
+export const stemPiece = (role: AudioRole, index: number) =>
+  `stem-${role}-${String(index + 1).padStart(4, '0')}.flac`;
+
+/**
+ * The soundtrack of the film, or of one of its windows (docs/design/editor.md#soundtrack). Each stem is mixed on its
+ * own bus, the music bus is ducked under speech, and the buses are summed (docs/design/post-audio.md#stems).
+ *
+ * Windows joined end to end are the whole film's soundtrack: every position is counted in samples at 48 kHz; a
+ * segment is resampled from a whole second of its source, so the resampler's grid is the same in every window, and
+ * read from at least `SEEK_MARGIN` before its part, so the decoder and the resampler have settled; its fades and the
+ * music's duck read the film's clock. `atempo` cannot resume mid-stream: windows from `planAudioWindows` never cut a
+ * sound whose speed is not 1.
+ */
+export function soundtrackGraph(
+  t: Timeline,
+  opts: GraphInput & { stems?: boolean; window?: Pick<AudioWindow, 'start' | 'end'> },
+): SoundtrackGraph {
+  const len = totalFrames(t) / t.fps;
+  const w0 = samplesAt(opts.window?.start ?? 0);
+  const count = samplesAt(opts.window?.end ?? len) - w0;
   const args: string[] = [];
   const af: string[] = [];
-  audio.forEach((a, k) => {
-    const seek = Math.max(0, a.in - SEEK_MARGIN);
-    args.push('-ss', n(seek), '-t', n(a.out - seek + 0.1), '-i', opts.inputPath(a.media));
-    const d = (a.out - a.in) / a.speed;
-    const delay = Math.max(0, Math.round(a.start * 1000));
-    let chain = `[${k}:a]atrim=start=${n(a.in - seek)}:end=${n(a.out - seek)},asetpts=PTS-STARTPTS,${atempoChain(a.speed)}aformat=sample_rates=48000:channel_layouts=stereo,volume=${n(a.volume)}`;
-    if (a.fadeIn > 0) chain += `,afade=t=in:st=0:d=${n(Math.min(a.fadeIn, d))}`;
-    if (a.fadeOut > 0)
-      chain += `,afade=t=out:st=${n(Math.max(0, d - a.fadeOut))}:d=${n(Math.min(a.fadeOut, d))}`;
-    chain += `,adelay=${delay}|${delay}[a${k}]`;
+  const media = new Map<string, MediaRef>();
+  const parts: { role: AudioRole; label: string }[] = [];
+  for (const a of audioSegments(t)) {
+    if (a.media.hasAudio === false) continue;
+    // The segment's samples on the film's clock, and the part of them in this window
+    const start = samplesAt(a.start);
+    const length = samplesAt(a.end) - start;
+    const j0 = Math.max(0, w0 - start);
+    const j1 = Math.min(length, w0 + count - start);
+    if (j1 <= j0) continue;
+    const k = parts.length;
+    // The source sample (48 kHz, from the file's start) under output sample j of the segment
+    const source = (j: number) => samplesAt(a.in) + Math.round(j * a.speed);
+    const seek = Math.max(0, Math.floor(source(j0) / AUDIO_RATE - SEEK_MARGIN));
+    const from = source(j0) - seek * AUDIO_RATE;
+    const to = source(j1) - seek * AUDIO_RATE;
+    args.push('-ss', String(seek), '-t', n(to / AUDIO_RATE + READ_MARGIN_SEC), '-i', opts.inputPath(a.media));
+    media.set(a.media.hash, a.media);
+    // An explicit resampler: the one `aformat` inserts for a rate and a layout at once starts off the grid
+    let chain = `[${k}:a]aresample=${AUDIO_RATE},aformat=channel_layouts=stereo,atrim=start_sample=${from}:end_sample=${to}`;
+    if (Math.abs(a.speed - 1) > EPS)
+      chain += `,asetpts=PTS-STARTPTS,${atempoChain(a.speed)}atrim=end_sample=${j1 - j0}`;
+    // Fades are placed by timestamp: the part keeps the segment's clock
+    chain += `,asetpts=(N+${j0})/SR/TB,volume=${n(a.volume)}`;
+    if (a.fadeIn > 0) chain += `,afade=t=in:ss=0:ns=${Math.min(samplesAt(a.fadeIn), length)}`;
+    if (a.fadeOut > 0) {
+      const ns = Math.min(samplesAt(a.fadeOut), length);
+      chain += `,afade=t=out:ss=${length - ns}:ns=${ns}`;
+    }
+    const delay = start + j0 - w0;
+    chain += `,asetpts=N/SR/TB,adelay=${delay}S|${delay}S[a${k}]`;
     af.push(chain);
-  });
-  const silence = `anullsrc=r=48000:cl=stereo,atrim=0:${n(len)}`;
+    parts.push({ role: a.role, label: `a${k}` });
+  }
+  const silence = `anullsrc=r=${AUDIO_RATE}:cl=stereo,atrim=end_sample=${count}`;
   const duck = duckEnvelope(t);
   const buses: string[] = [];
   const stems: Partial<Record<AudioRole, string>> = {};
   for (const role of AUDIO_ROLES) {
-    const ks = audio.flatMap((a, k) => (a.role === role ? [k] : []));
-    if (!ks.length) {
+    const labels = parts.filter((p) => p.role === role).map((p) => `[${p.label}]`);
+    if (!labels.length) {
       if (opts.stems) {
         af.push(`${silence}[stem_${role}]`);
         stems[role] = `stem_${role}`;
@@ -638,12 +737,12 @@ export function soundtrackGraph(t: Timeline, opts: GraphInput & { stems?: boolea
       continue;
     }
     let chain =
-      ks.length === 1
-        ? `[a${ks[0]}]apad,atrim=0:${n(len)}`
-        : `${ks.map((k) => `[a${k}]`).join('')}amix=inputs=${ks.length}:normalize=0:dropout_transition=0,apad,atrim=0:${n(len)}`;
-    // 10 ms frames: `eval=frame` steps the gain once per frame, so the ramps stay smooth.
+      labels.length === 1
+        ? `${labels[0]}apad,atrim=end_sample=${count}`
+        : `${labels.join('')}amix=inputs=${labels.length}:normalize=0:dropout_transition=0,apad,atrim=end_sample=${count}`;
+    // 10 ms frames on the film's clock: `eval=frame` steps the gain once per frame, so the ramps stay smooth.
     if (role === 'music' && duck)
-      chain += `,asetnsamples=n=480:p=0,volume='${duckExpression(duck)}':eval=frame`;
+      chain += `,asetnsamples=n=480:p=0,asetpts=(N+${w0})/SR/TB,volume='${duckExpression(duck)}':eval=frame,asetpts=N/SR/TB`;
     if (opts.stems) {
       af.push(`${chain},asplit=2[bus_${role}][stem_${role}]`);
       stems[role] = `stem_${role}`;
@@ -658,8 +757,9 @@ export function soundtrackGraph(t: Timeline, opts: GraphInput & { stems?: boolea
     );
   return {
     args: [...args, '-filter_complex', af.join(';'), '-map', '[aout]'],
-    durationSec: len,
+    durationSec: count / AUDIO_RATE,
     stems: opts.stems ? (stems as Record<AudioRole, string>) : null,
+    media: [...media.values()],
   };
 }
 
@@ -670,9 +770,6 @@ export function soundtrackGraph(t: Timeline, opts: GraphInput & { stems?: boolea
 export function soundtrackEncodeArgs(): string[] {
   return ['-vn', '-c:a', 'flac', '-sample_fmt', 's16', '-ar', '48000'];
 }
-
-export const SOUNDTRACK_FILE = 'soundtrack.flac';
-export const stemFile = (role: AudioRole) => `stem-${role}.flac`;
 
 /** The outputs of the stems after the mix's: `-map [stem_role] <encoder> <path>` for each stem. */
 export function stemOutputArgs(g: SoundtrackGraph, path: (role: AudioRole) => string): string[] {

@@ -78,7 +78,8 @@ Exports take `loudness`:
 | `broadcast` | −23 LUFS (EBU R128) | −1 dBTP | TV, festivals |
 | `off` | – | – | the mix as it is |
 
-The tab renders the soundtrack losslessly (`soundtrack.flac`, and `stem-<role>.flac`). `export.finish` measures it
+The tab renders the soundtrack losslessly in windows (`soundtrack-<n>.flac`, and `stem-<role>-<n>.flac`;
+[rendering](editor.md#soundtrack)). `export.finish` joins each set of pieces into one file, measures it
 (`loudnorm` first pass, `print_format=json`) and normalizes it in a second, linear pass with the measured values
 (`linear=true`); when the gain would push the true peak over the target, `loudnorm` switches to its dynamic mode and
 says so. Stems get the linear gain of the mix (`volume=<output_i − input_i>dB`), so they still sum to the normalized

@@ -126,10 +126,10 @@ describe('stems (docs/design/post-audio.md#stems)', () => {
     const s = soundtrackGraph(t, { inputPath, stems: true });
     const g = graphOf(s.args);
     expect(g).toContain(
-      'amix=inputs=3:normalize=0:dropout_transition=0,apad,atrim=0:12,asplit=2[bus_dialogue][stem_dialogue]',
+      'amix=inputs=3:normalize=0:dropout_transition=0,apad,atrim=end_sample=576000,asplit=2[bus_dialogue][stem_dialogue]',
     );
-    expect(g).toContain('[a2]apad,atrim=0:12,asplit=2[bus_music][stem_music]');
-    expect(g).toContain('anullsrc=r=48000:cl=stereo,atrim=0:12[stem_effects]');
+    expect(g).toContain('[a2]apad,atrim=end_sample=576000,asplit=2[bus_music][stem_music]');
+    expect(g).toContain('anullsrc=r=48000:cl=stereo,atrim=end_sample=576000[stem_effects]');
     expect(g).toContain('[bus_dialogue][bus_music]amix=inputs=2:normalize=0:dropout_transition=0[aout]');
     expect(s.stems).toEqual({ dialogue: 'stem_dialogue', music: 'stem_music', effects: 'stem_effects' });
     expect(stemOutputArgs(s, (r) => `/out/${r}.flac`)).toEqual([
@@ -251,7 +251,7 @@ describe('ducking (docs/design/post-audio.md#ducking)', () => {
     for (const time of [0, 0.8, 1, 2.5, 4.2, 5, 6.9, 8, 9.3, 11])
       expect(evalAt(time)).toBeCloseTo(duckGainAt(env, time), 2);
     expect(graphOf(soundtrackGraph(t, { inputPath }).args)).toContain(
-      `[a2]apad,atrim=0:12,asetnsamples=n=480:p=0,volume='${expr}':eval=frame[bus_music]`,
+      `[a2]apad,atrim=end_sample=576000,asetnsamples=n=480:p=0,asetpts=(N+0)/SR/TB,volume='${expr}':eval=frame,asetpts=N/SR/TB[bus_music]`,
     );
   });
 

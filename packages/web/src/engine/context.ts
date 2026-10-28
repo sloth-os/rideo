@@ -7,8 +7,11 @@ export interface EditorJobContext {
   signal: AbortSignal;
   /** Progress, reported with the next heartbeat. */
   progress(done: number, total: number, message?: string): void;
-  /** Stages an output file on the server (kept across leases). */
-  upload(name: string, data: Blob): Promise<void>;
+  /**
+   * Stages an output file on the server (kept across leases). Rendered files are passed as bytes: an unreachable
+   * `Blob` keeps its memory until a garbage collection its size does not prompt (docs/design/editor.md#memory).
+   */
+  upload(name: string, data: Blob | Uint8Array): Promise<void>;
 }
 
 export type EditorJobHandler = (ctx: EditorJobContext) => Promise<unknown>;

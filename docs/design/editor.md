@@ -262,7 +262,7 @@ the `client` lane that an open studio tab of that project claims and runs. See [
 | Module | Role |
 |---|---|
 | `ffmpeg.ts` | One ffmpeg.wasm instance per tab (`@ffmpeg/ffmpeg` 0.12, FFmpeg 5.1 core served from our origin, loaded lazily: the multi-threaded core in a cross-origin isolated tab, [engine performance](engine-performance.md)). Its worker is passed explicitly and always runs with the page's origin, also inside an app that embeds the studio ([embedding](embedding.md#package)). Runs one command at a time (queue). Inputs are `Blob`s mounted read-only with `WORKERFS` (no copy into wasm memory); outputs are read back and deleted. Log lines are captured for the shared parsers. Cancelling terminates the worker and reloads the core (≈ 1 s). |
-| `media-files.ts` | Blob access to project media: files this tab uploaded are reused from memory, others are downloaded once (LRU). |
+| `media-files.ts` | Blob access to project media: files this tab uploaded are reused from memory, others are downloaded once (an LRU of 512 MB, [memory](#memory)). |
 | `prepare.ts` | Probe (`ffmpeg -i` banner, parsed by `shared/media/probe.ts`) and poster for a file. |
 | `codecs.ts`, `local-proxy.ts`, `proxy-plan.ts` | Whether WebCodecs decodes a media file, and the local proxies (see below). |
 | `threads.ts`, `heartbeat.ts`, `ticker.ts`, `keep-alive.ts` | Threads of the multi-threaded core's commands; heartbeats sent by a worker (a worker timer where they cannot be) and a Web Lock while a job runs ([engine performance](engine-performance.md)). |
@@ -389,14 +389,36 @@ so every chunk has exactly `round(LEN·FPS)` frames and the chunks join without 
 
 ### Soundtrack
 
-The audio is planned for the whole film (audio is cheap, and one continuous encode avoids AAC priming gaps
-at chunk joins): item audio (when `hasAudio`, not muted, not ramped; overlay items' sound on their track's stem,
-effects by default) and audio tracks,
-`atrim → asetpts → atempo chain → volume → afade → adelay`, mixed per stem (dialogue, music, effects) with
-`amix=normalize=0`, `apad` and trimmed to the length; the music bus is ducked under speech; the buses are summed
-([post audio](post-audio.md#stems)). ffmpeg.wasm renders it losslessly (`soundtrack.flac`) and, when the export
-asks for stems, each bus to `stem-<role>.flac` in the same run. The preview plays the same buses with the same
-duck automation (`automateDuck`).
+The audio is planned for the whole film and rendered in windows (`planAudioWindows`, about 60 s each, starting on
+whole seconds): item audio (when `hasAudio`, not muted, not ramped; overlay items' sound on their track's stem,
+effects by default) and audio tracks, `aformat (48 kHz stereo) → atrim → asetpts → atempo chain → volume → afade →
+adelay`, mixed per stem (dialogue, music, effects) with `amix=normalize=0`, padded and trimmed to the window; the
+music bus is ducked under speech; the buses are summed ([post audio](post-audio.md#stems)). ffmpeg.wasm renders each
+window losslessly (`soundtrack-0001.flac`, …) and, when the export asks for stems, each bus to
+`stem-<role>-0001.flac`, … in the same run. `export.finish` joins each set of pieces into one continuous file
+before it normalizes the loudness, so the delivery is one encode with no priming gaps. The preview plays the same
+buses with the same duck automation (`automateDuck`).
+
+A window opens only the media it plays, so the soundtrack of a long film never holds every input in memory, and a
+resumed render starts at the first window not staged. The pieces join without a seam because each one computes the
+same samples a render of the whole film would: positions, trims, fades and delays are counted in samples at 48 kHz;
+a segment is resampled by an explicit `aresample` from a whole second of its source, so the resampler's grid is the
+same in every window (the resampler `aformat` inserts for a rate and a layout at once started 0.23 samples off the
+grid after some seeks), and read from at least a second before its part, so its decoder has settled; its fades and
+the music's duck follow the film's clock (`asetpts`). A boundary never falls inside a sound whose speed is not 1:
+`atempo` cannot resume mid-stream (a forced cut started it over on another phase, a step of 4,002 at a peak of
+6,031), so the window runs on to the next free second. Joined, the pieces are the whole film's float samples; the
+conversion to 16 bits rounds a few of them (under 0.5 %) the other way, by one step.
+
+### Memory
+
+Neither engine holds the film or all of its media in the tab. The ffmpeg engine loads the media a chunk shows as it
+renders that chunk (each graph names the files it reads, `ChunkGraph.media`), the WebCodecs engine reads ranges of
+the sources (`MediaPool`), and a soundtrack window loads its own media. A rendered chunk or piece is uploaded as
+bytes, not as a `Blob`: a browser without a disk-backed profile (an incognito window, Playwright's default context)
+keeps blobs in memory and fails with `ERR_BLOB_OUT_OF_MEMORY` once they outgrow its budget, and an unreachable
+`Blob` holds its memory until a garbage collection that its size does not prompt. Downloaded media is kept in an
+LRU of 512 MB (`media-files.ts`).
 
 ### Engines
 
@@ -406,7 +428,7 @@ duck automation (`automateDuck`).
 | `webcodecs` | the compositor (`activeAt` → frames → alpha, wipe, fades, effects, text; on WebGPU when the browser has it, else the 2D canvas, [engine performance](engine-performance.md#webgpu-compositing)) → hardware `VideoEncoder` (H.264 in MP4, else VP9/AV1/VP8 in WebM) via mediabunny | fast (GPU); needs every source decodable by WebCodecs (originals or local proxies) |
 | `auto` (default) | `webcodecs` when the browser can encode video and decode every source original with WebCodecs; otherwise `ffmpeg` | |
 
-Both engines produce video-only chunk files (`part-0001.mp4`, …) plus the soundtrack, uploaded as they
+Both engines produce video-only chunk files (`part-0001.mp4`, …) plus the soundtrack's pieces, uploaded as they
 finish. Chunks are intermediates: the server's finishing pass re-encodes the final export, so they favour
 speed and quality over size.
 
@@ -436,7 +458,7 @@ An editor job is a job in the `client` lane. The server never runs it; a browser
 |---|---|---|---|
 | `media.process` | `resourceId` | fetches the original, probes it, makes the poster | probe + poster → resource `ready` |
 | `analysis.signals` | `analysisId`, `resourceId`, `speech` | runs the analysis pass, thumbnails, speech audio | signals + files → `analysis.suggest` job |
-| `export.render` | `exportId`, `quality`, `engine`, `chunkSec`, `timelinePath` (the cut, the animatic or `renders/<exportId>.json`), `stems` | renders the soundtrack (and stems) and every chunk | parts + manifest → `export.finish` job |
+| `export.render` | `exportId`, `quality`, `engine`, `chunkSec`, `timelinePath` (the cut, the animatic or `renders/<exportId>.json`), `stems` | renders every chunk, then the soundtrack (and stems) window by window | parts, pieces + manifest → `export.finish` job |
 
 Protocol (REST, see [api/rest.md](../api/rest.md#editor-jobs)):
 

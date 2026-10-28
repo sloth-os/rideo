@@ -155,7 +155,12 @@ describe('footage → edit workflow', () => {
     expect(done).toMatchObject({ status: 'succeeded', method: 'browser', engine: 'ffmpeg' });
     expect(done.durationSec).toBeCloseTo(53.5, 0);
     const render = await stack.api<Job>('GET', `/projects/${p.id}/jobs/${out.job.id}`);
-    expect(render.staged).toEqual(['part-0001.mp4', 'part-0002.mp4', 'soundtrack.flac']);
+    // the soundtrack in the worker's 8 s windows, joined by the server (docs/design/editor.md#soundtrack)
+    expect(render.staged).toEqual([
+      'part-0001.mp4',
+      'part-0002.mp4',
+      ...[1, 2, 3, 4, 5, 6, 7].map((n) => `soundtrack-000${n}.flac`),
+    ]);
     expect(
       (await stack.api<any>('POST', '/watermark/detect', { projectId: p.id, mediaPath: done.media.path })).id,
     ).toBe(done.watermarkId);

@@ -13,6 +13,8 @@ import {
   ExportRenderResultSchema,
   type ProjectDocs,
   ruleSuggestions,
+  type StagedAudio,
+  stagedPieces,
   suggestionFromLlm,
   type Timeline,
 } from '@rideo/shared';
@@ -21,7 +23,7 @@ import type { LabelledImage } from '../../ai/tasks';
 import { FeedbackService } from '../../domain/feedback';
 import { AppError, notFound } from '../../errors';
 import { extractFrame } from '../../media/frames';
-import { normalizeSoundtrack } from '../../media/loudness';
+import { joinPieces, normalizeSoundtrack } from '../../media/loudness';
 import { writeTar } from '../../media/tar';
 import type { ExportIngredient } from '../../provenance/c2pa';
 import { runFramePipeline } from '../../watermark/pipeline';
@@ -302,7 +304,15 @@ export async function exportFinish(deps: HandlerDeps, ctx: JobContext) {
   if (!exp) throw notFound(`export ${p.exportId}`);
   try {
     return await deps.media.withTmpDir(async (dir) => {
-      const staged = p.soundtrack ? deps.staging.path(p.renderJobId, p.soundtrack) : null;
+      // The soundtrack's and each stem's pieces, one per window, joined into one file (docs/design/editor.md#soundtrack)
+      const joined = (audio: StagedAudio, name: string) =>
+        joinPieces(
+          deps,
+          stagedPieces(audio).map((piece) => deps.staging.path(p.renderJobId, piece)),
+          join(dir, `${name}.flac`),
+          ctx.signal,
+        );
+      const staged = p.soundtrack ? await joined(p.soundtrack, 'soundtrack-joined') : null;
       // Loudness (docs/design/post-audio.md#loudness): normalized lossless audio and stems, encoded below.
       const target = exp.loudness?.target ?? 'off';
       const finished = staged
@@ -311,9 +321,9 @@ export async function exportFinish(deps: HandlerDeps, ctx: JobContext) {
             stems:
               p.stems && exp.stemsRequested
                 ? {
-                    dialogue: deps.staging.path(p.renderJobId, p.stems.dialogue),
-                    music: deps.staging.path(p.renderJobId, p.stems.music),
-                    effects: deps.staging.path(p.renderJobId, p.stems.effects),
+                    dialogue: await joined(p.stems.dialogue, 'stem-dialogue-joined'),
+                    music: await joined(p.stems.music, 'stem-music-joined'),
+                    effects: await joined(p.stems.effects, 'stem-effects-joined'),
                   }
                 : null,
             target,

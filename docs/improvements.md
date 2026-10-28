@@ -94,9 +94,19 @@ a filmstrip decodes its frames: drawing every lane of the 118-shot cut reads abo
 when they come on screen. *How:* the server writes peaks (a few KB) and a thumbnail strip when a take or an
 upload is made, as it writes posters; the tab draws those and decodes only media without them. *Done:* a finished take carries its lane files (`media/lanes/<hash12>-peaks.json`, 100 peaks a second, and a filmstrip sprite of a frame a second at 72 px), and the tab draws its waveform and filmstrip from them; it decodes only media without them (uploads, older takes, music and effects) ([waveforms and filmstrips](design/editor.md#waveforms-and-filmstrips)). Uploads stay the tab's, as their posters do: the server never decodes them for editing.
 
-**15. Exports that do not hold every input in memory** (M) — an export loads every input as a Blob before its
+**15. Exports that do not hold every input in memory** (M, done) — an export loads every input as a Blob before its
 soundtrack (an ffmpeg export before its first chunk): about 400 MB for the 118 shots. *How:* render the soundtrack chunk by chunk and join the pieces, or load
-inputs as each chunk needs them.
+inputs as each chunk needs them. *Done:* each graph names the media it reads (`ChunkGraph.media`,
+`SoundtrackGraph.media`) and the tab loads only those: the ffmpeg engine a chunk's media as it renders it, and the
+soundtrack in windows of about 60 s on whole seconds (`planAudioWindows`), each opening the media it plays (13 of a
+150 s cut's 31 files, not all of them). `export.finish` joins the pieces (`soundtrack-0001.flac`, …, and the stems'),
+and a resumed render starts at the first window not staged ([soundtrack](design/editor.md#soundtrack)). Joined, the
+pieces are the whole film's float samples: a native-ffmpeg test with AAC at 44.1 and 32 kHz, WAV at 24 kHz, fades, a
+crossfade, a sped-up item and a ducked bed finds the 16-bit samples within one step everywhere (the conversion rounds
+under 0.5 % of them the other way). Two causes of seams were found and removed on the way: the resampler `aformat`
+inserts for a rate and a layout at once started 0.23 samples off the grid after some seeks (39 steps apart), so a
+segment is resampled by an explicit `aresample`; and `atempo` cannot resume mid-stream (a step of 4,002 at a peak of
+6,031), so a window never ends inside a sound whose speed is not 1.
 
 **16. Bounded range requests** (S, done) — mediabunny's `UrlSource` asks for open-ended ranges (`bytes=N-`) and aborts once it
 has what it needs, but the server and the storage behind it start sending the rest of the file. *How:* a `fetchFn`
@@ -225,12 +235,19 @@ element's first generated reference for unattended runs (the person reviews it l
 Allowed` to PUTs of two job records in `.rideo/jobs/`. *How:* retry `405` like other transient answers of that server
 (it is not a real refusal there) and keep the record in memory until it is written. *Done:* a buffered file write is tried again on `405` like a `503` ([slow and flaky servers](design/storage-webdav.md#slow-and-flaky-servers)).
 
-**34. Long exports and browser blob memory** (M) — the editor tab keeps every rendered chunk as a blob until the film
+**34. Long exports and browser blob memory** (M, done) — the editor tab keeps every rendered chunk as a blob until the film
 is joined. In a Chromium context without a disk-backed profile (Playwright's default, and incognito windows) the
 ninth minute of a 1080p film ended in `ERR_BLOB_OUT_OF_MEMORY` after chunk 19 of 19, and the render started over;
 five such attempts failed the export. A persistent profile, which pages blobs to disk, rendered it. *How:* write
 chunks to the origin private file system (OPFS) as they finish, or upload each chunk to the server and join them
 there, so memory does not grow with the length of the film; report the browser's storage quota before a long render.
+*Measured:* the chunks were not what filled the memory; the tab already uploads each one as it finishes and the
+server joins them. The failed attempt's log shows the soundtrack loading its inputs (`loading media 52/110`) when
+Chromium refused the next download: the soundtrack held every input at once (item 15). *Done:* with item 15 the tab
+holds one chunk's or one window's media at a time; the LRU of downloaded media is 512 MB instead of 1 GB; and
+rendered chunks and pieces are uploaded as bytes, not as Blobs (an unreachable Blob keeps its memory until a garbage
+collection that its size does not prompt) ([memory](design/editor.md#memory)). Nothing of a render is stored in the
+browser, so there is no quota to report.
 
 **35. A cast-only film** (S, done) — the brief said "only these two characters appear", yet the export has a
 red-haired girl with a snowboard in two shots, a human child in place of a panda in four, a brown bear and a dog

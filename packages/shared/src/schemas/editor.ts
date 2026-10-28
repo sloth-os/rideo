@@ -15,6 +15,10 @@ import { ResourceKindSchema, ResourceRoleSchema } from './resource';
 
 /** A file an editor job uploads into its staging folder. */
 export const StagedNameSchema = z.string().regex(/^[a-z0-9][a-z0-9._-]{0,99}$/, 'invalid staged file name');
+/** A staged audio file: its pieces in order (docs/design/editor.md#soundtrack), or one file from older tabs. */
+export const StagedAudioSchema = z.union([z.array(StagedNameSchema).min(1).max(10_000), StagedNameSchema]);
+export type StagedAudio = z.infer<typeof StagedAudioSchema>;
+export const stagedPieces = (audio: StagedAudio): string[] => (Array.isArray(audio) ? audio : [audio]);
 
 export const MediaProcessParamsSchema = z.object({ resourceId: IdSchema });
 export const AnalysisSignalsParamsSchema = z.object({
@@ -94,10 +98,10 @@ export const ExportRenderResultSchema = z.object({
   fps: z.number().positive(),
   durationSec: z.number().positive(),
   parts: z.array(StagedNameSchema).min(1).max(10_000),
-  /** Lossless (`soundtrack.flac`); older tabs staged AAC (`soundtrack.m4a`). */
-  soundtrack: StagedNameSchema.nullable(),
+  /** Lossless pieces, one per window (`soundtrack-0001.flac`, …); older tabs staged one file. */
+  soundtrack: StagedAudioSchema.nullable(),
   stems: z
-    .object({ dialogue: StagedNameSchema, music: StagedNameSchema, effects: StagedNameSchema })
+    .object({ dialogue: StagedAudioSchema, music: StagedAudioSchema, effects: StagedAudioSchema })
     .nullable()
     .default(null),
 });

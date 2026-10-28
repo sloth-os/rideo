@@ -15,17 +15,18 @@ import {
   type MediaRef,
   parseAnalysisLog,
   parseProbe,
+  planAudioWindows,
   planChunks,
   posterCommand,
   probeCommand,
   renderInputs,
   renderSize,
-  SOUNDTRACK_FILE,
   soundtrackEncodeArgs,
   soundtrackGraph,
+  soundtrackPiece,
   speechCommand,
-  stemFile,
   stemOutputArgs,
+  stemPiece,
   type Timeline,
   thumbnailCommand,
   thumbnailPicks,
@@ -64,8 +65,13 @@ async function mustRun(args: string[]): Promise<string[]> {
 export interface EditorWorkerOptions {
   kinds?: string[];
   pollMs?: number;
-  /** Simulates a tab that dies: stop (without completing) after staging this many render parts. */
+  /** Simulates a tab that dies: stop (without completing) after staging this many files (chunks, then pieces). */
   dieAfterParts?: number;
+  /**
+   * The soundtrack's windows (docs/design/editor.md#soundtrack); shorter than a tab's 60 s, so that the server joins
+   * the pieces of every export these tests make.
+   */
+  audioWindowSec?: number;
   /** Report every claimed job as failed with this code (retry and give-up paths). */
   failWith?: string;
   heartbeatMs?: number;
@@ -226,19 +232,32 @@ export async function startEditorWorker(
         staged++;
         if (opts.dieAfterParts !== undefined && staged >= opts.dieAfterParts) throw new Died();
       }
-      // The soundtrack (lossless) and, when asked, the stems from the same run (docs/design/post-audio.md#stems).
-      const audioFiles = [SOUNDTRACK_FILE, ...(params.stems ? AUDIO_ROLES.map(stemFile) : [])];
-      if (!audioFiles.every((f) => job.staged.includes(f))) {
-        const s = soundtrackGraph(t, { inputPath: (m) => paths.get(m.hash)!, stems: params.stems });
+      // The soundtrack (lossless) by windows and, when asked, the stems from the same runs
+      // (docs/design/editor.md#soundtrack, docs/design/post-audio.md#stems).
+      const windows = planAudioWindows(t, { targetSec: opts.audioWindowSec ?? 8 });
+      for (const w of windows) {
+        const files = [
+          soundtrackPiece(w.index),
+          ...(params.stems ? AUDIO_ROLES.map((role) => stemPiece(role, w.index)) : []),
+        ];
+        if (files.every((f) => job.staged.includes(f))) continue;
+        const s = soundtrackGraph(t, {
+          inputPath: (m) => paths.get(m.hash)!,
+          stems: params.stems,
+          window: w,
+        });
         const local = (name: string) => join(dir, `${job.id}-${name}`);
         await mustRun([
           ...s.args,
           ...soundtrackEncodeArgs(),
-          local(SOUNDTRACK_FILE),
-          ...stemOutputArgs(s, (role) => local(stemFile(role))),
+          local(soundtrackPiece(w.index)),
+          ...stemOutputArgs(s, (role) => local(stemPiece(role, w.index))),
         ]);
-        for (const f of audioFiles) await upload(job, f, local(f));
+        for (const f of files) await upload(job, f, local(f));
+        staged++;
+        if (opts.dieAfterParts !== undefined && staged >= opts.dieAfterParts) throw new Died();
       }
+      const pieces = (name: (index: number) => string) => windows.map((w) => name(w.index));
       const size = renderSize(t, params.quality);
       return {
         engine: 'ffmpeg',
@@ -247,9 +266,13 @@ export async function startEditorWorker(
         fps: t.fps,
         durationSec: totalFrames(t) / t.fps,
         parts,
-        soundtrack: SOUNDTRACK_FILE,
+        soundtrack: pieces(soundtrackPiece),
         stems: params.stems
-          ? { dialogue: stemFile('dialogue'), music: stemFile('music'), effects: stemFile('effects') }
+          ? {
+              dialogue: pieces((i) => stemPiece('dialogue', i)),
+              music: pieces((i) => stemPiece('music', i)),
+              effects: pieces((i) => stemPiece('effects', i)),
+            }
           : null,
       };
     },

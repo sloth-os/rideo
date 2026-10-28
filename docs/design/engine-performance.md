@@ -37,8 +37,9 @@ own pool of the graph's threads (`vf_scale`), and a graph with ten of them at fo
 `withThreads` estimates the scalers from the graph (`scale`, `format`, two per `xfade`, `overlay`, `alphamerge`, one
 for the output) and lowers the filter graph's threads first, then turns the input threads off, then lowers the
 decoders' and the encoder's, until the command fits 30 of the 32 threads. Commands with many inputs need the input
-threads off: the soundtrack opens every audio segment of the cut as an input, 118 for a ten-minute film of
-five-second shots, and a chunk opens every item it shows.
+threads off: a soundtrack window opens every audio segment it plays as an input (about 13 a minute of five-second
+shots; the whole soundtrack of a ten-minute film opened 118 before [windows](editor.md#soundtrack)), and a chunk
+opens every item it shows.
 
 The engine status in the header (its tooltip) and the presence the tab sends say how many threads the core runs
 (`engine.threads`, 1 for the single-threaded core).

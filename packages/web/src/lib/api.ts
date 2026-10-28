@@ -189,7 +189,7 @@ async function request<T>(
 ): Promise<T> {
   const token = getToken();
   const isForm = typeof FormData !== 'undefined' && body instanceof FormData;
-  const isBlob = typeof Blob !== 'undefined' && body instanceof Blob;
+  const isBlob = (typeof Blob !== 'undefined' && body instanceof Blob) || body instanceof Uint8Array;
   const res = await fetch(apiUrl(path), {
     method,
     headers: {
@@ -202,7 +202,11 @@ async function request<T>(
       ...headers,
     },
     body:
-      body === undefined ? undefined : isForm || isBlob ? (body as FormData | Blob) : JSON.stringify(body),
+      body === undefined
+        ? undefined
+        : isForm || isBlob
+          ? (body as FormData | Blob | Uint8Array<ArrayBuffer>)
+          : JSON.stringify(body),
   });
   if (res.status === 204) return undefined as T;
   const text = await res.text();
@@ -632,7 +636,7 @@ export const api = {
         ...(progress ? { progress } : {}),
       },
     ),
-  editorUpload: (jobId: string, sessionId: string, name: string, data: Blob) =>
+  editorUpload: (jobId: string, sessionId: string, name: string, data: Blob | Uint8Array) =>
     request<{ name: string; size: number }>(
       'PUT',
       `/editor/jobs/${jobId}/files/${name}?sessionId=${encodeURIComponent(sessionId)}`,

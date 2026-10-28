@@ -17,6 +17,7 @@ import {
   MediaProcessResultSchema,
   type MediaRef,
   type Resource,
+  stagedPieces,
 } from '@rideo/shared';
 import type { z } from 'zod';
 import { AppError, invalid, notFound } from '../errors';
@@ -221,8 +222,8 @@ export class EditorService extends Service {
       throw invalid('render size must be even and at most 8192 px');
     await this.requireStaged(job, [
       ...result.parts,
-      ...(result.soundtrack ? [result.soundtrack] : []),
-      ...(result.stems ? Object.values(result.stems) : []),
+      ...(result.soundtrack ? stagedPieces(result.soundtrack) : []),
+      ...(result.stems ? Object.values(result.stems).flatMap(stagedPieces) : []),
     ]);
     await this.setExport(
       job,

@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { readFile } from 'node:fs/promises';
+import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { type Job, parseProbe, posterCommand, probeCommand, type Resource } from '@rideo/shared';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -169,8 +169,9 @@ describe('editor jobs over REST', () => {
 
   it('resumes an interrupted render at the first missing part after the tab closed', async () => {
     const p = await project('Resume');
-    await timelineOf(p.id, 6); // 54 s → two 30 s-plan chunks
-    const dying = await startEditorWorker(stack, p.id, { dieAfterParts: 1 });
+    await timelineOf(p.id, 6); // 54 s → two 30 s-plan chunks, seven 8 s soundtrack windows
+    // the tab closes after both chunks and the first window of the soundtrack
+    const dying = await startEditorWorker(stack, p.id, { dieAfterParts: 3 });
     const out = await stack.api<any>('POST', `/projects/${p.id}/exports`, { quality: 'draft' });
     await dying.stopped;
     const released = await until(
@@ -178,7 +179,7 @@ describe('editor jobs over REST', () => {
       (j) => j.status === 'queued',
     );
     expect(released).toMatchObject({
-      staged: ['part-0001.mp4'],
+      staged: ['part-0001.mp4', 'part-0002.mp4', 'soundtrack-0001.flac'],
       lease: null,
       error: { code: 'lease_released' },
     });
@@ -193,7 +194,22 @@ describe('editor jobs over REST', () => {
       status: 'succeeded',
       attempts: 2,
     });
-    expect(render.staged).toEqual(['part-0001.mp4', 'part-0002.mp4', 'soundtrack.flac']);
+    expect(render.staged).toEqual([
+      'part-0001.mp4',
+      'part-0002.mp4',
+      ...[1, 2, 3, 4, 5, 6, 7].map((n) => `soundtrack-000${n}.flac`),
+    ]);
+    // the joined soundtrack lasts the film
+    const file = join(stack.dataDir, 'resume-export.mp4');
+    await writeFile(
+      file,
+      Buffer.from(
+        await (await fetch(`${stack.url}/api/projects/${p.id}/media/${done.media.path}`)).arrayBuffer(),
+      ),
+    );
+    const probe = parseProbe(ffmpeg(probeCommand(file)).stderr)!;
+    expect(probe.hasAudio).toBe(true);
+    expect(probe.durationSec).toBeCloseTo(54, 0);
   }, 180_000);
 
   it('reports cancellation through the heartbeat, fails the export, and requeues expired leases', async () => {

@@ -3,12 +3,13 @@ import { mediaUrl } from '../lib/api';
 
 /**
  * Blob access to project media for the editor engine: files this tab uploaded are reused from memory; others
- * are downloaded once and kept in a small LRU (browsers back large Blobs with disk).
+ * are downloaded once and kept in a small LRU. A browser without a disk-backed profile keeps every Blob in memory
+ * (docs/design/editor.md#memory), so the LRU stays well under its budget.
  */
 
 const uploaded = new Map<string, Blob>();
 const fetched = new Map<string, { blob: Blob; used: number }>();
-const MAX_FETCHED_BYTES = 1024 ** 3;
+const MAX_FETCHED_BYTES = 512 * 1024 ** 2;
 
 export function rememberUpload(media: Pick<MediaRef, 'hash'>, blob: Blob): void {
   uploaded.set(media.hash, blob);

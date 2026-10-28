@@ -3,6 +3,7 @@ import {
   analysisCommand,
   applyOps,
   atempoChain,
+  audioSegments,
   chunkGraph,
   emptyTimeline,
   localProxyCommand,
@@ -10,11 +11,14 @@ import {
   newId,
   parseAnalysisLog,
   parseProbe,
+  planAudioWindows,
   planChunks,
   primaryTrack,
   renderInputs,
   renderSize,
   soundtrackGraph,
+  soundtrackPiece,
+  stemPiece,
   type Timeline,
   thumbnailPicks,
   totalFrames,
@@ -293,6 +297,39 @@ describe('render plan', () => {
     expect(second.args[second.args.indexOf('-filter_complex') + 1]).toContain("enable='between(t\\,0\\,2)'");
   });
 
+  it('plans the soundtrack in whole-second windows that never cut a sped-up sound (docs/design/editor.md#soundtrack)', () => {
+    const { t } = film();
+    expect(planAudioWindows(t)).toEqual([{ index: 0, start: 0, end: 60 }]);
+    // the boundary near 50 s moves out of the sped-up item (49–54 s)
+    expect(planAudioWindows(t, { targetSec: 10 }).map((w) => [w.start, w.end])).toEqual([
+      [0, 10],
+      [10, 20],
+      [20, 30],
+      [30, 40],
+      [40, 49],
+      [49, 60],
+    ]);
+    // a window plays, and reads, only what sounds in it: from 20 s to 30 s the silent second clip leaves the bed
+    const g = soundtrackGraph(t, { inputPath, window: { start: 20, end: 30 } });
+    expect(g.durationSec).toBe(10);
+    expect(g.media).toEqual([music]);
+    const graph = g.args[g.args.indexOf('-filter_complex') + 1]!;
+    // the bed is 20 s in, on the film's clock for its fades, and 10 s long
+    expect(graph).toContain('asetpts=(N+960000)/SR/TB');
+    expect(graph).toContain('adelay=0S|0S[a0]');
+    expect(graph).toContain('[a0]apad,atrim=end_sample=480000[bus_music]');
+    // the sped-up item's sound is played whole by its window
+    const last = soundtrackGraph(t, { inputPath, window: { start: 49, end: 60 } });
+    expect(last.args.join(' ')).toContain('atempo=2,atrim=end_sample=240000');
+    expect(soundtrackPiece(0)).toBe('soundtrack-0001.flac');
+    expect(stemPiece('music', 11)).toBe('stem-music-0012.flac');
+    // a chunk's graph names the files it reads
+    const [first] = planChunks(t, { targetSec: 15 });
+    expect(
+      chunkGraph(t, first!, { quality: 'draft', inputPath, textPath: (i) => `/text/${i}.txt` }).media,
+    ).toEqual([a]);
+  });
+
   it('plans one continuous soundtrack from item audio and audio tracks', () => {
     const { t } = film();
     const s = soundtrackGraph(t, { inputPath });
@@ -300,13 +337,17 @@ describe('render plan', () => {
     expect(s.durationSec).toBe(60);
     // one bus per stem (the clips' sound is dialogue, the bed is music), then the buses summed
     expect(graph).toContain(
-      '[a0][a1]amix=inputs=2:normalize=0:dropout_transition=0,apad,atrim=0:60[bus_dialogue]',
+      '[a0][a1]amix=inputs=2:normalize=0:dropout_transition=0,apad,atrim=end_sample=2880000[bus_dialogue]',
     );
-    expect(graph).toContain('[a2]apad,atrim=0:60[bus_music]');
+    expect(graph).toContain('[a2]apad,atrim=end_sample=2880000[bus_music]');
     expect(graph).toContain('[bus_dialogue][bus_music]amix=inputs=2:normalize=0:dropout_transition=0[aout]');
     expect(graph).toContain('atempo=2');
     expect(s.stems).toBeNull();
     expect(renderInputs(t)).toHaveLength(3);
+    // the graph names the files it reads: the media whose sound it plays
+    expect(new Set(s.media.map((m) => m.hash))).toEqual(
+      new Set(audioSegments(t).flatMap((a) => (a.media.hasAudio === false ? [] : [a.media.hash]))),
+    );
     expect(atempoChain(0.25)).toBe('atempo=0.5,atempo=0.5,');
     const silent = soundtrackGraph(emptyTimeline({ fps: 24, width: 320, height: 180 }), { inputPath });
     expect(silent.args.join(' ')).toContain('anullsrc=r=48000:cl=stereo');
