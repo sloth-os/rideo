@@ -355,3 +355,10 @@ final scenes" into the film-wide lighting (and "warm orange sunset light" into t
 it, and 4 of the pilot's 8 morning takes ended at sunset. A video that starts from a frame now leaves the style's
 palette and lighting out (the frame shows them, the scene line gives the time of day), and the writer keeps times of
 day out of the style ([what the video model reads](design/continuity.md#prompts-version-2)).
+
+**47. Anything shown twice** (S, done) — the first export's feedback (6.2) listed 6 critical issues, most of them
+inside single takes the gate had passed: a second Rosie popping in, two yellow swim boards, ghost double exposures with
+a duplicated ball. The judge samples the same three moments (15, 50 and 85 %) the feedback's strips show, so it saw
+those frames, but it could only report cast members who should not be in the shot and other figures. It now lists
+anyone or anything shown twice, a see-through ghost included (`duplicates`), and such a take fails its quality checks
+and is generated again ([quality checks](design/continuity.md#quality-checks-in-the-gate)).

@@ -167,6 +167,8 @@ export interface QualityFrame {
   extras?: string[];
   /** Other people or animals in the frame. */
   others?: string[];
+  /** Anyone or anything shown twice that should appear once. */
+  duplicates?: string[];
 }
 
 /**
@@ -206,10 +208,13 @@ export function aggregateQuality(input: {
         500,
       ),
     );
+  const duplicates = [...new Set(input.frames.flatMap((f) => f.duplicates ?? []))].slice(0, 10);
+  for (const d of duplicates) issues.add(`shown twice: ${d}`.slice(0, 500));
   const passed =
     (physics === null || physics >= input.threshold) &&
     !input.temporal?.jumps.length &&
     !extras.length &&
+    !duplicates.length &&
     !(input.castOnly && others.length);
   return {
     passed,
@@ -218,6 +223,7 @@ export function aggregateQuality(input: {
     continuity,
     extras,
     others,
+    duplicates,
     sound: null,
     issues: [...issues].slice(0, 20),
   };
@@ -342,6 +348,7 @@ export function withSound(
     continuity: null,
     extras: [],
     others: [],
+    duplicates: [],
     sound: null,
     issues: [],
   };

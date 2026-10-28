@@ -241,6 +241,8 @@ export const JudgeOutputSchema = z.object({
         extras: z.array(z.string().max(80)).max(10).catch([]).default([]),
         /** Any other person or animal in the frame, briefly (quality checks). */
         others: z.array(z.string().max(200)).max(10).catch([]).default([]),
+        /** Anyone or anything shown twice that should appear once, a ghost included (quality checks). */
+        duplicates: z.array(z.string().max(200)).max(10).catch([]).default([]),
       }),
     )
     .min(1),

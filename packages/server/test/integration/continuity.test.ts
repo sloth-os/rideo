@@ -146,6 +146,24 @@ describe('continuity-aware generation (prompt version 2)', () => {
     expect(rejected.consistency.quality).toMatchObject({ passed: false, sound: { music: true } });
   });
 
+  it('fails a take with anything shown twice and generates it again', async () => {
+    const { pid, clip } = await plannedClip();
+    const shot = [...clip.shots].sort((a, b) => a.index - b.index)[0]!;
+    // The mock judge sees a second beach ball in a shot that says something appears twice
+    await stack.api('PATCH', `/projects/${pid}/clips/${clip.id}/shots/${shot.id}`, {
+      description: `${shot.description} The beach ball appears twice.`,
+    });
+    const job = await stack.api<Job>('POST', `/projects/${pid}/clips/${clip.id}/shots/${shot.id}/regenerate`);
+    expectSucceeded(await stack.waitJob(pid, job.id, 180_000));
+    await stack.waitIdle(pid);
+    const take = ((await stateOf(pid)).docs.clips[clip.id] as Clip).shots
+      .find((s) => s.id === shot.id)!
+      .takes.at(-1)!;
+    expect(take.consistency.attempts).toBe(3);
+    expect(take.consistency.quality).toMatchObject({ passed: false, duplicates: ['a second beach ball'] });
+    expect(take.consistency.quality?.issues).toContain('shown twice: a second beach ball');
+  });
+
   it('waits for a busy provider instead of failing the shot (docs/design/ai-gateway.md#sdk-usage)', async () => {
     const { pid, clip } = await plannedClip();
     const shot = [...clip.shots].sort((a, b) => a.index - b.index)[0]!;

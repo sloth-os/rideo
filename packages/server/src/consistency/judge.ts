@@ -141,6 +141,7 @@ export class VisionLlmJudge implements ConsistencyJudge {
                 ...(frame?.continuity && req.sceneReference ? { continuity: frame.continuity } : {}),
                 ...(extras.length ? { extras } : {}),
                 ...(frame?.others?.length ? { others: frame.others } : {}),
+                ...(frame?.duplicates?.length ? { duplicates: frame.duplicates } : {}),
               };
             }),
           }

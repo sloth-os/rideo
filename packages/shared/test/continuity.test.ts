@@ -629,6 +629,27 @@ describe('the sound check (docs/design/continuity.md#quality-checks-in-the-gate)
     expect(v.issues).toEqual(['speech in a shot without lines: “hello there friend”']);
   });
 
+  it('fails a frame with anyone or anything shown twice, a ghost included', () => {
+    const q = aggregateQuality({
+      frames: [
+        { physics: { score: 0.9 }, duplicates: ['a second Rosie'] },
+        { physics: { score: 0.9 }, duplicates: ['a second Rosie', 'two swim boards'] },
+        { physics: { score: 0.9 } },
+      ],
+      temporal: null,
+      threshold: 0.5,
+    });
+    expect(q).toMatchObject({
+      passed: false,
+      physics: 0.9,
+      duplicates: ['a second Rosie', 'two swim boards'],
+    });
+    expect(q.issues).toEqual(['shown twice: a second Rosie', 'shown twice: two swim boards']);
+    expect(
+      aggregateQuality({ frames: [{ physics: { score: 0.9 } }], temporal: null, threshold: 0.5 }),
+    ).toMatchObject({ passed: true, duplicates: [] });
+  });
+
   it('fails a frame with a cast member who is not in the shot, and reports other figures', () => {
     const q = aggregateQuality({
       frames: [

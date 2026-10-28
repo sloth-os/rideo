@@ -24,6 +24,7 @@ describe('the vision judge (docs/design/continuity.md#quality-checks-in-the-gate
           physics: { score: 0.9, issues: [] },
           extras: ['sammy', 'Bao'],
           others: ['a fox in the background'],
+          duplicates: ['a second beach ball'],
         },
       ],
     });
@@ -36,8 +37,15 @@ describe('the vision judge (docs/design/continuity.md#quality-checks-in-the-gate
       absent: [{ name: 'Sammy', look: 'a bigger plush panda in a blue jacket' }],
     });
     expect(out.quality).toEqual([
-      { physics: { score: 0.9, issues: [] }, extras: ['Sammy'], others: ['a fox in the background'] },
+      {
+        physics: { score: 0.9, issues: [] },
+        extras: ['Sammy'],
+        others: ['a fox in the background'],
+        duplicates: ['a second beach ball'],
+      },
     ]);
+    // It is asked about anything shown twice (docs/design/continuity.md#quality-checks-in-the-gate)
+    expect(vision.calls[0]!.system).toContain('- duplicates: anyone or anything shown twice');
     const input = JSON.parse((vision.calls[0]!.parts[0] as { text: string }).text.replace(/^[^{]*/, ''));
     expect(input.absent).toEqual([{ name: 'Sammy', look: 'a bigger plush panda in a blue jacket' }]);
     expect(vision.calls[0]!.system).toContain('"absent" lists cast members');

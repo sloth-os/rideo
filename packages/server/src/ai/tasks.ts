@@ -136,7 +136,8 @@ When "qualityChecks" is true, also score every candidate frame for:
 - continuity (0–1, only when "sceneReference" is true): the same place, light direction, weather and colour palette as the scene reference frame (ignore its composition and who is in it); list the differences as issues.
 - extras: when "absent" lists cast members (with how they look), none of them belongs in this shot: give the name of each one you see in the frame.
 - others: any other person or animal in the frame that is not one of the characters you were asked about, briefly ("a fox in the background").
-Return only JSON: {"frames":[{"index":0,"characters":[{"characterId":"...","present":true,"identityScore":0.9,"outfitScore":0.9,"issues":[]}],"elements":[{"elementId":"...","present":true,"score":0.9,"issues":[]}],"physics":{"score":0.9,"issues":[]},"continuity":{"score":0.9,"issues":[]},"extras":[],"others":[]}]}`,
+- duplicates: anyone or anything shown twice in the frame that should appear once, briefly: a second copy of a character, two of the same prop, a see-through ghost of a figure ("a second Rosie", "two beach balls", "a ghost of Sammy").
+Return only JSON: {"frames":[{"index":0,"characters":[{"characterId":"...","present":true,"identityScore":0.9,"outfitScore":0.9,"issues":[]}],"elements":[{"elementId":"...","present":true,"score":0.9,"issues":[]}],"physics":{"score":0.9,"issues":[]},"continuity":{"score":0.9,"issues":[]},"extras":[],"others":[],"duplicates":[]}]}`,
 
   'voice.judge': `rideo-task: voice.judge
 You are a dialogue supervisor checking that every character in an AI-generated shot speaks with their approved voice.

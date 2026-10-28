@@ -130,6 +130,7 @@ describe('feedback signals (docs/design/feedback.md#how-a-film-is-watched)', () 
       continuity: null,
       extras: [],
       others: [],
+      duplicates: [],
       sound: null,
       issues: [],
     };
@@ -682,6 +683,7 @@ describe('the outcome of a shot fix (docs/design/feedback.md#when-a-fix-does-not
       continuity: null,
       extras: [],
       others: ['a human girl in pink'],
+      duplicates: [],
       sound: null,
       issues: ['a human girl in pink is in the frame'],
     };

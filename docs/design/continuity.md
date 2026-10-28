@@ -218,6 +218,7 @@ attempt fails them, the best take that passed identity is kept, marked with what
 | **Physics** | the judge call already made for identity also scores each frame for physical plausibility (0–1: anatomy, contact with the ground, gravity, objects keeping shape and number) with issues | the lowest frame score is below `consistency.qualityThreshold` (0.5) |
 | **Continuity** | the same call compares the frames with the scene reference frame (place, light, weather, palette) | never (advisory: shown on the take, read by feedback) |
 | **Cast in frame** | the same call is told who must not be in the shot (`absent`: the clip's cast who are not in it, with how they look) and lists any it sees (`extras`), and any other person or animal that is not in the cast (`others`) | a cast member who is not in the shot is in a frame; with `consistency.castOnly` (a film with only its cast, off by default) any other person or animal too. Otherwise other figures are reported |
+| **Shown twice** | the same call lists anyone or anything shown twice in a frame that should appear once, a see-through ghost of a figure included (`duplicates`: "a second Rosie", "two beach balls") | anything is shown twice. The swimming film's first export passed takes with a second Rosie popping in, two swim boards and ghost double exposures: the judge saw those frames (its three samples are the feedback's), but had nowhere to say so |
 | **Sound** (takes with a sound track, when an [audio-visual model](settings.md) is set) | the `sound.check` task watches the take with its sound (360p, mono) and writes down what is said (the words, which character, the voice, lip sync), whether music plays and what else is heard; `soundVerdict` (shared) compares the words with the shot's lines | a line of the shot is not heard: fewer than `LINE_HEARD_RATIO` (0.6) of its words. Music in a take when `consistency.rejectMusic` is on (each retry is a paid take). Advisory: a line in another character's voice, speech in a shot without lines, music in a take otherwise (the film's score comes later), lips out of sync, a sound score below 0.5 |
 
 **Cast only.** The panda demo's brief said "only these two characters appear", yet Wan widened late in a take and a
@@ -243,6 +244,7 @@ report.quality = {
   physics: number | null;                  // lowest frame score
   continuity: number | null;               // mean frame score against the scene reference
   extras: string[];                        // cast members seen though the shot is not theirs
+  duplicates: string[];                    // anyone or anything shown twice that should appear once
   others: string[];                        // other people or animals seen
   sound: {
     lines: { character: string; line: string; heard: number; speaker: string | null }[];  // heard: share of words

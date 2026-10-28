@@ -212,6 +212,7 @@ describe('feedback on the export card (docs/design/feedback.md#surfaces)', () =>
       continuity: null,
       extras: [],
       others: [],
+      duplicates: [],
       sound: null,
       issues: ['the picture jumps at 2.1 s'],
     };

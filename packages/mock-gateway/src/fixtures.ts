@@ -372,10 +372,15 @@ export function consistencyJudge(input: JudgeInput, images: LabelledImages): Jud
             ? [input.absent[0]!.name]
             : [],
         others: [],
+        // A shot that says something appears twice is seen with a duplicate
+        duplicates:
+          input.qualityChecks && /\btwice\b/i.test(input.shotDescription) ? ['a second beach ball'] : [],
       };
     });
   return {
-    frames: frames.length ? frames : [{ index: 0, characters: [], elements: [], extras: [], others: [] }],
+    frames: frames.length
+      ? frames
+      : [{ index: 0, characters: [], elements: [], extras: [], others: [], duplicates: [] }],
   };
 }
 
