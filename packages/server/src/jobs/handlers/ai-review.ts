@@ -54,7 +54,7 @@ export const VIDEO_MODEL_FACTS = {
     'mechanical handling: boarding a lift, putting on equipment',
     'quick repeated motion',
     'a character who appears in a shot from nowhere',
-    'takes longer than ten seconds: they drift and cut themselves',
+    'one take longer than ten seconds: it drifts and cuts itself (scenes are split into shorter shots)',
     'inserts that must hold a tight framing: the camera widens',
   ],
 };

@@ -20,6 +20,7 @@ import {
 } from '../../src/ai/tasks';
 import { AppError } from '../../src/errors';
 import type { ProxyClient } from '../../src/gateway/proxy-client';
+import { VIDEO_MODEL_FACTS } from '../../src/jobs/handlers/ai-review';
 import { Metrics } from '../../src/metrics';
 
 class FakeProxy {
@@ -435,6 +436,17 @@ class ScriptedAdapter implements LlmAdapter {
     return { text: this.answers[Math.min(this.calls.length - 1, this.answers.length - 1)]! };
   }
 }
+
+describe('the screenplay reviewer (docs/design/ai-review.md#how-a-review-runs)', () => {
+  it('knows that scenes are split into shots later, so it judges moments, not scene lengths', () => {
+    const prompt = SYSTEM_PROMPTS['screenplay.review'];
+    expect(prompt).toContain('A shot planner splits every scene into shots of "video.shotSeconds" later');
+    expect(prompt).toContain("never the scene's length, and do not ask for shots in the screenplay");
+    expect(VIDEO_MODEL_FACTS.weaknesses).toContain(
+      'one take longer than ten seconds: it drifts and cuts itself (scenes are split into shorter shots)',
+    );
+  });
+});
 
 describe('structured tasks', () => {
   it('extracts JSON from fences and prose', () => {

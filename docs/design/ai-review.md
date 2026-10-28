@@ -103,7 +103,11 @@ level, cast only), the screenplay (title, logline, synopsis, genre, tone, style,
 and estimate, every written scene with its heading, location, time of day, continuity, summary, action, dialogue and
 cast), the cast (name, role, summary, look, voice), the places and props, and what the video model does well and
 badly (`VIDEO_MODEL_FACTS`: the shot lengths it renders, few people per shot, no on-screen text, no fine hand work).
-It answers scores, a summary, strengths, issues and recommendations, each scene named by its number.
+It is told that the shot planner splits every scene into shots of that length later, so it judges whether each moment
+can be filmed in one shot, not how long the scene is: in the swimming demo's first review, without that sentence, the
+reviewer called its 30-second scenes a critical problem for a model of 2–10 s shots and asked for the outline to be
+rewritten as numbered shots. It answers scores, a summary, strengths, issues and recommendations, each scene named by
+its number.
 
 **Storyboard** (`storyboard.review`, lane `llm`, the vision model): one call per storyboarded scene with the scene
 (heading, continuity, summary), its neighbours, the cast's looks, and every shot in order (label, length, camera,
