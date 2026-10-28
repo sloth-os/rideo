@@ -51,11 +51,11 @@ the next read waits for the last), so 100 commits cost 100 round trips on a cold
 `.rideo/logs/<branch>.json` with the last 200 commit summaries, written behind the commit like the work tree; a cache,
 rebuilt from the objects when it is missing or behind the ref.
 
-**5. The project list and the Inbox from summaries** (M) — `GET /api/projects` and `GET /api/inbox` load every
+**5. The project list and the Inbox from summaries** (M, done) — `GET /api/projects` and `GET /api/inbox` load every
 project's whole document set, one project after another, walk its log, and list the projects folder on every call
 (15 s and 18–38 s cold). *How:* a per-project summary (title, stage, durations, poster, open reviews, the gate to
 approve, recent agent commits) kept in memory and in `.rideo/summary.json` behind the commits; projects read in
-parallel; the folder listing cached and refreshed on create, delete and import.
+parallel; the folder listing cached and refreshed on create, delete and import. *Done:* both read each project's summary (`.rideo/summary.json`, kept in memory and written behind the commits; checked against the branch's tip and made again from the documents when behind), 8 projects at a time, and the WebDAV listing of the projects folder is reused for a minute (`rideo_project_digests_total{source}`). On the demo server before: 32.9 s for the project list and 103.9 s for the Inbox, cold after a restart.
 
 **6. One commit for many changes** (S–M) — a save is still two round trips (about 4–5 s on OpenList), and the demo made
 one commit per take override (94) and per editor operation. *How:* approve and override many takes in one call (REST
@@ -400,5 +400,12 @@ a task refused for its output is asked for again as a new task with another seed
   selected takes with the export feedback's own scene call when the clip is made, applies its priority 1
   regenerations (at most `settings.review.sceneFixes`, 3 by default; a new take is selected only when it passes every
   check) and watches the scene again; the batch assembles the cut from the fixed takes
-  ([scenes before the edit](design/ai-review.md#scenes-before-the-edit)). Its effect on a real film is still to be
-  measured.
+  ([scenes before the edit](design/ai-review.md#scenes-before-the-edit)). Watching only, on the swimming film's
+  takes (10 vision calls, 350 s for the ten scenes at once), it saw what the export feedback saw: each scene's
+  overall within 0.7 of the export's, continuity 4–5 against 4, and 34 priority 1 regenerations against the
+  feedback's 24 (continuity 51 of the 99 issues, temporal 14, physics 12). With its fixes, on the two weakest
+  scenes ($12.35, 18 minutes): scene 10 went from 6.6 to 7.5 (continuity 4 → 6, issues 11 → 7) with one of its two
+  fixes passing; scene 5 stayed at 5.9 → 5.6 (continuity 4, issues 11) with one of three. The same takes watched twice
+  scored up to 0.7 apart, so one scene's change is noisy. Two of the five fixes failed while the newapi proxy answered
+  `502` to the judge and the listener: both endpoints paused and the takes stayed unverified, which a fix counts as not
+  passing (item 28).

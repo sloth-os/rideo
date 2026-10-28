@@ -28,6 +28,8 @@ export interface FlakyDav {
   reset(): void;
   /** Requests seen (including faulted ones), by method. */
   seen: Record<string, number>;
+  /** The last requests seen, as `METHOD /path` (a test may empty it). */
+  log: string[];
   close(): Promise<void>;
 }
 
@@ -36,10 +38,13 @@ export async function startFlakyDav(): Promise<FlakyDav> {
   const dav = createEmbeddedDav({ root: dir });
   const rules: Rule[] = [];
   const seen: Record<string, number> = {};
+  const log: string[] = [];
   const server: Server = createServer((req, res) => {
     const method = req.method ?? 'GET';
     seen[method] = (seen[method] ?? 0) + 1;
     const path = decodeURIComponent((req.url ?? '/').split('?')[0]!);
+    log.push(`${method} ${path}`);
+    if (log.length > 20_000) log.splice(0, log.length - 10_000);
     const rule = rules.find((r) => r.times > 0 && r.method === method && r.path.test(path));
     if (rule) {
       rule.times--;
@@ -58,6 +63,7 @@ export async function startFlakyDav(): Promise<FlakyDav> {
   return {
     url: `http://127.0.0.1:${(server.address() as AddressInfo).port}/dav`,
     seen,
+    log,
     fail(method, path, fault, times = 1) {
       rules.push({ method, path, fault, times });
     },

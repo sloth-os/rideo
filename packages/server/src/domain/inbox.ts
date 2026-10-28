@@ -1,5 +1,6 @@
-import { can, evaluateWorkflow, type Inbox, isTerminalJob, type ProjectDocs } from '@rideo/shared';
+import { can, type Inbox, isTerminalJob, type ProjectDigest } from '@rideo/shared';
 import { currentPrincipal } from '../auth/context';
+import { eachLimit } from '../util/limit';
 import { Service } from './base';
 
 const DAY_MS = 24 * 3600 * 1000;
@@ -7,6 +8,8 @@ const DAY_MS = 24 * 3600 * 1000;
 const AGENT_COMMITS = 50;
 /** How long a person's Inbox is reused (every open tab's header asks for it). */
 export const INBOX_CACHE_MS = 10_000;
+/** Project summaries read at once (docs/design/storage-webdav.md#slow-and-flaky-servers). */
+const DIGESTS_AT_ONCE = 8;
 
 /**
  * The Inbox (docs/design/pwa.md#the-inbox): across the projects the caller may read, the gates they may approve,
@@ -33,32 +36,24 @@ export class InboxService extends Service {
     const me = principal.user.id;
     const since = Date.now() - DAY_MS;
     const out: Inbox = { approvals: [], reviews: [], jobs: [], agents: [], waiting: 0 };
-    for (const projectId of await this.deps.projects.listIds()) {
-      let docs: ProjectDocs;
+    // From each project's summary, not its documents (docs/design/storage-webdav.md#slow-and-flaky-servers)
+    await eachLimit(await this.deps.projects.listIds(), DIGESTS_AT_ONCE, async (projectId) => {
+      let d: ProjectDigest;
       try {
-        docs = await this.deps.projects.docs(projectId);
+        d = await this.deps.projects.digest(projectId);
       } catch {
-        continue;
+        return;
       }
-      const role = this.deps.accounts.roleInProject(principal, docs.project);
-      if (!role) continue;
-      const project = { id: projectId, title: docs.project.title };
-      const wf = evaluateWorkflow(docs);
-      const gate = wf.stages.find((s) => s.id === wf.stage)?.gate;
-      if (gate?.satisfied && !gate.approved && can(role, 'project.approve'))
-        out.approvals.push({ project, stage: wf.stage, gate: { id: gate.id, title: gate.title } });
-      for (const r of Object.values(docs.reviews)) {
-        if (r.status !== 'open' || r.createdBy.id === me || r.decisions.some((d) => d.author.id === me))
-          continue;
+      const role = this.deps.accounts.roleInProject(principal, { id: projectId, access: d.access });
+      if (!role) return;
+      const project = { id: projectId, title: d.summary.title };
+      if (d.gate?.satisfied && !d.gate.approved && can(role, 'project.approve'))
+        out.approvals.push({ project, stage: d.summary.stage, gate: { id: d.gate.id, title: d.gate.title } });
+      for (const r of d.reviews) {
+        if (r.createdById === me || r.deciders.includes(me)) continue;
         out.reviews.push({
           project,
-          review: {
-            id: r.id,
-            title: r.title,
-            createdBy: r.createdBy.name,
-            createdAt: r.createdAt,
-            gate: r.gate,
-          },
+          review: { id: r.id, title: r.title, createdBy: r.createdBy, createdAt: r.createdAt, gate: r.gate },
         });
       }
       for (const j of this.deps.jobs.list(projectId)) {
@@ -80,16 +75,11 @@ export class InboxService extends Service {
           canCancel: running && can(role, 'project.edit'),
         });
       }
-      const log = await this.deps.projects.handle(projectId).repo.log({ limit: 100 });
-      for (const c of log) {
-        if (Date.parse(c.timestamp) < since) break;
-        if (c.author.kind === 'agent')
-          out.agents.push({
-            project,
-            commit: { id: c.id, message: c.message, at: c.timestamp, agent: c.author.name ?? c.author.id },
-          });
+      for (const c of d.agents) {
+        if (Date.parse(c.at) < since) break;
+        out.agents.push({ project, commit: c });
       }
-    }
+    });
     out.approvals.sort((a, b) => a.project.title.localeCompare(b.project.title));
     out.reviews.sort((a, b) => b.review.createdAt.localeCompare(a.review.createdAt));
     // running first, then the failures; newest first in each

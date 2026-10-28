@@ -266,6 +266,13 @@ export class Metrics {
   readonly llmPauses = this.add(
     new Counter('rideo_llm_pauses_total', 'Times a model endpoint was paused, by endpoint'),
   );
+  /** The project list and the Inbox (docs/design/storage-webdav.md#slow-and-flaky-servers). */
+  readonly projectDigests = this.add(
+    new Counter(
+      'rideo_project_digests_total',
+      'Project summaries the project list and the Inbox read, by source (file: at the tip; documents: made again)',
+    ),
+  );
   /** Maintenance of a long-running studio (docs/design/storage-webdav.md#maintenance). */
   readonly projectsWarmed = this.add(
     new Counter(

@@ -74,6 +74,16 @@ export class Layout {
     return joinPath(this.rideoDir(projectId), 'worktree.json');
   }
 
+  /** A branch's recent commit summaries (docs/design/version-control.md#caching). */
+  recentLog(projectId: string, branch: string): string {
+    return joinPath(this.rideoDir(projectId), 'logs', `${branch}.json`);
+  }
+
+  /** What the project list and the Inbox show (docs/design/storage-webdav.md#slow-and-flaky-servers). */
+  digest(projectId: string): string {
+    return joinPath(this.rideoDir(projectId), 'summary.json');
+  }
+
   jobsDir(projectId: string): string {
     return joinPath(this.rideoDir(projectId), 'jobs');
   }

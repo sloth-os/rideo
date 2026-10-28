@@ -9,6 +9,7 @@ export * from './consistency';
 export * from './continuity';
 export * from './dialogue';
 export * from './diff/json-diff';
+export * from './digest';
 export * from './directing';
 export * from './feedback';
 export * from './finishing';

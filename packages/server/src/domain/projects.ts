@@ -26,6 +26,7 @@ import {
 import { currentPrincipal } from '../auth/context';
 import { invalid } from '../errors';
 import { mimeFor } from '../media/store';
+import { eachLimit } from '../util/limit';
 import { Service } from './base';
 
 export interface ProjectState {
@@ -63,6 +64,8 @@ function mergeSettings(
 
 /** How long a deleted project stays in the trash (docs/design/storage-webdav.md#maintenance). */
 const TRASH_KEEP_MS = 7 * 24 * 3600_000;
+/** Project summaries read at once for the project list (docs/design/storage-webdav.md#slow-and-flaky-servers). */
+const DIGESTS_AT_ONCE = 8;
 
 export class ProjectService extends Service {
   private readonly syncIssues = new Map<string, { path: string; error: string }[]>();
@@ -110,6 +113,7 @@ export class ProjectService extends Service {
     };
     const h = this.deps.projects.handle(id);
     await h.repo.init({ 'project.json': project }, actor, `Create ${input.kind} project “${project.title}”`);
+    this.deps.projects.invalidateIds();
     await this.deps.storage.write(`${this.deps.layout.inbox(id)}/README.txt`, INBOX_README, {
       contentType: 'text/plain',
     });
@@ -125,37 +129,22 @@ export class ProjectService extends Service {
   }
 
   /** The projects the caller may read, with their role. */
+  /**
+   * The projects the caller may read, with their role: from each project's summary, 8 projects at a time
+   * (docs/design/storage-webdav.md#slow-and-flaky-servers).
+   */
   async list(): Promise<ProjectSummary[]> {
     const out: ProjectSummary[] = [];
     const principal = currentPrincipal() ?? this.deps.accounts.studioPrincipal();
-    for (const id of await this.deps.projects.listIds()) {
+    await eachLimit(await this.deps.projects.listIds(), DIGESTS_AT_ONCE, async (id) => {
       try {
-        const docs = await this.deps.projects.docs(id);
-        const role = this.deps.accounts.roleInProject(principal, docs.project);
-        if (!role) continue;
-        const ev = evaluateWorkflow(docs);
-        const log = await this.deps.projects.handle(id).repo.log({ limit: 1 });
-        const poster = Object.values(docs.clips)
-          .flatMap((c) => c.shots)
-          .flatMap((s) => s.takes)
-          .find((t) => t.video?.poster)?.video?.poster?.path;
-        out.push({
-          id,
-          kind: docs.project.kind,
-          title: docs.project.title,
-          stage: ev.stage,
-          createdAt: docs.project.createdAt,
-          updatedAt: log[0]?.timestamp,
-          targetDurationSec: docs.project.settings.targetDurationSec,
-          plannedDurationSec: ev.plannedDurationSec,
-          approvedDurationSec: ev.approvedDurationSec,
-          ...(poster ? { posterPath: poster } : {}),
-          role,
-        });
+        const d = await this.deps.projects.digest(id);
+        const role = this.deps.accounts.roleInProject(principal, { id, access: d.access });
+        if (role) out.push({ ...d.summary, role });
       } catch (err) {
         this.deps.log.warn({ err, projectId: id }, 'skipping unreadable project');
       }
-    }
+    });
     return out.sort((a, b) => (b.updatedAt ?? b.createdAt).localeCompare(a.updatedAt ?? a.createdAt));
   }
 

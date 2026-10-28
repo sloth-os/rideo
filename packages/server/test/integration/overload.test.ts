@@ -86,6 +86,42 @@ describe('a busy storage server', () => {
   });
 });
 
+describe('the project list and the Inbox (docs/design/storage-webdav.md#slow-and-flaky-servers)', () => {
+  it('reads each project’s summary after a restart, not its documents', async () => {
+    const p = await stack.api<{ id: string }>('POST', '/projects', {
+      kind: 'story',
+      title: 'Listed',
+      brief: { prompt: 'a keeper of letters' },
+    });
+    // Every project's summary is made once, then follows its commits and is written behind them
+    await stack.api('GET', '/projects');
+    await stack.api('PATCH', `/projects/${p.id}`, { title: 'Listed again' });
+    expect(
+      (await stack.api<{ id: string; title: string }[]>('GET', '/projects')).find((x) => x.id === p.id)
+        ?.title,
+    ).toBe('Listed again');
+    await expect
+      .poll(
+        async () => {
+          const res = await fetch(`${dav.url}/studio/projects/${p.id}/.rideo/summary.json`);
+          return res.ok ? ((await res.json()) as { summary: { title: string } }).summary.title : null;
+        },
+        { timeout: 15_000, interval: 250 },
+      )
+      .toBe('Listed again');
+    await quiet();
+    await stack.restart();
+    // (the restart warms the recently used projects in the background: let it finish)
+    await quiet();
+    dav.log.length = 0;
+    const listed = await stack.api<{ id: string; title: string }[]>('GET', '/projects');
+    expect(listed.find((x) => x.id === p.id)?.title).toBe('Listed again');
+    await stack.api('GET', '/inbox');
+    expect(dav.log.filter((l) => l.includes('/.rideo/objects/'))).toEqual([]);
+    expect(await metric('rideo_project_digests_total', 'source="file"')).toBeGreaterThanOrEqual(1);
+  });
+});
+
 describe('a server that cannot move a folder to another folder', () => {
   it('deletes a project by renaming its folder where it is', async () => {
     const p = await stack.api<{ id: string }>('POST', '/projects', {
