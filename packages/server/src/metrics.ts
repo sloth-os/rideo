@@ -156,6 +156,12 @@ export class Metrics {
       'Temporal and physics checks of video attempts, by check and result',
     ),
   );
+  readonly sequenceSegments = this.add(
+    new Counter(
+      'rideo_sequence_segments_total',
+      'Segments of multi-shot renders kept as takes, by outcome of their checks (passed, failed)',
+    ),
+  );
   readonly feedback = this.add(new Counter('rideo_feedback_total', 'Feedback runs by outcome'));
   readonly feedbackScore = this.add(
     new Histogram(

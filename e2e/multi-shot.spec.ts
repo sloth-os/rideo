@@ -11,12 +11,15 @@ test('consecutive shots render in one request and come back as takes of their ow
   // Three 10 s shots (planned on the 10 s model); the multi-shot model renders the first two together.
   const pid = await api.storyProject(`Multi-shot (${testInfo.project.name})`, {
     screenplay: true,
-    // sequences are judged for identity only, so this project runs without the quality checks
+    // voiced and checked: the sequence carries its sound and each segment is checked like a single take
+    // (docs/design/multi-shot.md#splitting-and-verification)
     settings: {
       storyboard: { enabled: false },
       targetDurationSec: 60,
       pilotDurationSec: 30,
-      consistency: { qualityChecks: false },
+      consistency: { qualityChecks: true },
+      generation: { includeAudio: true },
+      dialogue: { mode: 'off' },
     },
   });
   await api.readyForStoryboard(pid);
@@ -54,5 +57,8 @@ test('consecutive shots render in one request and come back as takes of their ow
   await expect(rows.nth(2).locator('[data-entity^="take:"]')).toHaveCount(1);
   await expect(rows.nth(2).getByTestId('take-multishot')).toHaveCount(0);
   const jobs = await api.call<any[]>('GET', `/projects/${pid}/jobs`);
-  expect(jobs.filter((j) => j.kind === 'shot.group')).toHaveLength(1);
+  const groups = jobs.filter((j) => j.kind === 'shot.group');
+  expect(groups).toHaveLength(1);
+  // rendered once, every segment passing its checks
+  expect(groups[0].result).toMatchObject({ shots: 2, passed: 2, remade: 0 });
 });

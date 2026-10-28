@@ -5,7 +5,8 @@ import { expectSucceeded, readyStoryProject, type Stack, startStack } from '../h
 /** Multi-shot generation (docs/design/multi-shot.md) with the mock's multi-shot model. */
 let stack: Stack;
 beforeAll(async () => {
-  stack = await startStack();
+  // With an audio-visual model, so a voiced segment's lines are heard (the sound check)
+  stack = await startStack({ env: { RIDEO_OMNI_MODEL: 'mock-omni' } });
 }, 60_000);
 afterAll(async () => stack?.stop());
 
@@ -23,7 +24,7 @@ async function threeShotClip(settings: Record<string, unknown> = {}) {
     storyboard: { enabled: false },
     targetDurationSec: 60,
     pilotDurationSec: 30,
-    // sequences are judged for identity only (docs/design/multi-shot.md#when)
+    // identity only, unless a test asks for the quality checks
     consistency: { qualityChecks: false },
     ...settings,
   });
@@ -44,18 +45,49 @@ async function generate(pid: string, clipId: string) {
 }
 
 describe('multi-shot generation', () => {
-  it('generates shot by shot when the takes run the quality checks or carry the model’s voices', async () => {
-    for (const settings of [
-      { consistency: { qualityChecks: true } },
-      { generation: { includeAudio: true }, dialogue: { mode: 'off' } },
-    ]) {
-      const { pid, clip } = await threeShotClip(settings);
-      await generate(pid, clip.id);
-      const jobs = await jobsOf(pid);
-      expect(jobs.filter((j) => j.kind === 'shot.group')).toEqual([]);
-      expect(jobs.filter((j) => j.kind === 'shot.generate')).toHaveLength(3);
-    }
-  });
+  it('renders a voiced, checked sequence with its sound, checks each segment like a single take and remakes a failing shot alone', async () => {
+    const { pid, clip, shots } = await threeShotClip({
+      consistency: { qualityChecks: true },
+      generation: { includeAudio: true },
+      dialogue: { mode: 'off' },
+    });
+    expect(shots[0]!.dialogue.length && shots[1]!.dialogue.length).toBeTruthy();
+    // The model does not voice the first shot's line once: that segment fails its sound check
+    stack.gw.muffleSpeech(1);
+    await generate(pid, clip.id);
+    const jobs = await jobsOf(pid);
+    const groups = jobs.filter((j) => j.kind === 'shot.group');
+    expect(groups.map((j) => j.params.shotIds)).toEqual([[shots[0]!.id, shots[1]!.id]]);
+    // rendered once, with sound, each line in its own shot
+    expect(groups[0]!.result).toMatchObject({ shots: 2, passed: 1, remade: 1 });
+    const singles = jobs.filter((j) => j.kind === 'shot.generate');
+    expect(singles.map((j) => j.params.shotId).sort()).toEqual([shots[0]!.id, shots[2]!.id].sort());
+    expect(singles.find((j) => j.params.shotId === shots[0]!.id)!.params.selectIfPasses).toBe(true);
+
+    const done = await clipNow(pid, clip.id);
+    const [first, second] = [...done.shots].sort((x, y) => x.index - y.index);
+    const segment = first!.takes.find((t) => t.request.multiShot)!;
+    const request = requestOf(segment.gatewayTaskIds.at(-1)!);
+    expect(request.parameters.include_audio).toBe(true);
+    for (const s of [first!, second!])
+      expect(request.input[0].text).toContain(`"${s.dialogue[0]!.line.replace(/[.!?]+$/, '')}`);
+    // the muffled segment failed its sound check and stays as evidence; the remake alone passed and is selected
+    expect(segment.consistency.quality).toMatchObject({ passed: false, sound: { lines: [{ heard: 0 }] } });
+    // split half a frame before the detected cut: no frame of the next shot at its end
+    expect(segment.consistency.quality?.temporal).toMatchObject({ jumps: [] });
+    const remade = first!.takes.find((t) => t.id === first!.selectedTakeId)!;
+    expect(remade.request.multiShot).toBeNull();
+    expect(remade.consistency.quality).toMatchObject({ passed: true, sound: { lines: [{ heard: 1 }] } });
+    // the other segment kept its sound and passed every check
+    const kept = second!.takes.find((t) => t.id === second!.selectedTakeId)!;
+    expect(kept.request.multiShot).toEqual({ index: 1, of: 2, cut: 'detected' });
+    expect(kept.video!.hasAudio).toBe(true);
+    expect(kept.consistency.quality).toMatchObject({ passed: true, sound: { lines: [{ heard: 1 }] } });
+    expect(kept.consistency.quality?.temporal).toMatchObject({ jumps: [] });
+    const metrics = await (await fetch(`${stack.url}/metrics`)).text();
+    expect(metrics).toMatch(/rideo_sequence_segments_total\{outcome="passed"\} 1/);
+    expect(metrics).toMatch(/rideo_sequence_segments_total\{outcome="failed"\} 1/);
+  }, 300_000);
 
   it('renders consecutive shots in one request, splits at the detected cut and verifies every shot', async () => {
     const { pid, clip, shots } = await threeShotClip();

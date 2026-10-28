@@ -180,15 +180,10 @@ export async function clipGenerate(deps: HandlerDeps, ctx: JobContext) {
   const settings = docs.project.settings;
   const limits = (await deps.gateway.limitsFor('video', settings.models.video)).limits;
   const maxShots = limits?.max_shots ?? 0;
-  // A sequence is rendered silent and judged for identity only: takes that carry the model's voices or run the
-  // quality checks are generated shot by shot (docs/design/multi-shot.md#when)
-  const voiced = dialogueMode(settings) === 'off' && settings.generation.includeAudio === true;
-  const sequencesServe = !voiced && !settings.consistency.qualityChecks;
+  // A sequence carries the takes' own voices and each of its segments is checked like a single take
+  // (docs/design/multi-shot.md#splitting-and-verification); native dialogue is conditioned shot by shot
   const units =
-    maxShots >= 2 &&
-    settings.generation.multiShot !== 'off' &&
-    dialogueMode(settings) !== 'native' &&
-    sequencesServe
+    maxShots >= 2 && settings.generation.multiShot !== 'off' && dialogueMode(settings) !== 'native'
       ? planShotGroups(todo, {
           maxShots,
           maxDurationSec: limits?.max_duration_seconds ?? 10,

@@ -330,7 +330,8 @@ describe('continuity-aware generation (prompt version 2)', () => {
     expect(video.parameters.enhance_prompt).toBe(false);
     expect(video.input[0].text).toMatch(/^One continuous shot, no cuts\. /);
     expect(video.input[0].text).toContain('No BGM');
-    // Voiced takes with quality checks are generated shot by shot, not as a sequence
+    // Shots longer than 5 s are generated one by one: Wan 3.0's sequences hold shots of 2-5 s
+    // (docs/design/multi-shot.md#when)
     const jobs = await stack.api<Job[]>('GET', `/projects/${pid}/jobs`);
     expect(jobs.filter((j) => j.kind === 'shot.group')).toEqual([]);
   });

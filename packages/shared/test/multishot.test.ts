@@ -93,4 +93,48 @@ describe('the request (docs/design/multi-shot.md#request)', () => {
     expect(req.parameters).toMatchObject({ duration_seconds: 9, include_audio: false });
     expect(req.model).toBe('multi');
   });
+
+  it('renders a voiced sequence with its sound: each line in its own shot, in its speaker’s voice', () => {
+    const settings = ProjectSettingsSchema.parse({
+      generation: { promptVersion: 2, includeAudio: true },
+      dialogue: { mode: 'off' },
+    });
+    const rosie = f.character({ name: 'Rosie' });
+    const sammy = f.character({ name: 'Sammy' });
+    const a = f.shot({
+      description: 'Rosie raises a paw',
+      durationSec: 3,
+      characterIds: [rosie.id, sammy.id],
+      dialogue: [{ characterId: rosie.id, line: 'Slow down. Breathe.' }],
+    });
+    const b = f.shot({
+      description: 'Sammy coughs, then swims on',
+      durationSec: 4,
+      characterIds: [sammy.id],
+      dialogue: [{ characterId: sammy.id, line: 'I can keep going.' }],
+    });
+    const req = compileMultiShotRequest(
+      [a, b].map((shot) => ({
+        shot,
+        characters: [rosie, sammy].filter((c) => shot.characterIds.includes(c.id)),
+        elements: [],
+        screenplay: null,
+        settings,
+      })),
+      { firstFrameUri: 'data:kf', referenceUris: [], attempt: 0, includeAudio: true },
+    );
+    const text = (req.input[0] as { text: string }).text;
+    expect(req.parameters).toMatchObject({ duration_seconds: 7, include_audio: true });
+    const first = text.indexOf('Shot 1 [0-3s]:');
+    const second = text.indexOf('Shot 2 [3-7s]:');
+    expect(first).toBeGreaterThanOrEqual(0);
+    expect(second).toBeGreaterThan(first);
+    // each line inside its own shot, said in its speaker's voice
+    const rosieSays = text.search(/Rosie says, in [^:]+ voice: "Slow down\. Breathe" Lip sync\./);
+    const sammySays = text.search(/Sammy says, in [^:]+ voice: "I can keep going" Lip sync\./);
+    expect(rosieSays).toBeGreaterThan(first);
+    expect(rosieSays).toBeLessThan(second);
+    expect(sammySays).toBeGreaterThan(second);
+    expect(text).toContain('No BGM');
+  });
 });

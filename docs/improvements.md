@@ -398,6 +398,25 @@ job would not have helped, since mm-gateway answers a reused idempotency key wit
 a task refused for its output is asked for again as a new task with another seed, up to two more times, then fails as
 `output_refused` ([a refused output](design/ai-gateway.md#sdk-usage)).
 
+**50. Voiced scenes rendered as sequences** (M, done) — continuity stays at 4 (see *What is left* below) because every shot is
+a generation of its own: the ball, the board and the light are drawn again at each cut. Wan 3.0 renders up to 8 shots
+of 2–5 s in one request ([multi-shot](design/multi-shot.md)), but Rideo renders sequences only for silent takes
+without quality checks, so a voiced, checked film such as the swimming one never uses them. Eight of its ten scenes
+are runs of 4–8 such shots (two characters, every shot at most 5 s). *Measured:* one voiced Wan 3.0 sequence of scene
+7's shots 2–6 (17 s, 5 lines; the prompt compiled by `compileMultiShotRequest` with sound on, from shot 2's verified
+keyframe; $4.76, rendered in 195 s): 4 hard cuts detected at 3.3, 8.1, 10.5 and 14.2 s (planned 3, 7, 10, 14); the
+pandas' outfits, the light, the beach, the ball and the board the same in every shot; and the omni model heard all 5
+lines word for word, each inside its own shot, in the right voice (Rosie female, Sammy male), said by the character
+on screen (lip sync 0.9), with no music. *How:* render voiced, quality-checked runs as sequences: the request with
+sound, each segment cut with its sound and checked like a single take (identity, physics and the cast from the judge,
+its own jumps, its lines heard), and a shot whose segment fails made again alone. *Done:* voiced, checked runs render as sequences
+([splitting and verification](design/multi-shot.md#splitting-and-verification)): the request carries the takes' sound,
+each segment keeps its part of it and is checked like a single take, a render whose segments all pass is used whole,
+and a voiced or checked group is rendered once, its failing shots made again alone (a new take replaces the segment
+only when it passes). On the way, the split at the detected cuts was found to end a take on one frame of the next
+shot: a cut's time is its new shot's first frame rounded to the millisecond, so segments now end half a frame
+earlier.
+
 ### Run figures
 
 - **Time:** brief to first export in 6 hours, 99 minutes of which the batch was held while items 44–46 were made

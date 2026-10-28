@@ -1,29 +1,38 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
+  absentCast,
   analysisCommand,
+  attemptDone,
+  betterAttempt,
   boardState,
   type Clip,
   type ConsistencyReport,
   compileMultiShotRequest,
   docPath,
+  type Job,
   multiShotBoundaries,
   orderedShotCharacters,
   orderedShotElements,
   parseAnalysisLog,
+  promptVersionOf,
   type Shot,
   type ShotContext,
   shotContextOf,
+  temporalVerdict,
 } from '@rideo/shared';
 import { verifyFrames } from '../../consistency/gate';
+import { checkSound, silentTakeVerdict, spokenLines, withSoundVerdict } from '../../consistency/sound';
 import { assertCastReady, assertVoicesReady, clipStatusOf } from '../../domain/clips';
 import { invalid, notFound } from '../../errors';
 import { sampleFrames } from '../../media/frames';
+import { sceneChanges } from '../../media/temporal';
 import { throwIfAborted } from '../../util/abort';
 import type { JobContext } from '../queue';
 import { commitAs, docsFor, gatewayOptions, type HandlerDeps } from './common';
 import { speakLines, takeAudio } from './dialogue';
 import { generateKeyframe, prepareShotReferences } from './keyframe';
+import { sceneReferenceOf } from './shot';
 import { commitTake, finishTake } from './take-finish';
 
 interface Segment {
@@ -50,7 +59,8 @@ async function detectCuts(deps: HandlerDeps, local: string, durationSec: number,
 
 /**
  * `shot.group` (docs/design/multi-shot.md): consecutive shots rendered by a multi-shot model in one request, split
- * at the cuts, each segment judged against its own shot (R4) and finished as that shot's take.
+ * at the cuts, each segment checked like a single take of its own shot (R4, the quality checks, its lines heard) and
+ * finished as that shot's take. A voiced or checked group is rendered once and its failing shots are made again alone.
  */
 export async function shotGroup(deps: HandlerDeps, ctx: JobContext) {
   const { clipId, shotIds } = ctx.job.params as { clipId: string; shotIds: string[] };
@@ -72,6 +82,14 @@ export async function shotGroup(deps: HandlerDeps, ctx: JobContext) {
   const judge = settings.consistency.judge === 'off' ? deps.offJudge : deps.judge;
   const { threshold, maxAttempts } = settings.consistency;
   const ctxs: ShotContext[] = shots.map((shot) => shotContextOf(shot, docs, clip));
+  // The sequence carries the model's own voices like a single take (docs/design/multi-shot.md#request)
+  const voiced = (settings.dialogue?.mode ?? 'off') === 'off' && settings.generation.includeAudio === true;
+  const qualityChecks = settings.consistency.qualityChecks === true;
+  const listen = qualityChecks && !!deps.llm.omni && voiced;
+  // A voiced or checked sequence is rendered once; its failing shots are made again alone
+  const renders = voiced || qualityChecks ? 1 : maxAttempts;
+  const castOnly = settings.consistency.castOnly === true;
+  const place = docs.screenplay?.scenes.find((s) => s.id === clip.sceneId)?.location ?? '';
   const label = (s: Shot) => `c${clip.index + 1}-s${s.index + 1}`;
   await markShots(deps, ctx, clipId, shotIds, 'generating', null);
   try {
@@ -150,39 +168,50 @@ export async function shotGroup(deps: HandlerDeps, ctx: JobContext) {
       }
       const firstFrameUri = keyframe ? await deps.media.pngDataUri(projectId, keyframe, 1920) : undefined;
       const planned = shots.map((s) => s.durationSec);
+      // Each segment's place and light are judged against the scene's first shot, as a single take's are
+      const sceneReferences = await Promise.all(
+        shots.map(async (shot) => {
+          const media =
+            qualityChecks && promptVersionOf(settings) >= 2 ? sceneReferenceOf(clip, shot, docs) : null;
+          return media ? deps.media.pngBuffer(projectId, media, 512) : undefined;
+        }),
+      );
       // A render whose every shot passes is used whole (continuity across its cuts); otherwise every shot keeps
       // its best segment over the attempts.
       const best: (Segment | null)[] = shots.map(() => null);
       let chosen: Segment[] | null = null;
-      for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      for (let attempt = 0; attempt < renders; attempt++) {
         throwIfAborted(ctx.signal);
-        ctx.progress(
-          0.3 + (0.5 * attempt) / maxAttempts,
-          1,
-          `sequence attempt ${attempt + 1}/${maxAttempts}`,
-        );
+        ctx.progress(0.3 + (0.5 * attempt) / renders, 1, `sequence attempt ${attempt + 1}/${renders}`);
         const req = compileMultiShotRequest(ctxs, {
           firstFrameUri,
           referenceUris: refs.referenceUris,
           attempt,
           model: settings.models.video,
           limits: videoLimits.limits,
+          includeAudio: voiced,
         });
         const task = await deps.gateway.generateVideo(req, gatewayOptions(ctx, 'video', 'sequence', attempt));
         taskIds.push(task.id);
         const raw = join(dir, `sequence-${attempt}.mp4`);
         await deps.media.downloadTo(task.outputs![0]!.uri, raw, ctx.signal);
-        const total = (await deps.ff.probe(raw)).durationSec || planned.reduce((n, d) => n + d, 0);
+        const rawProbe = await deps.ff.probe(raw);
+        const total = rawProbe.durationSec || planned.reduce((n, d) => n + d, 0);
+        // Each segment keeps its part of the sound
+        const sound = voiced && rawProbe.hasAudio;
         const { boundaries, cut } = multiShotBoundaries(
           await detectCuts(deps, raw, total, ctx.signal),
           planned,
           total,
         );
+        // A cut's time is its new shot's first frame, rounded to the millisecond (10.042 for 10.0417): a segment
+        // ends, and the next begins, half a frame earlier, so neither holds a frame of the other shot
+        const half = 0.5 / (rawProbe.fps || 30);
         const segments: Segment[] = [];
         for (const [k, shot] of shots.entries()) {
           const local = join(dir, `seq-${attempt}-shot-${k}.mp4`);
-          const from = boundaries[k]!;
-          const to = boundaries[k + 1]!;
+          const from = k > 0 ? Math.max(0, boundaries[k]! - half) : 0;
+          const to = k < shots.length - 1 ? boundaries[k + 1]! - half : boundaries[k + 1]!;
           await deps.ff.run(
             [
               '-ss',
@@ -191,7 +220,7 @@ export async function shotGroup(deps: HandlerDeps, ctx: JobContext) {
               raw,
               '-t',
               (to - from).toFixed(3),
-              '-an',
+              ...(sound ? ['-c:a', 'aac', '-b:a', '192k'] : ['-an']),
               '-c:v',
               'libx264',
               '-preset',
@@ -204,12 +233,35 @@ export async function shotGroup(deps: HandlerDeps, ctx: JobContext) {
             ],
             { signal: ctx.signal },
           );
+          const shotCtx = ctxs[k]!;
+          // Checked like a single take (docs/design/continuity.md#quality-checks-in-the-gate): its own jumps, and its
+          // lines heard while the judge looks at its frames
+          const temporal = qualityChecks
+            ? temporalVerdict(await sceneChanges(deps.ff, local, { signal: ctx.signal }))
+            : null;
+          const heard =
+            listen && sound
+              ? checkSound({
+                  llm: deps.llm,
+                  ff: deps.ff,
+                  video: local,
+                  clip: join(dir, `seq-${attempt}-sound-${k}.mp4`),
+                  shot,
+                  characters: docs.characters,
+                  place,
+                  voiced,
+                  musicAllowed: settings.generation.modelMusic === true,
+                  rejectMusic: settings.consistency.rejectMusic === true,
+                  metrics: deps.metrics,
+                  log: ctx.log,
+                  signal: ctx.signal,
+                }).catch(() => null)
+              : null;
           const frames = await sampleFrames(deps.ff, local, to - from, dir, `seq-${attempt}-${k}`, {
             maxWidth: 512,
             signal: ctx.signal,
           });
-          const shotCtx = ctxs[k]!;
-          const report = await verifyFrames({
+          let report = await verifyFrames({
             judge,
             shot,
             characters: shotCtx.characters,
@@ -223,7 +275,21 @@ export async function shotGroup(deps: HandlerDeps, ctx: JobContext) {
             metrics: deps.metrics,
             log: ctx.log,
             signal: ctx.signal,
+            ...(qualityChecks
+              ? {
+                  quality: {
+                    threshold: settings.consistency.qualityThreshold,
+                    sceneReference: sceneReferences[k],
+                    temporal,
+                    absent: absentCast(shotCtx.offscreen, docs.characters),
+                    castOnly,
+                  },
+                }
+              : {}),
           });
+          if (heard) report = withSoundVerdict(report, await heard);
+          else if (listen && !sound && spokenLines(shot, docs.characters).length)
+            report = withSoundVerdict(report, silentTakeVerdict(spokenLines(shot, docs.characters)));
           const text = req.input[0]?.type === 'text' ? (req.input[0] as { text: string }).text : '';
           const segment: Segment = {
             local,
@@ -236,20 +302,17 @@ export async function shotGroup(deps: HandlerDeps, ctx: JobContext) {
             cut,
           };
           segments.push(segment);
-          const prev = best[k];
-          const failed = (r: ConsistencyReport) => r.status === 'failed';
-          if (
-            !prev ||
-            (failed(prev.report) && !failed(report)) ||
-            (failed(prev.report) === failed(report) && report.score > prev.report.score)
-          )
-            best[k] = segment;
+          // Identity first, then the quality checks, then the score, as for a single take
+          if (betterAttempt(report, best[k]?.report ?? null)) best[k] = segment;
         }
-        if (segments.every((s) => s.report.status !== 'failed')) {
+        if (segments.every((s) => attemptDone(s.report))) {
           chosen = segments;
           break;
         }
-        ctx.log.info({ attempt }, 'a shot of the multi-shot render failed the consistency gate');
+        ctx.log.info(
+          { attempt, failed: segments.flatMap((s, k) => (attemptDone(s.report) ? [] : [k])) },
+          'a shot of the multi-shot render failed its checks',
+        );
       }
       const final = chosen ?? best.map((s) => s!);
       const startSource =
@@ -326,10 +389,28 @@ export async function shotGroup(deps: HandlerDeps, ctx: JobContext) {
             : null,
           variation: 0,
         });
-        if (seg.report.status !== 'failed') passed++;
+        if (attemptDone(seg.report)) passed++;
+        deps.metrics.sequenceSegments.inc({ outcome: attemptDone(seg.report) ? 'passed' : 'failed' });
+      }
+      // A shot whose segment failed is made again alone; its new take replaces the segment only when it passes
+      // (docs/design/multi-shot.md#splitting-and-verification)
+      const remake =
+        renders === 1 && maxAttempts > 1 ? shots.filter((_, k) => !attemptDone(final[k]!.report)) : [];
+      if (remake.length) {
+        ctx.progress(0.95, 1, `${passed}/${shots.length} shots passed; ${remake.length} made again alone`);
+        const jobs: Job[] = [];
+        for (const shot of remake)
+          jobs.push(
+            await ctx.spawn(
+              'shot.generate',
+              { clipId, shotId: shot.id, selectIfPasses: true },
+              { dedupeKey: `shot:${shot.id}` },
+            ),
+          );
+        await ctx.waitFor(jobs.map((j) => j.id));
       }
       ctx.progress(1, 1, `${passed}/${shots.length} shots passed`);
-      return { shots: shots.length, passed, tasks: taskIds.length };
+      return { shots: shots.length, passed, remade: remake.length, tasks: taskIds.length };
     });
   } catch (err) {
     await markShots(

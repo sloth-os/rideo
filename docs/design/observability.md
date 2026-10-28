@@ -85,6 +85,7 @@ cost), as does a take replaced by a regeneration: the cost of quality, which the
 | `rideo_consistency_checks_total` | counter | `result` | identity gate outcomes |
 | `rideo_consistency_score` | histogram | – | judge scores of video attempts |
 | `rideo_quality_checks_total` | counter | `check` (`temporal`, `physics`, `sound`), `result` | [quality checks](continuity.md#quality-checks-in-the-gate) |
+| `rideo_sequence_segments_total` | counter | `outcome` (`passed`, `failed`) | [multi-shot](multi-shot.md#splitting-and-verification) |
 | `rideo_feedback_total` | counter | `outcome` | [feedback](feedback.md) runs |
 | `rideo_feedback_score` | histogram | `dimension` | film scores 0–10 |
 | `rideo_feedback_recommendations_total` | counter | `action`, `outcome` | applied and dismissed recommendations |

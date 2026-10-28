@@ -260,7 +260,8 @@ async function videoDuration(path: string): Promise<number> {
 
 /**
  * The mock multi-shot model: each `Shot k (D s)` of the prompt becomes a segment of D seconds (the first from the
- * first frame), with its own texture and the identity signatures of the references, joined by hard cuts.
+ * first frame), with its own texture and the identity signatures of the references, joined by hard cuts; with sound
+ * when asked (`include_audio`).
  */
 async function multiShot(
   parts: Part[],
@@ -277,6 +278,8 @@ async function multiShot(
   );
   const first = parts.find((p) => p.type === 'image' && p.role === 'first_frame');
   const sigs = ctx.flaky ? [] : await signaturesFromImages(parts);
+  // A drifting generation also loses the voices, as a single take does
+  const sound = !!params.include_audio && !ctx.flaky;
   const files: string[] = [];
   for (const [k, d] of durations.entries()) {
     const seg = `${name}-seg${k}`;
@@ -293,6 +296,7 @@ async function multiShot(
       width,
       height,
       durationSec: d,
+      includeAudio: sound,
       ...(k === 0 && first?.uri && !ctx.flaky ? { firstFrame: await loadUri(first.uri) } : { frame }),
     });
     files.push(join(ctx.dir, `${seg}.mp4`));
@@ -314,6 +318,7 @@ async function multiShot(
     '20',
     '-pix_fmt',
     'yuv420p',
+    ...(sound ? ['-c:a', 'aac'] : []),
     '-movflags',
     '+faststart',
     join(ctx.dir, `${name}.mp4`),

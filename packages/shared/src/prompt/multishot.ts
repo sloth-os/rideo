@@ -138,6 +138,8 @@ export function compileMultiShotRequest(
     attempt: number;
     model?: string;
     limits?: ModelLimits | null;
+    /** The takes carry the model's own voices: the sequence is rendered with its sound (docs/design/multi-shot.md#request). */
+    includeAudio?: boolean;
   },
 ): GatewayVideoRequest {
   const first = ctxs[0]!;
@@ -201,7 +203,7 @@ export function compileMultiShotRequest(
       ...(opts.limits?.supports_negative_prompt === false
         ? {}
         : { negative_prompt: v2 ? negativePromptFor(first).replace(/,\s*jump cut/, '') : BASE_NEGATIVE }),
-      include_audio: false,
+      include_audio: opts.includeAudio === true,
       camera_motion: 'auto',
       ...enhancePromptParam(first.settings),
     },
