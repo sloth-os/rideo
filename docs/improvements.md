@@ -369,6 +369,12 @@ double exposures", both shots just regenerated without ghosts. Its strips sample
 0.5 s crossfade into the next scene, where the cut blends two shots. A strip now samples each shot's clean part,
 without its own transition or the next one's ([how a film is watched](design/feedback.md#how-a-film-is-watched)).
 
+**49. A provider that refuses its own output** (S, done) — on the real-model CI run of October 28 Volcengine refused
+a cartoon panda's reference sheet (`400 OutputImageSensitiveContentDetected`) and the job failed at once; retrying the
+job would not have helped, since mm-gateway answers a reused idempotency key with the failed task it stored. *Done:*
+a task refused for its output is asked for again as a new task with another seed, up to two more times, then fails as
+`output_refused` ([a refused output](design/ai-gateway.md#sdk-usage)).
+
 ### Run figures
 
 - **Time:** brief to first export in 6 hours, 99 minutes of which the batch was held while items 44–46 were made

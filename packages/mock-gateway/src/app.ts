@@ -65,6 +65,8 @@ export interface MockGatewayApp {
     overloaded: number;
     /** Task creates turned away with `429` (busyCreates). */
     busy: number;
+    /** Image and video tasks failed as a provider's moderation refusing its output (refuseOutputs). */
+    refused: number;
     proxyCalls: Record<string, number>;
     /** The account and gateway key of the last call to each registered proxy. */
     proxyAccounts: Record<string, { account: string; key: string; headers: Record<string, string> }>;
@@ -77,6 +79,8 @@ export interface MockGatewayApp {
   busyCreates(times: number): void;
   /** The next `times` video generations jump inside the shot (a flash cut), like MOCK_JUMP_EVERY. */
   jumpVideos(times: number): void;
+  /** The next `times` image or video tasks fail as a provider's moderation refusing what it generated. */
+  refuseOutputs(times: number): void;
   /** The next `times` sound checks hear no speech, as when the video model does not voice its lines. */
   muffleSpeech(times: number): void;
   close(): Promise<void>;
@@ -93,12 +97,14 @@ export async function buildMockGateway(opts: MockGatewayOptions = {}): Promise<M
     videos: 0,
     overloaded: 0,
     busy: 0,
+    refused: 0,
     proxyCalls: {},
     proxyAccounts: {},
   };
   let overloads = 0;
   let busyLeft = 0;
   let jumpsLeft = 0;
+  let refusalsLeft = 0;
   let mufflesLeft = 0;
   const management = new MockManagement({ apiKey: opts.apiKey, managementKey: opts.managementKey });
   const keyOf = new WeakMap<FastifyRequest, MockKey>();
@@ -285,6 +291,13 @@ export async function buildMockGateway(opts: MockGatewayOptions = {}): Promise<M
       }
       if (jump) counters.jumps++;
       const failCode = typeof body.metadata?.mock_fail === 'string' ? body.metadata.mock_fail : null;
+      // A provider's moderation refusing what it generated (docs/design/ai-gateway.md#mock-gateway)
+      let refused = false;
+      if (!replay && route.modality !== 'music' && refusalsLeft > 0) {
+        refusalsLeft--;
+        counters.refused++;
+        refused = true;
+      }
       const base = baseUrl(req);
       const task =
         replay ??
@@ -299,6 +312,13 @@ export async function buildMockGateway(opts: MockGatewayOptions = {}): Promise<M
             if (failCode) {
               const { TaskError } = await import('./tasks');
               throw new TaskError(failCode, `mock failure: ${failCode}`);
+            }
+            if (refused) {
+              const { TaskError } = await import('./tasks');
+              throw new TaskError(
+                'provider_error',
+                `mock ${route.modality} failed: Error code: 400 - {'error': {'message': 'The request failed because the output ${route.modality} may contain sensitive information.', 'code': 'Output${route.modality === 'image' ? 'Image' : 'Video'}SensitiveContentDetected'}}`,
+              );
             }
             return route.run(body, { dir, fileUrl: (name) => `${base}/files/${name}`, flaky, jump });
           },
@@ -481,6 +501,9 @@ export async function buildMockGateway(opts: MockGatewayOptions = {}): Promise<M
     },
     jumpVideos(times) {
       jumpsLeft = times;
+    },
+    refuseOutputs(times) {
+      refusalsLeft = times;
     },
     muffleSpeech(times) {
       mufflesLeft = times;

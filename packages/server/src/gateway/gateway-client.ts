@@ -51,6 +51,24 @@ export class GatewayHttpError extends Error {
   }
 }
 
+/**
+ * A provider's moderation refused what it generated, not what it was asked (docs/design/ai-gateway.md#sdk-usage):
+ * another task, with another seed, usually passes.
+ */
+export const OUTPUT_REFUSAL =
+  /Output(Image|Video|Audio)SensitiveContent|output (image|video|audio|data)s? may contain (sensitive|inappropriate)/i;
+/** New tasks asked for after an output refusal before it fails as `output_refused`. */
+const REFUSAL_RETRIES = 2;
+
+/** The request asked again after its `n`th refusal: another seed when it pins one. */
+export function reseeded<R extends object>(req: R, n: number): R {
+  const params = (req as { parameters?: Record<string, unknown> }).parameters;
+  const seed = params?.seed;
+  return typeof seed === 'number'
+    ? ({ ...req, parameters: { ...params, seed: (seed + 7919 * n) % 2_147_483_647 } } as R)
+    : req;
+}
+
 /** The first wait for a busy provider (docs/design/ai-gateway.md#sdk-usage); it doubles up to the longest. */
 const BUSY_FIRST_WAIT_MS = 15_000;
 const BUSY_LONGEST_WAIT_MS = 60_000;
@@ -213,15 +231,50 @@ export class GatewayClient {
   }
 
   generateImage(req: GatewayImageRequest, opts: GenerateOptions): Promise<GatewayTask> {
-    return this.run('image', req, opts);
+    return this.runAgainWhenRefused('image', req, opts);
   }
 
   generateVideo(req: GatewayVideoRequest, opts: GenerateOptions): Promise<GatewayTask> {
-    return this.run('video', req, opts);
+    return this.runAgainWhenRefused('video', req, opts);
   }
 
   generateMusic(req: GatewayMusicRequest, opts: GenerateOptions): Promise<GatewayTask> {
-    return this.run('music', req, opts);
+    return this.runAgainWhenRefused('music', req, opts);
+  }
+
+  /**
+   * A task refused for its output is asked for again as a new task (a key of its own: mm-gateway answers a reused key
+   * with the stored task) and another seed, up to `REFUSAL_RETRIES` times (docs/design/ai-gateway.md#sdk-usage).
+   */
+  private async runAgainWhenRefused<M extends Modality>(
+    modality: M,
+    req: WireRequest[M],
+    opts: GenerateOptions,
+  ): Promise<GatewayTask> {
+    for (let n = 0; ; n++) {
+      try {
+        return n === 0
+          ? await this.run(modality, req, opts)
+          : await this.run(modality, reseeded(req, n), {
+              ...opts,
+              idempotencyKey: `${opts.idempotencyKey}:refused${n}`,
+            });
+      } catch (err) {
+        if (!(err instanceof GatewayTaskError) || !OUTPUT_REFUSAL.test(err.message) || opts.signal?.aborted)
+          throw err;
+        this.cfg.metrics?.gatewayTasks.inc({ modality, status: 'refused' });
+        if (n >= REFUSAL_RETRIES)
+          throw new GatewayTaskError(
+            'output_refused',
+            `the provider refused the ${modality} it generated ${n + 1} times: ${err.message}`,
+            err.task,
+          );
+        this.cfg.log?.warn(
+          { modality, taskId: err.task?.id, tries: n + 1, err: err.message.slice(0, 300) },
+          'the provider refused its own output; asking again',
+        );
+      }
+    }
   }
 
   private async run<M extends Modality>(

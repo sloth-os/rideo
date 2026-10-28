@@ -65,6 +65,15 @@ const task = await client.generateMusic(req, { idempotencyKey, signal, metadata,
   response at all (refused, reset, timed out) a `GatewayHttpError` without a status. Failed tasks become
   `GatewayTaskError {code, message}`. Both carry `retryable` (no response, 429 and 5xx, and the task codes
   `timeout`, `rate_limited`, `provider_unavailable`, `upstream_error`, `provider_timeout`, `internal_error`).
+- **A refused output.** A provider's moderation sometimes refuses what it generated, not what it was asked: on the
+  real-model CI run of October 28 Volcengine refused a cartoon panda's reference sheet with `400
+  OutputImageSensitiveContentDetected`, and the job failed at once. A job's retry could not help: mm-gateway answers a
+  reused `Idempotency-Key` with the task it stored, failed or not. So a task that fails with an output refusal
+  (`OutputImageSensitiveContent`, `OutputVideoSensitiveContent`, "output … may contain sensitive/inappropriate …") is
+  asked for again at once as a new task (`<key>:refused<n>`), with a different seed when the request pins one, up to
+  two more times; each counts as `rideo_gateway_tasks_total{status="refused"}` and is logged (`the provider refused
+  its own output; asking again`). A third refusal fails as `output_refused`, which the job does not retry. A refused
+  input (the prompt or a reference image) is not asked again: it would be refused the same way.
 - `routing.profile` is sent when `MM_GATEWAY_ROUTING_PROFILE` is set. `model` is sent when the project pins
   one; otherwise it is omitted and the gateway auto-routes by limits.
 - Image and video requests ask for no visible watermark (`parameters.watermark: false` unless the request says
@@ -282,4 +291,4 @@ paint that colour into a marker band. Mock keyframes and videos copy the marker 
 images they receive, as a real model copies identity. The mock judge decodes the PNG frames and checks the
 bands. `MOCK_FLAKY_EVERY=n` drops the bands from every n-th generation, so tests can prove that the gate
 retries and recovers. `overloadChat(n)` makes the next n chat calls through the proxy answer
-`503 system cpu overloaded`, as an overloaded upstream does, so tests can prove that LLM calls are made again. `metadata.mock_fail: "<code>"` fails a task with that code.
+`503 system cpu overloaded`, as an overloaded upstream does, so tests can prove that LLM calls are made again. `metadata.mock_fail: "<code>"` fails a task with that code. `refuseOutputs(n)` fails the next n image or video tasks as a provider's moderation refusing its output does (`provider_error`, `OutputImageSensitiveContentDetected`).

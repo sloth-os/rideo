@@ -134,6 +134,35 @@ describe('emptying the trash (docs/design/storage-webdav.md#maintenance)', () =>
   });
 });
 
+describe('a provider that refuses its own output (docs/design/ai-gateway.md#sdk-usage)', () => {
+  it('draws the reference again as a new task instead of failing the job', async () => {
+    const p = await stack.api<{ id: string }>('POST', '/projects', {
+      kind: 'story',
+      title: 'Refused',
+      brief: { prompt: 'a keeper of letters' },
+    });
+    const sp = await stack.api<{ id: string }>('POST', `/projects/${p.id}/screenplay/generate`, {});
+    await stack.waitJob(p.id, sp.id, 60_000);
+    const character = Object.values<{ id: string }>(
+      (await stack.api<any>('GET', `/projects/${p.id}/state`)).docs.characters,
+    )[0]!;
+    const before = stack.gw.counters.refused;
+    stack.gw.refuseOutputs(1);
+    const job = await stack.api<{ id: string }>(
+      'POST',
+      `/projects/${p.id}/characters/${character.id}/references/generate`,
+      { views: ['front'] },
+    );
+    const done = await stack.waitJob(p.id, job.id, 60_000);
+    expect(done).toMatchObject({ status: 'succeeded', attempts: 1 });
+    expect(stack.gw.counters.refused - before).toBe(1);
+    expect(await metric('rideo_gateway_tasks_total', 'modality="image"', 'status="refused"')).toBe(1);
+    const refs = (await stack.api<any>('GET', `/projects/${p.id}/state`)).docs.characters[character.id]
+      .references;
+    expect(refs).toHaveLength(1);
+  });
+});
+
 describe('an overloaded model provider', () => {
   it('writes the screenplay once the provider takes calls again', async () => {
     const p = await stack.api<{ id: string }>('POST', '/projects', {

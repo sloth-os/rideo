@@ -2,7 +2,12 @@ import { createServer, type IncomingHttpHeaders } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { type RunningMockGateway, startMockGateway } from '@rideo/mock-gateway';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { GatewayClient, GatewayHttpError, GatewayTaskError } from '../../src/gateway/gateway-client';
+import {
+  GatewayClient,
+  GatewayHttpError,
+  GatewayTaskError,
+  reseeded,
+} from '../../src/gateway/gateway-client';
 import { ProxyClient } from '../../src/gateway/proxy-client';
 import { Metrics } from '../../src/metrics';
 
@@ -141,6 +146,55 @@ describe('GatewayClient (SDK)', () => {
     expect(bad).toMatchObject({ status: 422 });
     expect(local.gatewayTasks.get({ modality: 'image', status: 'busy' })).toBe(2);
     expect(local.gatewayTasks.get({ modality: 'image', status: 'rejected' })).toBe(1);
+  });
+
+  it('asks again, as a new task with another seed, when the provider refuses its own output (docs/design/ai-gateway.md#sdk-usage)', async () => {
+    const local = new Metrics();
+    const warned: unknown[] = [];
+    const refused = new GatewayClient({
+      url: gw.url,
+      apiKey: 'k',
+      pollMs: 20,
+      timeoutsSec: { image: 30, video: 60, music: 30 },
+      metrics: local,
+      log: { info: () => undefined, warn: (o) => warned.push(o) },
+    });
+    const keys: string[] = [];
+    const before = gw.counters.refused;
+    gw.refuseOutputs(2);
+    const done = await refused.generateImage(
+      { input: [{ type: 'text', text: 'a plush panda' }], parameters: { seed: 42 } },
+      { idempotencyKey: 'refused-1', onTask: (t) => keys.push(t.id) },
+    );
+    expect(done.status).toBe('succeeded');
+    expect(gw.counters.refused - before).toBe(2);
+    // Three tasks: the refused two and the one that passed, each its own
+    expect(new Set(keys).size).toBe(3);
+    expect(local.gatewayTasks.get({ modality: 'image', status: 'refused' })).toBe(2);
+    expect(warned).toHaveLength(2);
+    // A third refusal fails as output_refused, which the job does not retry
+    gw.refuseOutputs(3);
+    const err = await refused
+      .generateImage({ input: [{ type: 'text', text: 'x' }] }, { idempotencyKey: 'refused-2' })
+      .catch((e) => e);
+    expect(err).toBeInstanceOf(GatewayTaskError);
+    expect(err).toMatchObject({ taskCode: 'output_refused', retryable: false });
+    expect(err.message).toContain('refused the image it generated 3 times');
+    // Another failure is not asked again
+    const failed = await refused
+      .generateImage(
+        { input: [{ type: 'text', text: 'x' }], metadata: { mock_fail: 'provider_error' } },
+        { idempotencyKey: 'refused-3' },
+      )
+      .catch((e) => e);
+    expect(failed).toMatchObject({ taskCode: 'provider_error' });
+    expect(local.gatewayTasks.get({ modality: 'image', status: 'refused' })).toBe(5);
+    // Another seed when the request pins one, else the request as it is
+    expect(reseeded({ parameters: { seed: 42, watermark: false } }, 1)).toEqual({
+      parameters: { seed: 42 + 7919, watermark: false },
+    });
+    const free = { input: [] };
+    expect(reseeded(free, 2)).toBe(free);
   });
 
   it('aborts the request in flight with the job and reports what the gateway answered', async () => {
