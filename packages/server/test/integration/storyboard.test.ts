@@ -27,6 +27,8 @@ async function rejects(p: Promise<unknown>, code: string): Promise<ApiError> {
 }
 
 const state = (pid: string) => stack.api<any>('GET', `/projects/${pid}/state`);
+const requestOf = (taskId: string) => stack.gw.store.requests.get(taskId) as any;
+const SCENE_REFERENCE = 'The last image is the scene reference';
 const clipsOf = async (pid: string) =>
   Object.values<Clip>((await state(pid)).docs.clips).sort((a, b) => a.index - b.index);
 
@@ -64,6 +66,20 @@ describe('storyboard', () => {
       // Speaking shots carry their TTS dialogue for the animatic (docs/design/dialogue.md).
       if (shot.dialogue.some((d) => d.characterId))
         expect(shot.board!.audio).toMatchObject({ mode: 'tts', dialogue: { mime: 'audio/wav' } });
+    }
+    // Each scene's first frame went first; the others take it as their scene reference (docs/design/storyboard.md#jobs)
+    for (const clip of clips) {
+      const [lead, ...later] = [...clip.shots].sort((a, b) => a.index - b.index);
+      expect(requestOf(lead!.board!.gatewayTaskIds[0]!).input[0].text).not.toContain(SCENE_REFERENCE);
+      expect(later.length).toBeGreaterThan(0);
+      for (const shot of later) {
+        expect(shot.board!.createdAt >= lead!.board!.createdAt).toBe(true);
+        const image = requestOf(shot.board!.gatewayTaskIds[0]!);
+        expect(image.input[0].text).toContain(SCENE_REFERENCE);
+        expect(image.input.filter((p: { type: string }) => p.type === 'image').length).toBe(
+          shot.board!.request.referenceCount + 1,
+        );
+      }
     }
     const wf = await stack.api<any>('GET', `/projects/${pid}/workflow`);
     const gate = wf.stages.find((x: { id: string }) => x.id === 'storyboard').gate;

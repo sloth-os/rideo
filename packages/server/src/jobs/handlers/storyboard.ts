@@ -1,12 +1,18 @@
 import {
   absentCast,
+  boardApprovable,
   boardNeedsGeneration,
   boardPromptHash,
   boardState,
   type Clip,
   docPath,
+  type Job,
+  type MediaRef,
   orderedShotCharacters,
   orderedShotElements,
+  type ProjectDocs,
+  promptVersionOf,
+  type Shot,
   type ShotBoard,
   type ShotContext,
   shotContextOf,
@@ -19,6 +25,42 @@ import type { JobContext } from '../queue';
 import { commitAs, docsFor, type HandlerDeps } from './common';
 import { speakLines } from './dialogue';
 import { generateKeyframe, prepareShotReferences } from './keyframe';
+
+/**
+ * The scene reference of a storyboard frame (docs/design/storyboard.md#jobs): the clip's first shot's frame when it is
+ * drawn and did not fail, approved or not; none for the first shot itself.
+ */
+export function boardSceneReference(clip: Clip, shot: Shot, docs: ProjectDocs): MediaRef | null {
+  const first = [...clip.shots].sort((a, b) => a.index - b.index)[0];
+  if (!first || first.id === shot.id || !first.board) return null;
+  return boardApprovable(boardState(first, docs)) ? first.board.keyframe : null;
+}
+
+/**
+ * Draws these frames and waits for them: each clip's first shot first, then the others in parallel, so they take
+ * the first frame as their scene reference (docs/design/storyboard.md#jobs).
+ */
+export async function drawBoards(
+  ctx: JobContext,
+  targets: { clip: Clip; shot: Shot }[],
+): Promise<(Job | undefined)[]> {
+  const isFirst = ({ clip, shot }: { clip: Clip; shot: Shot }) =>
+    shot.index === Math.min(...clip.shots.map((s) => s.index));
+  const spawn = async (list: { clip: Clip; shot: Shot }[]) => {
+    const jobs: Job[] = [];
+    for (const { clip, shot } of list)
+      jobs.push(
+        await ctx.spawn(
+          'shot.board',
+          { clipId: clip.id, shotId: shot.id },
+          { dedupeKey: `board:${shot.id}` },
+        ),
+      );
+    return jobs.length ? ctx.waitFor(jobs.map((j) => j.id)) : [];
+  };
+  const firsts = await spawn(targets.filter(isFirst));
+  return [...firsts, ...(await spawn(targets.filter((t) => !isFirst(t))))];
+}
 
 /**
  * `shot.board` (docs/design/storyboard.md#jobs): the shot's keyframe with references, judge and retries (R4), and its
@@ -40,11 +82,11 @@ export async function shotBoard(deps: HandlerDeps, ctx: JobContext) {
   const judge = settings.consistency.judge === 'off' ? deps.offJudge : deps.judge;
   const { threshold, maxAttempts } = settings.consistency;
   const name = `board-c${clip.index + 1}-s${shot.index + 1}`;
-  const shotCtx: ShotContext = { ...shotContextOf(shot, docs, clip), characters, elements };
+  const baseCtx: ShotContext = { ...shotContextOf(shot, docs, clip), characters, elements };
   return deps.media.withTmpDir(async (dir) => {
     ctx.progress(0.05, 1, 'preparing references');
     const imageLimits = await deps.gateway.limitsFor('image', settings.models.image);
-    const refs = await prepareShotReferences(deps, ctx, {
+    const shotRefs = await prepareShotReferences(deps, ctx, {
       shot,
       characters,
       elements,
@@ -52,6 +94,22 @@ export async function shotBoard(deps: HandlerDeps, ctx: JobContext) {
       maxInputImages: imageLimits.limits?.max_input_images,
       dir,
     });
+    // The scene's first frame as one more image, as for the video pass's keyframes (docs/design/storyboard.md#jobs)
+    const sceneFrame = promptVersionOf(settings) >= 2 ? boardSceneReference(clip, shot, docs) : null;
+    const maxImages = imageLimits.limits?.max_input_images;
+    const withScene =
+      sceneFrame &&
+      (maxImages === undefined || (maxImages >= 3 && shotRefs.referenceUris.length < maxImages));
+    const refs = withScene
+      ? {
+          ...shotRefs,
+          referenceUris: [
+            ...shotRefs.referenceUris,
+            await deps.media.pngDataUri(ctx.job.projectId, sceneFrame, 1024),
+          ],
+        }
+      : shotRefs;
+    const shotCtx: ShotContext = { ...baseCtx, sceneReference: !!withScene };
     const kf = await generateKeyframe(deps, ctx, {
       shotCtx,
       refs,
@@ -88,7 +146,8 @@ export async function shotBoard(deps: HandlerDeps, ctx: JobContext) {
         imageModel: kf.imageModel,
         prompt: kf.prompt,
         seed: kf.seed,
-        referenceCount: refs.referenceUris.length,
+        // The cast's and elements' images, as for takes (the scene reference is one more)
+        referenceCount: shotRefs.referenceUris.length,
       },
       promptHash: boardPromptHash(shotCtx),
       consistency: report,
@@ -146,21 +205,15 @@ export async function storyboardGenerate(deps: HandlerDeps, ctx: JobContext) {
     docs = await docsFor(deps, ctx);
   }
   const ids = new Set(scenes.map((s) => s.id));
-  const jobs = [];
-  for (const clip of Object.values(docs.clips).filter((c) => c.sceneId && ids.has(c.sceneId))) {
-    for (const shot of clip.shots) {
-      if (!boardNeedsGeneration(boardState(shot, docs))) continue;
-      jobs.push(
-        await ctx.spawn(
-          'shot.board',
-          { clipId: clip.id, shotId: shot.id },
-          { dedupeKey: `board:${shot.id}` },
-        ),
-      );
-    }
-  }
-  ctx.progress(0.2, 1, `drawing ${jobs.length} frame(s)`);
-  const done = jobs.length ? await ctx.waitFor(jobs.map((j) => j.id)) : [];
+  const targets = Object.values(docs.clips)
+    .filter((c) => c.sceneId && ids.has(c.sceneId))
+    .flatMap((clip) =>
+      clip.shots
+        .filter((shot) => boardNeedsGeneration(boardState(shot, docs)))
+        .map((shot) => ({ clip, shot })),
+    );
+  ctx.progress(0.2, 1, `drawing ${targets.length} frame(s)`);
+  const done = await drawBoards(ctx, targets);
   // The frames are reviewed before any video (docs/design/ai-review.md#how-a-review-runs)
   await deps.services.aiReviews
     .followUp(ctx.actor, ctx.job.projectId, 'storyboard')
@@ -168,7 +221,7 @@ export async function storyboardGenerate(deps: HandlerDeps, ctx: JobContext) {
   return {
     scenes: scenes.length,
     planned: plans.length,
-    frames: jobs.length,
+    frames: targets.length,
     failed: done.filter((j) => j?.status !== 'succeeded').length,
   };
 }

@@ -2,6 +2,7 @@ import {
   type Actor,
   assembleStageReview,
   autoApplicable,
+  boardApprovable,
   boardState,
   type Character,
   type Clip,
@@ -37,6 +38,7 @@ import { invalid } from '../../errors';
 import { throwIfAborted } from '../../util/abort';
 import type { JobContext } from '../queue';
 import { commitAs, docsFor, type HandlerDeps } from './common';
+import { drawBoards } from './storyboard';
 
 /** What the video model does well and badly, told to the reviewers (docs/design/ai-review.md#how-a-review-runs). */
 export const VIDEO_MODEL_FACTS = {
@@ -480,18 +482,14 @@ async function finish(
 /** Draws the frames of these clips that are missing, failed, stale or outdated, and waits for them. */
 async function drawFrames(deps: HandlerDeps, ctx: JobContext, clipIds: string[]): Promise<void> {
   const docs = await docsFor(deps, ctx);
-  const jobs = [];
-  for (const id of clipIds) {
+  const targets = clipIds.flatMap((id) => {
     const clip = docs.clips[id];
-    for (const shot of clip?.shots ?? []) {
-      const state = boardState(shot, docs);
-      if (state === 'approved' || state === 'unapproved') continue;
-      jobs.push(
-        await ctx.spawn('shot.board', { clipId: id, shotId: shot.id }, { dedupeKey: `board:${shot.id}` }),
-      );
-    }
-  }
-  if (jobs.length) await ctx.waitFor(jobs.map((j) => j.id));
+    return (clip?.shots ?? [])
+      .filter((shot) => !boardApprovable(boardState(shot, docs)))
+      .map((shot) => ({ clip: clip!, shot }));
+  });
+  // Each scene's first frame first: the others take it as their scene reference
+  await drawBoards(ctx, targets);
 }
 
 /** Applies a storyboard round's fixes: shots revised and redrawn, scenes planned again and drawn. */

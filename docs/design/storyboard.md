@@ -60,8 +60,15 @@ again.
 
 | Kind | Lane | Does |
 |---|---|---|
-| `storyboard.generate` | control | plan the storyboarded scenes that have no clip (`clip.plan`), then `shot.board` for every shot whose frame is missing, failed, stale or outdated; waits for them |
+| `storyboard.generate` | control | plan the storyboarded scenes that have no clip (`clip.plan`), then `shot.board` for every shot whose frame is missing, failed, stale or outdated: each scene's first shot first, then its other shots in parallel; waits for them |
 | `shot.board` | image | R1/E1 preconditions, the keyframe with references, judge and retries (the shot pipeline's keyframe step, shared code), and the shot's TTS dialogue when the server has a TTS provider and every speaker has a locked voice; commits `shot.board` (unapproved) |
+
+**The scene reference.** With prompt version 2 a later shot's frame gets the scene's first frame as one more image,
+as keyframes of the video pass do ([scene reference frame](continuity.md#scene-reference-frame)): a first frame that
+is drawn and did not fail (approved or not). The swimming demo drew all sixteen frames of two scenes at once, without
+it, and the storyboard review scored their continuity 5 in all three rounds: the watermelon halves wandered from one
+side of the beach to the other and onto a blanket, the shoreline and the sun swapped sides. A frame redrawn after the
+first one changed keeps the reference it was drawn with until it is drawn again.
 
 ## Video pass
 

@@ -192,7 +192,8 @@ shot's keyframe gets the first shot's selected, acceptable keyframe (or its firs
 named in the prompt: *"The last image is the scene reference: match its place, light, weather and colours, not its
 composition or people."* It is added when the image model accepts at least three input images and the shot's
 references leave a slot (or the model's limit is unknown). Video requests do not get it: the keyframe is their first
-frame already.
+frame already. Storyboard frames get the scene's first frame the same way
+([storyboard](storyboard.md#jobs)).
 
 ## Quality checks in the gate
 
