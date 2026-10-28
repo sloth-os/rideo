@@ -21,8 +21,9 @@ import {
   shotContextOf,
   type Take,
   type TakeAudio,
-  type TimelineOp,
+  takePassesChecks,
   takeState,
+  takeSwapOps,
   temporalVerdict,
 } from '@rideo/shared';
 import { verifyFrames } from '../../consistency/gate';
@@ -62,22 +63,7 @@ function label(clip: Clip, shot: Shot): string {
 async function swapInCut(deps: HandlerDeps, ctx: JobContext, clipId: string, shotId: string, take: Take) {
   const timeline = (await docsFor(deps, ctx)).timeline;
   if (!timeline || !take.video) return;
-  const ops: TimelineOp[] = timeline.tracks.flatMap((track) =>
-    track.items.flatMap((item) =>
-      item.kind !== 'text' &&
-      item.source.type === 'take' &&
-      item.source.shotId === shotId &&
-      item.source.takeId !== take.id
-        ? [
-            {
-              op: 'replace_source' as const,
-              itemId: item.id,
-              source: { type: 'take' as const, clipId, shotId, takeId: take.id, media: take.video! },
-            },
-          ]
-        : [],
-    ),
-  );
+  const ops = takeSwapOps(timeline, { clipId, shotId, takeId: take.id, media: take.video });
   if (ops.length) await deps.services.edit.applyOps(ctx.actor, ctx.job.projectId, ops);
 }
 
@@ -460,6 +446,7 @@ export async function shotGenerate(deps: HandlerDeps, ctx: JobContext) {
                 place,
                 voiced,
                 musicAllowed: settings.generation.modelMusic === true,
+                rejectMusic: settings.consistency.rejectMusic === true,
                 metrics: deps.metrics,
                 log: ctx.log,
                 signal: ctx.signal,
@@ -661,16 +648,19 @@ export async function shotGenerate(deps: HandlerDeps, ctx: JobContext) {
         endKeyframe,
         variation,
       });
-      // A regeneration a feedback recommendation asked for replaces the shot's old take in the cut
-      // (docs/design/feedback.md#actions).
-      if (
-        (ctx.job.params as { swapInCut?: boolean }).swapInCut &&
-        take.video &&
-        final.report.status !== 'failed'
-      )
-        await swapInCut(deps, ctx, clipId, shotId, take).catch((err) =>
-          ctx.log.warn({ err: (err as Error).message }, 'could not put the new take in the cut'),
-        );
+      // A regeneration a feedback recommendation asked for replaces the shot's old take in the cut when it passes every
+      // check; otherwise a person chooses (docs/design/feedback.md#when-a-fix-does-not-pass).
+      if ((ctx.job.params as { swapInCut?: boolean }).swapInCut && take.video) {
+        if (takePassesChecks(take, shot, docs.characters, docs.elements))
+          await swapInCut(deps, ctx, clipId, shotId, take).catch((err) =>
+            ctx.log.warn({ err: (err as Error).message }, 'could not put the new take in the cut'),
+          );
+        else
+          ctx.log.info(
+            { takeId: take.id },
+            'the fix did not pass its checks; the cut keeps the previous take',
+          );
+      }
       ctx.progress(1, 1, `take ${final.report.status}`);
       return { takeId: take.id, status: final.report.status, score: final.report.score };
     });

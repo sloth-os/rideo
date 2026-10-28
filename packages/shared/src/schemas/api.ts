@@ -70,6 +70,7 @@ export const ProjectSettingsPatchSchema = z
         qualityChecks: z.boolean(),
         qualityThreshold: z.number().min(0).max(1),
         castOnly: z.boolean(),
+        rejectMusic: z.boolean(),
       })
       .partial(),
     /** Dialogue audio (docs/design/dialogue.md#from-lines-to-audio) and its level (docs/design/continuity.md). */
@@ -413,6 +414,8 @@ export const RestoreInputSchema = z.object({
 export const ApproveInputSchema = z.object({ gate: z.string().min(1) });
 export const ReopenInputSchema = z.object({ stage: z.string().min(1) });
 export const OverrideInputSchema = z.object({ reason: z.string().min(3).max(1000) });
+/** Select a take, and put it in the cut too (docs/design/feedback.md#when-a-fix-does-not-pass). */
+export const SelectTakeInputSchema = z.object({ inCut: z.boolean().optional() }).default({});
 
 /** Accounts (docs/design/accounts.md#surfaces). */
 export const ProjectAccessInputSchema = z.object({

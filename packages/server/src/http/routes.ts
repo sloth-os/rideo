@@ -41,6 +41,7 @@ import {
   RestoreInputSchema,
   ScoreInputSchema,
   ScreenplayPatchInputSchema,
+  SelectTakeInputSchema,
   SelectVoiceInputSchema,
   ShotUpdateInputSchema,
   StoryboardGenerateInputSchema,
@@ -718,7 +719,14 @@ export function registerRoutes(app: FastifyInstance, studio: Studio): void {
       .send(await studio.clips.regenerateShot(actor(), pid(req), p(req, 'clipId'), p(req, 'shotId'))),
   );
   app.post('/api/projects/:id/clips/:clipId/shots/:shotId/takes/:takeId/select', async (req) =>
-    studio.clips.selectTake(actor(), pid(req), p(req, 'clipId'), p(req, 'shotId'), p(req, 'takeId')),
+    studio.clips.selectTake(
+      actor(),
+      pid(req),
+      p(req, 'clipId'),
+      p(req, 'shotId'),
+      p(req, 'takeId'),
+      parse(SelectTakeInputSchema, req.body ?? {}),
+    ),
   );
   app.post('/api/projects/:id/clips/:clipId/shots/:shotId/takes/:takeId/override', async (req) =>
     studio.clips.overrideTake(

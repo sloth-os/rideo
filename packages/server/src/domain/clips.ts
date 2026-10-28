@@ -1,5 +1,6 @@
 import {
   type Actor,
+  applyOps,
   approvedElementReferences,
   approvedReferences,
   type Character,
@@ -18,7 +19,9 @@ import {
   type Screenplay,
   type Shot,
   type ShotUpdateInput,
+  type Timeline,
   takeState,
+  takeSwapOps,
   voicesNotReady,
 } from '@rideo/shared';
 import { AppError, invalid, notFound } from '../errors';
@@ -380,6 +383,8 @@ export class ClipService extends Service {
     clipId: string,
     shotId: string,
     takeId: string,
+    /** Also put the take in the cut, in place of the shot's items (docs/design/feedback.md#when-a-fix-does-not-pass). */
+    opts: { inCut?: boolean } = {},
   ): Promise<Clip> {
     const { result } = await this.mutate(
       actor,
@@ -389,6 +394,11 @@ export class ClipService extends Service {
         const shot = this.requireShot(clip, shotId);
         const take = shot.takes.find((t) => t.id === takeId);
         if (!take) throw notFound(`take ${takeId}`);
+        const timeline = opts.inCut && take.video ? tx.get<Timeline>('timeline.json') : null;
+        if (timeline) {
+          const ops = takeSwapOps(timeline, { clipId, shotId, takeId, media: take.video! });
+          if (ops.length) tx.set('timeline.json', applyOps(timeline, ops));
+        }
         const characters = Object.fromEntries(tx.list<Character>('characters/').map((c) => [c.id, c]));
         const elements = Object.fromEntries(tx.list<Element>('elements/').map((e) => [e.id, e]));
         shot.selectedTakeId = takeId;
@@ -402,7 +412,9 @@ export class ClipService extends Service {
         tx.set(docPath.clip(clipId), clip);
         return clip;
       },
-      { message: `Select take ${takeId.slice(-4)} for shot ${shotId.slice(-4)}` },
+      {
+        message: `Select take ${takeId.slice(-4)} for shot ${shotId.slice(-4)}${opts.inCut ? ' and put it in the cut' : ''}`,
+      },
     );
     return result;
   }

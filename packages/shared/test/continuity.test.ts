@@ -543,6 +543,19 @@ describe('the sound check (docs/design/continuity.md#quality-checks-in-the-gate)
     expect(LINE_HEARD_RATIO).toBe(0.6);
   });
 
+  it('fails a take with music when the film rejects music, and only then', () => {
+    const music = { lines: [], heard: heard({ music: true }), cast: [] };
+    expect(soundVerdict({ ...music, musicAllowed: false }).passed).toBe(true);
+    const rejected = soundVerdict({ ...music, musicAllowed: false, rejectMusic: true });
+    expect(rejected.passed).toBe(false);
+    expect(rejected.issues).toEqual(['music plays in the take (the film’s score is added later)']);
+    // Music the film allows, or none at all, passes
+    expect(soundVerdict({ ...music, musicAllowed: true, rejectMusic: true }).passed).toBe(true);
+    expect(
+      soundVerdict({ lines: [], heard: heard({}), musicAllowed: false, rejectMusic: true, cast: [] }).passed,
+    ).toBe(true);
+  });
+
   it('reports speech in a shot without lines and allows music when the film wants it', () => {
     const v = soundVerdict({
       lines: [],

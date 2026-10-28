@@ -115,6 +115,37 @@ describe('continuity-aware generation (prompt version 2)', () => {
     expect(metrics).toMatch(/rideo_quality_checks_total\{check="sound",result="failed"\} 1/);
   });
 
+  it('generates a take with music again only when the film rejects music', async () => {
+    const { pid, clip } = await plannedClip();
+    const shot = [...clip.shots].sort((a, b) => a.index - b.index)[0]!;
+    await stack.api('PATCH', `/projects/${pid}/clips/${clip.id}/shots/${shot.id}`, {
+      description: `${shot.description} A radio plays music on the table.`,
+    });
+    const regenerate = async () => {
+      const job = await stack.api<Job>(
+        'POST',
+        `/projects/${pid}/clips/${clip.id}/shots/${shot.id}/regenerate`,
+      );
+      expectSucceeded(await stack.waitJob(pid, job.id, 180_000));
+      await stack.waitIdle(pid);
+      return ((await stateOf(pid)).docs.clips[clip.id] as Clip).shots
+        .find((s) => s.id === shot.id)!
+        .takes.at(-1)!;
+    };
+    // Advisory by default: reported, kept at the first attempt
+    const heard = await regenerate();
+    expect(heard.consistency.attempts).toBe(1);
+    expect(heard.consistency.quality).toMatchObject({ passed: true, sound: { music: true } });
+    expect(heard.consistency.quality?.issues).toContain(
+      'music plays in the take (the film’s score is added later)',
+    );
+    // Rejected: every attempt is made, and the take fails its sound check
+    await stack.api('PATCH', `/projects/${pid}`, { settings: { consistency: { rejectMusic: true } } });
+    const rejected = await regenerate();
+    expect(rejected.consistency.attempts).toBe(3);
+    expect(rejected.consistency.quality).toMatchObject({ passed: false, sound: { music: true } });
+  });
+
   it('creates projects with version 2 prompts and quality checks, and plans with the brief, the level and lenses', async () => {
     const { pid, clip, state } = await plannedClip();
     const settings = state.docs.project.settings;

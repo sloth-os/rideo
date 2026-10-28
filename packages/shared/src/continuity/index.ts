@@ -277,6 +277,8 @@ export function soundVerdict(input: {
   heard: SoundCheckOutput;
   /** Takes may carry music. */
   musicAllowed: boolean;
+  /** Music that is not allowed fails the take instead of being reported (`consistency.rejectMusic`). */
+  rejectMusic?: boolean;
   /** Everyone in the shot, to tell another character's voice from an unclear one. */
   cast: string[];
 }): { passed: boolean; sound: SoundReport; issues: string[] } {
@@ -311,7 +313,8 @@ export function soundVerdict(input: {
   const unexpectedSpeech = !input.lines.length && speech.some((s) => wordsOf(s.text).length >= 2);
   if (unexpectedSpeech) issues.push(`speech in a shot without lines: “${transcript.slice(0, 200)}”`);
   const music = input.heard.music === true;
-  if (music && !input.musicAllowed) issues.push('music plays in the take (the film’s score is added later)');
+  const unwantedMusic = music && !input.musicAllowed;
+  if (unwantedMusic) issues.push('music plays in the take (the film’s score is added later)');
   const sync = speech.flatMap((s) => (typeof s.lipSync === 'number' ? [s.lipSync] : []));
   if (input.lines.length && sync.length && sync.reduce((a, b) => a + b, 0) / sync.length < SOUND_SCORE_LOW)
     issues.push('the lips are out of sync with the voices');
@@ -321,7 +324,7 @@ export function soundVerdict(input: {
     for (const i of input.heard.issues.slice(0, 3)) issues.push(`sound: ${i}`.slice(0, 500));
   }
   return {
-    passed: lines.every((l) => l.heard >= LINE_HEARD_RATIO),
+    passed: lines.every((l) => l.heard >= LINE_HEARD_RATIO) && !(unwantedMusic && input.rejectMusic),
     sound: { lines, transcript, music, unexpectedSpeech, score },
     issues,
   };

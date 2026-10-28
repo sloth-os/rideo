@@ -1,7 +1,7 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { startMockGateway } from '@rideo/mock-gateway';
-import type { Clip, Feedback, Job } from '@rideo/shared';
+import { type Clip, type Feedback, fixOutcome, type Job } from '@rideo/shared';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { startEditorWorker } from '../helpers/editor-worker';
 import { ApiError, expectSucceeded, readyStoryProject, type Stack, startStack } from '../helpers/stack';
@@ -264,5 +264,38 @@ describe('listening feedback (an audio-visual model)', () => {
     const md = await (await fetch(`${heard.url}/api/projects/${pid}/media/${fb!.report!.path}`)).text();
     expect(md).toContain(`watched by ${fb!.model}, heard by mock-omni`);
     expect(md).toContain(`Lines heard: ${voiced.length - 1} of ${voiced.length}.`);
+
+    // The fix's take is not heard either: it fails its checks, so the cut keeps the previous take
+    // (docs/design/feedback.md#when-a-fix-does-not-pass)
+    const cutTake = async () =>
+      (await heard.api<any>('GET', `/projects/${pid}/timeline`)).tracks
+        .flatMap((t: { items: any[] }) => t.items)
+        .find((i: any) => i.source?.shotId === spoken.id).source.takeId;
+    const before = await cutTake();
+    heard.gw.muffleSpeech(3);
+    const applied = await heard.api<{ feedback: Feedback; job: Job }>(
+      'POST',
+      `/projects/${pid}/feedback/${fb!.id}/recommendations/${regenerate.id}/apply`,
+    );
+    expectSucceeded(await heard.waitJob(pid, applied.job.id, 180_000));
+    await heard.waitIdle(pid);
+    const fixedDocs = (await heard.api<any>('GET', `/projects/${pid}/state`)).docs;
+    const rec = fixedDocs.feedback[fb!.id].recommendations.find(
+      (r: { id: string }) => r.id === regenerate.id,
+    );
+    const outcome = fixOutcome(rec, fixedDocs);
+    expect(outcome).toMatchObject({ state: 'not_fixed', inCut: false });
+    expect(outcome?.state === 'not_fixed' && outcome.issues.join(' ')).toContain('not heard');
+    expect(await cutTake()).toBe(before);
+    // A person uses it anyway: selected and in the cut, one commit
+    const takeId = outcome?.state === 'not_fixed' ? outcome.takeId : '';
+    await heard.api('POST', `/projects/${pid}/clips/${clip.id}/shots/${spoken.id}/takes/${takeId}/select`, {
+      inCut: true,
+    });
+    expect(await cutTake()).toBe(takeId);
+    const after = (await heard.api<any>('GET', `/projects/${pid}/state`)).docs;
+    expect(fixOutcome(rec, after)).toMatchObject({ state: 'not_fixed', inCut: true });
+    const log = await heard.api<any[]>('GET', `/projects/${pid}/history?limit=5`);
+    expect(log[0].message).toMatch(/^Select take .* and put it in the cut$/);
   });
 });

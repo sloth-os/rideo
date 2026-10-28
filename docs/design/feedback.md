@@ -122,7 +122,7 @@ type Feedback = {
 
 | `action.kind` | Fields | Applying it |
 |---|---|---|
-| `regenerate_shot` | `clipId`, `shotId`, `description?`, `action?`, `negativePrompt?`, `framing?`, `movement?`, `characters?` | updates the shot with the revised fields (the same service as the shot editor) and regenerates it (`shot.generate`, priority of a user regenerate); `characters` names who is in frame after the change, the shot's cast becomes those of the project's characters; the new take is selected when it passes and replaces the old one in the cut |
+| `regenerate_shot` | `clipId`, `shotId`, `description?`, `action?`, `negativePrompt?`, `framing?`, `movement?`, `characters?` | updates the shot with the revised fields (the same service as the shot editor) and regenerates it (`shot.generate`, priority of a user regenerate); `characters` names who is in frame after the change, the shot's cast becomes those of the project's characters; the new take replaces the old one in the cut only when it passes every check ([when a fix does not pass](#when-a-fix-does-not-pass)) |
 | `replan_scene` | `clipId`, `direction?` | re-plans the scene's shots (`clip.plan` with the direction added to the scene) and generates them |
 | `settings` | `patch` (project settings) | applies the patch (for example quality checks on, a higher threshold, the storyboard on, cast only) |
 | `note` | – | nothing to apply: the recommendation is advice for the editor or the next film |
@@ -134,6 +134,22 @@ while their takes showed what the recommendations asked for.
 
 Applying or dismissing records who and when on the recommendation (a commit like any other edit). An action that no
 longer fits (the shot was deleted, the export's cut changed) fails with `feedback_stale` (409).
+
+### When a fix does not pass
+
+A fix's new take used to replace the cut's take whenever its identity passed, even when its other checks failed. In
+the panda demo's second pass that was right for one shot (the new take failed only a jump check but showed panda Rosie
+where the old one had a human child) and wrong for another (the new take put a human girl on the chairlift where the
+old one had a stray cut). Which of two flawed takes is better is a person's call, so:
+
+| The fix's take (`take.jobId` = the recommendation's `jobId`) | The cut | The panel |
+|---|---|---|
+| not there yet | unchanged | *Regenerating…* (or the job's error) |
+| passes every check: identity passed or overridden, and the quality checks passed or off (`takePassesChecks`) | shows the new take (`replace_source` on every item of the shot) | *Fixed: the new take passed its checks and is in the cut* |
+| fails a check | keeps the previous take | *Not fixed*, with the new take's issues and **Use the new take**: it selects the take and puts it in the cut in one commit (`take_select` with `inCut`) |
+
+The outcome is derived from the documents (`fixOutcome`, shared), so the REST API, MCP and the panel agree, and a
+take a person put in the cut later shows as theirs.
 
 ## Retrospective: improvements after every project
 

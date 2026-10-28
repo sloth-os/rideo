@@ -92,6 +92,8 @@ export async function checkSound(input: {
   voiced: boolean;
   /** Takes may carry music. */
   musicAllowed: boolean;
+  /** Music that is not allowed fails the take (`consistency.rejectMusic`). */
+  rejectMusic?: boolean;
   metrics?: Metrics;
   log?: { info: (o: unknown, m?: string) => void; warn: (o: unknown, m?: string) => void };
   signal?: AbortSignal;
@@ -123,6 +125,7 @@ export async function checkSound(input: {
       lines,
       heard,
       musicAllowed: input.musicAllowed,
+      rejectMusic: input.rejectMusic,
       cast: Object.values(input.characters).map((c) => c.name),
     });
     input.metrics?.qualityChecks.inc({ check: 'sound', result: verdict.passed ? 'passed' : 'failed' });

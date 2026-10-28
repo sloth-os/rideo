@@ -21,6 +21,8 @@ export const ConsistencySettingsSchema = z.object({
   qualityThreshold: z.number().min(0).max(1).default(0.5),
   /** A film with only its cast: another person or animal in a frame fails the quality checks. */
   castOnly: z.boolean().default(false),
+  /** Music heard in a take fails its sound check, so it is generated again (docs/design/continuity.md). */
+  rejectMusic: z.boolean().default(false),
 });
 export type ConsistencySettings = z.infer<typeof ConsistencySettingsSchema>;
 
@@ -109,6 +111,7 @@ export const ProjectSettingsSchema = z.object({
     qualityChecks: false,
     qualityThreshold: 0.5,
     castOnly: false,
+    rejectMusic: false,
   }),
   dialogue: DialogueSettingsSchema.default({ mode: 'off', lipSync: true, level: 'any' }),
   storyboard: StoryboardSettingsSchema.default({ enabled: true, scenes: 3 }),

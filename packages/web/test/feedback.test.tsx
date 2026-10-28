@@ -165,6 +165,54 @@ describe('feedback on the export card (docs/design/feedback.md#surfaces)', () =>
     );
   });
 
+  it('says whether an applied fix passed, and puts a take that did not in the cut on request', async () => {
+    const projectId = useProject.getState().projectId!;
+    const clip = f.clip({ id: 'clp_0000000000aaaaaa' });
+    const oldTake = f.take();
+    const quality = {
+      passed: false,
+      temporal: null,
+      physics: 0.9,
+      continuity: null,
+      extras: [],
+      others: [],
+      sound: null,
+      issues: ['the picture jumps at 2.1 s'],
+    };
+    const newTake = f.take({ jobId: 'job_0000000000aaaaaa', consistency: f.report({ quality }) });
+    const shot = f.shot({
+      id: 'sht_0000000000aaaaaa',
+      takes: [oldTake, newTake],
+      selectedTakeId: oldTake.id,
+    });
+    const applied = FeedbackSchema.parse({
+      ...feedback,
+      recommendations: [{ ...feedback.recommendations[0], status: 'applied', jobId: 'job_0000000000aaaaaa' }],
+    });
+    const docs = f.docs({
+      exports: { [exportDoc.id]: exportDoc },
+      feedback: { [applied.id]: applied },
+      clips: { [clip.id]: { ...clip, shots: [shot] } },
+    });
+    useProject.setState({ ...emptySlice, projectId, docs, workflow: evaluateWorkflow(docs) });
+    render(<FeedbackSummary e={exportDoc} projectId={projectId} />);
+    fireEvent.click(screen.getByTestId('show-feedback'));
+    const rec = screen.getAllByTestId('feedback-recommendation')[0]!;
+    expect(rec.getAttribute('data-outcome')).toBe('not_fixed');
+    expect(within(rec).getByTestId('fix-outcome').textContent).toContain(
+      'Not fixed: the new take did not pass its checks, so the cut keeps the previous take.',
+    );
+    expect(within(rec).getByTestId('fix-issues').textContent).toBe('the picture jumps at 2.1 s');
+    fireEvent.click(within(rec).getByTestId('use-fix-take'));
+    await waitFor(() =>
+      expect(
+        calls.some(
+          (c) => c.method === 'POST' && c.url.endsWith(`/shots/${shot.id}/takes/${newTake.id}/select`),
+        ),
+      ).toBe(true),
+    );
+  });
+
   it('says when the film was heard and how many lines were', () => {
     const heard = FeedbackSchema.parse({
       ...feedback,

@@ -892,9 +892,16 @@ function buildServer(studio: Studio): McpServer {
   );
   tool(
     'take_select',
-    'Select a take for a shot.',
-    { projectId: PROJECT, clipId: z.string(), shotId: z.string(), takeId: z.string() },
-    (a, actor) => studio.clips.selectTake(actor, a.projectId, a.clipId, a.shotId, a.takeId),
+    'Select a take for a shot; inCut also puts it in the cut in place of the shot (a fix that did not pass its checks).',
+    {
+      projectId: PROJECT,
+      clipId: z.string(),
+      shotId: z.string(),
+      takeId: z.string(),
+      inCut: z.boolean().optional(),
+    },
+    (a, actor) =>
+      studio.clips.selectTake(actor, a.projectId, a.clipId, a.shotId, a.takeId, { inCut: a.inCut }),
   );
   tool(
     'take_override',

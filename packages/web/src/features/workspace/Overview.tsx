@@ -205,6 +205,12 @@ function SettingsDialog({
               'castOnly',
             )}
             {toggle(
+              'Music in a take fails it: generate it again (each retry is a paid take)',
+              s.consistency.rejectMusic,
+              (v) => setS({ ...s, consistency: { ...s.consistency, rejectMusic: v } }),
+              'rejectMusic',
+            )}
+            {toggle(
               'Watch each export and write feedback',
               s.feedback.auto,
               (v) => setS({ ...s, feedback: { auto: v } }),

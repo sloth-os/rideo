@@ -36,14 +36,18 @@ test('a story export is watched by itself: scores, issues, recommendations appli
   const castOnly = continuity.locator('input[name="castOnly"]');
   await expect(castOnly).not.toBeChecked();
   await castOnly.check();
+  // Takes with music generated again (docs/design/continuity.md#quality-checks-in-the-gate): off until asked for
+  const rejectMusic = continuity.locator('input[name="rejectMusic"]');
+  await expect(rejectMusic).not.toBeChecked();
+  await rejectMusic.check();
   await page.getByTestId('dialogue-level').selectOption('B1');
   await page.getByTestId('settings-save').click();
   await expect
     .poll(async () => {
       const settings = (await api.call<any>('GET', `/projects/${pid}/state`)).docs.project.settings;
-      return [settings.dialogue.level, settings.consistency.castOnly];
+      return [settings.dialogue.level, settings.consistency.castOnly, settings.consistency.rejectMusic];
     })
-    .toEqual(['B1', true]);
+    .toEqual(['B1', true, true]);
 
   await page.goto(`/p/${pid}/editor`);
   await expect(page.getByTestId('live-status')).toHaveAttribute('data-status', 'live');
@@ -66,6 +70,11 @@ test('a story export is watched by itself: scores, issues, recommendations appli
   await expect(regenerate.getByTestId('recommendation-cast')).toContainText('In frame:');
   await regenerate.getByTestId('apply-recommendation').click();
   await expect(regenerate).toHaveAttribute('data-status', 'applied');
+  // The fix's take passed its checks and replaced the old one in the cut (docs/design/feedback.md#when-a-fix-does-not-pass)
+  await expect(regenerate).toHaveAttribute('data-outcome', 'fixed', { timeout: 120_000 });
+  await expect(regenerate.getByTestId('fix-outcome')).toHaveText(
+    'Fixed: the new take passed its checks and is in the cut.',
+  );
   const note = dialog.locator('[data-testid="feedback-recommendation"][data-kind="note"]').first();
   await note.getByTestId('dismiss-recommendation').click();
   await expect(note).toHaveAttribute('data-status', 'dismissed');

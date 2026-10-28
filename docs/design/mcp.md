@@ -123,7 +123,7 @@ or keep going and `job_wait` until a tab picks the job up.
 | `clip_generate` | `projectId`, `clipId` → job |
 | `shot_update` | `projectId`, `clipId`, `shotId`, `fields` |
 | `shot_regenerate` | `projectId`, `clipId`, `shotId` → job |
-| `take_select` | `projectId`, `clipId`, `shotId`, `takeId` |
+| `take_select` | `projectId`, `clipId`, `shotId`, `takeId`, `inCut?` (also put the take in the cut, in place of the shot's items: [when a fix does not pass](feedback.md#when-a-fix-does-not-pass)) |
 | `take_override` | `projectId`, `clipId`, `shotId`, `takeId`, `reason` (requires `allowAgentOverrides`) |
 | `clip_approve` | `projectId`, `clipId` (consistency gate R7) |
 | `batch_generate` / `batch_pause` | `projectId`, `maxGenerations?` |

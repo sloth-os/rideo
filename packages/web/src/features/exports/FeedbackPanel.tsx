@@ -5,6 +5,7 @@ import {
   type FeedbackIssue,
   type FeedbackRecommendation,
   feedbackTime,
+  fixOutcome,
   isTerminalJob,
 } from '@rideo/shared';
 import { Download, Eye, Lightbulb, ListChecks, Play, RefreshCw, Sparkles, X } from 'lucide-react';
@@ -218,12 +219,29 @@ function Recommendation({
     }
   };
   const kind = r.action?.kind ?? 'note';
+  // What became of an applied shot fix (docs/design/feedback.md#when-a-fix-does-not-pass)
+  const docs = useProject((s) => s.docs);
+  const job = useProject((s) => (r.jobId ? s.jobs[r.jobId] : undefined));
+  const outcome = docs ? fixOutcome(r, docs) : null;
+  const useTake = async () => {
+    if (outcome?.state !== 'not_fixed') return;
+    setBusy('apply');
+    try {
+      await api.selectTake(projectId, outcome.clipId, outcome.shotId, outcome.takeId, { inCut: true });
+      toast('The new take is in the cut');
+    } catch (err) {
+      reportError(err);
+    } finally {
+      setBusy(null);
+    }
+  };
   return (
     <li
       className="space-y-1.5 rounded-[var(--radius-control)] border border-border p-2.5"
       data-testid="feedback-recommendation"
       data-kind={kind}
       data-status={r.status}
+      data-outcome={outcome?.state}
     >
       <div className="flex flex-wrap items-center gap-1.5">
         <Badge tone={r.priority === 1 ? 'accent' : 'neutral'}>P{r.priority}</Badge>
@@ -246,6 +264,47 @@ function Recommendation({
           <span className="text-muted">In frame: </span>
           {r.action.characters.join(', ')}
         </p>
+      ) : null}
+      {outcome ? (
+        <div className="space-y-1.5 text-[12px] break-words" data-testid="fix-outcome">
+          {outcome.state === 'pending' ? (
+            <p className={job?.status === 'failed' ? 'text-danger' : 'text-muted'}>
+              {job?.status === 'failed'
+                ? `The fix failed: ${job.error?.message ?? 'unknown error'}`
+                : 'Regenerating…'}
+            </p>
+          ) : outcome.state === 'fixed' ? (
+            <p className="text-success">
+              {outcome.inCut
+                ? 'Fixed: the new take passed its checks and is in the cut.'
+                : 'Fixed: the new take passed its checks.'}
+            </p>
+          ) : (
+            <>
+              <p className="text-warning">
+                {outcome.inCut
+                  ? 'The new take is in the cut, though it did not pass its checks.'
+                  : 'Not fixed: the new take did not pass its checks, so the cut keeps the previous take.'}
+              </p>
+              {outcome.issues.length ? (
+                <p className="text-muted" data-testid="fix-issues">
+                  {outcome.issues.join(' · ')}
+                </p>
+              ) : null}
+              {!outcome.inCut ? (
+                <Button
+                  size="sm"
+                  loading={busy === 'apply'}
+                  disabled={!!busy}
+                  onClick={useTake}
+                  data-testid="use-fix-take"
+                >
+                  Use the new take
+                </Button>
+              ) : null}
+            </>
+          )}
+        </div>
       ) : null}
       {r.status === 'open' ? (
         <div className="flex flex-wrap gap-2">

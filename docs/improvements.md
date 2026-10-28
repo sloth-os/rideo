@@ -268,7 +268,7 @@ humming") still left music under 21 of the 110 takes in the cut: 2 of the first 
 of the 104 after. The sound check hears it, but it is advisory, so a five-second shot with its own tune makes the
 cut jump from one tune to the next. *How:* once the gateway passes `negative_prompt` (item 25) put "music" there; a
 project setting that retries takes with music like an unheard line (each retry is a paid 5 s take, $1.40 here); or,
-better, a source-separation step that keeps voices and effects and drops the music of the takes where it is heard.
+better, a source-separation step that keeps voices and effects and drops the music of the takes where it is heard. *Partly done:* `consistency.rejectMusic` (off by default; a toggle in the project settings) fails a take whose sound check hears music, so it is generated again like a take whose line is not heard ([quality checks](design/continuity.md#quality-checks-in-the-gate)); Wan 3.0's own words for no music ("No BGM") are in the sound line since 2e039ff. Source separation is still to come.
 
 **38. Fixes the feedback cannot see the cost of** (S) — the strip review recommended regenerating 68 shots (27 at
 priority 1). Applying all of them is at least $100 at this run's prices ($1.45 an attempt), and some shots fail again
@@ -292,12 +292,12 @@ were changed together), the 13 failed shots were generated again ($33.65): 8 pas
 sheets show what the fixes asked for (Rosie stays in her shot to the stop, the close-ups hold, no human on the
 chairlift), 4 failed only the cast check (item 41) and 1 kept its earlier take.
 
-**40. A fix that fails its checks** (S) — a regenerated take replaces the cut's take when its identity passes, even
+**40. A fix that fails its checks** (S, done) — a regenerated take replaces the cut's take when its identity passes, even
 when its quality checks fail. In the second pass that was right for some shots and wrong for others: the new
 take of C5·S9 failed only a jump check but had panda Rosie where the old one had a human child, while the new take of
 C4·S13 put a human girl on the chairlift where the old one had a stray cut. *How:* after a fix, the feedback panel
 shows each applied recommendation as fixed or not (the new take's checks), with the previous take one click away,
-and the next feedback on the export compares the two takes of each fixed shot.
+and the next feedback on the export compares the two takes of each fixed shot. *Done:* a fix's take replaces the cut's take only when it passes every check; otherwise the panel says *Not fixed* with the new take's issues and offers **Use the new take** (`take_select` with `inCut`, one commit). The outcome is derived from the documents (`fixOutcome`) ([when a fix does not pass](design/feedback.md#when-a-fix-does-not-pass)). Comparing the two takes in the next feedback is still to come.
 
 **41. Who is in frame after a fix** (S, done) — a fix that brings a character into the shot ("put Rosie's head and
 pink beanie at frame right") left the shot's cast as planned, so the gate counted that character as an extra: the

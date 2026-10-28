@@ -1,4 +1,5 @@
 import { newId } from '../ids';
+import type { MediaRef } from '../schemas/common';
 import {
   type AudioItem,
   type AudioRole,
@@ -862,4 +863,36 @@ function applyOne(
       return;
     }
   }
+}
+
+/**
+ * Puts a take in place of every item of the cut that shows its shot (`replace_source`, each range kept within the take)
+ * (docs/design/feedback.md#when-a-fix-does-not-pass).
+ */
+export function takeSwapOps(
+  timeline: Timeline,
+  take: { clipId: string; shotId: string; takeId: string; media: MediaRef },
+): TimelineOp[] {
+  return timeline.tracks.flatMap((track) =>
+    track.items.flatMap((item) =>
+      item.kind !== 'text' &&
+      item.source.type === 'take' &&
+      item.source.shotId === take.shotId &&
+      item.source.takeId !== take.takeId
+        ? [
+            {
+              op: 'replace_source' as const,
+              itemId: item.id,
+              source: {
+                type: 'take' as const,
+                clipId: take.clipId,
+                shotId: take.shotId,
+                takeId: take.takeId,
+                media: take.media,
+              },
+            },
+          ]
+        : [],
+    ),
+  );
 }

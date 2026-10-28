@@ -833,3 +833,59 @@ export function parseSignalLog(
     silences.push({ start: round3(silenceStart), end: round3(durationSec) });
   return { black, frozen, silences, changes };
 }
+
+/** A take passes every check: its identity verdict (or an override) and its quality checks, when they ran. */
+export function takePassesChecks(
+  take: Take,
+  shot: Pick<Shot, 'characterIds'> & Partial<Pick<Shot, 'elementIds'>>,
+  characters: Record<string, Character>,
+  elements: Record<string, Element> = {},
+): boolean {
+  return (
+    isAcceptable(takeState(take, shot, characters, elements)) && take.consistency.quality?.passed !== false
+  );
+}
+
+/** What became of an applied shot fix (docs/design/feedback.md#when-a-fix-does-not-pass). */
+export type FixOutcome =
+  | { state: 'pending' }
+  | {
+      state: 'fixed' | 'not_fixed';
+      clipId: string;
+      shotId: string;
+      takeId: string;
+      /** The new take shows in the cut. */
+      inCut: boolean;
+      /** Why it did not pass. */
+      issues: string[];
+    };
+
+/** The outcome of a `regenerate_shot` recommendation from the take its job made; null for anything else. */
+export function fixOutcome(
+  rec: FeedbackRecommendation,
+  docs: {
+    clips: Record<string, Clip>;
+    characters: Record<string, Character>;
+    elements: Record<string, Element>;
+    timeline: Timeline | null;
+  },
+): FixOutcome | null {
+  const action = rec.action;
+  if (rec.status !== 'applied' || action?.kind !== 'regenerate_shot' || !rec.jobId) return null;
+  const shot = docs.clips[action.clipId]?.shots.find((s) => s.id === action.shotId);
+  const take = shot?.takes.find((t) => t.jobId === rec.jobId && t.video);
+  if (!shot || !take) return { state: 'pending' };
+  const inCut = !!docs.timeline?.tracks.some((track) =>
+    track.items.some((i) => i.kind !== 'text' && i.source.type === 'take' && i.source.takeId === take.id),
+  );
+  const fixed = takePassesChecks(take, shot, docs.characters, docs.elements);
+  const identity = take.consistency.characters.flatMap((c) => c.issues);
+  return {
+    state: fixed ? 'fixed' : 'not_fixed',
+    clipId: action.clipId,
+    shotId: action.shotId,
+    takeId: take.id,
+    inCut,
+    issues: fixed ? [] : [...identity, ...(take.consistency.quality?.issues ?? [])].slice(0, 6),
+  };
+}

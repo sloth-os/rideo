@@ -450,8 +450,8 @@ export const api = {
     request<Job[]>('POST', `${p(id)}/clips/${clipId}/shots/${shotId}/variations`, { count }),
   regenerateShot: (id: string, clipId: string, shotId: string) =>
     request<Job>('POST', `${p(id)}/clips/${clipId}/shots/${shotId}/regenerate`),
-  selectTake: (id: string, clipId: string, shotId: string, takeId: string) =>
-    request<Clip>('POST', `${p(id)}/clips/${clipId}/shots/${shotId}/takes/${takeId}/select`),
+  selectTake: (id: string, clipId: string, shotId: string, takeId: string, opts: { inCut?: boolean } = {}) =>
+    request<Clip>('POST', `${p(id)}/clips/${clipId}/shots/${shotId}/takes/${takeId}/select`, opts),
   overrideTake: (id: string, clipId: string, shotId: string, takeId: string, reason: string) =>
     request<Clip>('POST', `${p(id)}/clips/${clipId}/shots/${shotId}/takes/${takeId}/override`, { reason }),
   approveClip: (id: string, clipId: string) => request<Clip>('POST', `${p(id)}/clips/${clipId}/approve`),

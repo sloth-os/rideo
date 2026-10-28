@@ -1,17 +1,21 @@
 import { describe, expect, it } from 'vitest';
 import {
   addUsage,
+  applyOps,
   assembleFeedback,
   castIdsOf,
   cutPoints,
   dialogueDelivery,
+  emptyTimeline,
   emptyUsage,
+  FeedbackRecommendationSchema,
   type FeedbackSceneOutput,
   FeedbackSchema,
   type FeedbackSignals,
   FeedbackSignalsSchema,
   feedbackIdFor,
   feedbackMarkdown,
+  fixOutcome,
   framingRuns,
   mergeSceneOutputs,
   overallScore,
@@ -19,12 +23,15 @@ import {
   parseSignalLog,
   rushedLines,
   type SceneReview,
+  type Shot,
   shotSpans,
   signalIssues,
   soundScore,
   TelemetryInputSchema,
   type Timeline,
+  takePassesChecks,
   takeSignals,
+  takeSwapOps,
   unexpectedCuts,
 } from '../src';
 import * as f from '../src/testing/fixtures';
@@ -607,5 +614,109 @@ describe('listening feedback (docs/design/feedback.md#how-a-film-is-watched)', (
     const cast = { [rosie.id]: rosie, [sammy.id]: sammy };
     expect(castIdsOf([' rosie ', 'SAMMY', 'Rosie', 'Bao'], cast)).toEqual([rosie.id, sammy.id]);
     expect(castIdsOf(['Bao'], cast)).toEqual([]);
+  });
+});
+
+describe('the outcome of a shot fix (docs/design/feedback.md#when-a-fix-does-not-pass)', () => {
+  it('is pending until its job made a take, fixed when the take passes every check, not fixed otherwise', () => {
+    const mira = f.character({ name: 'Mira' });
+    const old = f.readyShot([mira]);
+    const clip = f.clip({ shots: [old] });
+    const oldTake = old.takes[0]!;
+    const base = emptyTimeline({ fps: 24, width: 320, height: 180 });
+    const source = (takeId: string) => ({
+      type: 'take' as const,
+      clipId: clip.id,
+      shotId: old.id,
+      takeId,
+      media: oldTake.video!,
+    });
+    const timeline = applyOps(base, [
+      {
+        op: 'insert',
+        trackId: base.tracks[0]!.id,
+        item: { kind: 'video', source: source(oldTake.id), in: 0, out: 5 },
+      },
+    ]);
+    const rec = FeedbackRecommendationSchema.parse({
+      id: 'r1',
+      priority: 1,
+      dimension: 'temporal',
+      title: 'Generate C1·S1 again',
+      status: 'applied',
+      jobId: 'job_0000000000aaaaaa',
+      action: { kind: 'regenerate_shot', clipId: clip.id, shotId: old.id },
+    });
+    const docs = (shot: Shot, tl: Timeline = timeline) => ({
+      clips: { [clip.id]: { ...clip, shots: [shot] } },
+      characters: { [mira.id]: mira },
+      elements: {},
+      timeline: tl,
+    });
+    expect(fixOutcome(rec, docs(old))).toEqual({ state: 'pending' });
+    expect(fixOutcome({ ...rec, status: 'open' }, docs(old))).toBeNull();
+    expect(fixOutcome({ ...rec, action: { kind: 'note' } }, docs(old))).toBeNull();
+
+    // The fix's take passed: fixed, and in the cut once swapped in; swapping again changes nothing
+    const good = f.take({ jobId: rec.jobId, characterLocks: oldTake.characterLocks });
+    const withGood = { ...old, takes: [oldTake, good] };
+    expect(fixOutcome(rec, docs(withGood))).toMatchObject({
+      state: 'fixed',
+      takeId: good.id,
+      inCut: false,
+      issues: [],
+    });
+    const swap = { clipId: clip.id, shotId: old.id, takeId: good.id, media: good.video! };
+    const swapped = applyOps(timeline, takeSwapOps(timeline, swap));
+    expect(swapped.tracks[0]!.items[0]).toMatchObject({ source: { takeId: good.id } });
+    expect(fixOutcome(rec, docs(withGood, swapped))).toMatchObject({ state: 'fixed', inCut: true });
+    expect(takeSwapOps(swapped, swap)).toEqual([]);
+
+    // A quality check failed: not fixed, with why
+    const quality = {
+      passed: false,
+      temporal: null,
+      physics: 0.9,
+      continuity: null,
+      extras: [],
+      others: ['a human girl in pink'],
+      sound: null,
+      issues: ['a human girl in pink is in the frame'],
+    };
+    const bad = f.take({
+      jobId: rec.jobId,
+      characterLocks: oldTake.characterLocks,
+      consistency: f.report({ quality }),
+    });
+    expect(takePassesChecks(bad, old, { [mira.id]: mira })).toBe(false);
+    expect(fixOutcome(rec, docs({ ...old, takes: [oldTake, bad] }))).toMatchObject({
+      state: 'not_fixed',
+      takeId: bad.id,
+      inCut: false,
+      issues: ['a human girl in pink is in the frame'],
+    });
+    // So did the identity check
+    const lost = f.take({
+      jobId: rec.jobId,
+      characterLocks: oldTake.characterLocks,
+      consistency: f.report({
+        status: 'failed',
+        characters: [{ characterId: mira.id, present: true, score: 0.3, issues: ['her scarf is red'] }],
+      }),
+    });
+    expect(fixOutcome(rec, docs({ ...old, takes: [oldTake, lost] }))).toMatchObject({
+      state: 'not_fixed',
+      issues: ['her scarf is red'],
+    });
+    // An override is a person's pass
+    const overridden = {
+      ...lost,
+      override: {
+        actor: { kind: 'user' as const, id: 'local' },
+        reason: 'the scarf reads as pink',
+        at: '2026-10-28T00:00:00.000Z',
+      },
+    };
+    expect(takePassesChecks(overridden, old, { [mira.id]: mira })).toBe(true);
   });
 });
