@@ -36,6 +36,48 @@ const commit = (id: string, extra: Record<string, unknown> = {}) => ({
   ...extra,
 });
 
+describe('loading a project (docs/design/realtime-sync.md#ordering-and-consistency)', () => {
+  const state = () => {
+    const docs = f.docs();
+    return { seq: 3, head: { branch: 'main', commit: 'c1' }, docs, jobs: [], syncIssues: [] };
+  };
+  const deferred = <T>() => {
+    let resolve!: (v: T) => void;
+    const promise = new Promise<T>((r) => {
+      resolve = r;
+    });
+    return { promise, resolve };
+  };
+
+  it('renders from the state without waiting for the history, which fills in when it arrives', async () => {
+    useProject.setState({ ...emptySlice });
+    const s = state();
+    const history = deferred<any[]>();
+    vi.spyOn(api, 'state').mockResolvedValue(s as never);
+    vi.spyOn(api, 'history').mockReturnValue(history.promise as never);
+    const loaded = await useProject.getState().load(s.docs.project.id);
+    expect(loaded.docs).toBe(s.docs);
+    expect(useProject.getState().commits).toEqual([]);
+    history.resolve([commit('c1')]);
+    await vi.waitFor(() => expect(useProject.getState().commits.map((c) => c.id)).toEqual(['c1']));
+    vi.restoreAllMocks();
+  });
+
+  it('keeps a history that arrives before the state', async () => {
+    useProject.setState({ ...emptySlice });
+    const s = state();
+    const slow = deferred<any>();
+    vi.spyOn(api, 'state').mockReturnValue(slow.promise as never);
+    vi.spyOn(api, 'history').mockResolvedValue([commit('c1'), commit('c0')] as never);
+    const loading = useProject.getState().load(s.docs.project.id);
+    await new Promise((r) => setTimeout(r, 0));
+    slow.resolve(s);
+    const loaded = await loading;
+    expect(loaded.commits.map((c) => c.id)).toEqual(['c1', 'c0']);
+    vi.restoreAllMocks();
+  });
+});
+
 describe('reduceEvent', () => {
   it('applies committed documents, recomputes the workflow and marks remote changes', () => {
     const s = slice();

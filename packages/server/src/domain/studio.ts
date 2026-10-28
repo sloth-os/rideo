@@ -259,6 +259,8 @@ export function createStudio(
     metrics,
     coalesceWindowMs: config.coalesceWindowSec * 1000,
     log,
+    // The recently used projects, warmed after a restart (docs/design/storage-webdav.md#maintenance)
+    recentFile: join(config.dataDir, 'recent-projects.json'),
   });
   const accounts = new AccountsService({
     config,
@@ -503,6 +505,7 @@ export function createStudio(
 
   let syncTimer: NodeJS.Timeout | null = null;
   let sweepTimer: NodeJS.Timeout | null = null;
+  const maintenanceTimers: NodeJS.Timeout[] = [];
   const sweepStaging = () =>
     staging
       .sweep((jobId) => {
@@ -553,6 +556,32 @@ export function createStudio(
       await sweepStaging();
       sweepTimer = setInterval(sweepStaging, 3600_000);
       sweepTimer.unref();
+      // Maintenance (docs/design/storage-webdav.md#maintenance): warm the recent projects, notice folders deleted
+      // outside Rideo, remember what was used, empty the trash after 7 days
+      void projectsRegistry
+        .warmRecent()
+        .then((ids) => ids.length && log.info({ projects: ids }, 'warmed the recently used projects'));
+      const maintain = (name: string, work: () => Promise<unknown>) => () =>
+        void work().catch((err) => log.warn({ err: (err as Error).message }, `${name} failed`));
+      maintenanceTimers.push(
+        setInterval(
+          maintain('verifying loaded projects', () => projectsRegistry.verifyLoaded()),
+          600_000,
+        ),
+        setInterval(
+          maintain('saving the recent projects', () => projectsRegistry.saveRecent()),
+          300_000,
+        ),
+        setTimeout(
+          maintain('emptying the trash', () => services.projects.purgeTrash()),
+          60_000,
+        ),
+        setInterval(
+          maintain('emptying the trash', () => services.projects.purgeTrash()),
+          24 * 3600_000,
+        ),
+      );
+      for (const t of maintenanceTimers) t.unref();
       if (config.webdav.syncIntervalSec > 0) {
         syncTimer = setInterval(() => {
           for (const projectId of hub.subscribedProjects()) {
@@ -575,6 +604,10 @@ export function createStudio(
     async stop() {
       gatewayProxies.stop();
       if (syncTimer) clearInterval(syncTimer);
+      for (const t of maintenanceTimers.splice(0)) clearTimeout(t);
+      await projectsRegistry
+        .saveRecent()
+        .catch((err) => log.warn({ err: (err as Error).message }, 'saving the recent projects failed'));
       services.search.close();
       if (sweepTimer) clearInterval(sweepTimer);
       await jobs.shutdown();

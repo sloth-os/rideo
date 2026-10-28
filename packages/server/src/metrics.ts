@@ -247,6 +247,19 @@ export class Metrics {
   readonly llmPauses = this.add(
     new Counter('rideo_llm_pauses_total', 'Times a model endpoint was paused, by endpoint'),
   );
+  /** Maintenance of a long-running studio (docs/design/storage-webdav.md#maintenance). */
+  readonly projectsWarmed = this.add(
+    new Counter(
+      'rideo_projects_warmed_total',
+      'Projects whose documents and recent log were loaded in the background',
+    ),
+  );
+  readonly projectsVanished = this.add(
+    new Counter('rideo_projects_vanished_total', 'Loaded projects forgotten because their folder is gone'),
+  );
+  readonly trashPurged = this.add(
+    new Counter('rideo_trash_purged_total', 'Deleted projects removed for good 7 days after their deletion'),
+  );
   readonly consistency = this.add(new Counter('rideo_consistency_checks_total', 'Consistency gate outcomes'));
   readonly watermark = this.add(
     new Counter('rideo_watermark_operations_total', 'Watermark embeds and detections'),

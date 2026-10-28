@@ -103,6 +103,11 @@ A request holds its slot until its body ends, fails or is cancelled (`engine/med
 HTTP/1.1, where a browser opens six connections to a host, one stays free for the API, heartbeats and an export's
 inputs.
 
+**Bounded ranges.** mediabunny asks for open-ended ranges (`bytes=N-`) and cancels once it has what it needs, but the
+studio and the WebDAV server behind it start sending the rest of the file. The editor's fetch closes each such range
+at 4 MB (`bytes=N-(N+4 MiB-1)`, `cappedRanges`); mediabunny asks again from where an answer stopped when it needs more
+(a server may cap ranges), and learns the file's size from `Content-Range`. So storage reads follow what is decoded.
+
 ## Local proxies made with WebCodecs
 
 A local proxy ([playback compatibility](editor.md#playback-compatibility-local-proxies)) is made with the hardware

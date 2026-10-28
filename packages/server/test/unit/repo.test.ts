@@ -46,6 +46,54 @@ function tick(ms: number) {
   clock += ms;
 }
 
+/** A slow storage that counts reads and the most in flight at once (docs/design/storage-webdav.md#slow-and-flaky-servers). */
+class SlowCounting extends MemoryBackend {
+  reads = 0;
+  inFlight = 0;
+  maxInFlight = 0;
+  override async read(path: string): Promise<Buffer | null> {
+    this.reads++;
+    this.inFlight++;
+    this.maxInFlight = Math.max(this.maxInFlight, this.inFlight);
+    try {
+      await new Promise((r) => setTimeout(r, 2));
+      return await super.read(path);
+    } finally {
+      this.inFlight--;
+    }
+  }
+}
+
+describe('loading a project', () => {
+  it('shares a load in progress between callers and reads at most 12 documents at once', async () => {
+    const slow = new SlowCounting();
+    const first = new Repository(slow, layout, project.id);
+    await first.init({ 'project.json': project }, user, 'Create project');
+    await first.transact(
+      (tx) => {
+        for (let i = 0; i < 40; i++) {
+          const c = f.character();
+          tx.set(docPath.character(c.id), c);
+        }
+      },
+      { actor: user, message: 'Forty characters' },
+    );
+    // A cold process: five requests arrive while the project loads
+    const cold = new Repository(slow, layout, project.id);
+    slow.reads = 0;
+    slow.maxInFlight = 0;
+    const snapshots = await Promise.all([1, 2, 3, 4, 5].map(() => cold.snapshot()));
+    expect(new Set(snapshots.map((s) => s.docs.size))).toEqual(new Set([41]));
+    const oneLoad = slow.reads;
+    expect(oneLoad).toBeGreaterThan(41);
+    expect(oneLoad).toBeLessThan(41 * 2);
+    expect(slow.maxInFlight).toBeLessThanOrEqual(12);
+    // Loaded: the next ones read nothing more
+    await Promise.all([1, 2, 3].map(() => cold.snapshot()));
+    expect(slow.reads).toBe(oneLoad);
+  });
+});
+
 describe('commits', () => {
   it('initializes main with the project document', async () => {
     const snap = await repo.snapshot();

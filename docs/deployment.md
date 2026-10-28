@@ -44,6 +44,12 @@ httpd, with the prefix stripped by the proxy or kept. Set `RIDEO_PUBLIC_URL=http
 `deploy/caddy/Caddyfile`, `deploy/nginx/rideo.conf` and `deploy/httpd/rideo.conf`; see
 [serving under a subpath](design/subpath.md).
 
+**Serve it over HTTPS with HTTP/2** when people edit long cuts. Over HTTP/1.1 a browser opens at most six connections
+to a host, and the editor's media reads can take five of them, so the API, the heartbeats of a running export and an
+export's inputs share the last; HTTP/2 carries them all over one connection. Caddy speaks HTTP/2 over HTTPS by default;
+nginx needs `listen 443 ssl; http2 on;` (1.25.1 and later), Apache httpd `Protocols h2 http/1.1` with `mod_http2`
+([engine performance](design/engine-performance.md)).
+
 ## Environment
 
 Every variable below is read from the environment (and `.env`). Those that also appear in the

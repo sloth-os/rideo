@@ -12,6 +12,7 @@ import type { Metrics } from '../metrics';
 import type { StorageBackend } from '../storage/backend';
 import type { Layout } from '../storage/layout';
 import { sha256 } from '../util/crypto';
+import { eachLimit } from '../util/limit';
 import { KeyedMutex } from '../util/mutex';
 import type { Materializer } from './repo';
 
@@ -48,17 +49,6 @@ const RETRY_MS = 1000;
 const RETRY_MAX_MS = 30_000;
 
 /** Runs `fn` over `items`, at most `limit` at a time. */
-async function eachLimit<T>(
-  items: readonly T[],
-  limit: number,
-  fn: (item: T) => Promise<void>,
-): Promise<void> {
-  let next = 0;
-  const worker = async () => {
-    while (next < items.length) await fn(items[next++]!);
-  };
-  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
-}
 
 /**
  * The human-readable work tree on WebDAV: materializes committed documents as pretty JSON (+ screenplay.md)

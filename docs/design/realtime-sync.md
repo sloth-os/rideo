@@ -58,6 +58,9 @@ those paths.
   commits, so `seq` order equals commit order.
 - On reconnect the client resubscribes with its last `seq`. On a different `instanceId`, or after a
   `resync`, it reloads the snapshot and continues from the snapshot's `seq`, which `GET /state` returns.
+- A page renders from `GET /state` alone; the recent history (`GET /history?limit=100`) arrives in the background and
+  fills the History view and the activity when it does. The first history after a restart took 26.5 s on OpenList, and
+  pages used to wait for both ([maintenance](storage-webdav.md#maintenance) also warms the log).
 - UI mutations are not optimistic. The user's own REST call returns the commit, and the live event
   (usually first) applies it. Typing in text fields keeps local state and saves on debounce; if a remote
   commit changes a field the user has open and dirty, a "changed remotely" banner offers reload or keep.

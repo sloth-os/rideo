@@ -83,10 +83,31 @@ export function limitedFetch(
   return limited as typeof fetch;
 }
 
+/** The longest range a media read asks for (docs/design/engine-performance.md#media-requests). */
+export const RANGE_CAP_BYTES = 4 * 1024 * 1024;
+
+/**
+ * A fetch that closes an open-ended range (`bytes=N-`) at `cap` bytes, so the server and the storage behind it send
+ * no more than a read needs; mediabunny asks again from where an answer stopped.
+ */
+export function cappedRanges(
+  base: typeof fetch = (input, init) => fetch(input, init),
+  cap = RANGE_CAP_BYTES,
+): typeof fetch {
+  return ((input: RequestInfo | URL, init?: RequestInit) => {
+    const headers = new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined));
+    const open = /^bytes=(\d+)-$/.exec(headers.get('range') ?? '');
+    if (!open) return base(input, init);
+    const start = Number(open[1]);
+    headers.set('range', `bytes=${start}-${start + cap - 1}`);
+    return base(input, { ...init, headers });
+  }) as typeof fetch;
+}
+
 // Five in all: on HTTP/1.1 (six connections a host) one stays free for the API, heartbeats and an export's inputs
 
 /** Timeline lanes (waveforms, filmstrips): two media requests at a time for the whole tab. */
-export const laneFetch = limitedFetch(2);
+export const laneFetch = limitedFetch(2, cappedRanges());
 
 /** The preview and the animatic: three media requests at a time for the whole tab. */
-export const previewFetch = limitedFetch(3);
+export const previewFetch = limitedFetch(3, cappedRanges());

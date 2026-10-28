@@ -53,8 +53,10 @@ paths people wait for small, and does not let one bad answer become an error:
 | Transient failures | `423`, `429`, `500`, `502`, `503`, `504` and dropped connections (`ECONNRESET`, `ETIMEDOUT`, …) are tried up to 4 more times, waiting 250 ms, then doubling up to 4 s, with jitter. A `Retry-After` is honoured (up to 10 s). |
 | What may repeat | Reads, listings, `stat`, deletes, MKCOL and writes of a buffered body repeat on any of them. A conditional write and a MOVE repeat only on answers that say the server did not apply them (`423`, `429`, `503`). A streamed upload is never sent twice. A write of a buffered file also repeats on `405`: a file PUT is never a method a WebDAV server forbids, and OpenList answered it to job records while it was flooded after a restart. |
 | False `404`s | A file this process wrote or read, and has not deleted or moved since, is believed to exist (the last 50 000 paths). A `404` for it is tried again like a `503` before it is believed. |
+| Media reads | A ranged read (`readStream`) is tried again until its first byte arrives, like any read: a `500` at the start of a GET used to reach the browser as a broken response. An error after the first byte still ends the response. |
 | Project existence | A project's `.rideo/HEAD` is looked up once per process, not on every request (a project kept in a browser is still asked every time: that is how a closed browser is noticed). A `404` for it is looked up again 1 s later before the project counts as gone. Projects deleted through Rideo are forgotten at once; sync (`verify`) looks again, so a folder deleted outside Rideo is noticed. |
 | Commits | The objects of a commit are written concurrently (up to 8), then the ref: two round trips ([commit protocol](version-control.md#commit-protocol)). |
+| Loading a project | One load per branch at a time: requests that arrive while a project loads (a page's `/state` and `/history`, the Inbox, the project list, sync) wait for the same load instead of each reading every document. The documents are read at most 12 at a time. After the redeploy of 25 October several requests loading the 118-shot project at once, each reading its ~150 objects in one burst, made 66 reads give up (`500`, `503`, false `404`s). |
 | Work tree | Written behind the commits ([external edits](#external-edits)). |
 | Job records | One write at a time per job; a newer state waits for the write in flight instead of racing it (which OpenList answers with `423 Locked`). |
 | Deleted projects | Moved to `trash/`. OpenList on some cloud drives renames within a folder but answers `500` to a move into another: then the project folder is renamed where it is, to `projects/<id>.trashed-<time>`, which Rideo does not list (logged as `project renamed in place: the storage cannot move it to the trash`). |
@@ -62,6 +64,16 @@ paths people wait for small, and does not let one bad answer become an error:
 `rideo_storage_retries_total{op,reason}` counts the retries (`reason`: the status, the connection error code, or
 `missing` for a false `404`); a request that still fails is logged (`WebDAV request kept failing`, with the op, path,
 reason and tries) and fails as before.
+
+## Maintenance
+
+Background work that keeps a long-running studio in step with its storage, each with a log line and a metric:
+
+| Work | When | What |
+|---|---|---|
+| Warm a project | the first time a process finds a project, and for the three most recently used ones after a restart | its documents are loaded (shared with the request that found it) and its last 100 commits read into the object cache, so the first History after a deploy does not walk the log one round trip at a time (26.5 s on OpenList after the redeploy of 25 October). The recently used projects are kept in `${RIDEO_DATA_DIR}/recent-projects.json` (the last 20, written every 5 minutes and at shutdown). `rideo_projects_warmed_total` |
+| Notice deleted folders | every 10 minutes | each loaded project is looked up on storage again (`existing` with `verify`, two looks a second apart); one whose folder is gone is forgotten, so a project deleted over WebDAV stops being served from memory. Sync did this only for projects with live subscribers. `rideo_projects_vanished_total` |
+| Empty the trash | a minute after start, then daily | a deleted project (`trash/<id>-<time>`, or `projects/<id>.trashed-<time>` on a server that cannot move folders) is removed for good 7 days after its deletion (the time in its name), as a browser's trash is. `rideo_trash_purged_total` |
 
 ## Embedded server
 

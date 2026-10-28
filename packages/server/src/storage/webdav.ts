@@ -1,4 +1,4 @@
-import type { Readable } from 'node:stream';
+import { PassThrough, type Readable } from 'node:stream';
 import { createClient, type FileStat, type WebDAVClient } from 'webdav';
 import type { Metrics } from '../metrics';
 import { sleep } from '../util/abort';
@@ -235,11 +235,47 @@ export class WebDavBackend implements StorageBackend {
     if (!st || st.isDir) return null;
     const start = range?.start ?? 0;
     const end = Math.min(range?.end ?? st.size - 1, st.size - 1);
-    const stream = this.client.createReadStream(
-      joinPath(path),
-      range ? { range: { start, end } } : undefined,
+    const p = joinPath(path);
+    // Tried again until the first byte arrives (docs/design/storage-webdav.md#slow-and-flaky-servers)
+    const stream = await this.retrying('read', p, 'always', () =>
+      this.openStream(p, range ? { start, end } : undefined),
     );
-    return { stream: stream as unknown as Readable, size: st.size, start, end };
+    return { stream, size: st.size, start, end };
+  }
+
+  /** A read stream that has delivered its first chunk (or ended): an error before it can be tried again. */
+  private openStream(path: string, range?: { start: number; end: number }): Promise<Readable> {
+    return new Promise((resolve, reject) => {
+      const source = this.client.createReadStream(path, range ? { range } : undefined) as unknown as Readable;
+      const out = new PassThrough();
+      const settle = () => {
+        source.off('error', onError);
+        source.off('data', onData);
+        source.off('end', onEnd);
+      };
+      const onError = (err: Error) => {
+        settle();
+        source.destroy();
+        reject(err);
+      };
+      const onData = (chunk: Buffer) => {
+        source.pause();
+        settle();
+        out.write(chunk);
+        // An error after the first byte ends the response, as before
+        source.on('error', (err) => out.destroy(err));
+        source.pipe(out);
+        resolve(out);
+      };
+      const onEnd = () => {
+        settle();
+        out.end();
+        resolve(out);
+      };
+      source.once('error', onError);
+      source.once('data', onData);
+      source.once('end', onEnd);
+    });
   }
 
   /** Creates a collection and its parents once per process (concurrent callers share one MKCOL). */

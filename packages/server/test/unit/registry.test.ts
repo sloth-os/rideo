@@ -1,3 +1,6 @@
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import * as f from '@rideo/shared/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ProjectRegistry } from '../../src/domain/registry';
@@ -101,5 +104,54 @@ describe('project existence', () => {
     storage.heads = 0;
     for (let i = 0; i < 3; i++) await registry.existing(id);
     expect(storage.heads).toBe(3);
+  });
+});
+
+describe('maintenance (docs/design/storage-webdav.md#maintenance)', () => {
+  it('forgets every loaded project whose folder is gone, on its timer', async () => {
+    const kept = await create();
+    const deleted = await create();
+    const metrics = new Metrics();
+    const fresh = new ProjectRegistry({
+      storage,
+      layout,
+      hub: new LiveHub(),
+      metrics,
+      coalesceWindowMs: 0,
+      log: { warn },
+      confirmMs: 5,
+    });
+    await fresh.existing(kept);
+    await fresh.existing(deleted);
+    await storage.delete(layout.project(deleted));
+    expect(await fresh.verifyLoaded()).toEqual([deleted]);
+    expect(metrics.projectsVanished.get()).toBe(1);
+    await expect(fresh.existing(deleted)).rejects.toMatchObject({ code: 'not_found' });
+    await expect(fresh.existing(kept)).resolves.toMatchObject({ id: kept });
+    expect(warn).toHaveBeenCalledWith({ projectId: deleted }, 'project folder is gone; forgot the project');
+  });
+
+  it('remembers the recently used projects across a restart and warms them, each once', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'rideo-recent-'));
+    const recentFile = join(dir, 'recent-projects.json');
+    const [a, b, c, d] = [await create(), await create(), await create(), await create()];
+    const make = (metrics = new Metrics()) =>
+      new ProjectRegistry({ storage, layout, hub: new LiveHub(), metrics, coalesceWindowMs: 0, recentFile });
+    const first = make();
+    for (const id of [a, b, c, d]) {
+      await first.existing(id);
+      await new Promise((r) => setTimeout(r, 2));
+    }
+    await first.saveRecent();
+    expect(await first.readRecent()).toEqual([d, c, b, a]);
+    // After a restart: the three most recent are warmed, documents and log
+    const metrics = new Metrics();
+    const restarted = make(metrics);
+    expect(await restarted.warmRecent()).toEqual([d, c, b]);
+    expect(metrics.projectsWarmed.get()).toBe(3);
+    // A second warm of the same project does nothing
+    await restarted.warm(d);
+    expect(metrics.projectsWarmed.get()).toBe(3);
+    await rm(dir, { recursive: true, force: true });
   });
 });

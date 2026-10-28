@@ -31,20 +31,20 @@ After the fixes, on the demo server:
 
 ## Storage and version control
 
-**1. A project loaded once, not once per request** (S) — after a restart, requests that arrive together (a page's
+**1. A project loaded once, not once per request** (S, done) — after a restart, requests that arrive together (a page's
 `/state` and `/history`, the Inbox, the project list, sync) each load the same project's whole document set:
 `Repository.state()` does not share a load in progress. After the redeploy of 25 October, while the 118-shot project
 was loaded by several requests at once, 66 storage reads gave up (17 answered `500`, 15 `503`, 34 a false `404`) and a
-project create answered `503`. *How:* the requests share the load in progress (one promise per branch).
+project create answered `503`. *How:* the requests share the load in progress (one promise per branch). *Done:* requests that arrive while a project loads share the load in progress (one per branch) ([slow and flaky servers](design/storage-webdav.md#slow-and-flaky-servers)).
 
-**2. Bounded parallel reads when a project loads** (S) — a project's documents are read all at once (one `Promise.all`
+**2. Bounded parallel reads when a project loads** (S, done) — a project's documents are read all at once (one `Promise.all`
 over about 150 objects for the 118-shot project). OpenList answers such bursts with `500`, `503` and false `404`s, and
-the retries add to the burst. *How:* read at most 8–16 objects at a time, as a commit writes at most 8.
+the retries add to the burst. *How:* read at most 8–16 objects at a time, as a commit writes at most 8. *Done:* a project's documents are read at most 12 at a time.
 
-**3. Pages wait for history on a cold start** (S) — the project store loads `/state` and `/history?limit=100`
+**3. Pages wait for history on a cold start** (S, done) — the project store loads `/state` and `/history?limit=100`
 together and shows nothing until both answer (`web/src/store/project.ts`), and the first history after a restart took
 26.5 s. *How:* render from `/state` and fetch history in the background; on the server, read the recent log into the
-commit cache when a project loads.
+commit cache when a project loads. *Done:* a page renders from `/state` and the history fills in when it arrives; opening a project's state reads its recent log into the object cache in the background ([maintenance](design/storage-webdav.md#maintenance)).
 
 **4. A recent-log file per branch** (M) — a log walk reads one commit object at a time (a commit names its parent, so
 the next read waits for the last), so 100 commits cost 100 round trips on a cold cache. *How:*
@@ -68,24 +68,24 @@ there), uploaded in the background with retries, the export card saying so until
 
 **8. ETags from PUT answers** (S) — every work-tree batch lists each folder it wrote to, only to learn the new etags.
 *How:* take the ETag from the PUT answer when the server sends one (the `webdav` client's `putFileContents` does not
-return headers; a custom request does).
+return headers; a custom request does). *Not done:* OpenList answers a PUT with `201` and no `ETag` (checked on the demo server on October 28), so taking the ETag from the answer would save no listing there; kept for servers that send one.
 
-**9. Media reads that survive a hiccup** (S) — `readStream` retries its `stat` but not the stream itself, so a `500`
-from OpenList at the start of a media read reaches the browser. *How:* retry the GET until its first byte arrives.
+**9. Media reads that survive a hiccup** (S, done) — `readStream` retries its `stat` but not the stream itself, so a `500`
+from OpenList at the start of a media read reaches the browser. *How:* retry the GET until its first byte arrives. *Done:* a media read is tried again until its first byte arrives.
 
-**10. Projects deleted outside Rideo** (S) — a project is looked up once per process; sync's `verify` notices a deleted
+**10. Projects deleted outside Rideo** (S, done) — a project is looked up once per process; sync's `verify` notices a deleted
 folder, but sync runs only for projects with live subscribers, so a folder deleted over WebDAV stays served from
-memory until a restart. *How:* drop project handles left idle for a while, or verify loaded projects on a slow timer.
+memory until a restart. *How:* drop project handles left idle for a while, or verify loaded projects on a slow timer. *Done:* every 10 minutes the loaded projects are looked up again and the ones whose folder is gone are forgotten (`rideo_projects_vanished_total`).
 
-**11. Emptying the WebDAV trash** (S) — `trash/`, and `projects/<id>.trashed-<time>` on servers that cannot move a
+**11. Emptying the WebDAV trash** (S, done) — `trash/`, and `projects/<id>.trashed-<time>` on servers that cannot move a
 folder into another, are never emptied (a browser's trash is emptied after 7 days). *How:* a scheduled purge after
-7 days, with a metric and a log line per project removed.
+7 days, with a metric and a log line per project removed. *Done:* a minute after start and then daily, deleted projects older than 7 days are removed for good (`rideo_trash_purged_total`).
 
 **12. Garbage collection on a schedule** (M) — GC runs only on request, so coalesced tips and objects of failed
 commits pile up as files on the WebDAV server. *How:* a weekly low-priority GC job per project, with the report kept.
 
-**13. Warm projects after a restart** (S) — after a deploy the first person in pays for the cold caches (items 1–5).
-*How:* load the most recently used projects (documents and recent log) in the background at startup.
+**13. Warm projects after a restart** (S, done) — after a deploy the first person in pays for the cold caches (items 1–5).
+*How:* load the most recently used projects (documents and recent log) in the background at startup. *Done:* the three most recently used projects (kept in `recent-projects.json`) are warmed after a restart, documents and recent log (`rideo_projects_warmed_total`).
 
 ## Editor and exports in the browser
 
@@ -98,13 +98,13 @@ upload is made, as it writes posters; the tab draws those and decodes only media
 soundtrack (an ffmpeg export before its first chunk): about 400 MB for the 118 shots. *How:* render the soundtrack chunk by chunk and join the pieces, or load
 inputs as each chunk needs them.
 
-**16. Bounded range requests** (S) — mediabunny's `UrlSource` asks for open-ended ranges (`bytes=N-`) and aborts once it
+**16. Bounded range requests** (S, done) — mediabunny's `UrlSource` asks for open-ended ranges (`bytes=N-`) and aborts once it
 has what it needs, but the server and the storage behind it start sending the rest of the file. *How:* a `fetchFn`
-that caps each range (say 4 MB) and asks again, so storage reads follow what is decoded.
+that caps each range (say 4 MB) and asks again, so storage reads follow what is decoded. *Done:* the editor's fetch closes each open-ended range at 4 MiB (`cappedRanges`) and mediabunny asks again from where an answer stopped ([media requests](design/engine-performance.md#media-requests)).
 
-**17. HTTP/2 in front of the studio** (S, docs) — over HTTP/1.1 a browser opens six connections to a host, and the
+**17. HTTP/2 in front of the studio** (S, docs, done) — over HTTP/1.1 a browser opens six connections to a host, and the
 editor's media reads may take five of them (the API, heartbeats and an export's inputs share the sixth). *How:*
-[deployment](deployment.md) recommends HTTPS with HTTP/2 (Caddy's default) for studios that edit long cuts.
+[deployment](deployment.md) recommends HTTPS with HTTP/2 (Caddy's default) for studios that edit long cuts. *Done:* [deployment](deployment.md#behind-a-reverse-proxy-under-a-subpath) recommends HTTPS with HTTP/2 and says how for Caddy, nginx and Apache httpd.
 
 ## AI calls and jobs
 

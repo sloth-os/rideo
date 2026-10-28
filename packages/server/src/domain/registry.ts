@@ -1,5 +1,6 @@
+import { readFile, writeFile } from 'node:fs/promises';
 import { docsFromEntries, type ProjectDocs } from '@rideo/shared';
-import { notFound } from '../errors';
+import { AppError, notFound } from '../errors';
 import type { LiveHub } from '../live/hub';
 import type { Metrics } from '../metrics';
 import type { StorageBackend } from '../storage/backend';
@@ -17,8 +18,17 @@ export interface ProjectHandle {
 }
 
 /** One Repository + Worktree per project, wired to live events and metrics. */
+/** The recently used projects remembered across restarts (docs/design/storage-webdav.md#maintenance). */
+const RECENT_KEPT = 20;
+/** Commits read into the object cache when a project is warmed. */
+const WARM_LOG = 100;
+
 export class ProjectRegistry {
   private readonly handles = new Map<string, ProjectHandle>();
+  /** When each project was last asked for, to warm the recent ones after a restart. */
+  private readonly lastUsed = new Map<string, number>();
+  /** Warm-ups started in this process, at most one per project. */
+  private readonly warmed = new Map<string, Promise<void>>();
   /** Commits on a project's checked-out branch, with the documents they changed (the search index follows them). */
   onCommit?: (projectId: string, docs: Record<string, unknown>) => void;
 
@@ -29,9 +39,11 @@ export class ProjectRegistry {
       hub: LiveHub;
       metrics: Metrics;
       coalesceWindowMs: number;
-      log?: { warn: (o: unknown, m?: string) => void };
+      log?: { warn: (o: unknown, m?: string) => void; info?: (o: unknown, m?: string) => void };
       /** How long a missing `.rideo/HEAD` is given to show up before the project counts as gone (WebDAV: 1 s). */
       confirmMs?: number;
+      /** Where the recently used projects are kept across restarts. */
+      recentFile?: string;
     },
   ) {}
 
@@ -76,6 +88,7 @@ export class ProjectRegistry {
     } catch {
       throw notFound(`project ${projectId}`);
     }
+    this.lastUsed.set(projectId, Date.now());
     if (h.confirmed && !opts.verify && this.sticky(projectId)) return h;
     if (!(await h.repo.exists())) {
       const confirmMs = this.deps.confirmMs ?? (this.deps.storage.kind === 'webdav' ? 1000 : 0);
@@ -100,6 +113,82 @@ export class ProjectRegistry {
 
   forget(projectId: string): void {
     this.handles.delete(projectId);
+    this.lastUsed.delete(projectId);
+    this.warmed.delete(projectId);
+  }
+
+  /**
+   * Loads a project's documents and reads its recent log into the object cache, once per process
+   * (docs/design/storage-webdav.md#maintenance): the first History after a restart then reads no commit one at a time.
+   */
+  warm(projectId: string): Promise<void> {
+    let w = this.warmed.get(projectId);
+    if (!w) {
+      const started = Date.now();
+      w = this.existing(projectId)
+        .then(async (h) => {
+          await h.repo.snapshot();
+          await h.repo.log({ limit: WARM_LOG });
+          this.deps.metrics.projectsWarmed.inc();
+          this.deps.log?.info?.({ projectId, ms: Date.now() - started }, 'project warmed');
+        })
+        .catch((err) => {
+          this.warmed.delete(projectId);
+          this.deps.log?.warn({ projectId, err: (err as Error).message }, 'could not warm the project');
+        });
+      this.warmed.set(projectId, w);
+    }
+    return w;
+  }
+
+  /** Warms the most recently used projects of the last run, one at a time (after a restart). */
+  async warmRecent(count = 3): Promise<string[]> {
+    const ids = (await this.readRecent()).slice(0, count);
+    for (const id of ids) await this.warm(id);
+    return ids;
+  }
+
+  /** The recently used projects, most recent first, from the file of the last run. */
+  async readRecent(): Promise<string[]> {
+    if (!this.deps.recentFile) return [];
+    try {
+      const raw = JSON.parse(await readFile(this.deps.recentFile, 'utf8')) as { projects?: unknown };
+      return Array.isArray(raw.projects)
+        ? raw.projects.filter((x): x is string => typeof x === 'string')
+        : [];
+    } catch {
+      return [];
+    }
+  }
+
+  /** Writes the recently used projects (every few minutes and at shutdown). */
+  async saveRecent(): Promise<void> {
+    if (!this.deps.recentFile) return;
+    const previous = await this.readRecent();
+    const used = [...this.lastUsed].sort((a, b) => b[1] - a[1]).map(([id]) => id);
+    const projects = [...new Set([...used, ...previous])].slice(0, RECENT_KEPT);
+    await writeFile(this.deps.recentFile, JSON.stringify({ projects }));
+  }
+
+  /**
+   * Looks up every loaded project on storage again and forgets the ones whose folder is gone
+   * (docs/design/storage-webdav.md#maintenance): sync did it only for projects with live subscribers.
+   */
+  async verifyLoaded(): Promise<string[]> {
+    const gone: string[] = [];
+    for (const [id, h] of [...this.handles]) {
+      if (!h.confirmed || !this.sticky(id)) continue;
+      try {
+        await this.existing(id, { verify: true });
+      } catch (err) {
+        if (!(err instanceof AppError && err.code === 'not_found')) continue;
+        this.forget(id);
+        gone.push(id);
+        this.deps.metrics.projectsVanished.inc();
+        this.deps.log?.warn({ projectId: id }, 'project folder is gone; forgot the project');
+      }
+    }
+    return gone;
   }
 
   /** Writes what the work trees have queued, waiting at most `ms` (shutdown). */

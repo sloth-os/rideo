@@ -90,6 +90,19 @@ describe('WebDAV retries', () => {
     expect(metrics.storageRetries.get({ op: 'read', reason: '405' })).toBe(0);
   });
 
+  it('tries a media read again until its first byte arrives', async () => {
+    const dir = base();
+    const data = Buffer.from('0123456789'.repeat(100));
+    await storage.write(`${dir}/clip.mp4`, data);
+    dav.fail('GET', /clip\.mp4$/, { status: 500 }, 1);
+    const read = await storage.readStream(`${dir}/clip.mp4`, { start: 10, end: 29 });
+    const chunks: Buffer[] = [];
+    for await (const c of read!.stream) chunks.push(c as Buffer);
+    expect(Buffer.concat(chunks).toString()).toBe(data.subarray(10, 30).toString());
+    expect(read).toMatchObject({ size: 1000, start: 10, end: 29 });
+    expect(metrics.storageRetries.get({ op: 'read', reason: '500' })).toBeGreaterThanOrEqual(1);
+  });
+
   it('honours Retry-After', async () => {
     const dir = base();
     await storage.write(`${dir}/doc.json`, 'x');

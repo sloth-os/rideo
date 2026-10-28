@@ -13,6 +13,7 @@ import {
 import { AppError, conflict, invalid, notFound } from '../errors';
 import type { StorageBackend } from '../storage/backend';
 import type { Layout } from '../storage/layout';
+import { eachLimit } from '../util/limit';
 import { Lru } from '../util/lru';
 import { KeyedMutex } from '../util/mutex';
 import { type BlobObject, type CommitObject, ObjectStore, type TreeEntry, type TreeObject } from './objects';
@@ -121,11 +122,16 @@ function diffFlat(a: ReadonlyMap<string, string>, b: ReadonlyMap<string, string>
 }
 
 /** Git-like repository for one project's documents (docs/design/version-control.md). */
+/** Documents read at once while a project loads (docs/design/storage-webdav.md#slow-and-flaky-servers). */
+const LOAD_CONCURRENCY = 12;
+
 export class Repository {
   readonly objects: ObjectStore;
   private readonly lock = new KeyedMutex();
   private readonly flatCache = new Lru<string, Map<string, string>>(128);
   private head: BranchState | null = null;
+  /** Loads in progress, by branch (shared by the callers that arrive while one runs). */
+  private readonly loading = new Map<string, Promise<BranchState>>();
   private headBranch: string | null = null;
   /** Tags, read once: they change only through this repository (createTag). */
   private tags: Promise<TagInfo[]> | null = null;
@@ -193,20 +199,34 @@ export class Repository {
     const commit = await this.readRef(branch);
     const flat = commit ? new Map(await this.flatTree(commit)) : new Map<string, string>();
     const docs = new Map<string, unknown>();
-    await Promise.all(
-      [...flat].map(async ([p, id]) => {
-        docs.set(p, (await this.objects.get<{ type: 'blob'; content: unknown }>(id)).content);
-      }),
-    );
+    // A few reads at a time: a slow WebDAV server answers a burst with 5xx and false 404s
+    // (docs/design/storage-webdav.md#slow-and-flaky-servers)
+    await eachLimit([...flat], LOAD_CONCURRENCY, async ([p, id]) => {
+      docs.set(p, (await this.objects.get<{ type: 'blob'; content: unknown }>(id)).content);
+    });
     return { branch, commit, flat, docs };
+  }
+
+  /** The load of a branch, shared by the callers that arrive while it runs. */
+  private loadShared(branch: string): Promise<BranchState> {
+    let load = this.loading.get(branch);
+    if (!load) {
+      load = this.loadState(branch).finally(() => this.loading.delete(branch));
+      this.loading.set(branch, load);
+    }
+    return load;
   }
 
   private async state(branch: string): Promise<BranchState> {
     const current = await this.currentBranch();
-    if (branch !== current) return this.loadState(branch);
+    if (branch !== current) return this.loadShared(branch);
     if (!this.head || this.head.branch !== branch) {
-      this.head = await this.loadState(branch);
-      void this.materializer?.reconcile?.(this.head.docs);
+      const loaded = await this.loadShared(branch);
+      // Another caller of the same load, or a commit, may have set the head meanwhile
+      if (!this.head || this.head.branch !== branch) {
+        this.head = loaded;
+        void this.materializer?.reconcile?.(this.head.docs);
+      }
     }
     return this.head;
   }

@@ -105,6 +105,35 @@ describe('a server that cannot move a folder to another folder', () => {
   });
 });
 
+describe('emptying the trash (docs/design/storage-webdav.md#maintenance)', () => {
+  it('removes a deleted project for good 7 days after its deletion, wherever it went', async () => {
+    const make = async (title: string) =>
+      (await stack.api<{ id: string }>('POST', '/projects', { kind: 'story', title, brief: { prompt: 'x' } }))
+        .id;
+    const moved = await make('Moved to the trash');
+    const renamed = await make('Renamed in place');
+    await stack.api('DELETE', `/projects/${moved}`);
+    dav.fail('MOVE', new RegExp(`/projects/${renamed}/?$`), { status: 500 }, 1);
+    await stack.api('DELETE', `/projects/${renamed}`);
+    const listing = async (dir: string) =>
+      await (
+        await fetch(`${dav.url}/studio/${dir}/`, { method: 'PROPFIND', headers: { Depth: '1' } })
+      ).text();
+    expect(await listing('trash')).toContain(moved);
+    expect(await listing('projects')).toMatch(new RegExp(`${renamed}\\.trashed-\\d+`));
+    const projects = stack.server.studio.projects;
+    // A day later both stay; eight days later both are gone
+    expect(await projects.purgeTrash(Date.now() + 24 * 3600_000)).toEqual([]);
+    const purged = await projects.purgeTrash(Date.now() + 8 * 24 * 3600_000);
+    expect(purged.some((p) => p.includes(`trash/${moved}-`))).toBe(true);
+    expect(purged.some((p) => p.includes(`projects/${renamed}.trashed-`))).toBe(true);
+    expect(await listing('trash')).not.toContain(moved);
+    expect(await listing('projects')).not.toContain(`${renamed}.trashed-`);
+    const text = await (await fetch(`${stack.url}/metrics`)).text();
+    expect(Number(/^rideo_trash_purged_total (\d+)/m.exec(text)?.[1])).toBeGreaterThanOrEqual(2);
+  });
+});
+
 describe('an overloaded model provider', () => {
   it('writes the screenplay once the provider takes calls again', async () => {
     const p = await stack.api<{ id: string }>('POST', '/projects', {

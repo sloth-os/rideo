@@ -227,11 +227,19 @@ export const useProject = create<ProjectStore>((set, get) => ({
       ...(get().projectId !== projectId ? { ...emptySlice } : {}),
     });
     const started = performance.now();
+    // The page renders from the state; the recent history fills in when it arrives: the first after a restart took
+    // 26.5 s on OpenList (docs/design/realtime-sync.md#ordering-and-consistency)
+    let early: ProjectSlice['commits'] | null = null;
+    api
+      .history(projectId, { limit: 100 })
+      .then((commits) => {
+        // Before the state: kept for the slice; after it: shown at once
+        early = commits;
+        if (get().projectId === projectId) set({ commits });
+      })
+      .catch(() => undefined);
     try {
-      const [state, commits] = await Promise.all([
-        api.state(projectId),
-        api.history(projectId, { limit: 100 }),
-      ]);
+      const state = await api.state(projectId);
       // A reload while edits are pending keeps the shown timeline: it is fetched once they are answered
       const before = get();
       const pending = before.projectId === projectId ? before.pendingEdits : [];
@@ -245,7 +253,8 @@ export const useProject = create<ProjectStore>((set, get) => ({
         docs,
         workflow: evaluateWorkflow(docs),
         jobs: Object.fromEntries(state.jobs.map((j) => [j.id, j])),
-        commits,
+        // The history arrives on its own; a reload of the same project keeps the commits shown until then
+        commits: early ?? (before.projectId === projectId ? before.commits : []),
         activity: before.projectId === projectId ? before.activity : [],
         syncIssues: state.syncIssues,
         pendingEdits: pending,

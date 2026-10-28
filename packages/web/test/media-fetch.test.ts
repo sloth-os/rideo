@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { limitedFetch } from '../src/engine/media-fetch';
+import { cappedRanges, limitedFetch, RANGE_CAP_BYTES } from '../src/engine/media-fetch';
 
 /** Media reads that leave room on the connection (docs/design/engine-performance.md#media-requests). */
 
@@ -83,5 +83,25 @@ describe('limited media fetch', () => {
     await expect(waiting).rejects.toMatchObject({ name: 'AbortError' });
     await first;
     expect(server.open.map((o) => o.url)).toEqual(['/first']);
+  });
+});
+
+describe('bounded media ranges (docs/design/engine-performance.md#media-requests)', () => {
+  it('closes an open-ended range at 4 MiB and leaves every other request as it is', async () => {
+    const seen: (string | null)[] = [];
+    const base = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      seen.push(new Headers(init?.headers).get('range'));
+      return new Response('x', { status: 206 });
+    });
+    const get = cappedRanges(base as unknown as typeof fetch);
+    await get('/media/a.mp4', { headers: { Range: 'bytes=1000-' } });
+    await get('/media/a.mp4', { headers: { Range: 'bytes=0-99' } });
+    await get('/media/a.mp4');
+    expect(seen).toEqual([`bytes=1000-${1000 + RANGE_CAP_BYTES - 1}`, 'bytes=0-99', null]);
+    expect(RANGE_CAP_BYTES).toBe(4 * 1024 * 1024);
+    // The signal goes with it
+    const ctrl = new AbortController();
+    await get('/media/a.mp4', { headers: { Range: 'bytes=5-' }, signal: ctrl.signal });
+    expect(base.mock.calls.at(-1)![1]!.signal).toBe(ctrl.signal);
   });
 });

@@ -61,6 +61,9 @@ function mergeSettings(
   return out;
 }
 
+/** How long a deleted project stays in the trash (docs/design/storage-webdav.md#maintenance). */
+const TRASH_KEEP_MS = 7 * 24 * 3600_000;
+
 export class ProjectService extends Service {
   private readonly syncIssues = new Map<string, { path: string; error: string }[]>();
 
@@ -198,6 +201,8 @@ export class ProjectService extends Service {
   async state(projectId: string): Promise<ProjectState> {
     const seq = this.deps.hub.currentSeq(projectId);
     const h = await this.deps.projects.existing(projectId);
+    // A page opened: its History follows, so the recent log is read in the background (docs/design/storage-webdav.md#maintenance)
+    void this.deps.projects.warm(projectId);
     const snap = await h.repo.snapshot();
     const docs = docsFromEntries(snap.docs);
     return {
@@ -263,6 +268,34 @@ export class ProjectService extends Service {
     }
     this.deps.projects.forget(projectId);
     this.deps.log.info({ projectId, actor, target }, 'project moved to trash');
+  }
+
+  /**
+   * Removes deleted projects for good 7 days after their deletion (docs/design/storage-webdav.md#maintenance): the
+   * trash folder's `<id>-<time>` and, on servers that cannot move folders, `projects/<id>.trashed-<time>`.
+   */
+  async purgeTrash(now = Date.now()): Promise<string[]> {
+    const { storage, layout } = this.deps;
+    const older = (name: string, pattern: RegExp) => {
+      const at = Number(pattern.exec(name)?.[1]);
+      return Number.isFinite(at) && now - at > TRASH_KEEP_MS;
+    };
+    const trash = await storage.list(layout.trashDir()).catch(() => []);
+    const renamed = await storage.list(layout.projectsDir()).catch(() => []);
+    const targets = [
+      ...trash
+        .filter((e) => e.isDir && older(e.name, /^prj_[0-9a-z]+-(\d+)$/))
+        .map((e) => `${layout.trashDir()}/${e.name}`),
+      ...renamed
+        .filter((e) => e.isDir && older(e.name, /^prj_[0-9a-z]+\.trashed-(\d+)$/))
+        .map((e) => `${layout.projectsDir()}/${e.name}`),
+    ];
+    for (const path of targets) {
+      await storage.delete(path);
+      this.deps.metrics.trashPurged.inc();
+      this.deps.log.info({ path }, 'deleted project removed for good after 7 days');
+    }
+    return targets;
   }
 
   async getDoc(projectId: string, path: string, at?: string): Promise<unknown> {
