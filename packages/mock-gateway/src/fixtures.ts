@@ -239,6 +239,8 @@ export function screenplayGenerate(input: ScreenplayGenerateInput): ScreenplayGe
     outline,
     scenes,
     ended: true,
+    // "Only these two characters appear": nobody but the cast on screen
+    castOnly: /\bonly\b[^.!?]{0,60}\b(appears?|on screen)\b/i.test(input.prompt),
   };
 }
 

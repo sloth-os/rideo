@@ -50,12 +50,12 @@ export class Api {
   /** A story project with tiny media (320×180) and a 30 s target so generation stays fast. */
   async storyProject(
     title: string,
-    opts: { screenplay?: boolean; settings?: Record<string, unknown> } = {},
+    opts: { screenplay?: boolean; settings?: Record<string, unknown>; brief?: string } = {},
   ): Promise<string> {
     const p = await this.call<{ id: string }>('POST', '/projects', {
       kind: 'story',
       title,
-      brief: { prompt: 'A lighthouse keeper receives letters from the future' },
+      brief: { prompt: opts.brief ?? 'A lighthouse keeper receives letters from the future' },
       settings: { ...TINY, ...opts.settings },
     });
     if (opts.screenplay) {

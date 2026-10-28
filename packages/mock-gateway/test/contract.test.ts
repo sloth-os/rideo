@@ -316,6 +316,15 @@ describe('proxy LLM formats', () => {
   it('answers OpenAI, Gemini and Anthropic shapes with schema-valid JSON', async () => {
     const openai = ScreenplayGenerateOutputSchema.parse(await chat('screenplay.generate', input));
     expect(openai.outline.reduce((s, b) => s + b.estDurationSec, 0)).toBe(60);
+    // a brief that allows only its cast says so (docs/design/continuity.md#quality-checks-in-the-gate)
+    expect(openai.castOnly).toBe(false);
+    const castOnly = ScreenplayGenerateOutputSchema.parse(
+      await chat('screenplay.generate', {
+        ...input,
+        prompt: 'Two pandas ski. Only these two characters appear.',
+      }),
+    );
+    expect(castOnly.castOnly).toBe(true);
     expect(openai.scenes.length).toBeGreaterThan(0);
     const gem = await post(
       '/proxy/generativelanguage.googleapis.com/v1beta/models/gemini-x:generateContent',

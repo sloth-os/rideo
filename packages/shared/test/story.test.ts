@@ -13,6 +13,7 @@ import {
 import * as f from '../src/testing/fixtures';
 
 const llm = ScreenplayGenerateOutputSchema.parse({
+  castOnly: 'perhaps',
   title: 'The Keeper',
   characters: [
     {
@@ -36,6 +37,11 @@ const llm = ScreenplayGenerateOutputSchema.parse({
       estDurationSec: 40,
     },
   ],
+});
+
+it('reads a missing or garbled cast-only answer as no (docs/design/continuity.md#quality-checks-in-the-gate)', () => {
+  expect(llm.castOnly).toBe(false);
+  expect(ScreenplayGenerateOutputSchema.parse({ ...llm, castOnly: true }).castOnly).toBe(true);
 });
 
 describe('screenplay normalization', () => {

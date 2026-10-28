@@ -103,6 +103,8 @@ export const ScreenplayGenerateOutputSchema = z.object({
     .max(400),
   scenes: z.array(LlmSceneSchema).min(1).max(60),
   ended: z.boolean().catch(true).default(true),
+  /** The brief allows nobody on screen but the cast (docs/design/continuity.md#quality-checks-in-the-gate). */
+  castOnly: z.boolean().catch(false).default(false),
 });
 export type ScreenplayGenerateOutput = z.infer<typeof ScreenplayGenerateOutputSchema>;
 

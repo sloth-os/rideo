@@ -54,6 +54,8 @@ describe('story → movie workflow (REST, mock gateway)', () => {
     ).toBeCloseTo(30);
     const characters = Object.values<any>(state.docs.characters);
     expect(characters.length).toBe(2);
+    // the brief does not limit who appears
+    expect(state.docs.project.settings.consistency.castOnly).toBe(false);
     // The writer's locations and props become draft elements linked from the scenes (docs/design/elements.md).
     const firstScene = state.docs.screenplay.scenes[0];
     const elements = Object.values<any>(state.docs.elements);
@@ -269,6 +271,23 @@ describe('story → movie workflow (REST, mock gateway)', () => {
     const log = await stack.api<any[]>('GET', `/projects/${pid}/history?limit=500`);
     expect(log.some((c) => c.author.kind === 'system' && c.author.onBehalfOf?.id === 'local')).toBe(true);
   }, 600_000);
+
+  it('turns the cast-only check on when the brief allows only its cast (docs/design/continuity.md#quality-checks-in-the-gate)', async () => {
+    const created = await stack.api<Project>('POST', '/projects', {
+      kind: 'story',
+      title: 'Two Swimmers',
+      brief: { prompt: 'Sammy and Rosie swim across a lake. Only these two characters appear.' },
+      settings: { targetDurationSec: 30, pilotDurationSec: 10, resolution: { width: 320, height: 180 } },
+    });
+    const gen = await stack.api<Job>('POST', `/projects/${created.id}/screenplay/generate`, {});
+    const done = expectSucceeded(await stack.waitJob(created.id, gen.id));
+    expect(done.result).toMatchObject({ castOnly: true });
+    const state = await stack.api<any>('GET', `/projects/${created.id}/state`);
+    expect(state.docs.project.settings.consistency.castOnly).toBe(true);
+    const history = await stack.api<any>('GET', `/projects/${created.id}/history`);
+    expect(JSON.stringify(history)).toContain('only the cast may appear');
+    await stack.waitIdle(created.id);
+  });
 
   it('invalidates takes when a character is relocked with changes (R6) until regenerated', async () => {
     const { projectId: pid, state } = await readyStoryProject(stack);

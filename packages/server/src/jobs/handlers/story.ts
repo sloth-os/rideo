@@ -13,6 +13,7 @@ import {
   identityFromLlm,
   newId,
   nextUnwrittenBeats,
+  type Project,
   type ProjectSettings,
   plannedShotRange,
   promptVersionOf,
@@ -122,6 +123,14 @@ export async function screenplayGenerate(deps: HandlerDeps, ctx: JobContext) {
         existingElements,
       });
       tx.set('screenplay.json', screenplay);
+      // A brief that allows only its cast turns the check on (docs/design/continuity.md#quality-checks-in-the-gate)
+      const project = tx.require<Project>(docPath.project(), 'project');
+      const castOnly = out.castOnly && !project.settings.consistency.castOnly;
+      if (castOnly)
+        tx.set(docPath.project(), {
+          ...project,
+          settings: { ...project.settings, consistency: { ...project.settings.consistency, castOnly: true } },
+        });
       for (const c of characters) tx.set(docPath.character(c.id), c);
       // Locations and props the writer introduced become draft elements (docs/design/elements.md).
       for (const e of elements) tx.set(docPath.element(e.id), e);
@@ -131,10 +140,11 @@ export async function screenplayGenerate(deps: HandlerDeps, ctx: JobContext) {
         beats: screenplay.outline.length,
         characters: characters.length,
         elements: elements.length,
+        castOnly,
       };
     },
     (r) =>
-      `Generate screenplay “${r.title}” (${r.beats} beats, ${r.scenes} scenes, ${r.characters} characters, ${r.elements} locations and props)`,
+      `Generate screenplay “${r.title}” (${r.beats} beats, ${r.scenes} scenes, ${r.characters} characters, ${r.elements} locations and props)${r.castOnly ? '; only the cast may appear' : ''}`,
   );
   // The screenplay is reviewed before the cast is made (docs/design/ai-review.md#how-a-review-runs)
   await deps.services.aiReviews

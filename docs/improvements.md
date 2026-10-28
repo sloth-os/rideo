@@ -254,8 +254,9 @@ red-haired girl with a snowboard in two shots, a human child in place of a panda
 creature: Wan widens a close-up late in the take and fills the new space with figures, and the judge reported
 them (`others`) without failing the take. Now `consistency.castOnly` (the project settings' "Only the cast may
 appear", off by default; feedback may recommend it) fails such a frame like an extra cast member
-([quality checks](design/continuity.md#quality-checks-in-the-gate)). Still open: turning it on when the brief asks for
-only its cast.
+([quality checks](design/continuity.md#quality-checks-in-the-gate)). It is also turned on when the brief asks for only
+its cast: the writer answers `castOnly` with the screenplay (from the brief's words, in any language) and the
+screenplay job sets the setting, so the screenplay review, the storyboard and the first takes are judged with it.
 
 **36. Feedback that sees and hears** (S, done) — the first feedback on the export let `qwen3.8-omni-flash` watch each
 scene as one video with its sound. It heard all 61 lines and who said them, but its picture findings were unreliable:

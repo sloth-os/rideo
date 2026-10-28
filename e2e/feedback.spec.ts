@@ -136,3 +136,18 @@ test('a story export is watched by itself: scores, issues, recommendations appli
   await expect(page.getByTestId('feedback-retake')).toHaveAttribute('data-outcome', 'same');
   await expect(page.getByTestId('feedback-retake')).toHaveText(/^C1·S\d+ (\d+) → \1$/);
 });
+
+/** A brief that allows only its cast (docs/design/continuity.md#quality-checks-in-the-gate), desktop and phone. */
+test('a brief that allows only its cast turns the cast-only check on with the screenplay', async ({
+  page,
+  request,
+}, testInfo) => {
+  const api = new Api(request);
+  const pid = await api.storyProject(`Cast only (${testInfo.project.name})`, {
+    screenplay: true,
+    brief: 'Sammy and Rosie swim across a lake. Only these two characters appear.',
+  });
+  await page.goto(`/p/${pid}/overview`);
+  await page.getByTestId('open-settings').click();
+  await expect(page.getByTestId('continuity-settings').locator('input[name="castOnly"]')).toBeChecked();
+});

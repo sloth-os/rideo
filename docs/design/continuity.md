@@ -225,6 +225,10 @@ attempt fails them, the best take that passed identity is kept, marked with what
 red-haired girl, a bear and a dog creature walked in (the judge saw them at 85 % and reported them). With
 `consistency.castOnly` such a frame fails like an extra cast member, so the take is made again. The project settings
 show it under *Continuity and quality* ("Only the cast may appear"); feedback may recommend it (`settings` action).
+The writer turns it on when the brief asks for it: `screenplay.generate` answers `castOnly: true` when the brief says
+nobody but its characters appears on screen (in any language), and the job sets the setting with the screenplay (it
+never turns it off; the settings toggle does). The screenplay review, the storyboard and every take are then judged
+with it.
 
 **Keyframes too.** With quality checks, a keyframe (and a storyboard frame) is judged for physics and the cast in
 frame as well, in the call that checks its identity, and is drawn again when it fails: an extra character or a
