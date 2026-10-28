@@ -650,3 +650,28 @@ describe('the recent log (docs/design/version-control.md#caching)', () => {
     expect(old.map((c) => c.message)).toEqual(['Create project']);
   });
 });
+
+describe('a slow server’s false 404 for an object (docs/design/storage-webdav.md#slow-and-flaky-servers)', () => {
+  it('looks for a missing object again before the read fails', async () => {
+    class MissOnce extends MemoryBackend {
+      missed = new Set<string>();
+      override async read(path: string) {
+        if (path.includes('/.rideo/objects/') && !this.missed.has(path)) {
+          this.missed.add(path);
+          return null;
+        }
+        return super.read(path);
+      }
+    }
+    const store = new MissOnce();
+    const first = new Repository(store, layout, project.id);
+    await first.init({ 'project.json': project }, user, 'Create project');
+    const cold = new Repository(store, layout, project.id);
+    cold.objects.missRetryMs = 1;
+    expect((await cold.snapshot()).docs.get('project.json')).toMatchObject({ id: project.id });
+    expect(store.missed.size).toBeGreaterThan(0);
+    // A file that is truly gone still fails, after the second look
+    const gone = new Repository(new MemoryBackend(), layout, project.id);
+    await expect(gone.objects.get('a'.repeat(64))).rejects.toMatchObject({ code: 'not_found' });
+  });
+});

@@ -2,6 +2,7 @@ import { type Actor, type CommitChange, canonicalJson } from '@rideo/shared';
 import { AppError } from '../errors';
 import type { StorageBackend } from '../storage/backend';
 import type { Layout } from '../storage/layout';
+import { sleep } from '../util/abort';
 import { sha256 } from '../util/crypto';
 import { Lru } from '../util/lru';
 
@@ -37,11 +38,17 @@ export class ObjectStore {
   private readonly cache = new Lru<string, VcsObject>(20_000);
   private readonly written = new Set<string>();
 
+  /** The wait before a missing object is looked for again: a WebDAV server's 404 may be false. */
+  missRetryMs: number;
+
   constructor(
     private readonly storage: StorageBackend,
     private readonly layout: Layout,
     private readonly projectId: string,
-  ) {}
+    opts: { missRetryMs?: number } = {},
+  ) {
+    this.missRetryMs = opts.missRetryMs ?? (storage.kind === 'webdav' ? 1000 : 0);
+  }
 
   hashOf(obj: VcsObject): { id: string; json: string } {
     const json = canonicalJson(obj);
@@ -77,7 +84,11 @@ export class ObjectStore {
   async get<T extends VcsObject>(id: string): Promise<T> {
     const hit = this.cache.get(id);
     if (hit) return hit as T;
-    const buf = await this.storage.read(this.layout.object(this.projectId, id));
+    const path = this.layout.object(this.projectId, id);
+    // Objects never change and something named this one: a 404 is looked for again a second later, as a slow server
+    // answers 404 for files it holds (docs/design/storage-webdav.md#slow-and-flaky-servers)
+    const buf =
+      (await this.storage.read(path)) ?? (await sleep(this.missRetryMs).then(() => this.storage.read(path)));
     if (!buf) throw new AppError('not_found', `object ${id.slice(0, 12)} not found`);
     if (sha256(buf) !== id) throw new AppError('storage_error', `object ${id.slice(0, 12)} is corrupt`);
     const obj = JSON.parse(buf.toString('utf8')) as T;

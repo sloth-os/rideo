@@ -9,6 +9,7 @@ import { LiveHub } from '../../src/live/hub';
 import { Metrics } from '../../src/metrics';
 import { Layout } from '../../src/storage/layout';
 import { MemoryBackend } from '../../src/storage/memory';
+import { Repository } from '../../src/vcs/repo';
 
 /** Project existence (docs/design/storage-webdav.md#slow-and-flaky-servers). */
 
@@ -226,6 +227,35 @@ describe('project summaries (docs/design/storage-webdav.md#slow-and-flaky-server
     const metrics = new Metrics();
     expect((await summaries(metrics).digest(id)).summary.title).toBe('Fourth title');
     expect(metrics.projectDigests.get({ source: 'documents' })).toBe(1);
+  });
+
+  it('makes at most two summaries from the documents at once, each a whole project to load', async () => {
+    const ids = [];
+    for (let i = 0; i < 5; i++) ids.push(await create());
+    const r = summaries();
+    let inFlight = 0;
+    let most = 0;
+    const real = Repository.prototype.snapshot;
+    const spy = vi.spyOn(Repository.prototype, 'snapshot').mockImplementation(async function (
+      this: Repository,
+      ...args: Parameters<Repository['snapshot']>
+    ) {
+      inFlight++;
+      most = Math.max(most, inFlight);
+      try {
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        return await real.apply(this, args);
+      } finally {
+        inFlight--;
+      }
+    });
+    try {
+      const made = await Promise.all(ids.map((id) => r.digest(id)));
+      expect(made.map((d) => d.summary.id)).toEqual(ids);
+      expect(most).toBe(2);
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it('lists the projects folder once a minute on WebDAV, and again after a project comes or goes', async () => {

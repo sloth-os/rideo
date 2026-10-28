@@ -13,6 +13,7 @@ import type { Metrics } from '../metrics';
 import type { StorageBackend } from '../storage/backend';
 import type { Layout } from '../storage/layout';
 import { sleep } from '../util/abort';
+import { Semaphore } from '../util/mutex';
 import { type CommitEvent, Repository } from '../vcs/repo';
 import { Worktree } from '../vcs/worktree';
 
@@ -33,6 +34,11 @@ const WARM_LOG = 100;
 const IDS_TTL_MS = 60_000;
 /** Commits a summary made from the documents reads for its agents' commits. */
 const DIGEST_LOG = 100;
+/**
+ * Summaries made from the documents at once: each loads a whole project, and eight at once after a restart made
+ * OpenList answer false 404s (docs/design/storage-webdav.md#slow-and-flaky-servers).
+ */
+const DIGESTS_FROM_DOCUMENTS = 2;
 
 export class ProjectRegistry {
   private readonly handles = new Map<string, ProjectHandle>();
@@ -45,6 +51,7 @@ export class ProjectRegistry {
   private readonly digesting = new Map<string, Promise<ProjectDigest>>();
   /** Summaries waiting to be written, a few seconds behind a burst of commits. */
   private readonly digestWrites = new Map<string, NodeJS.Timeout>();
+  private readonly digestLoads = new Semaphore(DIGESTS_FROM_DOCUMENTS);
   /** The projects folder listing (WebDAV only: it is slow there, and the browser's changes as tabs connect). */
   private ids: { at: number; ids: Promise<string[]> } | null = null;
   /** Commits on a project's checked-out branch, with the documents they changed (the search index follows them). */
@@ -174,6 +181,19 @@ export class ProjectRegistry {
     }
     // Made from the documents, again when a commit landed meanwhile (one before the summary is kept is not followed);
     // a summary still behind is set right by the next commit, and a file behind the tip is made again when read
+    await this.digestLoads.acquire();
+    try {
+      return await this.digestFromDocuments(projectId, h, branch);
+    } finally {
+      this.digestLoads.release();
+    }
+  }
+
+  private async digestFromDocuments(
+    projectId: string,
+    h: ProjectHandle,
+    branch: string,
+  ): Promise<ProjectDigest> {
     for (let tries = 1; ; tries++) {
       const snap = await h.repo.snapshot(branch);
       const log = await h.repo.log({ branch, limit: DIGEST_LOG });
