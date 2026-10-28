@@ -244,10 +244,11 @@ there, so memory does not grow with the length of the film; report the browser's
 *Measured:* the chunks were not what filled the memory; the tab already uploads each one as it finishes and the
 server joins them. The failed attempt's log shows the soundtrack loading its inputs (`loading media 52/110`) when
 Chromium refused the next download: the soundtrack held every input at once (item 15). *Done:* with item 15 the tab
-holds one chunk's or one window's media at a time; the LRU of downloaded media is 512 MB instead of 1 GB; and
-rendered chunks and pieces are uploaded as bytes, not as Blobs (an unreachable Blob keeps its memory until a garbage
-collection that its size does not prompt) ([memory](design/editor.md#memory)). Nothing of a render is stored in the
-browser, so there is no quota to report.
+holds one chunk's or one window's media at a time, and the LRU of downloaded media is 512 MB instead of 1 GB
+([memory](design/editor.md#memory)). Nothing of a render is stored in the browser, so there is no quota to report.
+Uploading the rendered chunks as bytes instead of Blobs was tried and undone: Chrome copies a body of bytes whole
+into the DevTools protocol's request event, and the Fuji film's 130 MB chunks made messages over 512 MB that killed
+the Playwright driver holding the tab.
 
 **35. A cast-only film** (S, done) — the brief said "only these two characters appear", yet the export has a
 red-haired girl with a snowboard in two shots, a human child in place of a panda in four, a brown bear and a dog

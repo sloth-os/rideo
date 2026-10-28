@@ -414,11 +414,11 @@ conversion to 16 bits rounds a few of them (under 0.5 %) the other way, by one s
 
 Neither engine holds the film or all of its media in the tab. The ffmpeg engine loads the media a chunk shows as it
 renders that chunk (each graph names the files it reads, `ChunkGraph.media`), the WebCodecs engine reads ranges of
-the sources (`MediaPool`), and a soundtrack window loads its own media. A rendered chunk or piece is uploaded as
-bytes, not as a `Blob`: a browser without a disk-backed profile (an incognito window, Playwright's default context)
-keeps blobs in memory and fails with `ERR_BLOB_OUT_OF_MEMORY` once they outgrow its budget, and an unreachable
-`Blob` holds its memory until a garbage collection that its size does not prompt. Downloaded media is kept in an
-LRU of 512 MB (`media-files.ts`).
+the sources (`MediaPool`), and a soundtrack window loads its own media: a browser without a disk-backed profile (an
+incognito window, Playwright's default context) keeps blobs in memory and fails with `ERR_BLOB_OUT_OF_MEMORY` once
+they outgrow its budget. Downloaded media is kept in an LRU of 512 MB (`media-files.ts`). A rendered chunk or piece is
+uploaded as it is made, as a `Blob`: a body of bytes is copied whole into the DevTools protocol's request event, and
+a 130 MB chunk sent as bytes made one over 512 MB that killed the Playwright driver holding the tab.
 
 ### Engines
 

@@ -78,7 +78,7 @@ function job(staged: string[] = [], stems = false): Job {
 }
 
 function context(j: Job) {
-  const uploads: { name: string; data: Blob | Uint8Array }[] = [];
+  const uploads: { name: string; data: Blob }[] = [];
   return {
     uploads,
     ctx: {
@@ -86,7 +86,7 @@ function context(j: Job) {
       projectId: j.projectId,
       signal: new AbortController().signal,
       progress: vi.fn(),
-      upload: vi.fn(async (name: string, data: Blob | Uint8Array) => {
+      upload: vi.fn(async (name: string, data: Blob) => {
         uploads.push({ name, data });
       }),
     },
@@ -104,7 +104,7 @@ beforeEach(() => {
 });
 
 describe('export.render in the tab (docs/design/editor.md#memory)', () => {
-  it('loads each chunk’s and each soundtrack window’s own media, and uploads bytes', async () => {
+  it('loads each chunk’s and each soundtrack window’s own media, and uploads each output as a Blob', async () => {
     const { t, takes, bed } = film();
     timeline = t;
     const { ctx, uploads } = context(job([], true));
@@ -128,7 +128,8 @@ describe('export.render in the tab (docs/design/editor.md#memory)', () => {
       'stem-music-0002.flac',
       'stem-effects-0002.flac',
     ]);
-    expect(uploads.every((u) => u.data instanceof Uint8Array)).toBe(true);
+    // Blobs, never bytes: Chrome copies a body of bytes whole into the DevTools protocol (docs/design/editor.md#memory)
+    expect(uploads.every((u) => u.data instanceof Blob)).toBe(true);
     // Every ffmpeg command mounts only what its graph reads: a chunk six takes, a window its takes and the bed
     const mounted = run.mock.calls.map(([, opts]) => Object.keys((opts as { inputs: object }).inputs).length);
     expect(mounted.slice(0, 5)).toEqual([6, 6, 6, 6, 6]);

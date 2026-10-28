@@ -13,7 +13,7 @@ export interface EditorApi {
     sessionId: string,
     progress?: Job['progress'],
   ): Promise<{ cancelled: boolean; leaseExpiresAt: string | null }>;
-  editorUpload(jobId: string, sessionId: string, name: string, data: Blob | Uint8Array): Promise<unknown>;
+  editorUpload(jobId: string, sessionId: string, name: string, data: Blob): Promise<unknown>;
   editorComplete(jobId: string, sessionId: string, result: unknown): Promise<unknown>;
   editorFail(jobId: string, sessionId: string, error: { code: string; message: string }): Promise<unknown>;
   /** The heartbeat as a plain request, for the worker that sends it off the main thread (when it can). */
