@@ -236,7 +236,9 @@ test('edits queue for a slow server and undo steps back from the last edit', asy
   const timeline = () => api.call<Timeline>('GET', `/projects/${pid}/timeline`);
   const phone = (page.viewportSize()?.width ?? 1280) < 768;
   // every edit takes 1.5 s to reach the server, like a storage that takes seconds per commit
+  const sent: { batches?: unknown[] }[] = [];
   await page.route('**/timeline/ops', async (route) => {
+    sent.push(route.request().postDataJSON() as { batches?: unknown[] });
     await new Promise((resolve) => setTimeout(resolve, 1500));
     await route.continue();
   });
@@ -269,6 +271,10 @@ test('edits queue for a slow server and undo steps back from the last edit', asy
       { timeout: 60_000 },
     )
     .toEqual([[1, 2], 1]);
+  // The edits made while one was being saved went in one request, each its own commit
+  // (docs/design/version-control.md#commit-protocol)
+  expect(sent.length).toBeLessThan(3);
+  expect(sent.some((body) => (body.batches?.length ?? 0) >= 2)).toBe(true);
   // the server committed them in the order they were made
   const history = await api.call<{ message: string }[]>('GET', `/projects/${pid}/history?limit=20`);
   const edits = history.map((c) => c.message.replace(/ from \w+$/, '')).filter((m) => / timeline/.test(m));

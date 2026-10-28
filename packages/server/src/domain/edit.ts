@@ -40,7 +40,8 @@ import {
   toVtt,
   withoutCaptions,
 } from '@rideo/shared';
-import { AppError, invalid, notFound } from '../errors';
+import { AppError, invalid, notFound, toAppError } from '../errors';
+import type { Tx } from '../vcs/repo';
 import { Service } from './base';
 import type { Deps } from './deps';
 import { cutVariant } from './variants';
@@ -109,6 +110,53 @@ export class EditService extends Service {
       },
     );
     return { timeline: result, commit };
+  }
+
+  /**
+   * The editor's waiting edits in one request (docs/design/editor.md#operations): each batch its own commit, written
+   * together; a batch that does not apply is left out with its error, and the others go on.
+   */
+  async applyOpsBatches(
+    actor: Actor,
+    projectId: string,
+    batches: TimelineOp[][],
+  ): Promise<{
+    timeline: Timeline;
+    results: ({ commit: CommitSummary | null } | { error: { code: string; message: string } })[];
+  }> {
+    let timeline: Timeline | null = null;
+    const out = await this.mutateMany(
+      actor,
+      projectId,
+      batches.map((ops) => ({
+        fn: (tx: Tx) => {
+          const p = tx.require<Project>('project.json', 'project');
+          const current =
+            tx.get<Timeline>('timeline.json') ??
+            emptyTimeline({
+              fps: p.settings.fps,
+              width: p.settings.resolution.width,
+              height: p.settings.resolution.height,
+            });
+          const next = applyOps(current, ops);
+          tx.set('timeline.json', next);
+          return next;
+        },
+        message: `Edit timeline (${opSummary(ops)})`,
+        meta: { ops },
+      })),
+    );
+    const results = out.map((o) => {
+      if ('commit' in o) {
+        timeline = o.result;
+        return { commit: o.commit };
+      }
+      const err = toAppError(o.error);
+      return { error: { code: err.code, message: err.message.slice(0, 1000) } };
+    });
+    timeline ??= (await this.deps.projects.docs(projectId)).timeline;
+    if (!timeline) throw invalid('no edit applied and the project has no timeline');
+    return { timeline, results };
   }
 
   async assemble(
@@ -507,6 +555,7 @@ export class EditService extends Service {
         ? docPath.render(exp.id)
         : source === 'animatic'
           ? 'animatic.json'
+      upload: null,
           : 'timeline.json',
       disclosure: disclosure.label ? { text: disclosure.text, position: disclosure.position } : null,
       stems,

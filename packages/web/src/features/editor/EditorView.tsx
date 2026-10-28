@@ -852,6 +852,8 @@ export function EditorView() {
     rerender();
   }, []);
   const queue = useRef<Promise<void>>(Promise.resolve());
+  /** Edits applied here and not sent yet: what waits goes in one request (docs/design/editor.md#operations). */
+  const unsent = useRef<TimelineOp[][]>([]);
   const pendingEdits = useProject((s) => s.pendingEdits.length);
   const seededFor = useRef<string | null>(null);
   const clipboard = useRef<Clip | null>(null);
@@ -885,13 +887,32 @@ export function EditorView() {
         reportError(err);
         return;
       }
+      unsent.current.push(ops);
       enqueue(async () => {
+        // An earlier turn may have taken this edit along with its own
+        const batches = unsent.current.splice(0);
+        if (!batches.length) return;
+        if (batches.length === 1) {
+          try {
+            const r = await api.applyOps(projectId, batches[0]!);
+            useProject.getState().confirmEdit(projectId, r.timeline);
+            setHistory((h) => recordEdit(h, r.commit));
+          } catch (err) {
+            useProject.getState().rejectEdit(projectId);
+            reportError(err);
+          }
+          return;
+        }
         try {
-          const r = await api.applyOps(projectId, ops);
-          useProject.getState().confirmEdit(projectId, r.timeline);
-          setHistory((h) => recordEdit(h, r.commit));
+          const r = await api.applyOpBatches(projectId, batches);
+          // Each edit its own commit, so undo still steps through them one at a time
+          for (const result of r.results) {
+            if ('commit' in result) setHistory((h) => recordEdit(h, result.commit));
+            else reportError(new Error(result.error.message));
+          }
+          useProject.getState().confirmEdits(projectId, r.timeline, batches.length);
         } catch (err) {
-          useProject.getState().rejectEdit(projectId);
+          for (let i = 0; i < batches.length; i++) useProject.getState().rejectEdit(projectId);
           reportError(err);
         }
       });

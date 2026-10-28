@@ -85,6 +85,14 @@ these hold:
 
 The replaced tip becomes an unreferenced object, and GC removes it later.
 
+**Several commits at once.** On OpenList a commit's two round trips take 4–5 s, and the panda demo made one commit
+per take override (94) and per editor operation. `repo.transactMany(steps)` runs each step on the documents the one
+before it left, makes each a commit of its own (its own entry in the history, its own undo), writes the objects of
+all of them at once and moves the ref once: two round trips for the group. A step that throws is left out with its
+error, and the others go on from the state before it; nothing is committed when the ref cannot be moved. Steps never
+coalesce. `POST /timeline/ops {batches}` (the editor's waiting edits) and `POST /takes/override` (many takes in one
+commit) use it.
+
 ## Reading history
 
 | Operation | API | MCP tool |

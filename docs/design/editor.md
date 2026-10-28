@@ -114,8 +114,11 @@ editor's undo and redo move between the session's timeline states by restoring `
 (`history_restore {paths: ["timeline.json"]}`, [undo and redo](editing-tools.md#undo-and-redo)).
 
 The browser applies its own edits **optimistically**: the same reducer runs locally on the current
-timeline, the UI updates at once, and the ops are queued for `POST /timeline/ops`. The queue sends one batch at a
-time, in order, each once the one before it is answered, so the server commits them in the order they were made. The
+timeline, the UI updates at once, and the ops are queued for `POST /timeline/ops`. The queue sends what waits in
+one request, in order: when several batches wait for an answer, they go together (`{batches}`) and the server
+commits each as its own commit, written together ([several commits at once](version-control.md#commit-protocol)), in
+the order they were made; undo still steps through each edit. A storage that takes seconds per commit then pays it
+once per request rather than once per edit. The
 timeline shown is always the server's last answer with the batches it has not answered yet replayed on top
 (`store/project.ts`: `pendingEdits`, `serverTimeline`): an answer replaces the server's copy and the rest replay on
 it, a rejected batch is dropped and its error shown, and a queued batch that no longer applies is skipped locally

@@ -18,7 +18,14 @@ import type { Layout } from '../storage/layout';
 import { eachLimit } from '../util/limit';
 import { Lru } from '../util/lru';
 import { KeyedMutex } from '../util/mutex';
-import { type BlobObject, type CommitObject, ObjectStore, type TreeEntry, type TreeObject } from './objects';
+import {
+  type BlobObject,
+  type CommitObject,
+  ObjectStore,
+  type TreeEntry,
+  type TreeObject,
+  type VcsObject,
+} from './objects';
 
 export interface CommitEvent {
   summary: CommitSummary;
@@ -110,6 +117,25 @@ function summaryOf(id: string, c: CommitObject, branch?: string): CommitSummary 
     ...(branch ? { branch } : {}),
     ...(c.meta && Object.keys(c.meta).length ? { meta: c.meta } : {}),
   };
+}
+
+/** A commit of a group, built in memory before the group is written (`transactMany`). */
+interface StagedCommit {
+  id: string;
+  commit: CommitObject;
+  objects: VcsObject[];
+  flat: Map<string, string>;
+  changedDocs: Record<string, unknown | null>;
+}
+
+/** Staged documents checked against the schemas of their paths. */
+function validateChanges(staged: Map<string, unknown | null>): Map<string, unknown | null> {
+  const validated = new Map<string, unknown | null>();
+  for (const [path, doc] of staged) {
+    if (doc === null && path === 'project.json') throw invalid('project.json cannot be deleted');
+    validated.set(path, doc === null ? null : validateDoc(path, doc));
+  }
+  return validated;
 }
 
 function diffFlat(a: ReadonlyMap<string, string>, b: ReadonlyMap<string, string>): CommitChange[] {
@@ -319,23 +345,125 @@ export class Repository {
       const result = await fn(tx);
       const staged = tx.changes();
       if (staged.size === 0) return { result, commit: null };
-      const validated = new Map<string, unknown | null>();
-      for (const [path, doc] of staged) {
-        if (doc === null && path === 'project.json') throw invalid('project.json cannot be deleted');
-        validated.set(path, doc === null ? null : validateDoc(path, doc));
-      }
+      const validated = validateChanges(staged);
       const message = typeof opts.message === 'function' ? opts.message(result) : opts.message;
       const commit = await this.writeCommit(state, validated, { ...opts, message });
       return { result, commit };
     });
   }
 
-  private async writeCommit(
-    state: BranchState,
+  /**
+   * Several transactions as one group (docs/design/version-control.md#commit-protocol): each step runs on the
+   * documents the one before it left and becomes a commit of its own; the objects of all of them are written at once
+   * and the ref moved once. A step that throws is left out with its error and the others go on; nothing is committed
+   * when the ref cannot be moved. Steps never coalesce.
+   */
+  async transactMany<R>(
+    steps: {
+      fn: (tx: Tx) => R | Promise<R>;
+      message: string | ((result: R) => string);
+      meta?: Record<string, unknown>;
+    }[],
+    opts: { actor: Actor; branch?: string },
+  ): Promise<({ result: R; commit: CommitSummary | null } | { error: unknown })[]> {
+    return this.lock.run('repo', async () => {
+      const branch = opts.branch ?? (await this.currentBranch());
+      const state = await this.state(branch);
+      let docs: ReadonlyMap<string, unknown> = state.docs;
+      let base: { flat: ReadonlyMap<string, string>; commit: string | null } = state;
+      const staged: StagedCommit[] = [];
+      const out: ({ result: R; commit: CommitSummary | null } | { error: unknown })[] = [];
+      for (const step of steps) {
+        try {
+          const tx = new Tx(docs);
+          const result = await step.fn(tx);
+          const changes = validateChanges(tx.changes());
+          const message = typeof step.message === 'function' ? step.message(result) : step.message;
+          const s = changes.size
+            ? this.stageCommit(base, changes, { actor: opts.actor, message, meta: step.meta })
+            : null;
+          if (!s) {
+            out.push({ result, commit: null });
+            continue;
+          }
+          staged.push(s);
+          const next = new Map(docs);
+          for (const [path, doc] of Object.entries(s.changedDocs)) {
+            if (doc === null) next.delete(path);
+            else next.set(path, doc);
+          }
+          docs = next;
+          base = { flat: s.flat, commit: s.id };
+          out.push({ result, commit: summaryOf(s.id, s.commit, branch) });
+        } catch (error) {
+          out.push({ error });
+        }
+      }
+      if (!staged.length) return out;
+      await this.objects.putAll(staged.flatMap((s) => s.objects));
+      await this.writeRef(branch, base.commit!);
+      // The branch takes the group's documents; each commit is followed as if it were made alone
+      const changed: Record<string, unknown | null> = {};
+      let previous = state.commit;
+      for (const s of staged) {
+        this.flatCache.set(s.id, s.flat);
+        this.followRecent(branch, previous, summaryOf(s.id, s.commit), undefined);
+        previous = s.id;
+        Object.assign(changed, s.changedDocs);
+      }
+      state.commit = base.commit;
+      state.flat = new Map(base.flat);
+      for (const [path, doc] of Object.entries(changed)) {
+        if (doc === null) state.docs.delete(path);
+        else state.docs.set(path, doc);
+      }
+      const checkedOut = branch === (await this.currentBranch());
+      if (checkedOut) await this.materializer?.materialize(changed, state.docs);
+      for (const s of staged)
+        this.onCommit?.({
+          summary: summaryOf(s.id, s.commit, branch),
+          branch,
+          docs: s.changedDocs,
+          checkedOut,
+        });
+      return out;
+    });
+  }
+
+  /** The commit of `changes` on top of `base`, its objects and the snapshot it makes; null when nothing changes. */
+  private stageCommit(
+    base: { flat: ReadonlyMap<string, string>; commit: string | null },
     changes: Map<string, unknown | null>,
-    opts: Omit<TransactOptions, 'message'> & { message: string },
-  ): Promise<CommitSummary | null> {
-    const flat = new Map(state.flat);
+    opts: { actor: Actor; message: string; meta?: Record<string, unknown> },
+  ): StagedCommit | null {
+    const { flat, changedDocs, blobs } = this.applyChanges(base.flat, changes);
+    if (Object.keys(changedDocs).length === 0) return null;
+    const { root: tree, trees } = this.buildTree(flat);
+    const commit: CommitObject = {
+      type: 'commit',
+      tree,
+      parents: base.commit ? [base.commit] : [],
+      author: opts.actor,
+      message: opts.message,
+      timestamp: this.now().toISOString(),
+      changes: diffFlat(base.flat, flat),
+      ...(opts.meta && Object.keys(opts.meta).length ? { meta: opts.meta } : {}),
+    };
+    return {
+      id: this.objects.hashOf(commit).id,
+      commit,
+      objects: [commit, ...blobs, ...trees],
+      flat,
+      changedDocs,
+    };
+  }
+
+  /** `changes` on top of a snapshot: the new snapshot, the documents that changed and the blobs to store. */
+  private applyChanges(
+    base: ReadonlyMap<string, string>,
+    changes: Map<string, unknown | null>,
+  ): { flat: Map<string, string>; changedDocs: Record<string, unknown | null>; blobs: BlobObject[] } {
+    const flat = new Map(base);
     const changedDocs: Record<string, unknown | null> = {};
     const blobs: BlobObject[] = [];
     for (const [path, doc] of changes) {
@@ -350,6 +478,15 @@ export class Repository {
       blobs.push(blob);
       changedDocs[path] = doc;
     }
+    return { flat, changedDocs, blobs };
+  }
+
+  private async writeCommit(
+    state: BranchState,
+    changes: Map<string, unknown | null>,
+    opts: Omit<TransactOptions, 'message'> & { message: string },
+  ): Promise<CommitSummary | null> {
+    const { flat, changedDocs, blobs } = this.applyChanges(state.flat, changes);
     if (Object.keys(changedDocs).length === 0) return null;
     const { root: tree, trees } = this.buildTree(flat);
     const now = this.now();

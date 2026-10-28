@@ -308,4 +308,33 @@ describe('editor depth', () => {
       await client.close();
     }
   }, 120_000);
+
+  it('commits waiting edits sent together each on its own, leaving out one that does not apply', async () => {
+    const t0 = await stack.api<Timeline>('GET', `/projects/${pid}/timeline`);
+    const primary = t0.tracks.find((t) => t.kind === 'video')!.id;
+    const source = { type: 'media', media: footage.media, resourceId: footage.id };
+    const insert = (out: number) => ({
+      op: 'insert',
+      trackId: primary,
+      item: { kind: 'video', source, in: 0, out },
+    });
+    const r = await stack.api<{
+      timeline: Timeline;
+      results: ({ commit: { id: string; message: string } } | { error: { code: string } })[];
+    }>('POST', `/projects/${pid}/timeline/ops`, {
+      batches: [[insert(1)], [{ op: 'remove', itemId: 'itm_doesnotexist0000' }], [insert(2)]],
+    });
+    expect(r.results.map((x) => ('error' in x ? x.error.code : 'commit'))).toEqual([
+      'commit',
+      'timeline_op_invalid',
+      'commit',
+    ]);
+    const items = r.timeline.tracks.find((t) => t.id === primary)!.items;
+    expect(items.length).toBe(t0.tracks.find((t) => t.id === primary)!.items.length + 2);
+    const log = await stack.api<{ id: string }[]>('GET', `/projects/${pid}/history?limit=2`);
+    expect(log.map((c) => c.id)).toEqual([
+      (r.results[2] as { commit: { id: string } }).commit.id,
+      (r.results[0] as { commit: { id: string } }).commit.id,
+    ]);
+  });
 });

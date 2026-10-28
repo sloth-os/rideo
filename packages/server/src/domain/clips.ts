@@ -465,25 +465,7 @@ export class ClipService extends Service {
       projectId,
       (tx) => {
         this.assertAgentMay(tx.require<Project>('project.json', 'project'), actor, 'override');
-        const clip = structuredClone(this.requireClip(tx, clipId));
-        const shot = this.requireShot(clip, shotId);
-        const take = shot.takes.find((t) => t.id === takeId);
-        if (!take) throw notFound(`take ${takeId}`);
-        const characters = Object.fromEntries(tx.list<Character>('characters/').map((c) => [c.id, c]));
-        const elements = Object.fromEntries(tx.list<Element>('elements/').map((e) => [e.id, e]));
-        if (takeState({ ...take, override: null }, shot, characters, elements) === 'stale') {
-          throw new AppError(
-            'consistency_gate',
-            'Stale takes were generated from an older character or element lock; regenerate instead of overriding',
-          );
-        }
-        take.override = { actor, reason: reason.trim(), at: new Date().toISOString() };
-        shot.selectedTakeId = takeId;
-        shot.status = 'ready';
-        if (clip.status === 'approved') clip.status = 'review';
-        clip.status = clipStatusOf(clip);
-        tx.set(docPath.clip(clipId), clip);
-        return clip;
+        return this.overrideIn(tx, actor, clipId, [{ shotId, takeId }], reason);
       },
       {
         message: `Override consistency for shot ${shotId.slice(-4)}: ${reason.trim().slice(0, 120)}`,
@@ -491,6 +473,64 @@ export class ClipService extends Service {
       },
     );
     return result;
+  }
+
+  /**
+   * Many takes overridden in one commit (docs/design/version-control.md#commit-protocol): the panda demo made one
+   * commit for each of 94 overrides, 4–5 s apiece on OpenList.
+   */
+  async overrideTakes(
+    actor: Actor,
+    projectId: string,
+    takes: { clipId: string; shotId: string; takeId: string }[],
+    reason: string,
+  ): Promise<Clip[]> {
+    const { result } = await this.mutate(
+      actor,
+      projectId,
+      (tx) => {
+        this.assertAgentMay(tx.require<Project>('project.json', 'project'), actor, 'override');
+        const byClip = new Map<string, { shotId: string; takeId: string }[]>();
+        for (const t of takes) byClip.set(t.clipId, [...(byClip.get(t.clipId) ?? []), t]);
+        return [...byClip].map(([clipId, shots]) => this.overrideIn(tx, actor, clipId, shots, reason));
+      },
+      {
+        message: `Override consistency for ${takes.length} take(s): ${reason.trim().slice(0, 120)}`,
+        meta: { override: true },
+      },
+    );
+    return result;
+  }
+
+  /** Overrides takes of one clip in a transaction: each becomes its shot's take (never a stale one). */
+  private overrideIn(
+    tx: Tx,
+    actor: Actor,
+    clipId: string,
+    takes: { shotId: string; takeId: string }[],
+    reason: string,
+  ): Clip {
+    const clip = structuredClone(this.requireClip(tx, clipId));
+    const characters = Object.fromEntries(tx.list<Character>('characters/').map((c) => [c.id, c]));
+    const elements = Object.fromEntries(tx.list<Element>('elements/').map((e) => [e.id, e]));
+    for (const { shotId, takeId } of takes) {
+      const shot = this.requireShot(clip, shotId);
+      const take = shot.takes.find((t) => t.id === takeId);
+      if (!take) throw notFound(`take ${takeId}`);
+      if (takeState({ ...take, override: null }, shot, characters, elements) === 'stale') {
+        throw new AppError(
+          'consistency_gate',
+          'Stale takes were generated from an older character or element lock; regenerate instead of overriding',
+        );
+      }
+      take.override = { actor, reason: reason.trim(), at: new Date().toISOString() };
+      shot.selectedTakeId = takeId;
+      shot.status = 'ready';
+    }
+    if (clip.status === 'approved') clip.status = 'review';
+    clip.status = clipStatusOf(clip);
+    tx.set(docPath.clip(clipId), clip);
+    return clip;
   }
 
   /** R7: approving requires every selected take to be passed-and-current or overridden. */

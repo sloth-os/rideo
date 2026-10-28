@@ -196,6 +196,24 @@ describe('optimistic timeline edits (docs/design/editor.md#operations)', () => {
     store().clear();
   });
 
+  it('confirms the edits the server answered together, and replays the ones made since', () => {
+    const { docs, pid } = open();
+    const store = useProject.getState;
+    store().applyLocalOps([insert('itm_first00000000000', 8)]);
+    store().applyLocalOps([insert('itm_second0000000000', 4)]);
+    store().applyLocalOps([insert('itm_third00000000000', 2)]);
+    // The first two went in one request; the third was made while it ran
+    const both = server(docs, insert('itm_first00000000000', 8), insert('itm_second0000000000', 4));
+    store().confirmEdits(pid, both, 2);
+    expect(store().pendingEdits).toHaveLength(1);
+    expect(store().serverTimeline).toBe(both);
+    expect(ids()).toEqual(['itm_first00000000000', 'itm_second0000000000', 'itm_third00000000000']);
+    // Another project's answer changes nothing
+    store().confirmEdits('prj_someotherproject', server(docs), 1);
+    expect(store().pendingEdits).toHaveLength(1);
+    store().clear();
+  });
+
   it('a refused first edit of a project without a timeline leaves it without one', () => {
     const { docs } = open();
     useProject.getState().applyLocalOps([insert('itm_first00000000000', 8)]);

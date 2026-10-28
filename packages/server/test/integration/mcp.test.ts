@@ -51,6 +51,7 @@ describe('MCP server', () => {
       'subtitles_get',
       'clip_generate',
       'clip_review',
+      'takes_override',
       'clip_approve',
       'timeline_apply',
       'history_restore',

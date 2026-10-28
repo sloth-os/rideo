@@ -424,13 +424,33 @@ describe('story → movie workflow (REST, mock gateway)', () => {
     const take = shot.takes[0]!;
     expect(take.consistency.status).toBe('unverified');
     await rejects(stack.api('POST', `/projects/${pid}/clips/${clip.id}/approve`), 'consistency_gate');
-    for (const sh of clip.shots) {
-      const t = sh.takes.find((x) => x.id === sh.selectedTakeId)!;
-      if (t.consistency.status !== 'passed') {
-        await stack.api('POST', `/projects/${pid}/clips/${clip.id}/shots/${sh.id}/takes/${t.id}/override`, {
-          reason: 'Visually verified against the references',
-        });
-      }
+    const unpassed = clip.shots
+      .map((sh) => ({ clipId: clip.id, shotId: sh.id, takeId: sh.selectedTakeId! }))
+      .filter(
+        (t) =>
+          clip.shots.find((sh) => sh.id === t.shotId)!.takes.find((x) => x.id === t.takeId)!.consistency
+            .status !== 'passed',
+      );
+    expect(unpassed.length).toBeGreaterThan(0);
+    // One take on its own, the others in one commit (docs/design/version-control.md#commit-protocol)
+    const [one, ...rest] = unpassed;
+    await stack.api(
+      'POST',
+      `/projects/${pid}/clips/${clip.id}/shots/${one!.shotId}/takes/${one!.takeId}/override`,
+      {
+        reason: 'Visually verified against the references',
+      },
+    );
+    if (rest.length) {
+      const clips = await stack.api<Clip[]>('POST', `/projects/${pid}/takes/override`, {
+        takes: rest,
+        reason: 'Visually verified against the references',
+      });
+      expect(clips.map((c) => c.id)).toEqual([clip.id]);
+      const last = (await stack.api<any[]>('GET', `/projects/${pid}/history?limit=1`))[0];
+      expect(last.message).toBe(
+        `Override consistency for ${rest.length} take(s): Visually verified against the references`,
+      );
     }
     const approved = await stack.api<Clip>('POST', `/projects/${pid}/clips/${clip.id}/approve`);
     expect(approved.status).toBe('approved');

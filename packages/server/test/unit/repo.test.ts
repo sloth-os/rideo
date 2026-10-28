@@ -1,3 +1,4 @@
+import type { Readable } from 'node:stream';
 import {
   type Actor,
   type Character,
@@ -10,9 +11,10 @@ import * as f from '@rideo/shared/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppError } from '../../src/errors';
 import { Metrics } from '../../src/metrics';
+import type { WriteOptions } from '../../src/storage/backend';
 import { Layout } from '../../src/storage/layout';
 import { MemoryBackend } from '../../src/storage/memory';
-import { type CommitEvent, RECENT_LOG, Repository } from '../../src/vcs/repo';
+import { type CommitEvent, RECENT_LOG, Repository, type Tx } from '../../src/vcs/repo';
 import { Worktree } from '../../src/vcs/worktree';
 
 const user = { kind: 'user' as const, id: 'local', name: 'You' };
@@ -673,5 +675,62 @@ describe('a slow server’s false 404 for an object (docs/design/storage-webdav.
     // A file that is truly gone still fails, after the second look
     const gone = new Repository(new MemoryBackend(), layout, project.id);
     await expect(gone.objects.get('a'.repeat(64))).rejects.toMatchObject({ code: 'not_found' });
+  });
+});
+
+describe('several commits at once (docs/design/version-control.md#commit-protocol)', () => {
+  it('makes a commit of each step, writes them together with one move of the ref, and leaves a failing step out', async () => {
+    class RefCounting extends MemoryBackend {
+      refWrites = 0;
+      override async write(path: string, data: Buffer | string | Readable, opts?: WriteOptions) {
+        if (path.endsWith('/refs/heads/main')) this.refWrites++;
+        return super.write(path, data, opts);
+      }
+    }
+    const store = new RefCounting();
+    const r = new Repository(store, layout, project.id);
+    await r.init({ 'project.json': project }, user, 'Create project');
+    const seen: CommitEvent[] = [];
+    r.onCommit = (e) => seen.push(e);
+    const before = store.refWrites;
+    const title = (t: string) => (tx: Tx) => {
+      const p = tx.require<Project>('project.json', 'project');
+      tx.set('project.json', { ...p, title: t });
+      return t;
+    };
+    const out = await r.transactMany(
+      [
+        { fn: title('One'), message: 'Title One' },
+        {
+          fn: () => {
+            throw new Error('does not apply');
+          },
+          message: 'Broken',
+        },
+        { fn: title('Two'), message: (t) => `Title ${t}` },
+        { fn: title('Two'), message: 'Nothing changes' },
+      ],
+      { actor: user },
+    );
+    expect(out.map((o) => ('error' in o ? 'error' : (o.commit?.message ?? null)))).toEqual([
+      'Title One',
+      'error',
+      'Title Two',
+      null,
+    ]);
+    // Two commits, one after the other, behind one move of the ref
+    expect(store.refWrites - before).toBe(1);
+    const log = await r.log({ limit: 3 });
+    expect(log.map((c) => c.message)).toEqual(['Title Two', 'Title One', 'Create project']);
+    expect(log[0]!.parents).toEqual([log[1]!.id]);
+    expect((await r.snapshot()).docs.get('project.json')).toMatchObject({ title: 'Two' });
+    expect(seen.map((e) => e.summary.message)).toEqual(['Title One', 'Title Two']);
+    // A cold process sees the same history
+    const cold = new Repository(store, layout, project.id);
+    expect((await cold.log({ limit: 3 })).map((c) => c.message)).toEqual([
+      'Title Two',
+      'Title One',
+      'Create project',
+    ]);
   });
 });

@@ -49,8 +49,10 @@ import {
   SuggestionDecisionsInputSchema,
   TakeEditInputSchema,
   TakeExtendInputSchema,
+  TakesOverrideInputSchema,
   TelemetryInputSchema,
   TimelineExtendInputSchema,
+  TimelineOpBatchesInputSchema,
   TimelineOpsInputSchema,
   TranslationUpdateInputSchema,
   UpdateProjectInputSchema,
@@ -751,6 +753,10 @@ export function registerRoutes(app: FastifyInstance, studio: Studio): void {
       parse(OverrideInputSchema, req.body).reason,
     ),
   );
+  app.post('/api/projects/:id/takes/override', async (req) => {
+    const body = parse(TakesOverrideInputSchema, req.body);
+    return studio.clips.overrideTakes(actor(), pid(req), body.takes, body.reason);
+  });
   app.post('/api/projects/:id/clips/:clipId/approve', async (req) =>
     studio.clips.approveClip(actor(), pid(req), p(req, 'clipId')),
   );
@@ -773,7 +779,14 @@ export function registerRoutes(app: FastifyInstance, studio: Studio): void {
   // Timeline, analysis, export
   app.get('/api/projects/:id/timeline', async (req) => studio.edit.timeline(pid(req)));
   app.post('/api/projects/:id/timeline/ops', async (req) =>
-    studio.edit.applyOps(actor(), pid(req), parse(TimelineOpsInputSchema, req.body).ops, coalesceHeader(req)),
+    req.body && typeof req.body === 'object' && 'batches' in req.body
+      ? studio.edit.applyOpsBatches(actor(), pid(req), parse(TimelineOpBatchesInputSchema, req.body).batches)
+      : studio.edit.applyOps(
+          actor(),
+          pid(req),
+          parse(TimelineOpsInputSchema, req.body).ops,
+          coalesceHeader(req),
+        ),
   );
   app.post('/api/projects/:id/timeline/assemble', async (req) =>
     studio.edit.assemble(actor(), pid(req), parse(AssembleInputSchema, req.body)),

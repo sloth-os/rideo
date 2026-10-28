@@ -286,6 +286,7 @@ review does not show is `403 forbidden`.
 | POST | `/api/projects/:id/clips/:clipId/shots/:shotId/board/approve` | `{approved}` | `Clip` (`board_unapprovable`) |
 | POST | `/api/projects/:id/clips/:clipId/shots/:shotId/takes/:takeId/select` | – | `Clip` |
 | POST | `/api/projects/:id/clips/:clipId/shots/:shotId/takes/:takeId/override` | `{reason}` | `Clip` |
+| POST | `/api/projects/:id/takes/override` | `{takes: [{clipId, shotId, takeId}], reason}` (1–500) | `Clip[]`: every take overridden in one commit |
 | POST | `/api/projects/:id/clips/:clipId/approve` | – | `Clip` (or `consistency_gate`) |
 | POST | `/api/projects/:id/batch` | `{maxGenerations?}` | `Job` |
 | DELETE | `/api/projects/:id/batch` | – | `{cancelled: jobId \| null}` |
@@ -295,7 +296,7 @@ review does not show is `403 forbidden`.
 | Method | Path | Body | Result |
 |---|---|---|---|
 | GET | `/api/projects/:id/timeline` | – | `Timeline` |
-| POST | `/api/projects/:id/timeline/ops` | `{ops[]}` | `{timeline, commit}` |
+| POST | `/api/projects/:id/timeline/ops` | `{ops[]}`, or `{batches: ops[][]}` | `{timeline, commit}`; with `batches`, `{timeline, results[]}`: each batch's `{commit}` or `{error}`, committed together ([several commits at once](../design/version-control.md#commit-protocol)) |
 | POST | `/api/projects/:id/timeline/assemble` | `{captions?, musicResourceId?}` | `{timeline, commit}` (with the default mix: ducking on) |
 | POST | `/api/projects/:id/timeline/score` | `{direction?}` | `202 Job` (`score.generate`: a cue per scene on the Music track, [post audio](../design/post-audio.md)) |
 | GET | `/api/projects/:id/subtitles.srt`, `/subtitles.vtt` | `?language=` | the cut's subtitles as text ([localization](../design/localization.md#subtitle-files)) |

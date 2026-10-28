@@ -205,6 +205,8 @@ interface ProjectStore extends ProjectSlice {
   applyLocalOps(ops: TimelineOp[]): void;
   /** The server answered the oldest pending edit of `projectId` with its timeline: the rest replay on top of it. */
   confirmEdit(projectId: string, timeline: Timeline): void;
+  /** The server answered the `count` oldest pending edits together with its timeline (applied or refused each). */
+  confirmEdits(projectId: string, timeline: Timeline, count: number): void;
   /** The server refused the oldest pending edit of `projectId`: the rest replay on the server's timeline. */
   rejectEdit(projectId: string): void;
   /** The server's timeline (a restore, a fetch): pending edits replay on top of it, and it is no longer behind. */
@@ -288,6 +290,13 @@ export const useProject = create<ProjectStore>((set, get) => ({
     const { docs, pendingEdits } = get();
     if (get().projectId !== projectId || !docs) return;
     const rest = pendingEdits.slice(1);
+    const shown = replayEdits(timeline, rest, () => blankTimeline(docs));
+    set({ serverTimeline: timeline, pendingEdits: rest, docs: { ...docs, timeline: shown } });
+  },
+  confirmEdits(projectId, timeline, count) {
+    const { docs, pendingEdits } = get();
+    if (get().projectId !== projectId || !docs) return;
+    const rest = pendingEdits.slice(count);
     const shown = replayEdits(timeline, rest, () => blankTimeline(docs));
     set({ serverTimeline: timeline, pendingEdits: rest, docs: { ...docs, timeline: shown } });
   },

@@ -41,6 +41,27 @@ export abstract class Service {
     return out;
   }
 
+  /**
+   * Several changes, each its own commit, written as one group (docs/design/version-control.md#commit-protocol): each
+   * step's result or error, in order.
+   */
+  protected async mutateMany<R>(
+    actor: Actor,
+    projectId: string,
+    steps: {
+      fn: (tx: Tx) => R | Promise<R>;
+      message: string | ((result: R) => string);
+      meta?: Record<string, unknown>;
+    }[],
+  ): Promise<({ result: R; commit: CommitSummary | null } | { error: unknown })[]> {
+    const h = await this.deps.projects.existing(projectId);
+    const out = await h.repo.transactMany(steps, { actor });
+    if (actor.kind !== 'user')
+      for (const o of out)
+        if ('commit' in o && o.commit) this.deps.hub.activity(projectId, actor, 'commit', o.commit.message);
+    return out;
+  }
+
   protected activity(projectId: string, actor: Actor, action: string, summary: string): void {
     if (actor.kind !== 'user') this.deps.hub.activity(projectId, actor, action, summary);
   }

@@ -923,6 +923,19 @@ function buildServer(studio: Studio): McpServer {
     (a, actor) => studio.clips.overrideTake(actor, a.projectId, a.clipId, a.shotId, a.takeId, a.reason),
   );
   tool(
+    'takes_override',
+    'Accept many takes in one commit, with one audited reason (docs/design/version-control.md#commit-protocol); agents need settings.approvals.allowAgentOverrides.',
+    {
+      projectId: PROJECT,
+      takes: z
+        .array(z.object({ clipId: z.string(), shotId: z.string(), takeId: z.string() }))
+        .min(1)
+        .max(500),
+      reason: z.string().min(3),
+    },
+    (a, actor) => studio.clips.overrideTakes(actor, a.projectId, a.takes, a.reason),
+  );
+  tool(
     'clip_approve',
     'Approve a clip (every selected take must pass the consistency gate).',
     { projectId: PROJECT, clipId: z.string() },

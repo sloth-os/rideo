@@ -341,6 +341,10 @@ export const MaskInputSchema = z.object({
 export const VariationsInputSchema = z.object({ count: z.number().int().min(2).max(4) });
 
 export const TimelineOpsInputSchema = z.object({ ops: z.array(TimelineOpSchema).min(1).max(500) });
+/** The editor's waiting edits, each its own commit, written together (docs/design/editor.md#operations). */
+export const TimelineOpBatchesInputSchema = z.object({
+  batches: z.array(z.array(TimelineOpSchema).min(1).max(500)).min(1).max(50),
+});
 
 export const AssembleInputSchema = z.object({
   captions: z.boolean().optional(),
@@ -419,6 +423,14 @@ export const RestoreInputSchema = z.object({
 export const ApproveInputSchema = z.object({ gate: z.string().min(1) });
 export const ReopenInputSchema = z.object({ stage: z.string().min(1) });
 export const OverrideInputSchema = z.object({ reason: z.string().min(3).max(1000) });
+/** Many takes overridden in one commit (docs/design/version-control.md#commit-protocol). */
+export const TakesOverrideInputSchema = z.object({
+  takes: z
+    .array(z.object({ clipId: IdSchema, shotId: IdSchema, takeId: IdSchema }))
+    .min(1)
+    .max(500),
+  reason: z.string().min(3).max(1000),
+});
 /** Select a take, and put it in the cut too (docs/design/feedback.md#when-a-fix-does-not-pass). */
 export const SelectTakeInputSchema = z.object({ inCut: z.boolean().optional() }).default({});
 

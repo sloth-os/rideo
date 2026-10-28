@@ -57,10 +57,10 @@ project's whole document set, one project after another, walk its log, and list 
 approve, recent agent commits) kept in memory and in `.rideo/summary.json` behind the commits; projects read in
 parallel; the folder listing cached and refreshed on create, delete and import. *Done:* both read each project's summary (`.rideo/summary.json`, kept in memory and written behind the commits; checked against the branch's tip and made again from the documents when behind), 8 projects at a time, and the WebDAV listing of the projects folder is reused for a minute (`rideo_project_digests_total{source}`). On the demo server, cold after a restart: 32.9 s for the project list and 103.9 s for the Inbox before; 2.4 s for the list after (its nine summaries read from their files), and the Inbox at once after it. The first list after the deploy made every summary from the documents (61.7 s, once).
 
-**6. One commit for many changes** (S–M) — a save is still two round trips (about 4–5 s on OpenList), and the demo made
+**6. One commit for many changes** (S–M, done) — a save is still two round trips (about 4–5 s on OpenList), and the demo made
 one commit per take override (94) and per editor operation. *How:* approve and override many takes in one call (REST
 and MCP); the editor sends its queued edits as one request when several wait ("Saving N edits…"); on the server,
-transactions waiting on the project lock committed together.
+transactions waiting on the project lock committed together. *Done:* `transactMany` writes a group of commits (each its own entry and its own undo) with one batch of objects and one move of the ref; the editor sends the edits that wait while one is saved in one request (`POST /timeline/ops {batches}`), and `POST /takes/override` (MCP `takes_override`) overrides many takes in one commit ([several commits at once](design/version-control.md#commit-protocol)). Transactions from different callers are still committed one at a time.
 
 **7. Exports ready before the WebDAV upload ends** (M, done) — export finishing uploads the watermarked file to WebDAV before
 the export is ready: about 6 minutes for 419 MB. *How:* ready once the file is in the local media cache (served from

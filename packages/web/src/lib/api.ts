@@ -469,6 +469,12 @@ export const api = {
       { ops },
       coalesce ? { 'x-rideo-coalesce': coalesce } : {},
     ),
+  /** Waiting edits in one request: each batch its own commit, written together (docs/design/editor.md#operations). */
+  applyOpBatches: (id: string, batches: TimelineOp[][]) =>
+    request<{
+      timeline: Timeline;
+      results: ({ commit: CommitSummary | null } | { error: { code: string; message: string } })[];
+    }>('POST', `${p(id)}/timeline/ops`, { batches }),
   assemble: (id: string, body: { captions?: boolean; musicResourceId?: string }) =>
     request<{ timeline: Timeline }>('POST', `${p(id)}/timeline/assemble`, body),
   /** Accounts (docs/design/accounts.md#surfaces). */
