@@ -63,6 +63,8 @@ export interface MockGatewayApp {
     videos: number;
     /** Chat calls answered `503 system cpu overloaded` (overloadChat). */
     overloaded: number;
+    /** Task creates turned away with `429` (busyCreates). */
+    busy: number;
     proxyCalls: Record<string, number>;
     /** The account and gateway key of the last call to each registered proxy. */
     proxyAccounts: Record<string, { account: string; key: string; headers: Record<string, string> }>;
@@ -71,6 +73,8 @@ export interface MockGatewayApp {
   management: MockManagement;
   /** The next `times` chat calls through the proxy answer `503 system cpu overloaded`, as an overloaded upstream does. */
   overloadChat(times: number): void;
+  /** The next `times` task creates answer `429`, as a provider at its concurrency limit does (no task is made). */
+  busyCreates(times: number): void;
   /** The next `times` video generations jump inside the shot (a flash cut), like MOCK_JUMP_EVERY. */
   jumpVideos(times: number): void;
   /** The next `times` sound checks hear no speech, as when the video model does not voice its lines. */
@@ -88,10 +92,12 @@ export async function buildMockGateway(opts: MockGatewayOptions = {}): Promise<M
     jumps: 0,
     videos: 0,
     overloaded: 0,
+    busy: 0,
     proxyCalls: {},
     proxyAccounts: {},
   };
   let overloads = 0;
+  let busyLeft = 0;
   let jumpsLeft = 0;
   let mufflesLeft = 0;
   const management = new MockManagement({ apiKey: opts.apiKey, managementKey: opts.managementKey });
@@ -236,6 +242,18 @@ export async function buildMockGateway(opts: MockGatewayOptions = {}): Promise<M
         return problem(req, reply, 422, 'validation_error', `Unknown model ${model}.`, [
           { loc: 'model', msg: 'unknown model' },
         ]);
+      }
+      // A provider at its concurrency limit: mm-gateway passes its 429 on and makes no task
+      if (busyLeft > 0) {
+        busyLeft--;
+        counters.busy++;
+        return problem(
+          req,
+          reply,
+          429,
+          'generation_service_error',
+          'The generation service returned an error.',
+        );
       }
       const key = req.headers['idempotency-key'] as string | undefined;
       const owner = 'default';
@@ -457,6 +475,9 @@ export async function buildMockGateway(opts: MockGatewayOptions = {}): Promise<M
     management,
     overloadChat(times) {
       overloads = times;
+    },
+    busyCreates(times) {
+      busyLeft = times;
     },
     jumpVideos(times) {
       jumpsLeft = times;

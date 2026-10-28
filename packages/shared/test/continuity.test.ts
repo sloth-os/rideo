@@ -32,11 +32,14 @@ import {
   sceneLine,
   selectReferences,
   shotContextOf,
+  soundBlockV2,
   soundVerdict,
+  startsFromFrame,
   TEMPORAL_JUMP_SCORE,
   temporalVerdict,
   voicePhrase,
   WORDS_PER_SECOND,
+  withoutOffscreenNames,
   withSound,
   wordsCapacity,
   wordsOf,
@@ -134,8 +137,9 @@ describe('prompt version 2 (docs/design/continuity.md#prompts-version-2)', () =>
         generation: { promptVersion: 2, includeAudio: true, modelMusic: true },
       }),
     };
+    // A shot without lines says nobody speaks
     expect(compileShotPrompt(music, 'video')).toContain(
-      'Sound: natural ambient sound of the place and the action.',
+      'Sound: natural ambient sound of the place and the action; nobody speaks.',
     );
   });
 
@@ -321,6 +325,25 @@ describe('prompt version 2 (docs/design/continuity.md#prompts-version-2)', () =>
     expect(inFrameLine({ characters: [rosie], offscreen: ['Sammy', 'Mei', 'Bao'] })).toBe(
       'In frame: only Rosie; Sammy, Mei and Bao are out of frame.',
     );
+    // A single that looks at the other: the video prompt says someone off-screen (Wan showed whoever it names)
+    const looks = shotContextOf(
+      {
+        ...single,
+        description: 'Rosie stands at the water, Sammy behind the camera',
+        action: "Rosie turns her eyes to Sammy on the right and nods at Sammy's question.",
+      },
+      docs,
+    );
+    const looking = compileShotPrompt(looks, 'video');
+    expect(looking).toContain('Rosie stands at the water, someone off-screen behind the camera.');
+    expect(looking).toContain(
+      "Action: Rosie turns her eyes to someone off-screen on the right and nods at someone off-screen's question.",
+    );
+    expect(looking).not.toContain('Sammy');
+    expect(compileShotPrompt(looks, 'keyframe')).toContain('Sammy behind the camera');
+    expect(withoutOffscreenNames('Sammyland waves to Sammy', ['Sammy'])).toBe(
+      'Sammyland waves to someone off-screen',
+    );
     // A neighbour that changes its cast does not make this board outdated
     expect(boardPromptHash({ ...ctx, offscreen: [] })).toBe(boardPromptHash(ctx));
     // Multi-shot segments say it too
@@ -334,6 +357,44 @@ describe('prompt version 2 (docs/design/continuity.md#prompts-version-2)', () =>
     expect(text).toContain('No dialogue. Hard cut. Shot 2 [5-10s]: Rosie points at the chart. Action:');
     expect(text).not.toMatch(/Hard cut\.\s*Characters/);
     expect((req.input[0] as { text: string }).text).toContain('In frame: only Rosie; nobody else.');
+  });
+
+  it('leaves the style’s palette and lighting out of a video that starts from a frame', () => {
+    const ctx = ctxV2();
+    ctx.screenplay = {
+      ...ctx.screenplay!,
+      style: { ...ctx.screenplay!.style, lighting: 'a warm sunset glow in the final scenes' },
+    };
+    const video = compileShotPrompt(ctx, 'video');
+    expect(video).not.toContain('lighting:');
+    expect(video).not.toContain('palette:');
+    expect(video).not.toContain('sunset');
+    expect(video).toContain('visual style: neo-noir');
+    // The keyframe keeps the whole style: it sets the look the video starts from
+    expect(compileShotPrompt(ctx, 'keyframe')).toContain('lighting: a warm sunset glow in the final scenes');
+    // Without keyframes the video has no frame to start from, so it keeps the style
+    const unframed = {
+      ...ctx,
+      settings: { ...ctx.settings, generation: { ...ctx.settings.generation, keyframes: false } },
+    };
+    expect(compileShotPrompt(unframed, 'video')).toContain('lighting: a warm sunset glow');
+    expect(startsFromFrame(ctx.settings)).toBe(true);
+  });
+
+  it('says nobody speaks in the sound line of a shot without lines', () => {
+    const silent = ctxV2();
+    silent.shot.dialogue = [];
+    const p = compileShotPrompt(silent, 'video');
+    expect(p).toContain('No dialogue.');
+    expect(p).toContain(
+      'Sound: only the ambient and action sounds of the place; nobody speaks. No BGM, no music, no song, no humming.',
+    );
+    expect(p).not.toContain("the characters' voices");
+    const music = { ...silent.settings, generation: { ...silent.settings.generation, modelMusic: true } };
+    expect(soundBlockV2(music, { lines: false })).toBe(
+      'Sound: natural ambient sound of the place and the action; nobody speaks.',
+    );
+    expect(soundBlockV2(music)).toBe('Sound: natural ambient sound of the place and the action.');
   });
 
   it('keeps the scene’s continuity out of the video prompt of a shot without the whole cast', () => {

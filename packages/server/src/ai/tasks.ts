@@ -302,7 +302,7 @@ Rules:
 - "locations" and "props": how each place and object looks, with no character in it (their reference pictures show them empty).
 - Scenes: vivid visual action, characters listed by name.
 - "locations": every distinct place of the WHOLE film (all outline beats, not only the written scenes), each with a precise visual description (architecture, materials, light); each scene's "location" is one of these names. "props": the recurring objects of the whole film that must look the same every time (name + precise visual description); each scene lists the props it shows in "props".
-- "style": concrete visual language (film stock or render look, lens, palette, lighting, camera movement), with believable light and physically plausible motion within that look.
+- "style": concrete visual language (film stock or render look, lens, palette, lighting, camera movement), with believable light and physically plausible motion within that look. It is the whole film's look: put a time of day or a scene's light (a sunset, a storm) in that scene's continuity, never in the style.
 - Use the attachment descriptions as inspiration for the look and the cast.
 Return only JSON: {"title":"...","logline":"...","synopsis":"...","genre":"...","tone":"...","style":{"visual":"...","palette":"...","camera":"...","lighting":"..."},"characters":[{"name":"...","role":"protagonist|antagonist|supporting|minor","summary":"...","identity":${IDENTITY_TEMPLATE},"wardrobe":[{"name":"...","description":"..."}],"personality":"...","voice":"..."}],"locations":[{"name":"...","description":"..."}],"props":[{"name":"...","description":"..."}],"outline":[{"title":"...","summary":"...","purpose":"setup","estDurationSec":90}],"scenes":[{"beatIndex":0,"heading":"EXT. PLACE - DAY","location":"location name","timeOfDay":"...","continuity":"...","summary":"...","action":"...","dialogue":[{"character":"Name","line":"...","parenthetical":"..."}],"characters":["Name"],"props":["prop name"],"estDurationSec":90}],"ended":true}`,
 
@@ -328,6 +328,7 @@ Rules:
 - Keep the scene's time of day, weather and light ("scene.timeOfDay", "scene.continuity") in every shot. When the scene continues "previousShot" (the end of the previous scene), start from it.
 - Dialogue: put each line in the shot where it is spoken, keep the words of the scene's lines, and give one shot at most "maxWordsPerShot" words in total; spread a longer exchange over several shots (shot and reverse shot). When "dialogueLevel" is given, any line you write keeps to "dialogueGuidance".
 - "characters": names of the characters visible in the shot (only from the cast list). "props": names of the scene's props visible in the shot (only from scene.props).
+- Name only the characters in frame in a shot's "description" and "action": write where an unseen character is ("looks off-screen right"), never their name (the video model shows whoever the text names).
 - Use "continuity":"continuous" only when the shot continues the previous shot's final frame without a cut; the first shot is always "cut".
 - camera.framing: extreme_wide|wide|medium|medium_close|close_up|extreme_close_up|over_shoulder|pov|insert; camera.movement: static|pan|tilt|dolly_in|dolly_out|tracking|handheld|crane|zoom|orbit.
 - When "direction" is given (what a new plan must do), follow it.

@@ -53,6 +53,14 @@ const task = await client.generateMusic(req, { idempotencyKey, signal, metadata,
   connection, a `5xx` or a `429` from the file host); a download that still fails is a retryable `gateway_error`,
   so the job runs again instead of failing after the generation was paid for. The job's `AbortSignal` goes with every request: cancelling a job aborts the request in
   flight. The result is a normalized `GatewayTask {id, model, status, outputs[], usage, error}`, validated with zod.
+- **A busy provider.** A `429` to `create*` says the provider is at its rate or concurrency limit and made no task:
+  the call waits and asks again with the same `Idempotency-Key` (mm-gateway stores a key only with a created task),
+  15 s, then doubling up to 60 s with jitter, or longer when the answer's `Retry-After` asks, for up to 10 minutes
+  in all; each wait counts as `rideo_gateway_tasks_total{status="busy"}` and is logged (`the provider is busy;
+  waiting to create the task`). The job keeps its lane slot while it waits, as the provider's limit is the real one.
+  The ctaigw aggregator of the October 2026 demos limits Wan 3.0's concurrent tasks (`model_concurrency_limit`): with
+  seven shots of the swimming pilot at once, four were turned away, and one failed all three runs of its job, 2 s and
+  4 s apart.
 - Errors: an HTTP problem (`application/problem+json`) becomes `GatewayHttpError {status, code, detail}`, no
   response at all (refused, reset, timed out) a `GatewayHttpError` without a status. Failed tasks become
   `GatewayTaskError {code, message}`. Both carry `retryable` (no response, 429 and 5xx, and the task codes

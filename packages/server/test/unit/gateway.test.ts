@@ -111,6 +111,36 @@ describe('GatewayClient (SDK)', () => {
     expect(await offline.health()).toBe(false);
   });
 
+  it('waits for a busy provider to create the task: a 429 made no task (docs/design/ai-gateway.md#sdk-usage)', async () => {
+    const local = new Metrics();
+    const patient = new GatewayClient({
+      url: gw.url,
+      apiKey: 'k',
+      pollMs: 20,
+      timeoutsSec: { image: 30, video: 60, music: 30 },
+      metrics: local,
+    });
+    const before = gw.counters.busy;
+    gw.busyCreates(2);
+    const done = await patient.generateVideo(
+      { input: [{ type: 'text', text: 'x' }] },
+      { idempotencyKey: 'busy-1' },
+    );
+    expect(done.status).toBe('succeeded');
+    expect(gw.counters.busy - before).toBe(2);
+    expect(local.gatewayTasks.get({ modality: 'video', status: 'busy' })).toBe(2);
+    expect(local.gatewayTasks.get({ modality: 'video', status: 'rejected' })).toBe(0);
+    // Another answer than 429 is not waited for
+    const bad = await patient
+      .generateImage(
+        { input: [{ type: 'text', text: 'x' }], parameters: { size: '1x1' } as never },
+        { idempotencyKey: 'busy-2' },
+      )
+      .catch((e) => e);
+    expect(bad).toMatchObject({ status: 422 });
+    expect(local.gatewayTasks.get({ modality: 'image', status: 'busy' })).toBe(0);
+  });
+
   it('aborts the request in flight with the job and reports what the gateway answered', async () => {
     const seen: IncomingHttpHeaders[] = [];
     let closed = 0;

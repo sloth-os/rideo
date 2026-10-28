@@ -130,8 +130,12 @@ export function styleHeader(
   screenplay: Pick<Screenplay, 'style'> | null,
   settings: Pick<ProjectSettings, 'aspectRatio'>,
   mode: 'still' | 'motion',
-  /** The style's camera line (a single shot's version 2 video prompt leaves it out: it lists several kinds of shot). */
-  opts: { camera?: boolean } = {},
+  /**
+   * The style's camera line (a single shot's version 2 video prompt leaves it out: it lists several kinds of shot), and
+   * its palette and lighting (a version 2 video that starts from a frame leaves them out: the frame shows them, and the
+   * film's style may name other scenes' light).
+   */
+  opts: { camera?: boolean; light?: boolean } = {},
 ): string {
   const s = screenplay?.style;
   const parts = [
@@ -140,8 +144,8 @@ export function styleHeader(
       : `Cinematic shot, ${settings.aspectRatio}`,
   ];
   if (clean(s?.visual)) parts.push(`visual style: ${clean(s?.visual)}`);
-  if (clean(s?.palette)) parts.push(`palette: ${clean(s?.palette)}`);
-  if (clean(s?.lighting)) parts.push(`lighting: ${clean(s?.lighting)}`);
+  if (opts.light !== false && clean(s?.palette)) parts.push(`palette: ${clean(s?.palette)}`);
+  if (opts.light !== false && clean(s?.lighting)) parts.push(`lighting: ${clean(s?.lighting)}`);
   if (mode === 'motion' && opts.camera !== false && clean(s?.camera))
     parts.push(`camera style: ${clean(s?.camera)}`);
   return `${parts.join('; ')}.`;
@@ -212,6 +216,11 @@ export function inFrameLine(
   const here = list(ctx.characters.map((c) => c.name));
   if (mode === 'video') return `In frame: only ${here}; nobody else.`;
   return `In frame: only ${here}; ${list(away)} ${away.length === 1 ? 'is' : 'are'} out of frame.`;
+}
+
+/** A version 2 video starts from a frame (a keyframe or a storyboard frame) unless keyframes are off. */
+export function startsFromFrame(settings: Pick<ProjectSettings, 'generation'>): boolean {
+  return settings.generation?.keyframes !== false;
 }
 
 export function promptVersionOf(settings: Pick<ProjectSettings, 'generation'>): PromptVersion {
@@ -293,6 +302,21 @@ export function voicePhrase(c: Pick<Character, 'voice' | 'identity'>): string {
   return /^(a|an|the|his|her|their)\s/i.test(base) ? base : `${/^[aeiou]/i.test(base) ? 'an' : 'a'} ${base}`;
 }
 
+/**
+ * A video prompt never names who is out of frame (docs/design/continuity.md#prompts-version-2): Wan brought the
+ * character a single looks at into the shot. Their names, in the shot's own words, become "someone off-screen".
+ */
+export function withoutOffscreenNames(text: string, offscreen: string[]): string {
+  let out = text;
+  for (const name of offscreen.map((n) => n.trim()).filter(Boolean)) {
+    const n = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    out = out
+      .replace(new RegExp(`\\b${n}(?:'s|’s)`, 'g'), "someone off-screen's")
+      .replace(new RegExp(`\\b${n}\\b`, 'g'), 'someone off-screen');
+  }
+  return out;
+}
+
 /** Version 2: what one shot shows and does (also a segment of a multi-shot request). */
 export function shotBodyV2(
   ctx: ShotContext,
@@ -302,10 +326,13 @@ export function shotBodyV2(
   const { shot } = ctx;
   const lines: string[] = [];
   const override = shot.promptOverride && clean(shot.promptOverride);
+  // A video names only who is in frame; a keyframe says who is out of frame instead (inFrameLine)
+  const away = mode === 'video' ? (ctx.offscreen ?? []) : [];
+  const text = (t: string) => withoutOffscreenNames(clean(t), away);
   if (override) lines.push(`${clean(shot.promptOverride!)}.`);
   else {
-    lines.push(`${clean(shot.description)}.`);
-    if (mode === 'video' && clean(shot.action)) lines.push(`Action: ${clean(shot.action)}.`);
+    lines.push(`${text(shot.description)}.`);
+    if (mode === 'video' && clean(shot.action)) lines.push(`Action: ${text(shot.action)}.`);
   }
   // Keyframes only: the video starts from that frame, and Wan played the line as a second shot
   const previous = clean(ctx.previousEndState ?? '');
@@ -346,12 +373,22 @@ export function dialogueBlockV2(ctx: Pick<ShotContext, 'shot' | 'characters' | '
   return `Dialogue: ${voiced.join(' ')} Lip sync.`;
 }
 
-/** Version 2: the model's own sound (ambient and action; music only when the project lets it). */
-export function soundBlockV2(settings: Pick<ProjectSettings, 'generation' | 'dialogue'>): string | null {
+/**
+ * Version 2: the model's own sound (ambient and action; music only when the project lets it). A shot without lines
+ * says nobody speaks: "the characters' voices" made Wan 3.0 invent speech in silent shots.
+ */
+export function soundBlockV2(
+  settings: Pick<ProjectSettings, 'generation' | 'dialogue'>,
+  opts: { lines?: boolean } = {},
+): string | null {
   if (!settings.generation.includeAudio || settings.dialogue?.mode === 'tts') return null;
   // What the sound is, not only what it is not, and Wan 3.0's own words for no music ("No BGM")
-  return settings.generation.modelMusic
-    ? 'Sound: natural ambient sound of the place and the action.'
+  if (settings.generation.modelMusic)
+    return opts.lines === false
+      ? 'Sound: natural ambient sound of the place and the action; nobody speaks.'
+      : 'Sound: natural ambient sound of the place and the action.';
+  return opts.lines === false
+    ? 'Sound: only the ambient and action sounds of the place; nobody speaks. No BGM, no music, no song, no humming.'
     : "Sound: the characters' voices and the ambient and action sounds of the place. No BGM, no music, no song, no humming.";
 }
 
@@ -369,7 +406,12 @@ function compileShotPromptV2(
   // A video prompt describes this one shot: its structure first, as Wan reads the structure from the prompt, and
   // nothing a model could play as another shot (docs/design/continuity.md#what-the-video-model-reads)
   const lines: string[] = video ? [ONE_SHOT_LINE] : [];
-  lines.push(styleHeader(ctx.screenplay, settings, video ? 'motion' : 'still', { camera: !video }));
+  lines.push(
+    styleHeader(ctx.screenplay, settings, video ? 'motion' : 'still', {
+      camera: !video,
+      light: !(video && startsFromFrame(settings)),
+    }),
+  );
   const sceneText = sceneLine(ctx.scene, location, { placeOnly: video && !!ctx.offscreen?.length });
   if (sceneText) lines.push(sceneText);
   lines.push(...shotBodyV2(ctx, mode, opts));
@@ -394,7 +436,7 @@ function compileShotPromptV2(
   }
   const dialogue = dialogueBlockV2(ctx);
   if (dialogue) lines.push(dialogue);
-  const sound = soundBlockV2(settings);
+  const sound = soundBlockV2(settings, { lines: shot.dialogue.some((d) => clean(d.line)) });
   if (sound) lines.push(sound);
   lines.push(PHYSICS_LINE);
   lines.push(`Avoid: ${EXCLUSIONS_MOTION}.`);

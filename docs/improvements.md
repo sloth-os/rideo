@@ -321,3 +321,37 @@ cast ([actions](design/feedback.md#actions)).
   on a loaded two-core box (once in 42 ms, so an assertion, not a timeout) and passes alone and in loaded reruns; it
   has not failed on CI. Capture its message the next time it fails.
 
+
+## The swimming demo (October 28, 2026)
+
+A five-minute film of Sammy and Rosie swimming at a lagoon, made to measure the studio after the work above: the
+screenplay and storyboard reviews, Wan 3.0 used as documented, the checks without reasoning, the music option and the
+unattended batch. What it taught while it ran:
+
+**42. The screenplay reviewer misread how a film is written** (S, done) — the first review called the 30-second
+scenes a critical problem for a model of 2–10 s shots, the second called "only two scenes written" critical; both cost
+a revision round (the review passed at its third, 6.4 → 6.8 → 7.5). The reviewer is now told that the planner splits
+scenes into shots and that production writes each later scene from its outline beat, and each beat says whether it is
+written ([how a review runs](design/ai-review.md#how-a-review-runs)).
+
+**43. Storyboard frames drawn all at once** (S, done) — the storyboard review scored continuity 5 in all three of its
+rounds (6.6 → 6.9 → 7.1): the watermelon halves wandered across the beach and onto a blanket, the shoreline and the
+sun swapped sides. Each scene's first frame is now drawn first and the others take it as their scene reference, as
+the video pass's keyframes do ([storyboard jobs](design/storyboard.md#jobs)).
+
+**44. What the video model reads of a single and of a silent shot** (S, done) — in the pilot, Rosie's close-up said
+"turns her eyes to Sammy on the right" and Sammy walked into all three attempts; 5 of the 8 attempts at its silent
+shots had speech nobody wrote, under a sound line that named "the characters' voices". A video prompt now calls an
+absent character "someone off-screen", the planner names only who is in frame, and a silent shot's sound line says
+nobody speaks ([prompts](design/continuity.md#prompts-version-2)).
+
+**45. A provider at its concurrency limit** (S, done) — the ctaigw aggregator turned away 4 of the pilot's 7
+concurrent Wan 3.0 creates (`429 model_concurrency_limit`), and one shot failed all three runs of its job, 2 s and
+4 s apart. A `429` to a create made no task, so the call now waits and asks again (15 s doubling to 60 s, up to 10
+minutes) ([a busy provider](design/ai-gateway.md#sdk-usage)); until it was deployed the video lane ran at 3.
+
+**46. The film's style named another scene's light** (S, done) — the writer put "a warm orange sunset glow in the
+final scenes" into the film-wide lighting (and "warm orange sunset light" into the palette), every video prompt carried
+it, and 4 of the pilot's 8 morning takes ended at sunset. A video that starts from a frame now leaves the style's
+palette and lighting out (the frame shows them, the scene line gives the time of day), and the writer keeps times of
+day out of the style ([what the video model reads](design/continuity.md#prompts-version-2)).

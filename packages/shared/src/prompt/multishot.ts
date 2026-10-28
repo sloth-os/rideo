@@ -17,6 +17,7 @@ import {
   shotBodyV2,
   shotSeed,
   soundBlockV2,
+  startsFromFrame,
   styleHeader,
 } from './index';
 
@@ -143,7 +144,7 @@ export function compileMultiShotRequest(
   const v2 = promptVersionOf(first.settings) >= 2;
   const header = v2
     ? [
-        styleHeader(first.screenplay, first.settings, 'motion'),
+        styleHeader(first.screenplay, first.settings, 'motion', { light: !startsFromFrame(first.settings) }),
         sceneLine(
           first.scene,
           (first.elements ?? []).find((e) => e.kind === 'location'),
@@ -172,7 +173,9 @@ export function compileMultiShotRequest(
     );
   lines.push(...elementLines(elements));
   if (v2) {
-    const sound = soundBlockV2(first.settings);
+    const sound = soundBlockV2(first.settings, {
+      lines: ctxs.some((c) => c.shot.dialogue.some((d) => d.line.trim())),
+    });
     if (sound) lines.push(sound);
     lines.push(PHYSICS_LINE, `Avoid: ${EXCLUSIONS_MULTI}.`);
   }

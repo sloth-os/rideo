@@ -43,11 +43,19 @@ export class GatewayHttpError extends Error {
     readonly status: number | undefined,
     readonly problemCode: string | undefined,
     readonly retryable: boolean,
+    /** How long the answer asked to wait (`Retry-After`). */
+    readonly retryAfterMs?: number,
   ) {
     super(message);
     this.name = 'GatewayHttpError';
   }
 }
+
+/** The first wait for a busy provider (docs/design/ai-gateway.md#sdk-usage); it doubles up to the longest. */
+const BUSY_FIRST_WAIT_MS = 15_000;
+const BUSY_LONGEST_WAIT_MS = 60_000;
+/** How long a create may wait for a busy provider in all before it fails as before. */
+const BUSY_WAIT_MAX_MS = 600_000;
 
 export class GatewayTaskError extends Error {
   readonly code = 'gateway_error';
@@ -96,11 +104,13 @@ function toError(err: unknown, signal?: AbortSignal): Error {
   const status = err.response?.status;
   const body = err.response?.data as { detail?: string; code?: string; title?: string } | string | undefined;
   const problem = body && typeof body === 'object' ? body : undefined;
+  const after = Number.parseFloat(String(err.response?.headers?.['retry-after'] ?? ''));
   return new GatewayHttpError(
     `mm-gateway ${status ?? 'network'}: ${problem?.detail ?? problem?.title ?? err.message}`,
     status,
     problem?.code,
     !status || status === 429 || status >= 500,
+    Number.isFinite(after) && after > 0 ? after * 1000 : undefined,
   );
 }
 
@@ -230,13 +240,32 @@ export class GatewayClient {
     };
     if (opts.signal?.aborted) throw abortError();
     const started = Date.now();
-    let res: AxiosResponse<object>;
-    try {
-      res = await calls.create(body, opts.idempotencyKey, opts.signal);
-    } catch (err) {
-      const e = toError(err, opts.signal);
-      if (e instanceof GatewayHttpError) this.cfg.metrics?.gatewayTasks.inc({ modality, status: 'rejected' });
-      throw e;
+    let res: AxiosResponse<object> | undefined;
+    // A busy provider (429) made no task: wait for a slot and ask again (docs/design/ai-gateway.md#sdk-usage)
+    for (let busy = 0; !res; busy++) {
+      try {
+        res = await calls.create(body, opts.idempotencyKey, opts.signal);
+      } catch (err) {
+        const e = toError(err, opts.signal);
+        if (e instanceof GatewayHttpError && e.status === 429) {
+          // A sub-second poll interval is a fast-poll mode (tests, local mocks): the waits shrink with it
+          const first = this.cfg.pollMs < 1000 ? this.cfg.pollMs : BUSY_FIRST_WAIT_MS;
+          const backoff = Math.min(BUSY_LONGEST_WAIT_MS, first * 2 ** busy) * (0.8 + Math.random() * 0.4);
+          const wait = Math.round(Math.max(backoff, Math.min(e.retryAfterMs ?? 0, BUSY_LONGEST_WAIT_MS)));
+          if (Date.now() - started + wait <= BUSY_WAIT_MAX_MS) {
+            this.cfg.metrics?.gatewayTasks.inc({ modality, status: 'busy' });
+            this.cfg.log?.warn(
+              { modality, waitMs: wait, tries: busy + 1 },
+              'the provider is busy; waiting to create the task',
+            );
+            await sleep(wait, opts.signal);
+            continue;
+          }
+        }
+        if (e instanceof GatewayHttpError)
+          this.cfg.metrics?.gatewayTasks.inc({ modality, status: 'rejected' });
+        throw e;
+      }
     }
     let current = task(res);
     opts.onTask?.(current);

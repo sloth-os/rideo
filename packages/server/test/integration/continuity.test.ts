@@ -146,6 +146,21 @@ describe('continuity-aware generation (prompt version 2)', () => {
     expect(rejected.consistency.quality).toMatchObject({ passed: false, sound: { music: true } });
   });
 
+  it('waits for a busy provider instead of failing the shot (docs/design/ai-gateway.md#sdk-usage)', async () => {
+    const { pid, clip } = await plannedClip();
+    const shot = [...clip.shots].sort((a, b) => a.index - b.index)[0]!;
+    const before = stack.gw.counters.busy;
+    stack.gw.busyCreates(3);
+    const job = await stack.api<Job>('POST', `/projects/${pid}/clips/${clip.id}/shots/${shot.id}/regenerate`);
+    const done = expectSucceeded(await stack.waitJob(pid, job.id, 180_000));
+    // The waits are not runs of the job: the provider made no task
+    expect(done.attempts).toBe(1);
+    expect(stack.gw.counters.busy - before).toBe(3);
+    const metrics = await (await fetch(`${stack.url}/metrics`)).text();
+    const busy = [...metrics.matchAll(/rideo_gateway_tasks_total\{modality="\w+",status="busy"\} (\d+)/g)];
+    expect(busy.reduce((n, m) => n + Number(m[1]), 0)).toBeGreaterThanOrEqual(3);
+  });
+
   it('creates projects with version 2 prompts and quality checks, and plans with the brief, the level and lenses', async () => {
     const { pid, clip, state } = await plannedClip();
     const settings = state.docs.project.settings;

@@ -120,7 +120,11 @@ who is not there: `In frame: only Rosie; Sammy is out of frame.` (or `No charact
 The scene reference frame shows the whole cast, and a single often names the one it looks at ("her eyeline is toward
 Sammy"): in the panda demo the image model put Sammy into Rosie's close-up twice before the line was added. The video
 prompt names nobody else: `In frame: only Rosie; nobody else.` Like the scene reference, the line comes from the
-shot's neighbours, so the board's prompt hash leaves it out.
+shot's neighbours, so the board's prompt hash leaves it out. The video prompt also leaves the absent characters' names
+out of the shot's own description and action, where they become `someone off-screen` (`withoutOffscreenNames`): in
+the swimming pilot Rosie's close-up said "turns her eyes to Sammy on the right" and Sammy walked into all three
+attempts, though the line said nobody else. The planner names only who is in frame and writes where an unseen
+character is ("looks off-screen right").
 
 **What the video model reads.** Wan 2.7 and later take the structure of a video from its prompt: "if you do not
 explicitly specify the shot structure, the model infers it from the prompt" ([Alibaba's Wan image-to-video
@@ -131,7 +135,11 @@ shot's end state), her close-up cut to Sammy "in a low wedge", and Sammy's close
 girl in her pink jacket, from the scene line. So a single shot's video prompt opens with its structure (`One
 continuous shot, no cuts.`), leaves out the style's camera line (it lists wide, medium and tracking shots, a plan of
 several shots), the previous shot's end state and, when part of the cast is out of frame, the scene's continuity, and
-names only who is in frame. A multi-shot request keeps its own header and its cuts.
+names only who is in frame. A multi-shot request keeps its own header and its cuts. A video that starts from a frame
+(`generation.keyframes`, the default) also leaves out the style's palette and lighting, single or multi-shot: the frame
+shows them and the scene line says the time of day, while the film's style may name other scenes' light. The swimming
+film's said "a warm orange sunset glow in the final scenes", and 4 of the 8 morning takes of its pilot ended at sunset.
+The writer keeps a time of day out of the style.
 
 **Video prompt blocks.** Following the prompt guides of current video models (Wan 3.0, Veo, Kling), the video prompt
 is a sequence of short blocks; a model given a first frame needs motion, story and sound more than a description of
@@ -151,7 +159,10 @@ Avoid: <exclusions>.
 - **Voices.** A line names its speaker and the speaker's voice (`voice.description`, else "a <age> <gender> voice"
   from the identity), the same words every time, so a model that voices the lines itself (`include_audio` without
   reference audio, [dialogue](dialogue.md#from-lines-to-audio)) keeps each character sounding alike.
-- **No dialogue.** A shot without lines says `No dialogue.`, otherwise models that render sound invent speech.
+- **No dialogue.** A shot without lines says `No dialogue.`, otherwise models that render sound invent speech, and its
+  sound line says `only the ambient and action sounds of the place; nobody speaks.` instead of naming the characters'
+  voices: with `the characters' voices` in the sound line, 5 of the 8 attempts at the swimming pilot's silent shots
+  had speech nobody wrote ("Sammy: Hmm, nothing over there.", "Hello, what's that?").
 - **Music.** Unless `settings.generation.modelMusic` is on, the sound is `the characters' voices and the ambient and
   action sounds of the place. No BGM, no music, no song, no humming.`: a shot with its own music makes the cut jump
   from song to song; the score is laid on the Music track ([post audio](post-audio.md)). Wan 3.0's guide disables
