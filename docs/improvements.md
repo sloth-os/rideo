@@ -368,3 +368,26 @@ every check and went into the cut, the second feedback still scored 6.2 and call
 double exposures", both shots just regenerated without ghosts. Its strips sampled 85% of short last shots inside the
 0.5 s crossfade into the next scene, where the cut blends two shots. A strip now samples each shot's clean part,
 without its own transition or the next one's ([how a film is watched](design/feedback.md#how-a-film-is-watched)).
+
+### Run figures
+
+- **Time:** brief to first export in 6 hours, 99 minutes of which the batch was held while items 44–46 were made
+  and deployed; without the hold, about 4.4 hours. Screenplay and its review: 41 min (three rounds). Cast: 7 min.
+  Storyboard and its reviews: 59 min (three rounds, then three priority 1 redraws and a re-review). Pilot: 29 min.
+  Batch: 78 min (71 shots in 8 clips; scenes 3–10 written on the way). Export: 46 min (28.5 min rendering in the tab,
+  17 finishing). Feedback: 20 min.
+- **Generation:** with items 44–46 deployed, 67 of the batch's 71 shots passed every check at the first attempt
+  (94 %, mean 1.07 attempts; about 60 % in the panda demo). That took 289 s of video for 270 s of film, and no take had
+  music. The pilot, on the earlier prompts: 3 of 8 at the first attempt. Every scripted line was heard in every take.
+- **Feedback:** the first export scored 6.2 (the panda demo's first 4.9, its third 6.0). Dialogue 8.9, sound 9.4,
+  storytelling 7, character 7, continuity 4, temporal 5. 121 issues: 6 critical, most of them duplicates the gate
+  could not report (item 47). The 23 priority 1 fixes all passed every check and replaced their takes, 16 at the first
+  attempt; they cost $34.09 against an estimate of $28.33. The second export, re-watched with clean strips (item 48),
+  scored 6.5: character 8, editing 6, physics 6, realism 7, critical issues 3. Continuity (4) and temporal (5) did not
+  move.
+- **Cost:** $134.62 to the first export, $27.11 a finished minute; the batch alone was $18.82 a minute against the
+  panda demo's $27.31. With the fixes and three feedbacks, $169.55. Wan 3.0 was $125.44 of the first $134.62.
+- **What is left:** continuity across shots. Props change side, count or state between cuts (the ball, the board,
+  the watermelon), and the sun moves. The gate judges one take at a time and the storyboard reference fixes only the
+  frames, so the feedback's continuity stays at 4. Next: a scene check after a clip is generated, with strips of all its
+  shots as the feedback has them, and its fixes made before the edit.
