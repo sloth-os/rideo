@@ -78,4 +78,6 @@ export const REAL_PROJECT_SETTINGS = {
   pilotDurationSec: 10,
   storyboard: { enabled: false },
   consistency: { threshold: 0.5, maxAttempts: 2 },
+  // One review of the screenplay and no automatic revisions: the suite checks the review runs, not the story
+  review: { maxRounds: 0 },
 };

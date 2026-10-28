@@ -21,6 +21,9 @@ export const PORTS = {
   slowMedia: E2E_PORT + 8,
   /** The mock mm-gateway. */
   gateway: E2E_PORT + 10,
+  /** Studios whose model a spec overloads until it is paused (docs/design/ai-gateway.md#outages): one per viewport. */
+  outage: E2E_PORT + 11,
+  outageMobile: E2E_PORT + 12,
 } as const;
 
 export const at = (port: number, path = '') => `http://127.0.0.1:${port}${path}`;

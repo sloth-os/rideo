@@ -119,6 +119,8 @@ export const ERROR_CODES = [
   'feedback_stale',
   /** docs/design/ai-review.md#surfaces */
   'review_stale',
+  /** docs/design/ai-gateway.md#refusals */
+  'llm_refused',
   /** docs/design/settings.md */
   'setting_locked',
   'gateway_not_configured',

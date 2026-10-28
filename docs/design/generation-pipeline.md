@@ -72,7 +72,10 @@ deadlock a lane.
   results are discarded.
 - **Retry**: handler errors are classified. Retryable errors (network, HTTP 429/5xx, gateway `TaskError`
   codes `timeout`, `rate_limited`, `provider_unavailable`, `upstream_error`) back off exponentially
-  (2 s · 2ⁿ, capped at 60 s) up to `maxAttempts` (default 3). Everything else fails immediately with its code.
+  (2 s · 2ⁿ, capped at 60 s) up to `maxAttempts` (default 3), or longer when the error asks (a provider's
+  `Retry-After`, up to 10 min). A job that failed because its model endpoint is paused waits for the pause to end,
+  and that run does not count against `maxAttempts` ([outages](ai-gateway.md#outages)). Everything else fails
+  immediately with its code.
 - **Restart recovery**: on boot, queued and running records are re-enqueued. Handlers are idempotent: gateway
   creates carry `Idempotency-Key = <jobId>:<step>:<attempt>` (re-posting returns the same gateway task while
   the gateway still has it), and commits carry `meta.jobId`, so a re-run finds its earlier results and skips
@@ -153,14 +156,20 @@ loop:
   if planned ≥ 0.97·target or (outline exhausted and story ended): stop planning
   if the next outline beat has no written scene: screenplay.extend(next 3 beats)
   clip.plan(next scene)
-  enqueue clip.generate(clip)   // at most 2 clip jobs in flight (lookahead)
+  enqueue clip.generate(clip)   // at most settings.batch.lookahead (3) clip jobs in flight
   stop if generations started by this batch would exceed settings.batch.maxGenerations
 wait for in-flight clip jobs
 re-check unverified takes (consistency.recheck) when any remain
 ```
 
 - Clips are generated **in order**, because continuity chaining and the story extension depend on earlier
-  clips.
+  clips. Each clip makes its first shot alone (its keyframe is the scene reference of the others), so with two clips
+  in flight the panda demo kept only five to seven of its eight video slots busy; three clips by default
+  (`settings.batch.lookahead`, 1–8) let later clips' first shots fill the lane.
+- **New places and props.** A scene the extension writes may bring a location or prop nobody approved; the batch
+  draws its references and stops for a person (the panda demo's batch stopped at 36 of 110 shots for one). With
+  `settings.batch.approveNewElements` (off by default, for unattended runs) it waits for the references, approves the
+  first and locks the element itself (as the system, in the history), and goes on; a person reviews it later.
 - **Model pinning**: when the pilot is approved, the image and video model ids reported by the gateway in
   the pilot takes (`task.model`) are written to `settings.models`, so auto-routing cannot silently switch
   backends mid-movie.

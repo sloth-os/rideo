@@ -76,6 +76,7 @@ import type { Metrics } from '../metrics';
 import type { UsageMeter } from '../usage/meter';
 import { sleep } from '../util/abort';
 import { type LlmAdapter, LlmError, type LlmPart, type LlmRequest, type LlmResponse } from './llm';
+import type { EndpointPauses } from './pauses';
 
 const IDENTITY_TEMPLATE =
   '{"age":"early 30s","gender":"woman","ethnicity":"...","build":"...","height":"...","face":"...","hair":"...","eyes":"...","skin":"...","distinguishingMarks":"..."}';
@@ -430,6 +431,16 @@ function gatewayProblemCode(body: string | undefined): string | null {
 }
 
 /** Why a failed call is worth making again (the status or connection error), or null. */
+/**
+ * A call that got no answer (docs/design/ai-gateway.md#outages): it timed out, its connection failed, or its stream
+ * ended in an error event.
+ */
+function isOutage(err: unknown): boolean {
+  if (err instanceof LlmError) return err.status === undefined && err.retryable;
+  const e = err as { name?: string; message?: string; cause?: { code?: string } } | null;
+  return e?.name === 'TimeoutError' || e?.message === 'fetch failed' || !!e?.cause?.code;
+}
+
 function turnedAway(err: unknown): string | null {
   if (err instanceof LlmError) {
     if (err.status === undefined || !RETRY_STATUS.has(err.status)) return null;
@@ -440,6 +451,30 @@ function turnedAway(err: unknown): string | null {
   if (e?.name === 'AbortError' || e?.name === 'TimeoutError') return null;
   const code = e?.cause?.code ?? e?.code;
   return code && NETWORK_CODES.has(code) ? code : null;
+}
+
+/**
+ * Tasks that answer without reasoning (docs/design/ai-gateway.md#reasoning): checks and captions, called for every
+ * attempt of every shot; a judge call took 57 s with reasoning and 9 s without, with the same verdicts.
+ */
+export const REASONING_OFF_TASKS: ReadonlySet<LlmTaskId> = new Set([
+  'consistency.judge',
+  'sound.check',
+  'voice.judge',
+  'frame.caption',
+]);
+
+/** A provider's moderation refusing an answer (docs/design/ai-gateway.md#refusals). */
+export const REFUSAL_PATTERN =
+  /data_inspection_failed|content_filter|inappropriate content|content management policy|safety system/i;
+
+function errorText(err: unknown): string {
+  if (err instanceof LlmError) return `${err.message} ${err.body ?? ''}`;
+  return err instanceof Error ? err.message : String(err);
+}
+
+export function isRefusal(err: unknown): boolean {
+  return REFUSAL_PATTERN.test(errorText(err));
 }
 
 /** Structured LLM tasks with schema validation and one repair round (docs/design/ai-gateway.md#structured-tasks). */
@@ -457,6 +492,10 @@ export class LlmTasks {
       retry?: LlmRetryPolicy;
       /** Tokens, time and cost of every call (docs/design/observability.md#usage-ledger). */
       meter?: UsageMeter;
+      /** `model`: checks and captions reason as the model does by default (`RIDEO_CHECK_REASONING`). */
+      checkReasoning?: 'off' | 'model';
+      /** Endpoints paused after failing calls in a row (docs/design/ai-gateway.md#outages). */
+      pauses?: EndpointPauses;
     } = {},
   ) {}
 
@@ -473,6 +512,27 @@ export class LlmTasks {
     try {
       return await this.completeOnce(task, adapter, req, counts);
     } catch (err) {
+      // A moderation that refused a harmless answer: once more at temperature 0, then its own error
+      // (docs/design/ai-gateway.md#refusals)
+      if (!req.signal?.aborted && isRefusal(err)) {
+        this.deps.metrics?.llmCalls.inc({ task, status: 'refused' });
+        this.deps.log?.info(
+          { task, provider: adapter.provider, model: adapter.model },
+          'the provider refused the answer; asking once more at temperature 0',
+        );
+        try {
+          return await this.completeOnce(task, adapter, { ...req, temperature: 0 }, counts);
+        } catch (again) {
+          if (!isRefusal(again)) throw again;
+          this.deps.metrics?.llmCalls.inc({ task, status: 'refused' });
+          throw new AppError(
+            'llm_refused',
+            `${task}: the provider's moderation refused the answer twice (${errorText(again).slice(0, 200)})`,
+            [],
+            false,
+          );
+        }
+      }
       if (req.signal?.aborted || err instanceof AppError || err instanceof LlmError) throw err;
       const e = err as { name?: string; message?: string; cause?: { code?: string; message?: string } };
       if (e?.name === 'TimeoutError' || e?.message === 'fetch failed' || e?.cause?.code)
@@ -493,11 +553,29 @@ export class LlmTasks {
     counts: { retries: number } = { retries: 0 },
   ): Promise<LlmResponse> {
     const policy = this.deps.retry ?? DEFAULT_LLM_RETRY;
+    const pauses = this.deps.pauses;
+    const endpoint = `${adapter.endpoint ?? adapter.provider}/${adapter.model}`;
     for (let attempt = 0; ; attempt++) {
+      // A paused endpoint is not called: the job waits for the pause to end (docs/design/ai-gateway.md#outages)
+      const admission = pauses?.admit(endpoint);
+      if (admission && !admission.ok) {
+        this.deps.metrics?.llmCalls.inc({ task, status: 'paused' });
+        throw new AppError(
+          'llm_error',
+          `${task}: ${endpoint} is paused after ${admission.failures} failed calls in a row; next try in ${Math.ceil(admission.waitMs / 1000)} s`,
+          [],
+          true,
+          { retryAfterMs: admission.waitMs, sparesAttempt: admission.sparesAttempts },
+        );
+      }
       try {
-        return await adapter.complete(req);
+        const res = await adapter.complete(req);
+        pauses?.answered(endpoint);
+        return res;
       } catch (err) {
         const status = turnedAway(err);
+        if (status || isOutage(err)) pauses?.failed(endpoint);
+        else if (!req.signal?.aborted) pauses?.answered(endpoint);
         if (!status || attempt >= policy.retries || req.signal?.aborted) throw err;
         counts.retries++;
         const backoff = policy.baseMs * 2 ** attempt * (0.5 + Math.random() / 2);
@@ -576,10 +654,22 @@ export class LlmTasks {
         tokensOut: tokens.out,
         retries: counts.retries,
       });
+    const reasoning =
+      this.deps.checkReasoning !== 'model' && REASONING_OFF_TASKS.has(task)
+        ? ({ reasoning: 'off' } as const)
+        : {};
     let res = await this.complete(
       task,
       adapter,
-      { system, parts, json: true, temperature, signal: opts.signal, maxTokens: opts.maxTokens },
+      {
+        system,
+        parts,
+        json: true,
+        temperature,
+        signal: opts.signal,
+        maxTokens: opts.maxTokens,
+        ...reasoning,
+      },
       counts,
     );
     tokens.in += res.usage?.input ?? 0;
@@ -603,6 +693,7 @@ export class LlmTasks {
           temperature: 0,
           signal: opts.signal,
           maxTokens: opts.maxTokens,
+          ...reasoning,
         },
         counts,
       );

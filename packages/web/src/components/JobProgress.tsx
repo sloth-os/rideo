@@ -106,6 +106,12 @@ export function JobRow({ job, projectId, compact }: { job: Job; projectId: strin
           {progress.message && !compact ? (
             <div className="mt-1 truncate text-[11px] text-muted">{progress.message}</div>
           ) : null}
+          {job.status === 'queued' && job.error ? (
+            // Why a job waits to run again: its last error, e.g. a paused model (docs/design/ai-gateway.md#outages)
+            <div className="mt-1 text-[11px] break-words text-warning" data-testid="job-waiting">
+              {job.error.message}
+            </div>
+          ) : null}
         </div>
       ) : job.error && job.status === 'failed' ? (
         <div className="mt-1 text-[12px] break-words text-danger">{job.error.message}</div>

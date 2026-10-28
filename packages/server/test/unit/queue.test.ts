@@ -138,6 +138,44 @@ describe('job queue', () => {
     expect(failed.error).toMatchObject({ code: 'character_not_locked', retryable: false });
   }, 10_000);
 
+  it('waits for a paused model without using up attempts, and as long as a provider asks (outages)', async () => {
+    const { q } = makeQueue();
+    const runs: number[] = [];
+    q.register('clip.plan', async () => {
+      runs.push(Date.now());
+      if (runs.length <= 3)
+        throw new AppError('llm_error', 'newapi.example.org/qwen3.8-max is paused', [], true, {
+          retryAfterMs: 40,
+          sparesAttempt: true,
+        });
+      return 'ok';
+    });
+    const waited = await q.wait(
+      (await q.enqueue({ projectId, kind: 'clip.plan', actor, branch: 'main', maxAttempts: 2 })).id,
+    );
+    // Three runs met the pause, yet the job had two attempts: none of them counted
+    expect(waited).toMatchObject({ status: 'succeeded', attempts: 1 });
+    for (let i = 1; i < runs.length; i++) expect(runs[i]! - runs[i - 1]!).toBeGreaterThanOrEqual(35);
+
+    // A provider's Retry-After longer than the backoff (2 s) is waited for
+    const asked: number[] = [];
+    q.register('screenplay.extend', async () => {
+      asked.push(Date.now());
+      if (asked.length === 1)
+        throw Object.assign(new Error('503 system cpu overloaded'), {
+          code: 'llm_error',
+          retryable: true,
+          retryAfterMs: 2600,
+        });
+      return 'ok';
+    });
+    const slow = await q.wait(
+      (await q.enqueue({ projectId, kind: 'screenplay.extend', actor, branch: 'main' })).id,
+    );
+    expect(slow).toMatchObject({ status: 'succeeded', attempts: 2 });
+    expect(asked[1]! - asked[0]!).toBeGreaterThanOrEqual(2550);
+  }, 15_000);
+
   it('cancels running jobs and their children', async () => {
     const { q } = makeQueue({ control: 2, video: 1 });
     q.register(

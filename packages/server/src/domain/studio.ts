@@ -11,6 +11,7 @@ import {
 } from '@rideo/shared';
 import { EmbeddingsClient } from '../ai/embeddings';
 import { createAdapter, SttClient } from '../ai/llm';
+import { DEFAULT_PAUSES, EndpointPauses } from '../ai/pauses';
 import { SfxClient } from '../ai/sfx';
 import { LlmTasks } from '../ai/tasks';
 import { createTts } from '../ai/tts';
@@ -197,6 +198,13 @@ export function createStudio(
       metrics,
       meter,
       log: log.child({ component: 'llm' }),
+      // Checks and captions answer without reasoning (docs/design/ai-gateway.md#reasoning)
+      checkReasoning: config.checkReasoning,
+      // Endpoints that keep failing are paused and their jobs wait (docs/design/ai-gateway.md#outages)
+      pauses: new EndpointPauses(
+        { ...DEFAULT_PAUSES, baseMs: config.llmPauseMs },
+        { metrics, log: log.child({ component: 'llm' }) },
+      ),
       ...(config.voiceJudge ? { audio: createAdapter(proxy, config.voiceJudge) } : {}),
       // The audio-visual model (docs/design/continuity.md#quality-checks-in-the-gate)
       ...(config.omni ? { omni: createAdapter(proxy, config.omni, config.llmTimeoutMs) } : {}),

@@ -64,6 +64,11 @@ describe('story → movie workflow (REST, mock gateway)', () => {
     });
     expect(firstScene.elementIds.map((id: string) => state.docs.elements[id].kind)).toEqual(['prop']);
 
+    // The screenplay is reviewed after it is written; the gate waits for the review (docs/design/ai-review.md)
+    await stack.waitIdle(pid);
+    expect(
+      (await stack.api<any>('GET', `/projects/${pid}/state`)).docs.aiReviews.screenplay.verdict.passed,
+    ).toBe(true);
     await stack.api('POST', `/projects/${pid}/workflow/approve`, { gate: 'screenplay_approved' });
     const unmet = await rejects(
       stack.api('POST', `/projects/${pid}/workflow/approve`, { gate: 'cast_locked' }),
@@ -358,6 +363,32 @@ describe('story → movie workflow (REST, mock gateway)', () => {
       (expectSucceeded(await stack.waitJob(pid, resumed.id, 180_000)).result as { stopReason: string })
         .stopReason,
     ).toMatch(/target|outline/);
+  }, 300_000);
+
+  it('approves and locks a new prop by itself in an unattended batch', async () => {
+    const { projectId: pid, state } = await readyStoryProject(stack, {
+      batch: { approveNewElements: true, lookahead: 3 },
+    });
+    const scene = state.docs.screenplay.scenes[0];
+    const bottle = await stack.api<any>('POST', `/projects/${pid}/elements`, {
+      kind: 'prop',
+      name: 'ship in a bottle',
+      description: 'a three-masted ship in a dusty bottle',
+    });
+    await stack.api('PATCH', `/projects/${pid}/screenplay`, {
+      upsertScenes: [{ id: scene.id, heading: scene.heading, elementIds: [...scene.elementIds, bottle.id] }],
+    });
+    const plan = await stack.api<Job>('POST', `/projects/${pid}/clips/plan`, { sceneId: scene.id });
+    expectSucceeded(await stack.waitJob(pid, plan.id));
+    const batch = await stack.api<Job>('POST', `/projects/${pid}/batch`, {});
+    const done = expectSucceeded(await stack.waitJob(pid, batch.id, 240_000));
+    expect((done.result as { stopReason: string }).stopReason).toMatch(/target|outline/);
+    const s = await stack.api<any>('GET', `/projects/${pid}/state`);
+    const e = s.docs.elements[bottle.id];
+    expect(e.lock.locked).toBe(true);
+    expect(e.references.filter((r: { approved: boolean }) => r.approved)).toHaveLength(1);
+    const log = await stack.api<any[]>('GET', `/projects/${pid}/history?limit=200`);
+    expect(log.some((c) => /Lock element|lock/i.test(c.message) && c.author?.kind === 'system')).toBe(true);
   }, 300_000);
 
   it('judges locations and props when the project asks for it (E4)', async () => {

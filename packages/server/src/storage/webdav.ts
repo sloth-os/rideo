@@ -62,12 +62,22 @@ const PRESENT_MAX = 50_000;
 /** The longest `Retry-After` honoured. */
 const RETRY_AFTER_MAX_MS = 10_000;
 
+/**
+ * A file PUT is never a method a WebDAV server forbids: OpenList answered 405 to job records while it was flooded
+ * after a restart (docs/design/storage-webdav.md#slow-and-flaky-servers). It was not applied, so it may go again.
+ */
+const WRITE_RETRY_STATUS = new Set([405]);
+
 /** Why a failed request is worth another try, or null. */
-function transientReason(err: unknown, replayable: 'always' | 'unapplied'): string | null {
+function transientReason(
+  err: unknown,
+  replayable: 'always' | 'unapplied',
+  extra?: ReadonlySet<number>,
+): string | null {
   const status = statusOf(err);
   if (status !== undefined) {
     const set = replayable === 'always' ? TRANSIENT_STATUS : NOT_APPLIED_STATUS;
-    return set.has(status) ? String(status) : null;
+    return set.has(status) || extra?.has(status) ? String(status) : null;
   }
   if (replayable !== 'always') return null;
   const e = err as { code?: string; cause?: { code?: string } };
@@ -144,6 +154,8 @@ export class WebDavBackend implements StorageBackend {
     path: string,
     replayable: 'always' | 'unapplied' | 'never',
     fn: () => Promise<T>,
+    /** More answers worth another try for this operation. */
+    extra?: ReadonlySet<number>,
   ): Promise<T> {
     const policy = this.opts.retry ?? DEFAULT_RETRY;
     for (let attempt = 0; ; attempt++) {
@@ -155,7 +167,7 @@ export class WebDavBackend implements StorageBackend {
             ? 'missing'
             : replayable === 'never'
               ? null
-              : transientReason(err, replayable);
+              : transientReason(err, replayable, extra);
         if (!reason || attempt >= policy.retries) {
           if (reason)
             this.opts.log?.warn({ op, path, reason, tries: attempt + 1 }, 'WebDAV request kept failing');
@@ -274,16 +286,21 @@ export class WebDavBackend implements StorageBackend {
       // A stream cannot be sent twice; a conditional write goes again only when it was not applied
       const replayable = !buffered ? 'never' : opts.ifMatch || opts.ifNoneMatch ? 'unapplied' : 'always';
       try {
-        await this.retrying('write', p, replayable, () =>
-          this.client.putFileContents(p, data as Buffer, {
-            overwrite: true,
-            headers,
-            ...(opts.size !== undefined
-              ? { contentLength: opts.size }
-              : buffered
-                ? {}
-                : { contentLength: false }),
-          }),
+        await this.retrying(
+          'write',
+          p,
+          replayable,
+          () =>
+            this.client.putFileContents(p, data as Buffer, {
+              overwrite: true,
+              headers,
+              ...(opts.size !== undefined
+                ? { contentLength: opts.size }
+                : buffered
+                  ? {}
+                  : { contentLength: false }),
+            }),
+          WRITE_RETRY_STATUS,
         );
       } catch (err) {
         if (statusOf(err) === 412) throw new PreconditionFailedError(p);

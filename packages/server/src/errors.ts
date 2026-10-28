@@ -32,11 +32,20 @@ const STATUS: Record<ErrorCode, number> = {
   board_unapprovable: 409,
   feedback_stale: 409,
   review_stale: 409,
+  llm_refused: 502,
   setting_locked: 409,
   gateway_not_configured: 409,
   storage_offline: 503,
   internal_error: 500,
 };
+
+/** How a retryable error's job runs again (docs/design/generation-pipeline.md). */
+export interface RetryHint {
+  /** Wait at least this long before the next run (a provider's `Retry-After`, a paused endpoint). */
+  retryAfterMs?: number;
+  /** The run never reached its model (the endpoint is paused): it does not count against `maxAttempts`. */
+  sparesAttempt?: boolean;
+}
 
 /** Domain error with a stable code (REST problem details, MCP errors and job records share it). */
 export class AppError extends Error {
@@ -46,6 +55,7 @@ export class AppError extends Error {
     message: string,
     readonly errors: unknown[] = [],
     readonly retryable = false,
+    readonly hint: RetryHint = {},
   ) {
     super(message);
     this.name = 'AppError';
@@ -87,7 +97,15 @@ export function toAppError(err: unknown): AppError {
     (err as { code: string }).code in STATUS
       ? (err as { code: ErrorCode }).code
       : 'internal_error';
-  return new AppError(code, message, [], retryable);
+  // A provider's Retry-After (LlmError) is kept for the job's next run
+  const retryAfterMs = (err as { retryAfterMs?: unknown } | null)?.retryAfterMs;
+  return new AppError(
+    code,
+    message,
+    [],
+    retryable,
+    typeof retryAfterMs === 'number' && retryAfterMs > 0 ? { retryAfterMs } : {},
+  );
 }
 
 export function problemDetails(err: AppError, instance?: string) {

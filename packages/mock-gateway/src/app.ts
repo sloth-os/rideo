@@ -23,6 +23,9 @@ import { publicTask, type RunResult, TaskStore } from './tasks';
 
 const execFileP = promisify(execFile);
 
+/** A chat call that mentions this is answered `503 system cpu overloaded`. */
+export const OVERLOAD_MARKER = '[provider overloaded]';
+
 export interface MockGatewayOptions {
   /** Bearer key required on /v1 and /proxy (open when unset). */
   apiKey?: string;
@@ -429,9 +432,10 @@ export async function buildMockGateway(opts: MockGatewayOptions = {}): Promise<M
       const res = embeddings(body);
       return reply.code(res.status).send(res.body);
     }
-    if (overloads > 0) {
-      // An upstream turning calls away for load (newapi's words), passed through by the proxy
-      overloads--;
+    // An upstream turning calls away for load (newapi's words), passed through by the proxy: the next calls after
+    // overloadChat(), or every call that mentions OVERLOAD_MARKER (e2e specs share the mock)
+    if (overloads > 0 || JSON.stringify(body).includes(OVERLOAD_MARKER)) {
+      if (overloads > 0) overloads--;
       counters.overloaded++;
       return reply.code(503).type('text/plain').send('system cpu overloaded');
     }

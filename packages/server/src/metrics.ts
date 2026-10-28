@@ -237,6 +237,16 @@ export class Metrics {
   readonly llmRetries = this.add(
     new Counter('rideo_llm_retries_total', 'LLM calls made again after 429/5xx, by task and status'),
   );
+  /** Model endpoints paused after failing calls in a row (docs/design/ai-gateway.md#outages). */
+  readonly llmPaused = this.add(
+    new Gauge(
+      'rideo_llm_paused',
+      'Whether a model endpoint is in an outage (1 from its first pause until it answers)',
+    ),
+  );
+  readonly llmPauses = this.add(
+    new Counter('rideo_llm_pauses_total', 'Times a model endpoint was paused, by endpoint'),
+  );
   readonly consistency = this.add(new Counter('rideo_consistency_checks_total', 'Consistency gate outcomes'));
   readonly watermark = this.add(
     new Counter('rideo_watermark_operations_total', 'Watermark embeds and detections'),

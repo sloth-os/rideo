@@ -137,6 +137,27 @@ describe('JobRow', () => {
     );
     expect(screen.getByText('Mira is not locked')).toBeTruthy();
   });
+
+  it('says why a queued job waits to run again (docs/design/ai-gateway.md#outages)', () => {
+    const message =
+      'clip.plan: newapi.example.org/qwen3.8-max is paused after 6 failed calls in a row; next try in 25 s';
+    const job = {
+      id: 'job_2',
+      kind: 'clip.plan',
+      status: 'queued',
+      progress: { done: 0, total: 1 },
+      attempts: 1,
+      error: { code: 'llm_error', message, retryable: true },
+    } as unknown as Job;
+    const { rerender } = render(<JobRow job={job} projectId="prj_x" compact />);
+    expect(screen.getByText('retry 2')).toBeTruthy();
+    expect(screen.getByTestId('job-waiting').textContent).toBe(message);
+    // Running again, or never failed: nothing to explain
+    rerender(<JobRow job={{ ...job, status: 'running' }} projectId="prj_x" compact />);
+    expect(screen.queryByTestId('job-waiting')).toBeNull();
+    rerender(<JobRow job={{ ...job, error: undefined }} projectId="prj_x" compact />);
+    expect(screen.queryByTestId('job-waiting')).toBeNull();
+  });
 });
 
 describe('take badges', () => {

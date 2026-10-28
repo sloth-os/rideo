@@ -117,7 +117,11 @@ outline and opening scenes of a ten-minute film took more than ten minutes throu
 demo), and both cut it off. `RIDEO_LLM_TIMEOUT_SEC` (default 600 s) is how long a call may go without receiving
 anything (the first byte, then between events); a streamed answer may take four times that in all. An upstream that
 refuses `stream` (a 400 naming it) is asked again without it, and an answer that is not an event stream is read as
-JSON. Gemini and Anthropic calls are not streamed and take at most `RIDEO_LLM_TIMEOUT_SEC`. The proxy client opens
+JSON. Gemini calls are streamed the same way (`streamGenerateContent?alt=sse`: the parts of every event joined, the
+usage of the last; an upstream that answers `404` or `405` there is asked `generateContent` from then on), and so are
+Anthropic calls (`stream: true`: the `text_delta`s joined, the input tokens of `message_start`, the output tokens of
+`message_delta`; a 400 naming `stream` is asked again without it). An error event in any stream is a retryable
+`llm_error`; keep-alives and lines that are not JSON are skipped. The proxy client opens
 its connections without header or body timeouts of their own, so a call's timeout is the only one. A connection that
 fails or a call that times out is a retryable `llm_error`: the job runs again (up to its `maxAttempts`). Other
 proxied calls keep their own timeouts (speech-to-text 600 s, voices 120–300 s, embeddings 60 s).
@@ -129,6 +133,47 @@ Speech-to-text (optional, used by footage analysis): OpenAI-style
 
 Embeddings (optional, used by [media search](search.md)): OpenAI-style `POST /proxy/{RIDEO_EMBEDDINGS_PROXY_DOMAIN}/v1/embeddings`
 `{model, input: string[]}` in batches of 64, validated and put back in input order. When unset, search ranks by words.
+
+### Reasoning
+
+Checks and captions, made for every attempt of every shot, answer without reasoning
+(`REASONING_OFF_TASKS`: `consistency.judge`, `sound.check`, `voice.judge`, `frame.caption`): OpenAI-compatible calls
+send `enable_thinking: false` (Qwen's switch), Gemini calls `thinkingConfig.thinkingBudget: 0`; Anthropic models do
+not reason unless asked. An upstream that refuses the field (a 400 naming it) is asked again without it, and that
+adapter never sends it again (the same for every optional field). Writing, planning and feedback keep the model's
+reasoning. Measured on 16 frames of the panda demo through the same proxy (12 that had passed, 4 with a human girl, a
+stand-in panda or a cast member who should not be there), `qwen3.8-max` judged the same pass or fail for every frame
+with and without reasoning and caught all four bad ones; without it a call took 8.6 s instead of 57.1 s (median) and
+wrote 231 tokens instead of 2,304. Its scores run higher without reasoning (identity mostly 0.95–1.0 instead of
+0.85–0.9), so a threshold near the top would separate less. `RIDEO_CHECK_REASONING=model` keeps the model's default.
+
+### Refusals
+
+A provider's moderation sometimes refuses a harmless answer (`data_inspection_failed`, "output data may
+contain inappropriate content", or a `content_filter` finish): DashScope ended a footage analysis of a test pattern
+that way. A refused call is made once more at temperature 0; a second refusal fails as `llm_refused` (not retried by
+the job). Both count as `rideo_llm_calls_total{status="refused"}`.
+
+### Outages
+
+The newapi proxy of the October 2026 demos answered `503 system cpu overloaded` to every model for long stretches.
+Each job kept trying on its own: four calls per run of a task, and three runs 2 s and 4 s apart, so a writing job
+failed within a minute (a failed `clip.plan` skipped its scene, a failed `screenplay.extend` stopped the batch).
+Rideo now pauses an endpoint that keeps failing and lets its jobs wait for it:
+
+| Rule | Value |
+|---|---|
+| Endpoint | the proxy domain and the model (`newapi.example.org/qwen3.8-max`): one overloaded model does not pause the others |
+| A failure | a call turned away for load (`429`, `500`, `502`, `503`, `529`), a timeout or a connection that failed; any other answer (even a `400`) counts as answered |
+| Paused | after 6 failures in a row, for `RIDEO_LLM_PAUSE_SEC` (30 s; 0 turns pausing off), doubling after every failure that follows a pause, up to 5 min |
+| While paused | calls are not made: the call fails at once as a retryable `llm_error` that says so ("…/qwen3.8-max is paused after 6 failed calls in a row; next try in 25 s") |
+| After a pause | the endpoint takes calls again; the first answer ends the outage (logged `LLM endpoint answering again`), the first failure pauses it again for twice as long. No call waits for a probe, so a long streamed answer holds nobody up |
+| Jobs | a job that failed on a paused endpoint is queued again for when the pause ends, and that run does not count against its `maxAttempts`; after an hour of pauses in a row it does, so a dead endpoint still fails its jobs. The jobs panel shows why a job waits |
+| Checks | a judge or sound check on a paused endpoint fails at once, so the take stays unverified and the video lane goes on; the batch judges unverified takes again at its end ([re-checking](character-consistency.md#re-checking-unverified-takes)) |
+
+Any job retry also waits as long as the provider's last `Retry-After` asked (up to 10 min) when that is longer than
+its own backoff. `rideo_llm_paused{endpoint}` is 1 from an endpoint's first pause until it answers again, `rideo_llm_pauses_total{endpoint}`
+counts the pauses and `rideo_llm_calls_total{status="paused"}` the calls not made.
 
 ## Enhancement
 
@@ -196,7 +241,7 @@ Every LLM use is a **task** with an id, a zod output schema, a system prompt and
    repeated here; a timeout or a connection that failed otherwise becomes a retryable `llm_error`, so the job runs
    again. Each retry is logged (`LLM call turned away; retrying`, with the
    task, status and wait) and counted in `rideo_llm_retries_total{task,status}`; a judge that still fails leaves the
-   take unverified (R9).
+   take unverified (R9). While an endpoint is [paused](#outages) the call is not made at all.
 2. Extract JSON: strip code fences, then take the outermost object. Schemas are lenient where models drift: the
    judge's verdicts may name a character instead of giving its id, and stray strings in its lists are dropped.
 3. Validate with zod. If validation fails, make **one repair call** with the validation errors and the

@@ -392,6 +392,26 @@ export const SETTING_FIELDS: readonly SettingField[] = [
     help: 'How long one text or vision model call may take: the screenplay of a long film takes minutes on slower models.',
     advanced: true,
   },
+  {
+    env: 'RIDEO_CHECK_REASONING',
+    group: 'ai',
+    label: 'Reasoning of checks',
+    kind: 'select',
+    options: ['off', 'model'],
+    optionLabels: { off: 'Off (answers in seconds)', model: "The model's default" },
+    placeholder: 'off',
+    help: 'The consistency judge, the sound check, the voice check and frame captions answer without reasoning: in a test of 16 takes a judge call took 57 s with it and 9 s without, and both reached the same verdict on every take.',
+    advanced: true,
+  },
+  {
+    env: 'RIDEO_LLM_PAUSE_SEC',
+    group: 'ai',
+    label: 'Pause after failing calls (seconds)',
+    kind: 'number',
+    placeholder: '30',
+    help: 'A model that fails 6 calls in a row (overloaded, timing out) gets no calls for this long, then twice as long after each new failure, up to 5 minutes; its jobs wait instead of failing. 0 never pauses.',
+    advanced: true,
+  },
   // Voices and sound (docs/design/dialogue.md, docs/design/post-audio.md)
   {
     env: 'RIDEO_TTS_PROVIDER',

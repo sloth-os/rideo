@@ -138,8 +138,14 @@ export const ProjectSettingsSchema = z.object({
   /** AI review of the screenplay and the storyboard (docs/design/ai-review.md#the-gates). */
   review: ReviewSettingsSchema.default(DEFAULT_REVIEW_SETTINGS),
   batch: z
-    .object({ maxGenerations: z.number().int().min(1).max(100000).default(2000) })
-    .default({ maxGenerations: 2000 }),
+    .object({
+      maxGenerations: z.number().int().min(1).max(100000).default(2000),
+      /** Clips in flight (docs/design/generation-pipeline.md#batch-generation). */
+      lookahead: z.number().int().min(1).max(8).default(3),
+      /** Unattended runs: approve and lock a new place or prop's first reference instead of stopping. */
+      approveNewElements: z.boolean().default(false),
+    })
+    .default({ maxGenerations: 2000, lookahead: 3, approveNewElements: false }),
   watermark: z.object({ enabled: z.boolean().default(true) }).default({ enabled: true }),
   disclosure: DisclosureSettingsSchema.default(DEFAULT_DISCLOSURE),
   autopilot: z.boolean().default(false),

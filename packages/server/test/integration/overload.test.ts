@@ -12,7 +12,13 @@ let stack: Stack;
 beforeAll(async () => {
   dav = await startFlakyDav();
   stack = await startStack({
-    env: { RIDEO_STORAGE: 'webdav', RIDEO_WEBDAV_URL: dav.url, RIDEO_WEBDAV_ROOT: '/studio' },
+    env: {
+      RIDEO_STORAGE: 'webdav',
+      RIDEO_WEBDAV_URL: dav.url,
+      RIDEO_WEBDAV_ROOT: '/studio',
+      // Pauses longer than a call's own retries wait, so a job meets one (docs/design/ai-gateway.md#outages)
+      RIDEO_LLM_PAUSE_SEC: '8',
+    },
   });
 });
 afterAll(async () => {
@@ -113,4 +119,31 @@ describe('an overloaded model provider', () => {
     expect(await metric('rideo_llm_retries_total', 'task="screenplay.generate"', 'status="503"')).toBe(2);
     expect((await stack.api<any>('GET', `/projects/${p.id}/state`)).docs.screenplay.title).toBeTruthy();
   });
+
+  it('pauses a model that keeps failing; the job waits for it without using up its attempts', async () => {
+    const p = await stack.api<{ id: string }>('POST', '/projects', {
+      kind: 'story',
+      title: 'Outage',
+      brief: { prompt: 'a keeper of letters' },
+    });
+    const before = stack.gw.counters.overloaded;
+    stack.gw.overloadChat(6);
+    const job = await stack.api<{ id: string }>('POST', `/projects/${p.id}/screenplay/generate`, {});
+    // Four calls in the first run, two in the second: the sixth pauses the model and the run waits for the pause
+    await expect
+      .poll(
+        async () => (await stack.api<any>('GET', `/projects/${p.id}/jobs/${job.id}`)).error?.message ?? '',
+        {
+          timeout: 60_000,
+          interval: 100,
+        },
+      )
+      .toMatch(/is paused after 6 failed calls in a row; next try in \d+ s/);
+    const done = await stack.waitJob(p.id, job.id, 60_000);
+    expect(done).toMatchObject({ status: 'succeeded', attempts: 2 });
+    expect(stack.gw.counters.overloaded - before).toBe(6);
+    expect(await metric('rideo_llm_pauses_total')).toBe(1);
+    expect(await metric('rideo_llm_calls_total', 'status="paused"', 'task="screenplay.generate"')).toBe(1);
+    expect(await metric('rideo_llm_paused')).toBe(0);
+  }, 120_000);
 });

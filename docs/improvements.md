@@ -114,12 +114,12 @@ them again from their evidence frames, on request (REST, MCP) and when a batch e
 ([re-checking](design/character-consistency.md#re-checking-unverified-takes)); a button in the clip view is still to
 come.
 
-**19. One retry budget per call** (S) — an LLM call made up to 4 times by the task's retries is made again by every
+**19. One retry budget per call** (S, done) — an LLM call made up to 4 times by the task's retries is made again by every
 job attempt (`maxAttempts`, 3 by default): up to 12 calls for one task while a provider is down. *How:* no job-level
-retry for an LLM error that already used its retries, or a job retry that waits for the provider's `Retry-After`.
+retry for an LLM error that already used its retries, or a job retry that waits for the provider's `Retry-After`. *Done:* a job retry waits as long as the provider's `Retry-After` asked (up to 10 min), and a run that met a paused endpoint (item 20) neither calls it nor counts against `maxAttempts` ([outages](design/ai-gateway.md#outages)).
 
-**20. A circuit breaker per provider** (S) — while most calls to a proxy domain fail with `503`, every job keeps
-trying on its own. *How:* pause calls to the domain for a while after a run of failures, and say so in the jobs panel.
+**20. A circuit breaker per provider** (S, done) — while most calls to a proxy domain fail with `503`, every job keeps
+trying on its own. *How:* pause calls to the domain for a while after a run of failures, and say so in the jobs panel. *Done:* after 6 failures in a row (turned away, timed out, cut off) an endpoint (proxy domain and model) gets no calls for 30 s (`RIDEO_LLM_PAUSE_SEC`), then twice as long after every new failure, up to 5 min; jobs wait for it, checks leave takes unverified, the jobs panel says why a job waits, and `rideo_llm_paused`/`rideo_llm_pauses_total` show it ([outages](design/ai-gateway.md#outages)).
 
 ## Observability
 
@@ -166,7 +166,7 @@ ran:
   put Sammy into Rosie's close-up twice. Version 2 prompts now say who is in frame and who is not
   ([who is in frame](design/continuity.md#prompts-version-2)).
 
-**23. Reasoning off for checks** (S) — `qwen3.8-max` reasons at length: a 200-word story took 3,167 completion
+**23. Reasoning off for checks** (S, done) — `qwen3.8-max` reasons at length: a 200-word story took 3,167 completion
 tokens and 61 s, and every judge call of the demo about 2,500 output tokens and 60 s, so a take spent two minutes being
 judged. On the first 15 takes of the batch (`rideo_shot_step_seconds`, `rideo_llm_call_seconds`) an attempt took
 about 330 s: the keyframe 112 s (Seedream 53 s, the rest its judge), the video 107 s and its checks 110 s, with
@@ -175,55 +175,55 @@ clip took 8.5 minutes a call. Through mm-gateway and newapi, `enable_thinking: f
 12.4 s to 2.4 s (281 reasoning tokens to none). *How:* a reasoning setting per task family: off for checks and captions
 (`consistency.judge`, `sound.check`, `frame.caption`), the model's default for writing and feedback; sent as
 `enable_thinking: false` (Qwen), `thinkingConfig.thinkingBudget: 0` (Gemini), and dropped for good by an adapter once
-its upstream refuses it. Measure the judge's agreement with and without reasoning before turning it off.
+its upstream refuses it. Measure the judge's agreement with and without reasoning before turning it off. *Done:* checks and captions answer without reasoning (`enable_thinking: false`, Gemini's `thinkingBudget: 0`, dropped for good by an adapter whose upstream refuses it; `RIDEO_CHECK_REASONING`). Measured on 16 frames of this demo, the judge reached the same pass or fail on every frame with and without reasoning, caught the four bad ones either way, and answered in 8.6 s instead of 57.1 s (median) with 231 output tokens instead of 2,304 ([reasoning](design/ai-gateway.md#reasoning)).
 
-**24. Stream Gemini and Anthropic calls too** (S) — only OpenAI-compatible calls are streamed; a long Gemini or
+**24. Stream Gemini and Anthropic calls too** (S, done) — only OpenAI-compatible calls are streamed; a long Gemini or
 Anthropic answer still ends at the gateway's 600 s. *How:* `streamGenerateContent?alt=sse` and Messages streaming in
-their adapters, with the same idle timer.
+their adapters, with the same idle timer. *Done:* Gemini (`streamGenerateContent?alt=sse`) and Anthropic (`stream: true`) calls are streamed with the same idle timeout, each falling back to an unstreamed call for an upstream that refuses it ([long calls](design/ai-gateway.md#proxy-usage-llm-vision-stt-embeddings)).
 
-**25. Video parameters the gateway drops** (S, mm-gateway) — its DashScope adapter drops `negative_prompt` for video
+**25. Video parameters the gateway drops** (S, mm-gateway, done) — its DashScope adapter drops `negative_prompt` for video
 and maps no `generate_audio`, so a silent take cannot be asked for and exclusions only work as prompt text (version 2
-puts them there). Sources disagree on whether `wan3.0` takes a negative prompt at all.
+puts them there). Sources disagree on whether `wan3.0` takes a negative prompt at all. *Done:* mm-gateway sends Wan 3.x the native body (typed `input.media`, `parameters.audio`, the resolution tier, 2–30 s), drops references when a frame is given (the modes are exclusive) and documents Wan 3.0's limits; Rideo sends no references with a frame and no negative prompt to such models.
 
-**26. The provider's prompt rewriting** (S) — Wan's `prompt_extend` is on by default: an LLM rewrites the prompt and
+**26. The provider's prompt rewriting** (S, done) — Wan's `prompt_extend` is on by default: an LLM rewrites the prompt and
 may change the lines it should speak, and Wan 2.6 planned multi-shot videos only with it on. The third pass turned it
 off together with the prompt change of item 39, so its share of that result is unknown; one of its 13 takes then
 spoke an invented Chinese line in a shot without lines (the sound check flagged it). *How:* measure stray cuts and
 the lines the sound check hears with `generation.enhancePrompt` off and on, and default to what keeps the words and
-the single shot.
+the single shot. *Done:* version 2 prompts send `enhance_prompt: false` unless the project asks for the rewriting ([prompt rewriting](design/continuity.md#prompts-version-2)).
 
-**27. A faster judge** (S) — a judge call takes 19–23 s through the proxy with any of the vision models tried, more
+**27. A faster judge** (S, done) — a judge call takes 19–23 s through the proxy with any of the vision models tried, more
 than the rest of a take's checks together. *How:* a judge model setting apart from vision (a flash model), or all of
-a take's frames in one smaller image.
+a take's frames in one smaller image. *Done* with item 23: a judge call is about 9 s.
 
 **28. A fallback endpoint per task family** (S–M) — the newapi proxy answered `503 system cpu overloaded` to every
 model for long stretches. *How:* an ordered list of endpoints per family (writing, judging, listening) used in turn,
 with the circuit breaker of item 20.
 
-**29. Provider moderation that refuses harmless output** (S) — on the real-model CI run of October 25, DashScope ended
+**29. Provider moderation that refuses harmless output** (S, done) — on the real-model CI run of October 25, DashScope ended
 the footage analysis of a test pattern with `data_inspection_failed` ("output data may contain inappropriate
 content"), streamed as an error event, and the analysis fell back to its rules. *How:* recognize refusals
 (`data_inspection_failed`, `content_filter`) as their own error code, make the call once more at a lower temperature,
-and count them in `rideo_llm_calls_total{status="refused"}` so a flaky moderator shows on the dashboard.
+and count them in `rideo_llm_calls_total{status="refused"}` so a flaky moderator shows on the dashboard. *Done:* a refused call is made once more at temperature 0, then fails as `llm_refused`; both count as `rideo_llm_calls_total{status="refused"}` ([refusals](design/ai-gateway.md#refusals)).
 
 **30. The judge counts who should not be there** (S, done) — the judge scored only the characters a shot lists, so a
 frame with an extra cast member passed. With quality checks the judge is now told who must not be in the shot, an
 extra fails the frame (keyframes and storyboard frames included), and other figures are reported
 ([quality checks](design/continuity.md#quality-checks-in-the-gate)).
 
-**31. Keep the video lane full** (S) — the batch keeps two clips in flight and each clip makes its first shot alone
+**31. Keep the video lane full** (S, done) — the batch keeps two clips in flight and each clip makes its first shot alone
 (its keyframe is the scene reference of the others), so with eight video slots only five to seven were busy at times.
 *How:* a lookahead setting (three clips by default when the lane is wider than a clip's parallel shots), and the next
-clip's first shot started while the current clip's others run.
+clip's first shot started while the current clip's others run. *Done:* `settings.batch.lookahead`, three clips in flight by default.
 
-**32. Unattended batches and new elements** (S) — the batch stopped at 36 of 110 shots because an extension introduced
+**32. Unattended batches and new elements** (S, done) — the batch stopped at 36 of 110 shots because an extension introduced
 a prop ("Resort trail lights") that a person must approve first, as designed; nobody was watching for twenty minutes.
 *How:* the Inbox already says so; add a push or webhook notification, and a project setting that approves a new
-element's first generated reference for unattended runs (the person reviews it later, the take records it).
+element's first generated reference for unattended runs (the person reviews it later, the take records it). *Done:* `settings.batch.approveNewElements` (off by default): an unattended batch draws a new place or prop's references, approves the first and locks it as the system, and goes on ([batch generation](design/generation-pipeline.md#batch-generation)).
 
-**33. Job records on a slow WebDAV server** (S) — right after a studio reload, OpenList answered `405 Method Not
+**33. Job records on a slow WebDAV server** (S, done) — right after a studio reload, OpenList answered `405 Method Not
 Allowed` to PUTs of two job records in `.rideo/jobs/`. *How:* retry `405` like other transient answers of that server
-(it is not a real refusal there) and keep the record in memory until it is written.
+(it is not a real refusal there) and keep the record in memory until it is written. *Done:* a buffered file write is tried again on `405` like a `503` ([slow and flaky servers](design/storage-webdav.md#slow-and-flaky-servers)).
 
 **34. Long exports and browser blob memory** (M) — the editor tab keeps every rendered chunk as a blob until the film
 is joined. In a Chromium context without a disk-backed profile (Playwright's default, and incognito windows) the

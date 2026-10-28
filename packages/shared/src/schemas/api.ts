@@ -89,7 +89,13 @@ export const ProjectSettingsPatchSchema = z
         modelMusic: z.boolean(),
       })
       .partial(),
-    batch: z.object({ maxGenerations: z.number().int().min(1).max(100000) }).partial(),
+    batch: z
+      .object({
+        maxGenerations: z.number().int().min(1).max(100000),
+        lookahead: z.number().int().min(1).max(8),
+        approveNewElements: z.boolean(),
+      })
+      .partial(),
     /** docs/design/feedback.md#when-it-runs */
     feedback: z.object({ auto: z.boolean() }).partial(),
     /** docs/design/ai-review.md#the-gates */

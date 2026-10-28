@@ -68,6 +68,9 @@ export interface EditorJobError {
   message: string;
 }
 
+/** The longest a job waits for a retry that a provider or a paused endpoint asked for. */
+const RETRY_AFTER_MAX_MS = 600_000;
+
 /** Persistent, lane-scheduled job queue (docs/design/generation-pipeline.md). */
 export class JobQueue {
   private readonly handlers = new Map<JobKind, JobHandler>();
@@ -410,12 +413,21 @@ export class JobQueue {
           retryable: false,
         };
         log.info({}, 'job cancelled');
-      } else if (e.retryable && job.attempts < job.maxAttempts && !this.closed) {
+      } else if (e.retryable && (job.attempts < job.maxAttempts || e.hint.sparesAttempt) && !this.closed) {
+        // A run that never reached its paused model does not count (docs/design/ai-gateway.md#outages)
+        if (e.hint.sparesAttempt) job.attempts = Math.max(0, job.attempts - 1);
         job.status = 'queued';
         job.error = { code: e.code, message: e.message, retryable: true };
-        const delay = Math.min(60_000, 2000 * 2 ** (job.attempts - 1));
+        const backoff = Math.min(60_000, 2000 * 2 ** Math.max(0, job.attempts - 1));
+        // A paused endpoint says when it takes calls again; a provider's Retry-After may ask for more than the backoff
+        const delay = Math.min(
+          RETRY_AFTER_MAX_MS,
+          e.hint.sparesAttempt
+            ? (e.hint.retryAfterMs ?? backoff)
+            : Math.max(backoff, e.hint.retryAfterMs ?? 0),
+        );
         this.notBefore.set(job.id, Date.now() + delay);
-        log.warn({ err: e.message, delay }, 'job failed, retrying');
+        log.warn({ err: e.message, delay, sparedAttempt: !!e.hint.sparesAttempt }, 'job failed, retrying');
       } else {
         job.status = 'failed';
         job.error = { code: e.code, message: e.message, retryable: e.retryable };

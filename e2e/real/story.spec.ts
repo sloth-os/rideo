@@ -70,6 +70,21 @@ test('a brief with a picture and a video → screenplay → locked cast → pilo
   expect(docs.screenplay.scenes[0].action).not.toBe('');
   const cast = Object.values<{ id: string; name: string }>(docs.characters);
   expect(cast.length).toBeGreaterThan(0);
+  // The AI review of the screenplay runs on the real text model (docs/design/ai-review.md): a verdict comes back
+  // with scores; a failing one is continued anyway, since its score depends on the story the model wrote
+  await api.waitJob(pid, (await jobOf(pid, 'screenplay.review')).id, 20 * MINUTES, POLL);
+  expect(await newCalls('screenplay.review')).toBeGreaterThanOrEqual(1);
+  const review = (await api.call('GET', `/projects/${pid}/state`)).docs.aiReviews.screenplay;
+  expect(review).toMatchObject({ status: 'succeeded' });
+  expect(review.verdict.score).toBeGreaterThan(0);
+  expect(Object.values(review.scores).filter((v) => typeof v === 'number').length).toBeGreaterThanOrEqual(6);
+  const panel = page.getByTestId('ai-review-screenplay');
+  if ((await panel.getAttribute('data-state')) === 'failed') {
+    page.once('dialog', (d) => d.accept('real-model run'));
+    await panel.getByTestId('override-ai-review').click();
+    await expect(panel).toHaveAttribute('data-state', 'overridden');
+  }
+  ({ docs } = await api.call('GET', `/projects/${pid}/state`));
   await expect(page.getByTestId('approve-screenplay')).toBeEnabled();
   await page.getByTestId('approve-screenplay').click();
 

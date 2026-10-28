@@ -17,6 +17,8 @@ export interface LlmRequest {
   temperature: number;
   maxTokens?: number;
   signal?: AbortSignal;
+  /** `off`: answer without reasoning (checks and captions; docs/design/ai-gateway.md#reasoning). */
+  reasoning?: 'off';
 }
 
 export interface LlmResponse {
@@ -27,8 +29,12 @@ export interface LlmResponse {
 export interface LlmAdapter {
   readonly provider: string;
   readonly model: string;
+  /** The proxy domain it calls, which with the model names the endpoint (docs/design/ai-gateway.md#outages). */
+  readonly endpoint?: string;
   complete(req: LlmRequest): Promise<LlmResponse>;
 }
+
+const domainOf = (api: ProxyTarget): string => (typeof api === 'string' ? api : api.domain);
 
 export class LlmError extends Error {
   readonly code = 'llm_error';
@@ -76,6 +82,8 @@ const OPTIONAL_FIELDS: Record<string, RegExp> = {
   temperature: /\btemperature\b/,
   response_format: /\bresponse_format\b/,
   max_tokens: /\bmax_tokens\b/,
+  // Qwen's switch for its reasoning (docs/design/ai-gateway.md#reasoning)
+  enable_thinking: /\benable_thinking\b/,
 };
 
 /**
@@ -165,6 +173,13 @@ export class OpenAiAdapter implements LlmAdapter {
     private readonly timeoutMs?: number,
   ) {}
 
+  /** Fields the upstream refused once: never sent again by this adapter. */
+  private readonly refused = new Set<string>();
+
+  get endpoint(): string {
+    return domainOf(this.api);
+  }
+
   async complete(req: LlmRequest): Promise<LlmResponse> {
     const content = req.parts.map((p) =>
       p.type === 'text'
@@ -186,9 +201,14 @@ export class OpenAiAdapter implements LlmAdapter {
       temperature: req.temperature,
       ...(req.json ? { response_format: { type: 'json_object' } } : {}),
       ...(req.maxTokens ? { max_tokens: req.maxTokens } : {}),
+      ...(req.reasoning === 'off' ? { enable_thinking: false } : {}),
       stream: true,
       stream_options: { include_usage: true },
     };
+    for (const f of this.refused) {
+      delete body[f];
+      if (f === 'stream') delete body.stream_options;
+    }
     const idleMs = this.timeoutMs ?? DEFAULT_IDLE_MS;
     const idle = new IdleTimer(idleMs);
     const signal = req.signal ? AbortSignal.any([req.signal, idle.signal]) : idle.signal;
@@ -200,7 +220,10 @@ export class OpenAiAdapter implements LlmAdapter {
         const text = await res.clone().text();
         const named = Object.keys(OPTIONAL_FIELDS).filter((f) => f in body && OPTIONAL_FIELDS[f]!.test(text));
         if (!named.length) break;
-        for (const f of named) delete body[f];
+        for (const f of named) {
+          delete body[f];
+          this.refused.add(f);
+        }
         if (named.includes('stream')) delete body.stream_options;
         idle.touch();
         res = await this.post(body, signal, body.stream ? idleMs * STREAM_TOTAL_FACTOR : idleMs);
@@ -237,9 +260,60 @@ export class OpenAiAdapter implements LlmAdapter {
   }
 }
 
-/** Google Gemini generateContent through the gateway proxy. */
+/** The events of a `text/event-stream` answer: each event's name (if any) and its joined `data:` lines. */
+async function* sseEvents(
+  res: Response,
+  onChunk: () => void,
+): AsyncGenerator<{ event?: string; data: string }> {
+  if (!res.body) return;
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let event: string | undefined;
+  let data: string[] = [];
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (value) {
+      onChunk();
+      buffer += decoder.decode(value, { stream: true });
+    }
+    if (done) buffer += `${decoder.decode()}\n\n`;
+    for (let nl = buffer.indexOf('\n'); nl >= 0; nl = buffer.indexOf('\n')) {
+      const line = buffer.slice(0, nl).replace(/\r$/, '');
+      buffer = buffer.slice(nl + 1);
+      if (line === '') {
+        if (data.length) yield { event, data: data.join('\n') };
+        event = undefined;
+        data = [];
+      } else if (line.startsWith('event:')) event = line.slice(6).trim();
+      else if (line.startsWith('data:')) data.push(line.slice(5).trimStart());
+    }
+    if (done) return;
+  }
+}
+
+/** One event's JSON, or undefined for a keep-alive or a line that is not JSON. */
+function eventJson<T>(data: string): T | undefined {
+  try {
+    return JSON.parse(data) as T;
+  } catch {
+    return undefined;
+  }
+}
+
+type GeminiChunk = {
+  candidates?: { content?: { parts?: { text?: string }[] } }[];
+  usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number };
+  error?: { message?: string };
+};
+
+/** Google Gemini through the gateway proxy, streamed (`streamGenerateContent?alt=sse`). */
 export class GeminiAdapter implements LlmAdapter {
   readonly provider = 'gemini';
+  /** The model refused a thinking budget of 0 (some keep a minimum): checks are asked without it. */
+  private noThinkingBudget = false;
+  /** The upstream has no streamed endpoint: this adapter asks `generateContent` from then on. */
+  private noStream = false;
   constructor(
     private readonly proxy: ProxyClient,
     private readonly api: ProxyTarget,
@@ -247,6 +321,10 @@ export class GeminiAdapter implements LlmAdapter {
     /** How long one call may take (`RIDEO_LLM_TIMEOUT_SEC`); else the proxy client's default. */
     private readonly timeoutMs?: number,
   ) {}
+
+  get endpoint(): string {
+    return domainOf(this.api);
+  }
 
   async complete(req: LlmRequest): Promise<LlmResponse> {
     const parts = req.parts.map((p) =>
@@ -259,43 +337,88 @@ export class GeminiAdapter implements LlmAdapter {
             },
           },
     );
-    const res = await this.proxy.fetch(
-      this.api,
-      `v1beta/models/${encodeURIComponent(this.model)}:generateContent`,
-      {
-        method: 'POST',
-        timeoutMs: this.timeoutMs,
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          systemInstruction: { parts: [{ text: req.system }] },
-          contents: [{ role: 'user', parts }],
-          generationConfig: {
-            temperature: req.temperature,
-            ...(req.json ? { responseMimeType: 'application/json' } : {}),
-            ...(req.maxTokens ? { maxOutputTokens: req.maxTokens } : {}),
-          },
-        }),
-        signal: req.signal,
-      },
-    );
-    if (!res.ok) throw await failure(res, this.provider);
-    const json = (await res.json()) as {
-      candidates?: { content?: { parts?: { text?: string }[] } }[];
-      usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number };
-    };
-    return {
-      text: (json.candidates?.[0]?.content?.parts ?? []).map((p) => p.text ?? '').join(''),
-      usage: {
-        input: json.usageMetadata?.promptTokenCount,
-        output: json.usageMetadata?.candidatesTokenCount,
-      },
-    };
+    const idleMs = this.timeoutMs ?? DEFAULT_IDLE_MS;
+    const idle = new IdleTimer(idleMs);
+    const signal = req.signal ? AbortSignal.any([req.signal, idle.signal]) : idle.signal;
+    try {
+      let res = await this.post(req, parts, signal, idleMs);
+      // A model that refuses a thinking budget of 0, or an upstream without the streamed endpoint, is asked again
+      // without it
+      for (let tries = 0; !res.ok && tries < 2; tries++) {
+        const text = await res.clone().text();
+        if (res.status === 400 && req.reasoning === 'off' && !this.noThinkingBudget && /thinking/i.test(text))
+          this.noThinkingBudget = true;
+        else if (!this.noStream && (res.status === 404 || res.status === 405)) this.noStream = true;
+        else break;
+        idle.touch();
+        res = await this.post(req, parts, signal, idleMs);
+      }
+      if (!res.ok) throw await failure(res, this.provider);
+      idle.touch();
+      let text = '';
+      let usage: GeminiChunk['usageMetadata'];
+      const take = (c: GeminiChunk | undefined) => {
+        if (c?.error) {
+          const body = JSON.stringify(c.error).slice(0, 600);
+          throw new LlmError(`gemini via mm-gateway proxy streamed an error: ${body}`, undefined, true, body);
+        }
+        text += (c?.candidates?.[0]?.content?.parts ?? []).map((p) => p.text ?? '').join('');
+        if (c?.usageMetadata) usage = c.usageMetadata;
+      };
+      if (res.headers.get('content-type')?.includes('text/event-stream')) {
+        for await (const e of sseEvents(res, () => idle.touch())) take(eventJson<GeminiChunk>(e.data));
+      } else {
+        // `generateContent` answers one object; a stream asked without `alt=sse` answers an array of them
+        const json = (await res.json()) as GeminiChunk | GeminiChunk[];
+        for (const c of Array.isArray(json) ? json : [json]) take(c);
+      }
+      return { text, usage: { input: usage?.promptTokenCount, output: usage?.candidatesTokenCount } };
+    } catch (err) {
+      // The idle timer's reason, not a bare AbortError, so the call is retried as a timeout.
+      if (idle.signal.aborted && !req.signal?.aborted) throw idle.signal.reason;
+      throw err;
+    } finally {
+      idle.stop();
+    }
+  }
+
+  private post(req: LlmRequest, parts: unknown[], signal: AbortSignal, idleMs: number): Promise<Response> {
+    const method = this.noStream ? 'generateContent' : 'streamGenerateContent?alt=sse';
+    return this.proxy.fetch(this.api, `v1beta/models/${encodeURIComponent(this.model)}:${method}`, {
+      method: 'POST',
+      timeoutMs: this.noStream ? idleMs : idleMs * STREAM_TOTAL_FACTOR,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        systemInstruction: { parts: [{ text: req.system }] },
+        contents: [{ role: 'user', parts }],
+        generationConfig: {
+          temperature: req.temperature,
+          ...(req.json ? { responseMimeType: 'application/json' } : {}),
+          ...(req.maxTokens ? { maxOutputTokens: req.maxTokens } : {}),
+          // No reasoning for checks (docs/design/ai-gateway.md#reasoning); a model that refuses it is asked without
+          ...(req.reasoning === 'off' && !this.noThinkingBudget
+            ? { thinkingConfig: { thinkingBudget: 0 } }
+            : {}),
+        },
+      }),
+      signal,
+    });
   }
 }
 
-/** Anthropic Messages through the gateway proxy (JSON mode via an assistant prefill of `{`). */
+type AnthropicEvent = {
+  type?: string;
+  delta?: { type?: string; text?: string };
+  message?: { usage?: { input_tokens?: number } };
+  usage?: { output_tokens?: number };
+  error?: { type?: string; message?: string };
+};
+
+/** Anthropic Messages through the gateway proxy, streamed (JSON mode via an assistant prefill of `{`). */
 export class AnthropicAdapter implements LlmAdapter {
   readonly provider = 'anthropic';
+  /** The upstream refused `stream` once (a 400 naming it): this adapter asks without it from then on. */
+  private noStream = false;
   constructor(
     private readonly proxy: ProxyClient,
     private readonly api: ProxyTarget,
@@ -303,6 +426,10 @@ export class AnthropicAdapter implements LlmAdapter {
     /** How long one call may take (`RIDEO_LLM_TIMEOUT_SEC`); else the proxy client's default. */
     private readonly timeoutMs?: number,
   ) {}
+
+  get endpoint(): string {
+    return domainOf(this.api);
+  }
 
   async complete(req: LlmRequest): Promise<LlmResponse> {
     if (req.parts.some((p) => p.type === 'audio' || p.type === 'video'))
@@ -319,9 +446,63 @@ export class AnthropicAdapter implements LlmAdapter {
             },
           },
     );
-    const res = await this.proxy.fetch(this.api, 'v1/messages', {
+    const idleMs = this.timeoutMs ?? DEFAULT_IDLE_MS;
+    const idle = new IdleTimer(idleMs);
+    const signal = req.signal ? AbortSignal.any([req.signal, idle.signal]) : idle.signal;
+    try {
+      let res = await this.post(req, content, signal, idleMs);
+      if (res.status === 400 && !this.noStream && OPTIONAL_FIELDS.stream!.test(await res.clone().text())) {
+        this.noStream = true;
+        idle.touch();
+        res = await this.post(req, content, signal, idleMs);
+      }
+      if (!res.ok) throw await failure(res, this.provider);
+      idle.touch();
+      let text = '';
+      const usage: { input?: number; output?: number } = {};
+      if (res.headers.get('content-type')?.includes('text/event-stream')) {
+        for await (const e of sseEvents(res, () => idle.touch())) {
+          const d = eventJson<AnthropicEvent>(e.data);
+          if (d?.type === 'error' || e.event === 'error') {
+            const body = e.data.slice(0, 600);
+            throw new LlmError(
+              `anthropic via mm-gateway proxy streamed an error: ${body}`,
+              undefined,
+              true,
+              body,
+            );
+          }
+          if (d?.type === 'message_start') usage.input = d.message?.usage?.input_tokens;
+          if (d?.type === 'content_block_delta' && d.delta?.type === 'text_delta') text += d.delta.text ?? '';
+          if (d?.type === 'message_delta' && d.usage?.output_tokens !== undefined)
+            usage.output = d.usage.output_tokens;
+        }
+      } else {
+        const json = (await res.json()) as {
+          content?: { type: string; text?: string }[];
+          usage?: { input_tokens?: number; output_tokens?: number };
+        };
+        text = (json.content ?? [])
+          .filter((c) => c.type === 'text')
+          .map((c) => c.text ?? '')
+          .join('');
+        usage.input = json.usage?.input_tokens;
+        usage.output = json.usage?.output_tokens;
+      }
+      return { text: req.json ? `{${text}` : text, usage };
+    } catch (err) {
+      // The idle timer's reason, not a bare AbortError, so the call is retried as a timeout.
+      if (idle.signal.aborted && !req.signal?.aborted) throw idle.signal.reason;
+      throw err;
+    } finally {
+      idle.stop();
+    }
+  }
+
+  private post(req: LlmRequest, content: unknown[], signal: AbortSignal, idleMs: number): Promise<Response> {
+    return this.proxy.fetch(this.api, 'v1/messages', {
       method: 'POST',
-      timeoutMs: this.timeoutMs,
+      timeoutMs: this.noStream ? idleMs : idleMs * STREAM_TOTAL_FACTOR,
       headers: { 'content-type': 'application/json', 'anthropic-version': '2023-06-01' },
       body: JSON.stringify({
         model: this.model,
@@ -329,22 +510,10 @@ export class AnthropicAdapter implements LlmAdapter {
         system: req.system,
         temperature: req.temperature,
         messages: [{ role: 'user', content }, ...(req.json ? [{ role: 'assistant', content: '{' }] : [])],
+        ...(this.noStream ? {} : { stream: true }),
       }),
-      signal: req.signal,
+      signal,
     });
-    if (!res.ok) throw await failure(res, this.provider);
-    const json = (await res.json()) as {
-      content?: { type: string; text?: string }[];
-      usage?: { input_tokens?: number; output_tokens?: number };
-    };
-    const text = (json.content ?? [])
-      .filter((c) => c.type === 'text')
-      .map((c) => c.text ?? '')
-      .join('');
-    return {
-      text: req.json ? `{${text}` : text,
-      usage: { input: json.usage?.input_tokens, output: json.usage?.output_tokens },
-    };
   }
 }
 

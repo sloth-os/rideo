@@ -119,6 +119,13 @@ for (const [name, port] of [
       RIDEO_STT_PROXY_DOMAIN: '',
     }),
   );
+// A model that keeps failing is paused (docs/design/ai-gateway.md#outages): studios of their own, so a pause does not
+// slow the other specs, with short pauses.
+for (const [name, port] of [
+  ['outage studio', PORTS.outage],
+  ['outage studio (mobile)', PORTS.outageMobile],
+] as const)
+  await start(name, await env(port, { RIDEO_LLM_PAUSE_SEC: '5' }));
 const host: Server = await startHostPage({ port: PORTS.host });
 console.log(`rideo e2e library host page on http://127.0.0.1:${PORTS.host}/`);
 const slowMedia: Server = await startSlowMediaProxy({

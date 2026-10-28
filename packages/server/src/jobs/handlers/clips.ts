@@ -239,8 +239,48 @@ export async function clipGenerate(deps: HandlerDeps, ctx: JobContext) {
 }
 
 /**
+ * An unattended batch's new places and props (docs/design/generation-pipeline.md#batch-generation): references drawn
+ * when there are none, the first approved, the element locked. Returns the names of those without a reference.
+ */
+async function approveNewElements(
+  deps: HandlerDeps,
+  ctx: JobContext,
+  elementIds: string[],
+): Promise<string[]> {
+  const projectId = ctx.job.projectId;
+  let docs = await docsFor(deps, ctx);
+  const jobs = [];
+  for (const id of elementIds) {
+    const e = docs.elements[id];
+    if (e && !e.lock.locked && e.references.length === 0)
+      jobs.push(await deps.services.elements.generateReferences(ctx.actor, projectId, id));
+  }
+  if (jobs.length) await ctx.waitFor(jobs.map((j) => j.id));
+  docs = await docsFor(deps, ctx);
+  const missing: string[] = [];
+  for (const id of elementIds) {
+    const e = docs.elements[id];
+    if (!e || e.lock.locked) continue;
+    const first = approvedElementReferences(e)[0] ?? e.references[0];
+    if (!first) {
+      missing.push(e.name);
+      continue;
+    }
+    if (!first.approved)
+      await deps.services.elements.setReferenceApproval(ctx.actor, projectId, id, first.id, true);
+    await deps.services.elements.lock(ctx.actor, projectId, id);
+    ctx.log.info(
+      { elementId: id, name: e.name },
+      'approved and locked a new element for an unattended batch',
+    );
+  }
+  return missing;
+}
+
+/**
  * Generates the film up to the target length (docs/design/generation-pipeline.md#batch-generation): clips in
- * order with a lookahead of two, planning and extending the screenplay just in time, under a generation budget.
+ * order, `settings.batch.lookahead` of them at once, planning and extending the screenplay just in time, under a
+ * generation budget.
  */
 export async function batchGenerate(deps: HandlerDeps, ctx: JobContext) {
   const maxGenerations = Number(ctx.job.params.maxGenerations ?? 2000);
@@ -274,7 +314,7 @@ export async function batchGenerate(deps: HandlerDeps, ctx: JobContext) {
           return !t?.video || !isAcceptable(takeState(t, s, docs.characters, docs.elements));
         }),
     );
-    if (next && inFlight.length < 2) {
+    if (next && inFlight.length < (docs.project.settings.batch?.lookahead ?? 3)) {
       const cost = next.shots.length * 2;
       if (generations + cost > maxGenerations) {
         stopReason = 'generation budget reached';
@@ -285,6 +325,21 @@ export async function batchGenerate(deps: HandlerDeps, ctx: JobContext) {
       const pending = [...new Set(next.shots.flatMap((s) => s.elementIds))]
         .map((id) => docs.elements[id])
         .filter((e) => !!e && (!e.lock.locked || approvedElementReferences(e).length === 0));
+      // Unattended: draw, approve the first reference and lock, then go on (a person reviews it later). A locked
+      // element without an approved reference still stops the batch: only a person can unlock it.
+      const unattended = docs.project.settings.batch?.approveNewElements
+        ? pending.filter((e) => !e!.lock.locked)
+        : [];
+      if (unattended.length) {
+        const missing = await approveNewElements(
+          deps,
+          ctx,
+          unattended.map((e) => e!.id),
+        );
+        if (!missing.length) continue;
+        stopReason = `new locations or props need approval: ${missing.join(', ')} (no reference could be drawn)`;
+        break;
+      }
       if (pending.length) {
         for (const e of pending)
           if (!e!.lock.locked && e!.references.length === 0)

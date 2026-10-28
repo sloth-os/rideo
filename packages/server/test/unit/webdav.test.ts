@@ -78,6 +78,18 @@ describe('WebDAV retries', () => {
     ).rejects.toBeInstanceOf(StorageError);
   });
 
+  it('writes a file again after a 405, which a busy server answers to a PUT', async () => {
+    const dir = base();
+    dav.fail('PUT', /job\.json$/, { status: 405 }, 1);
+    await storage.write(`${dir}/job.json`, '{"ok":true}');
+    expect((await storage.read(`${dir}/job.json`))!.toString()).toBe('{"ok":true}');
+    expect(metrics.storageRetries.get({ op: 'write', reason: '405' })).toBe(1);
+    // A read that is not allowed is not tried again
+    dav.fail('GET', /job\.json$/, { status: 405 }, 1);
+    await expect(storage.read(`${dir}/job.json`)).rejects.toBeInstanceOf(StorageError);
+    expect(metrics.storageRetries.get({ op: 'read', reason: '405' })).toBe(0);
+  });
+
   it('honours Retry-After', async () => {
     const dir = base();
     await storage.write(`${dir}/doc.json`, 'x');
