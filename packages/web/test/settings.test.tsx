@@ -2,6 +2,7 @@ import { type EndpointStatus, SETTING_ENDPOINT_IDS, SETTING_FIELDS, type Setting
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { FieldRow } from '../src/features/settings/fields';
 import {
   applyChange,
   checkValue,
@@ -227,6 +228,28 @@ describe('settings page (docs/design/settings.md)', () => {
     expect(JSON.parse(String(calls.find((c) => c.init?.method === 'PUT')!.init!.body))).toEqual({
       values: { MM_GATEWAY_API_KEY: null },
     });
+  });
+
+  it('keeps a replacement open through a refresh of the same settings, and ends it on a save', () => {
+    const field = SETTING_FIELDS.find((f) => f.env === 'MM_GATEWAY_API_KEY')!;
+    const first = view({ MM_GATEWAY_API_KEY: { set: true, source: 'settings' } });
+    const { container, rerender } = render(
+      <FieldRow field={field} view={first} draft={{}} onChange={() => undefined} />,
+    );
+    fireEvent.click(screen.getByTestId('setting-secret-replace'));
+    expect(container.querySelector('input')).toBeTruthy();
+    // The page polls while keys register: a new view object of the same settings (this test failed on CI that way)
+    rerender(<FieldRow field={field} view={{ ...first }} draft={{}} onChange={() => undefined} />);
+    expect(container.querySelector('input')).toBeTruthy();
+    rerender(
+      <FieldRow
+        field={field}
+        view={{ ...first, updatedAt: '2026-10-28T18:00:00.000Z' }}
+        draft={{}}
+        onChange={() => undefined}
+      />,
+    );
+    expect(container.querySelector('input')).toBeNull();
   });
 
   it('saves only what changed and reloads the config', async () => {

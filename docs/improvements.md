@@ -319,7 +319,11 @@ cast ([actions](design/feedback.md#actions)).
   on the server, then the upload; its feedback, picture and sound together, 30 minutes more.
 - **Flaky test:** `packages/web/test/settings.test.tsx` "never shows a secret" fails now and then in a full unit run
   on a loaded two-core box (once in 42 ms, so an assertion, not a timeout) and passes alone and in loaded reruns; it
-  has not failed on CI. Capture its message the next time it fails.
+  has not failed on CI. Capture its message the next time it fails. *Fixed:* CI caught it on October 28 (`TypeError:
+  Cannot read properties of null (reading 'type')` right after *Replace*): the page asks for its settings again every
+  2 s while API keys register, and every new answer ended a replacement in progress, so an answer landing at the click
+  took the field away, in the studio as in the test. A replacement now ends only when the settings were saved
+  (`updatedAt`).
 
 
 ## The swimming demo (October 28, 2026)

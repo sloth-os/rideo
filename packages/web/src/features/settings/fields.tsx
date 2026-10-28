@@ -135,8 +135,8 @@ function SecretControl({
   useEffect(() => {
     if (editing) input.current?.focus();
   }, [editing]);
-  // A save (a new view) ends a replacement
-  useEffect(() => setEditing(false), [view]);
+  // A save ends a replacement; a refresh of the same settings (the page polls while keys register) does not
+  useEffect(() => setEditing(false), [view.updatedAt]);
   if (state?.locked)
     return (
       <div className="flex h-9 items-center gap-2 text-[13px] text-muted" data-testid="setting-secret-set">
