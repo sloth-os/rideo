@@ -136,6 +136,10 @@ export async function screenplayGenerate(deps: HandlerDeps, ctx: JobContext) {
     (r) =>
       `Generate screenplay “${r.title}” (${r.beats} beats, ${r.scenes} scenes, ${r.characters} characters, ${r.elements} locations and props)`,
   );
+  // The screenplay is reviewed before the cast is made (docs/design/ai-review.md#how-a-review-runs)
+  await deps.services.aiReviews
+    .followUp(ctx.actor, projectId, 'screenplay')
+    .catch((err) => ctx.log.warn({ err: (err as Error).message }, 'could not queue the screenplay review'));
   return result;
 }
 

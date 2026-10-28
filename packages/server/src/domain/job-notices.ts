@@ -12,14 +12,31 @@ const NOTICES: Partial<Record<JobKind, { done: string; failed: string; view: Vie
   'batch.generate': { done: 'Batch finished', failed: 'Batch failed', view: 'clips' },
   'recipe.run': { done: 'Recipe finished', failed: 'Recipe failed', view: 'overview' },
   'localize.generate': { done: 'Language version ready', failed: 'Language version failed', view: 'exports' },
+  'screenplay.review': { done: 'Screenplay reviewed', failed: 'Screenplay review failed', view: 'story' },
+  'screenplay.revise': { done: 'Screenplay revised', failed: 'Screenplay revision failed', view: 'story' },
+  'storyboard.review': {
+    done: 'Storyboard reviewed',
+    failed: 'Storyboard review failed',
+    view: 'storyboard',
+  },
 };
+
+/** An AI review's verdict in its notice (docs/design/ai-review.md). */
+function reviewTitle(job: Job, base: string): string {
+  const r = job.result as { passed?: boolean; score?: number; threshold?: number } | undefined;
+  if (typeof r?.passed !== 'boolean' || typeof r.score !== 'number') return base;
+  const stage = job.kind === 'screenplay.review' ? 'Screenplay' : 'Storyboard';
+  return r.passed
+    ? `${stage} review passed (${r.score})`
+    : `${stage} review did not pass (${r.score} of ${r.threshold})`;
+}
 
 /** A finished top-level job's notice: the kinds above when they succeed, any job when it fails for good. */
 export function jobNotice(job: Job): { title: string; detail: string; link: string } | null {
   if (job.parentId) return null;
   const n = NOTICES[job.kind];
   if (job.status === 'succeeded' && n)
-    return { title: n.done, detail: '', link: `/p/${job.projectId}/${n.view}` };
+    return { title: reviewTitle(job, n.done), detail: '', link: `/p/${job.projectId}/${n.view}` };
   if (job.status === 'failed')
     return {
       title: n?.failed ?? `${job.kind} failed`,

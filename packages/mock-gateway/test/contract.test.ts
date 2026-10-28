@@ -11,8 +11,10 @@ import {
   JudgeOutputSchema,
   ScorePlanOutputSchema,
   ScreenplayGenerateOutputSchema,
+  ScreenplayReviseOutputSchema,
   SfxPlanOutputSchema,
   SoundCheckOutputSchema,
+  StageReviewOutputSchema,
   ThumbnailPickOutputSchema,
   TranslateOutputSchema,
 } from '@rideo/shared';
@@ -436,6 +438,59 @@ describe('proxy LLM formats', () => {
     );
     expect(seen.scores).not.toHaveProperty('dialogue');
     expect(seen.transcript).toEqual([]);
+  });
+
+  it('reviews a screenplay, rewrites the scene it cannot film, and reviews storyboard frames', async () => {
+    const scene = (number: number, action: string, characters = ['Rosie', 'Sammy']) => ({
+      number,
+      heading: 'EXT. PIER - DAY',
+      location: 'Pier',
+      timeOfDay: 'day',
+      continuity: '',
+      summary: 'They meet',
+      action,
+      dialogue: [],
+      characters,
+      props: [],
+      estDurationSec: 20,
+    });
+    const screenplay = {
+      title: 'The Keeper',
+      logline: '',
+      synopsis: '',
+      genre: '',
+      tone: '',
+      style: '',
+      outline: [],
+      scenes: [scene(1, 'Rosie waves. A crowd of tourists cheers.'), scene(2, 'Sammy rows.')],
+    };
+    const review = StageReviewOutputSchema.parse(await chat('screenplay.review', { screenplay }));
+    expect(review.scores.feasibility).toBe(3);
+    expect(review.issues).toMatchObject([{ scene: 1, severity: 'critical', dimension: 'feasibility' }]);
+    expect(review.recommendations[0]).toMatchObject({
+      scene: 1,
+      priority: 1,
+      action: { kind: 'revise_scene' },
+    });
+    const revised = ScreenplayReviseOutputSchema.parse(
+      await chat('screenplay.revise', { screenplay, instructions: [{ scene: 1, instruction: 'No crowd' }] }),
+    );
+    expect(revised.scenes).toHaveLength(1);
+    expect(revised.scenes[0]!.action).not.toMatch(/crowd|tourists/i);
+    const board = StageReviewOutputSchema.parse(
+      await chat('storyboard.review', {
+        scene: { number: 1 },
+        shots: [
+          { index: 0, label: 'C1·S1', description: 'Rosie waves', frame: 'attached' },
+          { index: 1, label: 'C1·S2', description: 'A blurry pier', frame: 'attached' },
+        ],
+      }),
+    );
+    expect(board.issues).toMatchObject([{ shot: 1, dimension: 'composition' }]);
+    expect(board.recommendations[0]).toMatchObject({
+      shot: 1,
+      action: { kind: 'redraw_board', description: 'A sharp pier' },
+    });
   });
 
   it('streams a chat completion when asked: content deltas, the usage last, then [DONE]', async () => {

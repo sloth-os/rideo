@@ -341,6 +341,9 @@ export const LLM_TASKS = [
   'feedback.scene',
   'feedback.listen',
   'feedback.film',
+  'screenplay.review',
+  'screenplay.revise',
+  'storyboard.review',
 ] as const;
 export type LlmTaskId = (typeof LLM_TASKS)[number];
 
@@ -787,4 +790,140 @@ export interface FeedbackFilmInput {
     llmRetries: number;
     failedJobs: number;
   };
+}
+
+// --------------------------------------------------------------------------------------------------------------------
+// AI review of the screenplay and the storyboard (docs/design/ai-review.md)
+
+/** An array that keeps the items that parse and drops the rest (one malformed item does not empty the list). */
+function lenientArray<T extends z.ZodType>(item: T, max: number) {
+  return z.preprocess(
+    (v) => (Array.isArray(v) ? v.filter((x) => item.safeParse(x).success).slice(0, max) : []),
+    z.array(item).max(max),
+  );
+}
+
+export const LlmStageActionSchema = z
+  .object({
+    kind: z.enum(['revise_scene', 'revise_outline', 'redraw_board', 'replan_scene', 'note']).catch('note'),
+    instruction: optionalText(2000),
+    description: optionalText(4000),
+    action: optionalText(4000),
+    framing: FeedbackFramingSchema.optional().catch(undefined),
+    movement: FeedbackMovementSchema.optional().catch(undefined),
+    characters: z.array(z.string().min(1).max(100)).max(10).optional().catch(undefined),
+    durationSec: z.coerce.number().min(1).max(60).optional().catch(undefined),
+    direction: optionalText(2000),
+  })
+  .catch({ kind: 'note' });
+export type LlmStageAction = z.infer<typeof LlmStageActionSchema>;
+
+const stageIssue = z.object({
+  /** The scene's number (1-based). */
+  scene: z.coerce.number().int().positive().optional().catch(undefined),
+  /** The shot's index in its scene (storyboard). */
+  shot: z.coerce.number().int().nonnegative().optional().catch(undefined),
+  dimension: z.string().max(40).catch(''),
+  severity: z.enum(['critical', 'major', 'minor']).catch('minor'),
+  title: z.string().min(1).max(200),
+  detail: str(2000),
+});
+const stageRecommendation = z.object({
+  scene: z.coerce.number().int().positive().optional().catch(undefined),
+  shot: z.coerce.number().int().nonnegative().optional().catch(undefined),
+  dimension: z.string().max(40).catch(''),
+  priority: z.coerce.number().int().min(1).max(3).catch(2),
+  title: z.string().min(1).max(200),
+  detail: str(2000),
+  action: LlmStageActionSchema.optional().catch(undefined),
+});
+
+/** What `screenplay.review` and `storyboard.review` answer (scores by dimension, 0–10). */
+export const StageReviewOutputSchema = z.object({
+  scores: z.record(z.string(), score10).catch({}).default({}),
+  summary: str(3000),
+  strengths: lenientArray(z.string().min(1).max(400), 10),
+  issues: lenientArray(stageIssue, 60),
+  recommendations: lenientArray(stageRecommendation, 40),
+});
+export type StageReviewOutput = z.infer<typeof StageReviewOutputSchema>;
+
+/** `screenplay.revise`: the revised scenes by number, beats of the outline by index, new places and props. */
+export const ScreenplayReviseOutputSchema = z.object({
+  scenes: lenientArray(LlmSceneSchema.extend({ number: z.coerce.number().int().positive() }), 50),
+  outline: lenientArray(
+    z.object({
+      index: z.coerce.number().int().nonnegative(),
+      title: optionalText(200),
+      summary: optionalText(4000),
+      purpose: optionalText(40),
+      estDurationSec: z.coerce.number().min(1).max(36000).optional().catch(undefined),
+    }),
+    200,
+  ),
+  locations: lenientArray(LlmElementSchema, 30),
+  props: lenientArray(LlmElementSchema, 30),
+});
+export type ScreenplayReviseOutput = z.infer<typeof ScreenplayReviseOutputSchema>;
+
+/** What the AI video model does well and badly, for the screenplay reviewer (docs/design/ai-review.md). */
+export interface VideoModelFacts {
+  shotSeconds: { min: number; max: number };
+  strengths: string[];
+  weaknesses: string[];
+}
+
+export interface ScreenplayReviewInput {
+  brief: { prompt: string; targetDurationSec: number; dialogueLevel: string | null; castOnly: boolean };
+  screenplay: {
+    title: string;
+    logline: string;
+    synopsis: string;
+    genre: string;
+    tone: string;
+    style: string;
+    outline: { index: number; title: string; summary: string; purpose: string; estDurationSec: number }[];
+    scenes: {
+      number: number;
+      heading: string;
+      location: string;
+      timeOfDay: string;
+      continuity: string;
+      summary: string;
+      action: string;
+      dialogue: { character: string; line: string }[];
+      characters: string[];
+      props: string[];
+      estDurationSec: number;
+    }[];
+  };
+  cast: { name: string; role: string; summary: string; look: string; voice: string }[];
+  places: string[];
+  props: string[];
+  video: VideoModelFacts;
+}
+
+export interface ScreenplayReviseInput extends Omit<ScreenplayReviewInput, 'video'> {
+  /** What to change: per scene (by number) or the outline. */
+  instructions: { scene?: number; outline?: boolean; instruction: string }[];
+}
+
+export interface StoryboardSceneReviewInput {
+  film: { title: string; tone: string; style: string; dialogueLevel: string | null; castOnly: boolean };
+  scene: { number: number; heading: string; continuity: string; summary: string };
+  previousScene: { heading: string; summary: string } | null;
+  nextScene: { heading: string; summary: string } | null;
+  cast: { name: string; look: string }[];
+  shots: {
+    index: number;
+    label: string;
+    durationSec: number;
+    camera: string;
+    description: string;
+    action: string;
+    characters: string[];
+    dialogue: { character: string; line: string }[];
+    frame: 'attached' | 'missing';
+  }[];
+  video: VideoModelFacts;
 }

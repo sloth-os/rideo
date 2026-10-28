@@ -153,7 +153,13 @@ export class Api {
   }
 }
 
-export const TINY = { resolution: { width: 320, height: 180 }, targetDurationSec: 30, pilotDurationSec: 10 };
+export const TINY = {
+  resolution: { width: 320, height: 180 },
+  targetDurationSec: 30,
+  pilotDurationSec: 10,
+  // the AI reviews have specs of their own (e2e/ai-review.spec.ts)
+  review: { screenplay: false, storyboard: false },
+};
 
 export function projectIdFrom(url: string): string {
   const m = /\/p\/(prj_[0-9a-z]+)/.exec(url);

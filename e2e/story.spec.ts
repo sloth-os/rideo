@@ -26,10 +26,17 @@ test('idea → screenplay → locked cast → pilot → production → edit → 
   await expect(page).toHaveURL(/\/p\/prj_[0-9a-z]+\/story$/);
   const pid = projectIdFrom(page.url());
   await api.shrink(pid);
+  // The journey keeps its AI reviews (docs/design/ai-review.md)
+  await api.call('PATCH', `/projects/${pid}`, {
+    settings: { review: { screenplay: true, storyboard: true } },
+  });
 
-  // Screenplay
+  // Screenplay: written, reviewed, approved once its review passes
   await page.getByTestId('generate-screenplay').click();
   await expect(page.getByTestId('scenes')).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByTestId('ai-review-screenplay')).toHaveAttribute('data-state', 'passed', {
+    timeout: 60_000,
+  });
   await expect(page.getByTestId('approve-screenplay')).toBeEnabled({ timeout: 60_000 });
   await page.getByTestId('approve-screenplay').click();
 
@@ -105,6 +112,8 @@ test('idea → screenplay → locked cast → pilot → production → edit → 
   await expect(boardStates.first()).toBeVisible({ timeout: 60_000 });
   await api.waitIdle(pid, 180_000);
   await expect(boardStates.first()).toContainText('to review');
+  // The frames were reviewed after they were drawn (docs/design/ai-review.md)
+  await expect(page.getByTestId('ai-review-storyboard')).toHaveAttribute('data-state', 'passed');
   const frames = await boardStates.count();
   await expect(page.getByTestId('approve-storyboard')).toBeDisabled();
   await page.getByTestId('approve-all-boards').click();

@@ -1,3 +1,4 @@
+import { reviewRequirement } from '../ai-review';
 import { clipBlockers, isAcceptable, takeState } from '../consistency';
 import { dialogueMode, speakingCharacters } from '../dialogue';
 import { approvedReferences, voiceReady } from '../schemas/character';
@@ -46,6 +47,8 @@ export type RequirementId =
   | 'elements.allLocked'
   | 'voices.speakingLocked'
   | 'storyboard.approved'
+  | 'screenplay.reviewPassed'
+  | 'storyboard.reviewPassed'
   | 'clips.pilotApproved'
   | 'clips.allApproved'
   | 'duration.targetReached'
@@ -96,7 +99,12 @@ export const STORY_WORKFLOW: WorkflowDefinition = {
       gate: {
         id: 'screenplay_approved',
         title: 'Approve screenplay',
-        requirements: ['screenplay.hasScenes', 'characters.nonEmpty', 'screenplay.outlineCoversTarget'],
+        requirements: [
+          'screenplay.hasScenes',
+          'characters.nonEmpty',
+          'screenplay.outlineCoversTarget',
+          'screenplay.reviewPassed',
+        ],
         tag: 'screenplay-approved',
       },
       autoOnEnter: ['screenplay.generate'],
@@ -133,7 +141,7 @@ export const STORY_WORKFLOW: WorkflowDefinition = {
       gate: {
         id: 'storyboard_approved',
         title: 'Approve storyboard',
-        requirements: ['storyboard.approved'],
+        requirements: ['storyboard.approved', 'storyboard.reviewPassed'],
         tag: 'storyboard-approved',
       },
       autoOnEnter: ['storyboard.generate'],
@@ -315,6 +323,8 @@ const CHECKS: Record<RequirementId, Check> = {
       details: missing.map((c) => c.name),
     };
   },
+  'screenplay.reviewPassed': (d) => reviewRequirement(d, 'screenplay'),
+  'storyboard.reviewPassed': (d) => reviewRequirement(d, 'storyboard'),
   'storyboard.approved': (d) => {
     if (d.project.settings.storyboard?.enabled === false)
       return { ok: true, message: 'The storyboard is off' };

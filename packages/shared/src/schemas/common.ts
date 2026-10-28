@@ -117,6 +117,8 @@ export const ERROR_CODES = [
   'board_unapprovable',
   /** docs/design/feedback.md#actions */
   'feedback_stale',
+  /** docs/design/ai-review.md#surfaces */
+  'review_stale',
   /** docs/design/settings.md */
   'setting_locked',
   'gateway_not_configured',

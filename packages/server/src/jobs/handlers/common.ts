@@ -1,5 +1,6 @@
 import { rm } from 'node:fs/promises';
 import type { GatewayTask, MediaRef, ProjectDocs } from '@rideo/shared';
+import type { AiReviewService } from '../../domain/ai-review';
 import type { ClipService } from '../../domain/clips';
 import type { Deps } from '../../domain/deps';
 import type { EditService } from '../../domain/edit';
@@ -30,6 +31,7 @@ export interface HandlerDeps extends Deps {
     recipes: RecipeService;
     search: SearchService;
     feedback: FeedbackService;
+    aiReviews: AiReviewService;
   };
 }
 

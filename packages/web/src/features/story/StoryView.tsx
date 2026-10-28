@@ -21,6 +21,7 @@ import { Badge, Button, Card, EmptyState, Field, SectionHeader, Select, Textarea
 import { api } from '../../lib/api';
 import { useProject } from '../../store/project';
 import { reportError, useUi } from '../../store/ui';
+import { AiReviewPanel } from '../ai-review/AiReviewPanel';
 
 /** Fountain, Final Draft or PDF → the screenplay (docs/design/storyboard.md#screenplay-import). */
 function ImportScreenplay({ replace }: { replace: boolean }) {
@@ -360,6 +361,7 @@ export function StoryView() {
           </>
         }
       />
+      <AiReviewPanel stage="screenplay" />
       <Card className="space-y-3 p-4">
         <Field label="Title">
           <Editable

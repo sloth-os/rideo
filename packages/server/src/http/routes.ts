@@ -58,6 +58,7 @@ import {
 } from '@rideo/shared';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
+import { AiReviewService } from '../domain/ai-review';
 import type { Detection, Studio } from '../domain/studio';
 import { AppError, invalid } from '../errors';
 import type { AuthedRequest } from './auth-routes';
@@ -847,6 +848,26 @@ export function registerRoutes(app: FastifyInstance, studio: Studio): void {
   );
   app.post('/api/projects/:id/feedback/:fid/recommendations/:rid/dismiss', async (req) =>
     studio.feedback.dismiss(actor(), pid(req), p(req, 'fid'), p(req, 'rid')),
+  );
+  // AI review of the screenplay and the storyboard (docs/design/ai-review.md#surfaces)
+  const stageOf = (req: FastifyRequest) => AiReviewService.stage(p<string>(req, 'stage'));
+  app.get('/api/projects/:id/ai-reviews', async (req) => studio.aiReviews.list(pid(req)));
+  app.post('/api/projects/:id/ai-reviews/:stage/run', async (req, reply) =>
+    reply.code(202).send(await studio.aiReviews.run(actor(), pid(req), stageOf(req))),
+  );
+  app.post('/api/projects/:id/ai-reviews/:stage/recommendations/:rid/apply', async (req) =>
+    studio.aiReviews.apply(actor(), pid(req), stageOf(req), p(req, 'rid')),
+  );
+  app.post('/api/projects/:id/ai-reviews/:stage/recommendations/:rid/dismiss', async (req) =>
+    studio.aiReviews.dismiss(actor(), pid(req), stageOf(req), p(req, 'rid')),
+  );
+  app.post('/api/projects/:id/ai-reviews/:stage/override', async (req) =>
+    studio.aiReviews.override(
+      actor(),
+      pid(req),
+      stageOf(req),
+      parse(z.object({ note: z.string().max(1000).default('') }), req.body ?? {}).note,
+    ),
   );
   // Insights and telemetry (docs/design/observability.md)
   app.get('/api/projects/:id/insights', async (req) => studio.insights.insights(pid(req)));

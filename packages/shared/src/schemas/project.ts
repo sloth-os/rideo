@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { ProjectBrandSchema } from '../brand/schema';
 import { ProjectAccessSchema } from './accounts';
+import { DEFAULT_REVIEW_SETTINGS, ReviewSettingsSchema } from './ai-review';
 import { ActorSchema, AspectRatioSchema, IdSchema, IsoDateSchema } from './common';
 
 export const ProjectKindSchema = z.enum(['story', 'edit']);
@@ -134,6 +135,8 @@ export const ProjectSettingsSchema = z.object({
     }),
   /** Feedback on exports (docs/design/feedback.md#when-it-runs). */
   feedback: z.object({ auto: z.boolean().default(true) }).default({ auto: true }),
+  /** AI review of the screenplay and the storyboard (docs/design/ai-review.md#the-gates). */
+  review: ReviewSettingsSchema.default(DEFAULT_REVIEW_SETTINGS),
   batch: z
     .object({ maxGenerations: z.number().int().min(1).max(100000).default(2000) })
     .default({ maxGenerations: 2000 }),

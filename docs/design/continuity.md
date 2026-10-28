@@ -76,6 +76,11 @@ including those written hours later by an extension, at the words the audience k
   the [directing](directing.md) lens fragment turns into words.
 - **Physical action.** `action` describes motion as cause and effect with direction and contact ("carves left,
   spraying snow from the uphill edge"), not counts or vague verbs.
+- **What the model can render.** The planner avoids shots video models break: a tight insert the camera must hold
+  (it widens: show the prop in use in a medium shot instead), hands handling small objects, mechanical handling
+  (boarding a lift, putting on equipment), crowds and readable text. In the panda demo's feedback these were the
+  shots that failed again and again: ski inserts that widened to a full figure, skis in the pandas' paws, the
+  chairlift boarding.
 - **End state.** Each shot says what its last frame shows (`endState`: positions, poses, what is in hand). The next
   shot's prompts continue from it.
 - **Across scenes.** The planner gets the previous scene's last shot (description and end state), so a new scene
@@ -163,7 +168,10 @@ Avoid: <exclusions>.
   the cast and the place, and the gateway would drop them after carrying megabytes of images).
 
 **Keyframe prompt.** The still keeps the full identity fragments (they condition the face) and adds the scene line,
-the continuation and the exclusions; it has no dialogue, sound or physics blocks.
+the continuation and the exclusions; it has no dialogue, sound or physics blocks. It names its reference images in
+the order they are sent (`Reference images, in order: 1 Rosie (front view); 2 Sammy (front view); 3 Beginner Slope,
+the place.`, from `referenceLabels`), since guides of image models put a defined role for each reference above the
+wording of the prompt; the board's prompt hash leaves the labels out.
 
 **Negative prompt.** `BASE_NEGATIVE_V2` = `BASE_NEGATIVE` + `morphing, warping, flicker, extra or missing limbs,
 floating objects, sliding feet, objects passing through each other, sudden lighting change, jump cut`, plus the shot's

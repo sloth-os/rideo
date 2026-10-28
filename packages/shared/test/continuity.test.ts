@@ -26,9 +26,11 @@ import {
   parseSceneScores,
   plannedShotRange,
   planShotGroups,
+  referenceLabels,
   type ShotContext,
   SoundCheckOutputSchema,
   sceneLine,
+  selectReferences,
   shotContextOf,
   soundVerdict,
   TEMPORAL_JUMP_SCORE,
@@ -642,5 +644,30 @@ describe('the sound check (docs/design/continuity.md#quality-checks-in-the-gate)
     expect(planShotGroups(shots, { maxShots: 8, maxDurationSec: 40, eligible: () => true })).toEqual([
       ['s0', 's1', 's2', 's3', 's4', 's5'],
     ]);
+  });
+
+  it('names each reference image of a keyframe, without it in the board hash', () => {
+    const rosie = f.character({ name: 'Rosie' });
+    const sammy = f.character({ name: 'Sammy' });
+    const slope = f.element({ name: 'Beginner Slope', kind: 'location' });
+    const shot = f.shot({ characterIds: [rosie.id, sammy.id] });
+    const selection = selectReferences([rosie, sammy], shot, 10, 2, [slope]);
+    const labels = referenceLabels(selection, [rosie, sammy], [slope]);
+    expect(labels[0]).toMatch(/^Rosie \(.+ view\)$/);
+    expect(labels).toContain('Beginner Slope, the place');
+    // A cast sheet when the cast outnumbers the slots
+    const tight = selectReferences([rosie, sammy], shot, 1, 2, []);
+    expect(referenceLabels(tight, [rosie, sammy], [])).toEqual(['a cast sheet of Rosie, Sammy']);
+    const ctx = ctxV2({
+      referenceLabels: ['Rosie (front view)', 'Beginner Slope, the place'],
+      sceneReference: true,
+    });
+    const p = compileShotPrompt(ctx, 'keyframe');
+    expect(p).toContain('Reference images, in order: 1 Rosie (front view); 2 Beginner Slope, the place.');
+    expect(p.indexOf('Reference images, in order')).toBeLessThan(
+      p.indexOf('The last image is the scene reference'),
+    );
+    expect(compileShotPrompt(ctx, 'video')).not.toContain('Reference images, in order');
+    expect(boardPromptHash(ctx)).toBe(boardPromptHash({ ...ctx, referenceLabels: [] }));
   });
 });

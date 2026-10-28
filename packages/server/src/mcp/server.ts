@@ -1101,6 +1101,39 @@ function buildServer(studio: Studio): McpServer {
     { projectId: PROJECT, feedbackId: z.string(), recommendationId: z.string() },
     (a, actor) => studio.feedback.dismiss(actor, a.projectId, a.feedbackId, a.recommendationId),
   );
+  // AI review of the screenplay and the storyboard (docs/design/ai-review.md#surfaces)
+  const STAGE = z.enum(['screenplay', 'storyboard']);
+  tool(
+    'ai_review_get',
+    "The AI reviews of the screenplay and the storyboard: each stage's verdict (passed, score against the threshold, what blocks it), scores per dimension, issues pinned to scenes and shots, recommendations with their actions and status, the rounds so far and any 'continue anyway'.",
+    { projectId: PROJECT },
+    (a) => studio.aiReviews.list(a.projectId),
+    ro,
+  );
+  tool(
+    'ai_review_run',
+    'Review the screenplay (before the cast is made) or the storyboard (before any video) with the AI reviewer; with settings.review.autoRevise it applies its own fixes and reviews again up to settings.review.maxRounds, and on autopilot a pass approves the stage gate. Returns {job}; use job_wait, then ai_review_get.',
+    { projectId: PROJECT, stage: STAGE },
+    (a, actor) => studio.aiReviews.run(actor, a.projectId, a.stage),
+  );
+  tool(
+    'ai_review_apply',
+    "Apply an AI review recommendation's action: revise_scene / revise_outline (the writer rewrites it), redraw_board (revises the shot and draws its frame again) or replan_scene (plans the scene again and draws its frames). Returns {review, job}; review again afterwards.",
+    { projectId: PROJECT, stage: STAGE, recommendationId: z.string() },
+    (a, actor) => studio.aiReviews.apply(actor, a.projectId, a.stage, a.recommendationId),
+  );
+  tool(
+    'ai_review_dismiss',
+    'Dismiss an AI review recommendation.',
+    { projectId: PROJECT, stage: STAGE, recommendationId: z.string() },
+    (a, actor) => studio.aiReviews.dismiss(actor, a.projectId, a.stage, a.recommendationId),
+  );
+  tool(
+    'ai_review_override',
+    "Continue anyway: the stage's gate accepts a review that did not pass, for the screenplay or frames as they are now (an approval; agents need settings.approvals.allowAgents).",
+    { projectId: PROJECT, stage: STAGE, note: z.string().max(1000).default('') },
+    (a, actor) => studio.aiReviews.override(actor, a.projectId, a.stage, a.note),
+  );
   tool(
     'project_insights',
     "The project's run at a glance (docs/design/observability.md#insights): usage and estimated cost by model and job kind, job times, queue waits and failures, take quality (first-try pass rate, attempts, unverified, overridden, quality failures), the characters who fail most, feedback scores and the latest retrospective.",

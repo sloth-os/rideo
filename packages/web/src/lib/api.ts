@@ -40,6 +40,7 @@ import type {
   ResourceRole,
   Review,
   ReviewItem,
+  ReviewStage,
   ReviewTarget,
   Screenplay,
   SearchKind,
@@ -48,6 +49,7 @@ import type {
   SettingsTestResult,
   SettingsTestTarget,
   SettingsView,
+  StageReview,
   TagInfo,
   Theme,
   Timeline,
@@ -523,6 +525,18 @@ export const api = {
       bug?: boolean;
     } & Omit<DeliveryInput, 'loudness' | 'captions' | 'stems'>,
   ) => request<{ export: Export; job: Job }>('POST', `${p(id)}/exports`, body),
+  // AI review of the screenplay and the storyboard (docs/design/ai-review.md#surfaces)
+  runAiReview: (id: string, stage: ReviewStage) =>
+    request<{ job: Job }>('POST', `${p(id)}/ai-reviews/${stage}/run`),
+  applyAiReview: (id: string, stage: ReviewStage, recommendationId: string) =>
+    request<{ review: StageReview; job: Job | null }>(
+      'POST',
+      `${p(id)}/ai-reviews/${stage}/recommendations/${recommendationId}/apply`,
+    ),
+  dismissAiReview: (id: string, stage: ReviewStage, recommendationId: string) =>
+    request<StageReview>('POST', `${p(id)}/ai-reviews/${stage}/recommendations/${recommendationId}/dismiss`),
+  overrideAiReview: (id: string, stage: ReviewStage, note: string) =>
+    request<StageReview>('POST', `${p(id)}/ai-reviews/${stage}/override`, { note }),
   // Feedback on exports (docs/design/feedback.md#surfaces)
   requestFeedback: (id: string, exportId: string) =>
     request<{ feedback: Feedback; job: Job }>('POST', `${p(id)}/exports/${exportId}/feedback`),

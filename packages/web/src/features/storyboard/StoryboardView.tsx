@@ -42,6 +42,7 @@ import {
 import { api, shotListUrl } from '../../lib/api';
 import { useProject } from '../../store/project';
 import { reportError, useUi } from '../../store/ui';
+import { AiReviewPanel } from '../ai-review/AiReviewPanel';
 
 // The player pulls in mediabunny (WebCodecs); load it only when an animatic exists.
 const AnimaticPlayer = lazy(() => import('./AnimaticPlayer').then((m) => ({ default: m.AnimaticPlayer })));
@@ -357,6 +358,7 @@ export function StoryboardView() {
         }
       />
       {running ? <JobRow job={running} projectId={projectId} /> : null}
+      {enabled ? <AiReviewPanel stage="storyboard" /> : null}
       {enabled ? (
         <p className="text-[13px] text-muted" data-testid="storyboard-progress">
           {progress.approved} of {progress.shots} frames approved

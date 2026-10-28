@@ -6,7 +6,8 @@ times) is spread over hours of footage. **Feedback** watches every export of a s
 and listens to it with the [audio-visual model](settings.md) when one is set, with the whole project in hand
 (screenplay, cast, shots, takes and their reports), and writes:
 
-- **scores** for the dimensions of a good film, for each scene and for the film;
+- **scores** for the dimensions of a good film, for each scene and for the film (the screenplay and the storyboard get
+  an [AI review](ai-review.md) of their own before any video is made);
 - **issues**, each pinned to a time in the export and to the shot that made it;
 - **recommendations**, as many as are useful, most important first, each one with an **action** Rideo can apply
   (regenerate a shot with a revised prompt, re-plan a scene, change a setting);

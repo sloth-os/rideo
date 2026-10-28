@@ -92,6 +92,16 @@ export const ProjectSettingsPatchSchema = z
     batch: z.object({ maxGenerations: z.number().int().min(1).max(100000) }).partial(),
     /** docs/design/feedback.md#when-it-runs */
     feedback: z.object({ auto: z.boolean() }).partial(),
+    /** docs/design/ai-review.md#the-gates */
+    review: z
+      .object({
+        screenplay: z.boolean(),
+        storyboard: z.boolean(),
+        threshold: z.number().min(5).max(9.5),
+        maxRounds: z.number().int().min(0).max(3),
+        autoRevise: z.boolean(),
+      })
+      .partial(),
     watermark: z.object({ enabled: z.boolean() }).partial(),
     disclosure: z
       .object({

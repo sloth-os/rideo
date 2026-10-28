@@ -280,6 +280,7 @@ export function docs(overrides: Partial<ProjectDocs> = {}): ProjectDocs {
     comments: {},
     reviews: {},
     feedback: {},
+    aiReviews: {},
     ...overrides,
   };
 }

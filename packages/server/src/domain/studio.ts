@@ -24,6 +24,7 @@ import { AppError } from '../errors';
 import { GatewayClient } from '../gateway/gateway-client';
 import { ProxyClient } from '../gateway/proxy-client';
 import { GatewayProxies } from '../gateway/proxy-sync';
+import { screenplayReview, screenplayRevise, storyboardReview } from '../jobs/handlers/ai-review';
 import { batchGenerate, clipGenerate, clipPlan } from '../jobs/handlers/clips';
 import type { HandlerDeps } from '../jobs/handlers/common';
 import { exportFeedback } from '../jobs/handlers/feedback';
@@ -63,6 +64,7 @@ import { Layout } from '../storage/layout';
 import { UsageLedger, UsageMeter } from '../usage/meter';
 import { VERSION } from '../version';
 import { WatermarkService } from '../watermark/service';
+import { AiReviewService } from './ai-review';
 import { BrandService } from './brand';
 import { BundleService } from './bundles';
 import { ClipService } from './clips';
@@ -121,6 +123,8 @@ export interface Studio {
   editor: EditorService;
   /** Feedback on exports and the project's insights (docs/design/feedback.md, docs/design/observability.md). */
   feedback: FeedbackService;
+  /** AI review of the screenplay and the storyboard (docs/design/ai-review.md). */
+  aiReviews: AiReviewService;
   insights: InsightsService;
   history: HistoryService;
   ui: UiService;
@@ -309,6 +313,7 @@ export function createStudio(
   const workflow = new WorkflowService(deps);
   const projectService = new ProjectService(deps);
   const clipService = new ClipService(deps);
+  const storyboardService = new StoryboardService(deps);
   const services = {
     projects: projectService,
     bundles: new BundleService(deps, projectService),
@@ -316,7 +321,7 @@ export function createStudio(
     story: new StoryService(deps),
     elements: new ElementService(deps),
     voices: new VoiceService(deps),
-    storyboard: new StoryboardService(deps),
+    storyboard: storyboardService,
     clips: clipService,
     edit: new EditService(deps),
     localization: new LocalizationService(deps),
@@ -330,6 +335,7 @@ export function createStudio(
     brand: new BrandService(deps),
     editor: new EditorService(deps),
     feedback: new FeedbackService(deps, { clips: clipService, projects: projectService }),
+    aiReviews: new AiReviewService(deps, { clips: clipService, storyboard: storyboardService }),
     insights: new InsightsService(deps),
   } satisfies Record<string, unknown>;
   // Editor jobs: failures and cancellations are recorded on their documents; a closed tab releases its jobs.
@@ -394,6 +400,9 @@ export function createStudio(
   reg('analysis.suggest', analysisSuggest);
   reg('export.finish', exportFinish);
   reg('export.feedback', exportFeedback);
+  reg('screenplay.review', screenplayReview);
+  reg('screenplay.revise', screenplayRevise);
+  reg('storyboard.review', storyboardReview);
   reg('consistency.recheck', consistencyRecheck);
   reg('edit.auto', editAuto);
   reg('timeline.assemble', timelineAssemble);

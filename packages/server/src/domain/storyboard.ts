@@ -98,6 +98,7 @@ export class StoryboardService extends Service {
       comments: {},
       reviews: {},
       feedback: {},
+      aiReviews: {},
     };
   }
 

@@ -170,6 +170,33 @@ export class Metrics {
       'Feedback recommendations applied or dismissed, by action and outcome',
     ),
   );
+  /** AI review of the screenplay and the storyboard (docs/design/ai-review.md#observability). */
+  readonly aiReviews = this.add(
+    new Counter(
+      'rideo_ai_reviews_total',
+      'AI reviews of a stage, by stage and outcome (passed, failed, error)',
+    ),
+  );
+  readonly aiReviewScore = this.add(
+    new Histogram(
+      'rideo_ai_review_score',
+      'Overall scores of AI reviews (0-10), by stage',
+      [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+    ),
+  );
+  readonly aiReviewRounds = this.add(
+    new Histogram(
+      'rideo_ai_review_rounds',
+      'Reviews a stage needed before it stopped, by stage',
+      [1, 2, 3, 4],
+    ),
+  );
+  readonly aiReviewRecommendations = this.add(
+    new Counter(
+      'rideo_ai_review_recommendations_total',
+      'AI review recommendations applied (by a person or automatically) or dismissed, by stage, action and outcome',
+    ),
+  );
   readonly httpSeconds = this.add(
     new Histogram(
       'rideo_http_request_seconds',

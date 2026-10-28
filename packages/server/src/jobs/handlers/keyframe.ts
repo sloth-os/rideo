@@ -9,6 +9,7 @@ import {
   compileKeyframeRequest,
   type Element,
   type MediaRef,
+  referenceLabels,
   type Shot,
   type ShotContext,
   selectReferences,
@@ -23,6 +24,8 @@ import { gatewayOptions, type HandlerDeps } from './common';
 /** The image inputs of a shot and the judge's references (rules R3, E3, E4). */
 export interface ShotReferences {
   referenceUris: string[];
+  /** What each of `referenceUris` shows, for the keyframe prompt. */
+  referenceLabels: string[];
   judgeRefs: Map<string, Buffer[]>;
   elementJudgeRefs: Map<string, Buffer[]>;
 }
@@ -80,7 +83,12 @@ export async function prepareShotReferences(
     const ref = approvedElementReferences(e)[0];
     if (ref) elementJudgeRefs.set(e.id, [await deps.media.pngBuffer(projectId, ref.media, 512)]);
   }
-  return { referenceUris, judgeRefs, elementJudgeRefs };
+  return {
+    referenceUris,
+    referenceLabels: referenceLabels(selection, characters, elements),
+    judgeRefs,
+    elementJudgeRefs,
+  };
 }
 
 export interface KeyframeResult {
@@ -125,12 +133,15 @@ export async function generateKeyframe(
   for (let attempt = 0; attempt < input.maxAttempts; attempt++) {
     throwIfAborted(ctx.signal);
     input.progress(attempt);
-    const req = compileKeyframeRequest(shotCtx, {
-      referenceUris: refs.referenceUris,
-      attempt,
-      model: shotCtx.settings.models.image,
-      variation: input.variation,
-    });
+    const req = compileKeyframeRequest(
+      { ...shotCtx, referenceLabels: refs.referenceLabels.slice(0, refs.referenceUris.length) },
+      {
+        referenceUris: refs.referenceUris,
+        attempt,
+        model: shotCtx.settings.models.image,
+        variation: input.variation,
+      },
+    );
     out.prompt = (req.input[0] as { text: string }).text;
     out.seed = req.parameters?.seed ?? 0;
     const task = await deps.gateway.generateImage(req, gatewayOptions(ctx, 'image', input.step, attempt));

@@ -30,9 +30,10 @@ import type { JobContext } from '../queue';
 import { commitAs, docsFor, type HandlerDeps } from './common';
 
 export async function clipPlan(deps: HandlerDeps, ctx: JobContext) {
-  const { sceneId, thenGenerate, direction } = ctx.job.params as {
+  const { sceneId, thenGenerate, thenBoard, direction } = ctx.job.params as {
     sceneId: string;
     thenGenerate?: boolean;
+    thenBoard?: boolean;
     direction?: string;
   };
   const docs = await docsFor(deps, ctx);
@@ -140,6 +141,9 @@ export async function clipPlan(deps: HandlerDeps, ctx: JobContext) {
     assertVoicesReady(deps, clip.shots, fresh.characters, fresh.project.settings);
     await ctx.spawn('clip.generate', { clipId: clip.id }, { dedupeKey: `clip:${clip.id}` });
   }
+  if (thenBoard)
+    for (const shot of clip.shots)
+      await ctx.spawn('shot.board', { clipId: clip.id, shotId: shot.id }, { dedupeKey: `board:${shot.id}` });
   return { clipId: clip.id, shots: clip.shots.length };
 }
 

@@ -191,6 +191,8 @@ export interface ShotContext {
   sceneReference?: boolean;
   /** Version 2: the clip's cast who are not in this shot, by name (docs/design/continuity.md#prompts-version-2). */
   offscreen?: string[];
+  /** Version 2: what each reference image of a keyframe request shows, in order (docs/design/continuity.md). */
+  referenceLabels?: string[];
 }
 
 /**
@@ -382,6 +384,10 @@ function compileShotPromptV2(
   if (inFrame) lines.push(inFrame);
   lines.push(...elementLines(ctx.elements ?? []));
   if (mode === 'keyframe') {
+    if (ctx.referenceLabels?.length)
+      lines.push(
+        `Reference images, in order: ${ctx.referenceLabels.map((l, i) => `${i + 1} ${l}`).join('; ')}.`,
+      );
     if (ctx.sceneReference) lines.push(SCENE_REFERENCE_PHRASE);
     lines.push(`Avoid: ${EXCLUSIONS_STILL}.`);
     return lines.join(' ');
@@ -476,6 +482,41 @@ function refRank(r: CharacterReference, wardrobeId: string | undefined): number 
  * Approved references per character (matching wardrobe first, then view priority) and one per element, bounded
  * by the model. Elements get a quarter of the budget (at least one image) when the cast leaves room.
  */
+/**
+ * What each reference image of a keyframe request shows, in the order `prepareShotReferences` sends them: a
+ * character's views (or one cast sheet), then the place and the props (or one sheet). The keyframe prompt names them,
+ * so the image model knows which picture is whom (docs/design/continuity.md#prompts-version-2).
+ */
+export function referenceLabels(
+  selection: Pick<ReferenceSelection, 'perCharacter' | 'needsSheet' | 'perElement' | 'elementSheet'>,
+  characters: Pick<Character, 'id' | 'name'>[],
+  elements: Pick<Element, 'id' | 'name' | 'kind'>[],
+): string[] {
+  const nameOf = (id: string) => characters.find((c) => c.id === id)?.name ?? 'a character';
+  const charRefs = selection.perCharacter.flatMap((pc) =>
+    pc.refs.map((r) => `${nameOf(pc.characterId)} (${String(r.view).replace(/_/g, ' ')} view)`),
+  );
+  const labels =
+    selection.needsSheet && charRefs.length > 1
+      ? [`a cast sheet of ${selection.perCharacter.map((pc) => nameOf(pc.characterId)).join(', ')}`]
+      : charRefs;
+  const role = (kind: string) =>
+    kind === 'location' ? 'the place' : kind === 'prop' ? 'a prop' : 'the style';
+  const elementRefs = selection.perElement.flatMap((pe) => {
+    const e = elements.find((x) => x.id === pe.elementId);
+    return pe.refs.map(() => (e ? `${e.name}, ${role(e.kind)}` : 'a place or prop'));
+  });
+  if (selection.elementSheet && elementRefs.length > 1)
+    labels.push(
+      `a sheet of ${selection.perElement
+        .map((pe) => elements.find((x) => x.id === pe.elementId)?.name ?? '')
+        .filter(Boolean)
+        .join(', ')}`,
+    );
+  else labels.push(...elementRefs);
+  return labels;
+}
+
 export function selectReferences(
   characters: Character[],
   shot: Pick<Shot, 'wardrobe'>,

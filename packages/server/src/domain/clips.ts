@@ -142,8 +142,11 @@ export class ClipService extends Service {
     actor: Actor,
     projectId: string,
     sceneId: string,
-    /** `direction`: what a new plan must do (a feedback recommendation, docs/design/feedback.md#actions). */
-    opts: { thenGenerate?: boolean; direction?: string } = {},
+    /**
+     * `direction`: what a new plan must do (a feedback recommendation, docs/design/feedback.md#actions); `thenBoard`:
+     * draw the new shots' storyboard frames (an AI review's fix, docs/design/ai-review.md#how-a-review-runs).
+     */
+    opts: { thenGenerate?: boolean; thenBoard?: boolean; direction?: string } = {},
   ): Promise<Job> {
     const docs = await this.docs(projectId);
     const sp = docs.screenplay as Screenplay | null;
@@ -154,6 +157,7 @@ export class ClipService extends Service {
       params: {
         sceneId,
         thenGenerate: !!opts.thenGenerate,
+        ...(opts.thenBoard ? { thenBoard: true } : {}),
         ...(opts.direction ? { direction: opts.direction.slice(0, 2000) } : {}),
       },
       actor,

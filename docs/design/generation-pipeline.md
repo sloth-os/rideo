@@ -53,6 +53,9 @@ type Job = {
 | `export.finish` | media | concat parts → watermark → encode → mux → publish |
 | `consistency.recheck` | llm | judge unverified takes again from their evidence frames ([re-checking](character-consistency.md#re-checking-unverified-takes)) |
 | `export.feedback` | llm | signals of the export, a vision call per scene, a text call for the film, the retrospective and the report ([feedback](feedback.md)) |
+| `screenplay.review` | llm | the screenplay reviewed by the text model, revised and reviewed again up to `settings.review.maxRounds`; a pass approves the gate on autopilot ([AI review](ai-review.md)) |
+| `screenplay.revise` | llm | rewrites the scenes and the outline as instructions say (a review's fix) |
+| `storyboard.review` | control | each storyboarded scene reviewed with its frames by the vision model; frames redrawn and scenes re-planned, then reviewed again |
 
 Lane concurrency defaults: `control=16, llm=2, image=2, video=2, music=1, media=1`. Override with
 `RIDEO_LANES="video=3,image=2"`. The `client` lane has no server concurrency: its jobs are claimed and run

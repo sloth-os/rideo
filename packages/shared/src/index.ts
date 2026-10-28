@@ -1,5 +1,6 @@
 export * from './accounts';
 export * from './agents/recipes';
+export * from './ai-review';
 export * from './audio';
 export * from './brand';
 export * from './bundle';
@@ -20,6 +21,7 @@ export * from './prompt/multishot';
 export * from './provenance/disclosure';
 export * from './review';
 export * from './schemas/accounts';
+export * from './schemas/ai-review';
 export * from './schemas/analysis';
 export * from './schemas/api';
 export * from './schemas/character';

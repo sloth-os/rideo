@@ -151,6 +151,11 @@ or keep going and `job_wait` until a tab picks the job up.
 | `feedback_get` | `projectId`, `exportId?` → the export's feedback (the newest when no export is given) |
 | `feedback_apply` | `projectId`, `feedbackId`, `recommendationId` → `{feedback, job}` (regenerates, re-plans or changes settings as the action says) |
 | `feedback_dismiss` | `projectId`, `feedbackId`, `recommendationId` → `feedback` |
+| `ai_review_get` | `projectId` → the [AI reviews](ai-review.md) of the screenplay and the storyboard: verdict, scores, issues, recommendations, rounds, override |
+| `ai_review_run` | `projectId`, `stage` (`screenplay` \| `storyboard`) → `{job}`: review (and revise, up to `settings.review.maxRounds`) |
+| `ai_review_apply` | `projectId`, `stage`, `recommendationId` → `{review, job}` (rewrites a scene or the outline, redraws a frame or re-plans a scene) |
+| `ai_review_dismiss` | `projectId`, `stage`, `recommendationId` → `review` |
+| `ai_review_override` | `projectId`, `stage`, `note?` → `review`: continue anyway (an approval) |
 | `project_insights` | `projectId` → usage and estimated cost, job times and failures, take quality, feedback scores and the latest retrospective ([observability](observability.md#insights)) |
 | `export_list` | `projectId` |
 | `watermark_detect` | `uri` or `projectId` + `mediaPath` → watermark, registry record and `contentCredentials` (C2PA) |

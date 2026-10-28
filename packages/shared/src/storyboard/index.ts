@@ -66,7 +66,7 @@ export function shotContextOf(shot: Shot, docs: BoardDocs, clip?: Clip): ShotCon
  */
 export function boardPromptHash(ctx: ShotContext): string {
   return fnv1a32(
-    `${compileShotPrompt({ ...ctx, sceneReference: false, previousEndState: null, offscreen: [] }, 'keyframe')}\n${ctx.shot.negativePrompt ?? ''}`,
+    `${compileShotPrompt({ ...ctx, sceneReference: false, previousEndState: null, offscreen: [], referenceLabels: [] }, 'keyframe')}\n${ctx.shot.negativePrompt ?? ''}`,
   ).toString(16);
 }
 

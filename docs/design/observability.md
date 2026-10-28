@@ -86,6 +86,10 @@ cost), as does a take replaced by a regeneration: the cost of quality, which the
 | `rideo_feedback_total` | counter | `outcome` | [feedback](feedback.md) runs |
 | `rideo_feedback_score` | histogram | `dimension` | film scores 0–10 |
 | `rideo_feedback_recommendations_total` | counter | `action`, `outcome` | applied and dismissed recommendations |
+| `rideo_ai_reviews_total` | counter | `stage`, `outcome` (`passed`, `failed`, `error`) | [AI reviews](ai-review.md) of the screenplay and the storyboard |
+| `rideo_ai_review_score` | histogram | `stage` | overall review scores 0–10 |
+| `rideo_ai_review_rounds` | histogram | `stage` | reviews a stage needed before it stopped |
+| `rideo_ai_review_recommendations_total` | counter | `stage`, `action`, `outcome` (`applied`, `dismissed`, `auto`, `stale`) | review recommendations |
 | `rideo_http_request_seconds` | histogram | `method`, `route` (the route pattern), `status` (class: `2xx`…) | REST latency |
 | `rideo_storage_seconds` | histogram | `op` | WebDAV operations, buckets up to 300 s (uploads to slow cloud drives) |
 | `rideo_storage_ops_per_request` | histogram | – | storage operations one request made |

@@ -275,6 +275,60 @@ export function appendScenes(
   return { screenplay: { ...sp, outline, scenes }, added, elements: library };
 }
 
+/**
+ * A review's revision of the screenplay (docs/design/ai-review.md#how-a-review-runs): the revised scenes replace the
+ * scenes of the same number and keep their ids, index and beat (planned clips stay attached); beats of the outline
+ * change by index; new places and props join the library.
+ */
+export function reviseScenes(
+  sp: Screenplay,
+  revised: (LlmScene & { number: number })[],
+  outline: { index: number; title?: string; summary?: string; purpose?: string; estDurationSec?: number }[],
+  characters: Character[],
+  elements: { existing: Element[]; introduced?: { locations: LlmElement[]; props: LlmElement[] } } = {
+    existing: [],
+  },
+): { screenplay: Screenplay; changed: string[]; elements: Element[] } {
+  const resolve = nameIndex(characters);
+  const library = mergeElements(
+    elements.introduced ?? { locations: [], props: [] },
+    revised,
+    elements.existing,
+  );
+  const resolveElement = elementIndex(library);
+  const ordered = [...sp.scenes].sort((a, b) => a.index - b.index);
+  const beats = sp.outline.map((b) => {
+    const patch = outline.find((o) => o.index === b.index);
+    if (!patch) return { ...b };
+    return {
+      ...b,
+      ...(patch.title?.trim() ? { title: patch.title.trim().slice(0, 200) } : {}),
+      ...(patch.summary?.trim() ? { summary: patch.summary.trim().slice(0, 4000) } : {}),
+      ...(patch.purpose?.trim() ? { purpose: patch.purpose.trim().slice(0, 60) } : {}),
+      ...(patch.estDurationSec ? { estDurationSec: Math.min(3600, Math.max(5, patch.estDurationSec)) } : {}),
+    };
+  });
+  const changed: string[] = [];
+  const replaced = new Map<string, Scene>();
+  for (const r of revised) {
+    const old = ordered[r.number - 1];
+    if (!old || replaced.has(old.id)) continue;
+    const fresh = sceneFromLlm(r, old.index, old.beatId, resolve, resolveElement);
+    const beat = beats.find((b) => b.id === old.beatId);
+    replaced.set(old.id, {
+      ...fresh,
+      id: old.id,
+      estDurationSec: beat?.estDurationSec ?? old.estDurationSec,
+    });
+    changed.push(old.id);
+  }
+  return {
+    screenplay: { ...sp, outline: beats, scenes: sp.scenes.map((s) => replaced.get(s.id) ?? s) },
+    changed,
+    elements: library,
+  };
+}
+
 export interface ShotPlanOptions {
   characters: Character[];
   minSec: number;

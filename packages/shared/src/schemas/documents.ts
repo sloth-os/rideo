@@ -1,4 +1,5 @@
 import type { z } from 'zod';
+import { type ReviewStage, type StageReview, StageReviewSchema } from './ai-review';
 import { type Analysis, AnalysisSchema } from './analysis';
 import { type Character, CharacterSchema } from './character';
 import { type Clip, ClipSchema } from './clip';
@@ -31,7 +32,8 @@ export type DocKind =
   | 'render'
   | 'comment'
   | 'review'
-  | 'feedback';
+  | 'feedback'
+  | 'aiReview';
 
 interface DocSpec {
   kind: DocKind;
@@ -99,6 +101,14 @@ export const DOC_SPECS: DocSpec[] = [
     schema: FeedbackSchema,
     dir: 'feedback',
   },
+  /** The AI review of a stage (docs/design/ai-review.md#the-document), keyed by the stage. */
+  {
+    kind: 'aiReview',
+    pattern: /^ai-reviews\/(screenplay|storyboard)\.json$/,
+    schema: StageReviewSchema,
+    dir: 'ai-reviews',
+    embedsId: false,
+  },
   {
     kind: 'render',
     pattern: new RegExp(`^renders/${ID}\\.json$`),
@@ -140,6 +150,7 @@ export const docPath = {
   comment: (id: string) => `comments/${id}.json`,
   review: (id: string) => `reviews/${id}.json`,
   feedback: (id: string) => `feedback/${id}.json`,
+  aiReview: (stage: ReviewStage) => `ai-reviews/${stage}.json`,
 };
 
 export class DocValidationError extends Error {
@@ -187,6 +198,8 @@ export interface ProjectDocs {
   reviews: Record<string, Review>;
   /** By feedback id (one per export). */
   feedback: Record<string, Feedback>;
+  /** By stage (docs/design/ai-review.md). */
+  aiReviews: Partial<Record<ReviewStage, StageReview>>;
 }
 
 const COLLECTION: Partial<Record<DocKind, keyof ProjectDocs>> = {
@@ -200,6 +213,7 @@ const COLLECTION: Partial<Record<DocKind, keyof ProjectDocs>> = {
   comment: 'comments',
   review: 'reviews',
   feedback: 'feedback',
+  aiReview: 'aiReviews',
 };
 
 /** Applies document changes (path → doc | null) to a ProjectDocs projection immutably. */
@@ -255,6 +269,7 @@ export function docsFromEntries(entries: Iterable<[string, unknown]>): ProjectDo
       comments: {},
       reviews: {},
       feedback: {},
+      aiReviews: {},
     },
     changes,
   );

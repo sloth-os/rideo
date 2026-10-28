@@ -161,6 +161,10 @@ export async function storyboardGenerate(deps: HandlerDeps, ctx: JobContext) {
   }
   ctx.progress(0.2, 1, `drawing ${jobs.length} frame(s)`);
   const done = jobs.length ? await ctx.waitFor(jobs.map((j) => j.id)) : [];
+  // The frames are reviewed before any video (docs/design/ai-review.md#how-a-review-runs)
+  await deps.services.aiReviews
+    .followUp(ctx.actor, ctx.job.projectId, 'storyboard')
+    .catch((err) => ctx.log.warn({ err: (err as Error).message }, 'could not queue the storyboard review'));
   return {
     scenes: scenes.length,
     planned: plans.length,

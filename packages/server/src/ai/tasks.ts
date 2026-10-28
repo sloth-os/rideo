@@ -44,12 +44,19 @@ import {
   type ScreenplayGenerateInput,
   type ScreenplayGenerateOutput,
   ScreenplayGenerateOutputSchema,
+  type ScreenplayReviewInput,
+  type ScreenplayReviseInput,
+  type ScreenplayReviseOutput,
+  ScreenplayReviseOutputSchema,
   type SfxPlanInput,
   type SfxPlanOutput,
   SfxPlanOutputSchema,
   type SoundCheckInput,
   type SoundCheckOutput,
   SoundCheckOutputSchema,
+  type StageReviewOutput,
+  StageReviewOutputSchema,
+  type StoryboardSceneReviewInput,
   TAKE_AUDIO_LABEL,
   TAKE_VIDEO_LABEL,
   type ThumbnailPickInput,
@@ -229,6 +236,45 @@ Then issues about dialogue and sound only, most severe first: "shot" (the shot's
 Then recommendations about dialogue and sound only: "shot" when a shot should be generated again ("action": {"kind":"regenerate_shot", ...} with only the fields that change), otherwise {"kind":"note"}; "priority" 1–3.
 Return only JSON: {"scores":{"dialogue":7,"sound":6},"summary":"...","strengths":["..."],"transcript":[{"time":1.2,"speaker":"Name","text":"..."}],"issues":[{"shot":0,"time":3.5,"dimension":"dialogue","severity":"major","title":"...","detail":"..."}],"recommendations":[{"shot":0,"dimension":"dialogue","priority":1,"title":"...","detail":"...","action":{"kind":"regenerate_shot"}}]}`,
 
+  'screenplay.review': `rideo-task: screenplay.review
+You are a script editor and an AI film producer reviewing a screenplay before any picture is generated, to catch problems while they are cheap to fix. The film will be generated shot by shot by an AI video model; "video" says what it renders well and badly and how long its shots are. You get the brief, the screenplay (the outline of the whole film and the scenes written so far, each with its "number"), the cast, the places and the props.
+Score each dimension 0–10 (10 = ready to shoot, 7 = good with small fixes, 5 = clear problems, below 4 = must be rewritten):
+- story: an arc (setup, inciting incident, complications, crisis, climax, resolution); every scene has a goal, an obstacle and a turn; what is set up pays off.
+- character: the characters want something, change, and differ from each other.
+- dialogue: natural, short enough to be spoken within one shot, at the film's level ("brief.dialogueLevel", a CEFR level, when given) and in each character's voice.
+- pacing: the beats fit "brief.targetDurationSec"; no scene overstays or rushes its turn.
+- visual: the story is told in actions a camera can see, not in thoughts or narration.
+- continuity: every scene states its time of day, weather, light and what each character wears and carries; props keep their state from scene to scene.
+- feasibility: the video model can film it: two or three characters in a scene at most, simple clear actions, no crowds or background people (none at all when "brief.castOnly"), no on-screen text, no fine hand work or mechanical handling (boarding a lift, putting on equipment, tying, buckling, operating machines), no quick repeated motion, nothing in "video.weaknesses".
+- brief: it follows the brief: the named characters, the place, the tone, every constraint it states.
+List the issues, most severe first: "scene" (its number, when it is about one), "dimension", "severity" ("critical": the film cannot be made or breaks the brief; "major": clearly visible; "minor"), "title", "detail".
+Then the recommendations, most important first: "scene", "dimension", "priority" (1 = must fix before the cast is made, 2 = should, 3 = could), "title", "detail", and an "action": {"kind":"revise_scene","instruction":"what the writer must change in that scene"} for a scene, {"kind":"revise_outline","instruction":"what must change in the outline"}, or {"kind":"note"}. An instruction is concrete enough for a writer to follow without reading the review.
+Be honest and specific; praise only what deserves it ("strengths").
+Return only JSON: {"scores":{"story":7,"character":7,"dialogue":7,"pacing":7,"visual":7,"continuity":7,"feasibility":7,"brief":7},"summary":"...","strengths":["..."],"issues":[{"scene":2,"dimension":"feasibility","severity":"major","title":"...","detail":"..."}],"recommendations":[{"scene":2,"dimension":"feasibility","priority":1,"title":"...","detail":"...","action":{"kind":"revise_scene","instruction":"..."}}]}`,
+
+  'screenplay.revise': `rideo-task: screenplay.revise
+You are the screenwriter of this film, revising it after a script editor's review. "instructions" lists what to change, for a scene (by its "scene" number) or for the outline. Change only what the instructions ask; keep every other scene, line and beat as it is, and keep the cast's names, the places and the props (name a new place or prop only when an instruction needs one).
+Rules:
+- Rewrite each named scene in full, with its "number": heading, location (a name from "places", or a new one), timeOfDay, continuity (the state at the scene's start: time of day, weather, light, what each character wears and carries, where they are), summary, action, dialogue (lines by the cast only; at the film's level "brief.dialogueLevel" when given; short enough for one shot), characters, props, estDurationSec close to the scene's.
+- For the outline, return only the beats that change, by "index": title, summary, purpose, estDurationSec; together the beats still cover "brief.targetDurationSec".
+- Keep the film makeable by an AI video model: few characters per scene, simple clear actions, no crowds, no on-screen text, no fine hand work or mechanical handling.
+Return only JSON: {"scenes":[{"number":2,"heading":"EXT. PLACE - DAY","location":"...","timeOfDay":"...","continuity":"...","summary":"...","action":"...","dialogue":[{"character":"Name","line":"..."}],"characters":["Name"],"props":["prop name"],"estDurationSec":60}],"outline":[{"index":3,"summary":"...","estDurationSec":40}],"locations":[{"name":"...","description":"..."}],"props":[{"name":"...","description":"..."}]}`,
+
+  'storyboard.review': `rideo-task: storyboard.review
+You are a director of photography and a script supervisor reviewing the storyboard of one scene of an AI-generated film before its video is generated, to catch what is cheap to fix on a still. You get the film, the scene, its neighbours, the cast's looks and every shot in order (its "index", label, length, camera, description, action, who is in it, its lines), each followed by its frame ("Frame <label>:"). The video model will animate each frame for the shot's length; "video" says what it renders well and badly.
+Score each dimension 0–10 (10 = ready to shoot, 7 = good with small fixes, 5 = clear problems, below 4 = must be redone):
+- composition: each frame reads at once: framing, staging, the subject where the eye goes.
+- continuity: across the frames: screen direction (the 180-degree rule), positions, wardrobe, props and their state, light and time of day.
+- character: the cast looks like its description in every frame, and nobody else is in frame when "film.castOnly".
+- coverage: an establishing shot, shot and reverse shot with matching eyelines, reactions, inserts; varied framing.
+- storytelling: the frames tell the scene's beats in order.
+- feasibility: each frame can be animated for its shot: clear poses, one simple action, nothing in "video.weaknesses".
+- pacing: each shot's length fits its action and its lines (about two words a second, plus a beat).
+List the issues: "shot" (its index), "dimension", "severity" ("critical", "major", "minor"), "title", "detail" (what you see in the frame).
+Then the recommendations, most important first: "shot" when it is about one, "dimension", "priority" (1 = must fix before video, 2 = should, 3 = could), "title", "detail", and an "action": {"kind":"redraw_board", with only the fields that change: "description" (the revised first frame), "action", "framing", "movement", "characters" (the names in frame), "durationSec"} to draw that frame again, {"kind":"replan_scene","direction":"what the new shot plan must do"} when the scene's shots must be planned again, or {"kind":"note"}.
+Be honest and specific; praise only what deserves it.
+Return only JSON: {"scores":{"composition":7,"continuity":7,"character":7,"coverage":7,"storytelling":7,"feasibility":7,"pacing":7},"summary":"...","strengths":["..."],"issues":[{"shot":2,"dimension":"continuity","severity":"major","title":"...","detail":"..."}],"recommendations":[{"shot":2,"dimension":"continuity","priority":1,"title":"...","detail":"...","action":{"kind":"redraw_board","description":"..."}}]}`,
+
   'frame.caption': `rideo-task: frame.caption
 You describe one frame of a film project so people can find it later by searching in words. Write one sentence of at most 300 characters: who is in it, where it is, what is happening, the shot size (extreme close-up, close-up, medium, wide or extreme wide) and the light (daylight, night, dusk, dawn, interior...), with notable colours and objects.
 - "known" lists who and what this frame's source shows, with how they look: use their names when you see them.
@@ -277,6 +323,7 @@ Rules:
 - A shot is one continuous camera setup. "description": what the first frame shows (who, where, poses, framing). "action": how things move during the shot, as cause and effect with direction and contact (e.g. "Rosie carves left across the slope, snow spraying from the uphill edge of her skis"); describe a gesture, never count repetitions. "endState": what the last frame shows (positions, poses, what is in hand).
 - Film grammar: open the scene (or a new place) with an establishing wide shot; play a conversation as shot and reverse shot with matching eyelines; add reaction shots after important lines and inserts for props; keep the 180-degree rule and screen direction (a character who leaves frame right enters the next shot from the left); no more than two consecutive cuts with the same framing; at most one camera move per shot, motivated by the action.
 - "lensMm": a real focal length for the framing: 18–28 for wide shots, 35–50 for medium, 85–135 for close-ups.
+- Plan shots the video model can render: no tight insert it must hold (the camera widens: show the prop in use in a medium shot instead), no hands handling small objects, no mechanical handling (boarding a lift, putting on equipment), no crowds or readable text.
 - Keep the scene's time of day, weather and light ("scene.timeOfDay", "scene.continuity") in every shot. When the scene continues "previousShot" (the end of the previous scene), start from it.
 - Dialogue: put each line in the shot where it is spoken, keep the words of the scene's lines, and give one shot at most "maxWordsPerShot" words in total; spread a longer exchange over several shots (shot and reverse shot). When "dialogueLevel" is given, any line you write keeps to "dialogueGuidance".
 - "characters": names of the characters visible in the shot (only from the cast list). "props": names of the scene's props visible in the shot (only from scene.props).
@@ -685,6 +732,38 @@ export class LlmTasks {
       })),
       temperature: 0.2,
       maxTokens: 6000,
+      signal,
+    });
+  }
+
+  /** The screenplay before the cast is made (docs/design/ai-review.md#how-a-review-runs). */
+  reviewScreenplay(input: ScreenplayReviewInput, signal?: AbortSignal): Promise<StageReviewOutput> {
+    return this.run('screenplay.review', StageReviewOutputSchema, input, {
+      temperature: 0.2,
+      maxTokens: 8000,
+      signal,
+    });
+  }
+
+  /** The screenplay rewritten where a review asks (docs/design/ai-review.md#how-a-review-runs). */
+  reviseScreenplay(input: ScreenplayReviseInput, signal?: AbortSignal): Promise<ScreenplayReviseOutput> {
+    return this.run('screenplay.revise', ScreenplayReviseOutputSchema, input, {
+      temperature: 0.6,
+      maxTokens: 12000,
+      signal,
+    });
+  }
+
+  /** One storyboarded scene, its frames attached in shot order (the vision model). */
+  reviewStoryboardScene(
+    input: StoryboardSceneReviewInput,
+    frames: { label: string; data: Buffer }[],
+    signal?: AbortSignal,
+  ): Promise<StageReviewOutput> {
+    return this.run('storyboard.review', StageReviewOutputSchema, input, {
+      images: frames.map((f) => ({ label: `Frame ${f.label}:`, data: f.data, mime: 'image/png' })),
+      temperature: 0.2,
+      maxTokens: 8000,
       signal,
     });
   }

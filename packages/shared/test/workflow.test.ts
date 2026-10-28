@@ -23,6 +23,8 @@ describe('workflow evaluation', () => {
       'screenplay.hasScenes',
       'characters.nonEmpty',
       'screenplay.outlineCoversTarget',
+      // the AI review is on by default (docs/design/ai-review.md#the-gates)
+      'screenplay.reviewPassed',
     ]);
   });
 
