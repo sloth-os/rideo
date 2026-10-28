@@ -352,6 +352,21 @@ export const SceneFeedbackSchema = z.object({
 });
 export type SceneFeedback = z.infer<typeof SceneFeedbackSchema>;
 
+/** A shot whose take in the cut changed since the previous feedback (docs/design/feedback.md#what-changed-since-the-last-feedback). */
+export const FeedbackRetakeSchema = z.object({
+  clipId: IdSchema,
+  shotId: IdSchema,
+  /** "C3·S2" */
+  shot: z.string().max(20),
+  /** The previous feedback's recommendation whose job made the new take, while it is recorded. */
+  recommendationId: z.string().max(20).nullable().default(null),
+  /** The take in each export, and the issues pinned to the shot in each feedback, weighted by severity. */
+  before: z.object({ takeId: IdSchema, issues: z.number().nonnegative() }),
+  after: z.object({ takeId: IdSchema, issues: z.number().nonnegative() }),
+  outcome: z.enum(['better', 'same', 'worse']),
+});
+export type FeedbackRetake = z.infer<typeof FeedbackRetakeSchema>;
+
 export const FeedbackSchema = z.object({
   id: IdSchema,
   exportId: IdSchema,
@@ -378,6 +393,9 @@ export const FeedbackSchema = z.object({
   retrospective: z.array(RetrospectiveItemSchema).max(60).default([]),
   signals: FeedbackSignalsSchema.default(FeedbackSignalsSchema.parse({})),
   report: MediaRefSchema.nullable().default(null),
+  /** The feedback `retakes` compares with: the project's latest succeeded one of another export. */
+  previousFeedbackId: IdSchema.nullable().default(null),
+  retakes: z.array(FeedbackRetakeSchema).max(500).default([]),
 });
 export type Feedback = z.infer<typeof FeedbackSchema>;
 

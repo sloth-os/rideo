@@ -50,6 +50,7 @@ describe('MCP server', () => {
       'translation_update',
       'subtitles_get',
       'clip_generate',
+      'clip_review',
       'clip_approve',
       'timeline_apply',
       'history_restore',

@@ -1,6 +1,7 @@
 import {
   FEEDBACK_DIMENSIONS,
   type FeedbackDimension,
+  type FeedbackRetake,
   type FeedbackScores,
   type FeedbackShotSpan,
   type FeedbackSignals,
@@ -24,6 +25,8 @@ export interface RunFacts {
   signals: FeedbackSignals;
   scores: FeedbackScores;
   spans: FeedbackShotSpan[];
+  /** The shots with a new take since the previous feedback (docs/design/feedback.md#what-changed-since-the-last-feedback). */
+  retakes?: FeedbackRetake[];
 }
 
 interface Rule {
@@ -306,6 +309,27 @@ export const RETROSPECTIVE_RULES: Rule[] = [
         title: `${d.missing.length} of ${d.lines} lines are not heard in the film`,
         detail:
           'The video model did not voice them clearly. Apply the recommendations to generate those shots again, and turn the quality checks on with an audio-visual model so the sound check catches them while generating.',
+      };
+    },
+  },
+  {
+    id: 'retake_results',
+    area: 'quality',
+    check: ({ retakes }) => {
+      if (!retakes?.length) return null;
+      const n = (o: FeedbackRetake['outcome']) => retakes.filter((r) => r.outcome === o);
+      const [better, same, worse] = [n('better'), n('same'), n('worse')];
+      const names = (rs: FeedbackRetake[]) =>
+        `${rs
+          .slice(0, 8)
+          .map((r) => r.shot)
+          .join(', ')}${rs.length > 8 ? '…' : ''}`;
+      return {
+        title: `${retakes.length} shot(s) have a new take since the last feedback: ${better.length} better, ${same.length} the same, ${worse.length} worse`,
+        detail:
+          worse.length || same.length
+            ? `${worse.length ? `Worse now: ${names(worse)}. ` : ''}${same.length ? `No better: ${names(same)}. ` : ''}A shot that fails the same way twice needs a new plan (re-plan the scene, or describe what goes wrong in the shot's negative prompt), not another attempt.`
+            : 'Every new take fixed what the previous feedback saw.',
       };
     },
   },

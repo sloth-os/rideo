@@ -26,9 +26,9 @@ test('idea → screenplay → locked cast → pilot → production → edit → 
   await expect(page).toHaveURL(/\/p\/prj_[0-9a-z]+\/story$/);
   const pid = projectIdFrom(page.url());
   await api.shrink(pid);
-  // The journey keeps its AI reviews (docs/design/ai-review.md)
+  // The journey keeps its AI reviews, the scenes' included (docs/design/ai-review.md)
   await api.call('PATCH', `/projects/${pid}`, {
-    settings: { review: { screenplay: true, storyboard: true } },
+    settings: { review: { screenplay: true, storyboard: true, scenes: true } },
   });
 
   // Screenplay: written, reviewed, approved once its review passes

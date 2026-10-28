@@ -330,3 +330,5 @@ export function carriedFixes(
 ): StageRecommendation[] {
   return (previous?.recommendations ?? []).filter((r) => r.status === 'applied');
 }
+
+export * from './clip-review';

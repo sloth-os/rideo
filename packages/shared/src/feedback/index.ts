@@ -11,6 +11,7 @@ import {
   type FeedbackEstimate,
   type FeedbackIssue,
   type FeedbackRecommendation,
+  type FeedbackRetake,
   type FeedbackScores,
   type FeedbackSignals,
   HEARD_DIMENSION_IDS,
@@ -50,6 +51,37 @@ export interface FeedbackShotSpan {
 
 export function shotLabel(clipIndex: number, shotIndex: number): string {
   return `C${clipIndex + 1}·S${shotIndex + 1}`;
+}
+
+/**
+ * A scene's selected takes one after another, before the edit (docs/design/ai-review.md#scenes-before-the-edit): each
+ * whole take is its own clean part. Shots without a selected take that has a video are left out.
+ */
+export function takeSpans(clip: Clip): FeedbackShotSpan[] {
+  let t = 0;
+  return [...clip.shots]
+    .sort((a, b) => a.index - b.index)
+    .flatMap((s) => {
+      const take = s.takes.find((x) => x.id === s.selectedTakeId);
+      if (!take?.video) return [];
+      const len = Math.max(0.1, take.durationSec ?? take.video.durationSec ?? s.durationSec);
+      const start = round3(t);
+      const end = round3(t + len);
+      t += len;
+      return [
+        {
+          clipId: clip.id,
+          shotId: s.id,
+          takeId: take.id,
+          label: shotLabel(clip.index, s.index),
+          clipIndex: clip.index,
+          shotIndex: s.index,
+          start,
+          end,
+          clean: { start, end },
+        },
+      ];
+    });
 }
 
 /** The takes of the cut's primary track that belong to a known clip and shot, in time order. */
@@ -724,6 +756,17 @@ export function feedbackMarkdown(
   lines.push('');
   if (fb.summary) lines.push('## Summary', '', fb.summary, '');
   if (fb.strengths.length) lines.push('## Strengths', '', ...fb.strengths.map((s) => `- ${s}`), '');
+  if (fb.retakes.length) {
+    const c = retakeCounts(fb.retakes);
+    lines.push(
+      '## What changed since the last feedback',
+      '',
+      `${fb.retakes.length} shot(s) have a new take: ${c.better} better, ${c.same} the same, ${c.worse} worse (issues weighted critical 3, major 2, minor 1).`,
+      '',
+      ...fb.retakes.map((r) => `- ${r.shot}: ${r.before.issues} → ${r.after.issues} (${r.outcome})`),
+      '',
+    );
+  }
   if (fb.recommendations.length) {
     lines.push('## Recommendations', '');
     for (const r of fb.recommendations)
@@ -861,6 +904,62 @@ export function takePassesChecks(
   return (
     isAcceptable(takeState(take, shot, characters, elements)) && take.consistency.quality?.passed !== false
   );
+}
+
+/** How much an issue weighs when shots are compared before and after a new take. */
+const SEVERITY_WEIGHT: Record<FeedbackIssue['severity'], number> = { critical: 3, major: 2, minor: 1 };
+
+function shotWeight(issues: readonly Pick<FeedbackIssue, 'shotId' | 'severity'>[], shotId: string): number {
+  return issues.reduce((n, i) => n + (i.shotId === shotId ? SEVERITY_WEIGHT[i.severity] : 0), 0);
+}
+
+/**
+ * The shots whose take in the cut changed since the previous feedback, each with the issues pinned to it then and now
+ * (docs/design/feedback.md#what-changed-since-the-last-feedback). The takes come from the two exports' shots, so a
+ * new take counts whoever made it, and after a feedback was run again.
+ */
+export function compareRetakes(input: {
+  previous: Pick<Feedback, 'issues' | 'recommendations'>;
+  /** The previous export's shots. */
+  before: readonly FeedbackShotSpan[];
+  /** This export's shots. */
+  after: readonly FeedbackShotSpan[];
+  /** This feedback's issues. */
+  issues: readonly FeedbackIssue[];
+  clips: Record<string, Clip>;
+}): FeedbackRetake[] {
+  const was = new Map<string, string>();
+  for (const s of input.before) if (!was.has(s.shotId)) was.set(s.shotId, s.takeId);
+  const out: FeedbackRetake[] = [];
+  const seen = new Set<string>();
+  for (const s of input.after) {
+    if (seen.has(s.shotId)) continue;
+    seen.add(s.shotId);
+    const old = was.get(s.shotId);
+    if (!old || old === s.takeId) continue;
+    const take = input.clips[s.clipId]?.shots
+      .find((x) => x.id === s.shotId)
+      ?.takes.find((t) => t.id === s.takeId);
+    const rec = take?.jobId ? input.previous.recommendations.find((r) => r.jobId === take.jobId) : undefined;
+    const before = shotWeight(input.previous.issues, s.shotId);
+    const after = shotWeight(input.issues, s.shotId);
+    out.push({
+      clipId: s.clipId,
+      shotId: s.shotId,
+      shot: s.label,
+      recommendationId: rec?.id ?? null,
+      before: { takeId: old, issues: before },
+      after: { takeId: s.takeId, issues: after },
+      outcome: after < before ? 'better' : after > before ? 'worse' : 'same',
+    });
+  }
+  return out;
+}
+
+/** How many shots with a new take got better, stayed the same or got worse. */
+export function retakeCounts(retakes: readonly Pick<FeedbackRetake, 'outcome'>[]) {
+  const count = (o: FeedbackRetake['outcome']) => retakes.filter((r) => r.outcome === o).length;
+  return { better: count('better'), same: count('same'), worse: count('worse') };
 }
 
 /** What became of an applied shot fix (docs/design/feedback.md#when-a-fix-does-not-pass). */

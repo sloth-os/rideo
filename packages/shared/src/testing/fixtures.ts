@@ -239,6 +239,7 @@ export function clip(overrides: Partial<Clip> = {}): Clip {
     approvedAt: null,
     approvedBy: null,
     notes: '',
+    review: null,
     ...overrides,
   };
 }

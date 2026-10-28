@@ -4,6 +4,7 @@ import {
   applyOps,
   assembleFeedback,
   castIdsOf,
+  compareRetakes,
   cutPoints,
   dialogueDelivery,
   emptyTimeline,
@@ -23,6 +24,7 @@ import {
   overallScore,
   parsePrices,
   parseSignalLog,
+  retakeCounts,
   rushedLines,
   type SceneReview,
   type Shot,
@@ -791,5 +793,106 @@ describe('what a fix costs (docs/design/feedback.md#what-a-fix-costs)', () => {
     expect(fixEstimate(null, docs, prices, 1)).toBeNull();
     expect(fixEstimate({ ...regenerate, shotId: 'sht_0000000000zzzzzz' }, docs, prices, 1)).toBeNull();
     expect(meanAttempts({})).toBe(1);
+  });
+});
+
+describe('what changed since the last feedback (docs/design/feedback.md#what-changed-since-the-last-feedback)', () => {
+  it('compares each shot with a new take in the cut, then and now, weighted by severity', () => {
+    const { c1, clips, timeline } = fixture();
+    const before = shotSpans(timeline, clips);
+    // Shot 2 and shot 3 of C1 get new takes; shot 2's from the previous feedback's recommendation
+    const fixedShot = c1.shots[1]!;
+    const sameShot = c1.shots[2]!;
+    const fix = f.take({ jobId: 'job_0000000000dddd' });
+    const other = f.take();
+    fixedShot.takes.push(fix);
+    sameShot.takes.push(other);
+    const after = before.map((span) =>
+      span.shotId === fixedShot.id
+        ? { ...span, takeId: fix.id }
+        : span.shotId === sameShot.id
+          ? { ...span, takeId: other.id }
+          : span,
+    );
+    const issue = (shotId: string, severity: 'critical' | 'major' | 'minor', id: string) => ({
+      id,
+      dimension: 'continuity' as const,
+      severity,
+      title: 'Ball changes paws',
+      detail: '',
+      start: 0,
+      end: 1,
+      clipId: c1.id,
+      shotId,
+      shot: null,
+      source: 'vision' as const,
+    });
+    const rec = FeedbackRecommendationSchema.parse({
+      id: 'r4',
+      priority: 1,
+      dimension: 'continuity',
+      title: 'Fix it',
+      action: { kind: 'regenerate_shot', clipId: c1.id, shotId: fixedShot.id },
+      status: 'open',
+      jobId: 'job_0000000000dddd',
+    });
+    const retakes = compareRetakes({
+      previous: {
+        issues: [
+          issue(fixedShot.id, 'critical', 'i1'),
+          issue(fixedShot.id, 'minor', 'i2'),
+          issue(sameShot.id, 'major', 'i3'),
+        ],
+        recommendations: [rec],
+      },
+      before,
+      after,
+      issues: [issue(fixedShot.id, 'minor', 'i1'), issue(sameShot.id, 'major', 'i2')],
+      clips,
+    });
+    expect(retakes).toEqual([
+      {
+        clipId: c1.id,
+        shotId: fixedShot.id,
+        shot: 'C1·S2',
+        recommendationId: 'r4',
+        before: { takeId: before[1]!.takeId, issues: 4 },
+        after: { takeId: fix.id, issues: 1 },
+        outcome: 'better',
+      },
+      {
+        clipId: c1.id,
+        shotId: sameShot.id,
+        shot: 'C1·S3',
+        recommendationId: null,
+        before: { takeId: before[2]!.takeId, issues: 2 },
+        after: { takeId: other.id, issues: 2 },
+        outcome: 'same',
+      },
+    ]);
+    expect(retakeCounts(retakes)).toEqual({ better: 1, same: 1, worse: 0 });
+    // Nothing changed: nothing to compare
+    expect(
+      compareRetakes({
+        previous: { issues: [], recommendations: [] },
+        before,
+        after: before,
+        issues: [],
+        clips,
+      }),
+    ).toEqual([]);
+    // The report says it
+    const fb = FeedbackSchema.parse({
+      id: 'fbk_01m5qvveq6y41x74',
+      exportId: 'exp_01m5qvveq6y41x74',
+      status: 'succeeded',
+      createdAt: '2026-10-28T00:00:00.000Z',
+      updatedAt: '2026-10-28T00:00:00.000Z',
+      retakes,
+    });
+    const md = feedbackMarkdown(fb, { title: 'T' });
+    expect(md).toContain('## What changed since the last feedback');
+    expect(md).toContain('2 shot(s) have a new take: 1 better, 1 the same, 0 worse');
+    expect(md).toContain('- C1·S2: 4 → 1 (better)');
   });
 });

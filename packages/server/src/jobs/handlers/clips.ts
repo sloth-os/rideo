@@ -16,6 +16,7 @@ import {
   planShotGroups,
   promptVersionOf,
   type Screenplay,
+  shotsWithoutTakes,
   sortedClips,
   TARGET_REACHED_RATIO,
   takeState,
@@ -117,7 +118,7 @@ export async function clipPlan(deps: HandlerDeps, ctx: JobContext) {
     (tx) => {
       const existing = tx.list<Clip>('clips/').find((c) => c.sceneId === sceneId);
       const next: Clip = existing
-        ? { ...existing, shots, status: 'planned', approvedAt: null, approvedBy: null }
+        ? { ...existing, shots, status: 'planned', approvedAt: null, approvedBy: null, review: null }
         : {
             id: newId('clip'),
             index: scene.index,
@@ -128,6 +129,7 @@ export async function clipPlan(deps: HandlerDeps, ctx: JobContext) {
             approvedAt: null,
             approvedBy: null,
             notes: '',
+            review: null,
           };
       tx.set(docPath.clip(next.id), next);
       return next;
@@ -234,6 +236,24 @@ export async function clipGenerate(deps: HandlerDeps, ctx: JobContext) {
       'gateway_error',
       `every shot of clip ${clip.index + 1} failed: ${failed[0]?.error?.message ?? 'unknown error'}`,
     );
+  }
+  // The scene watched before the edit and the shots that break it made again, so the cut is assembled from the fixed
+  // takes (docs/design/ai-review.md#scenes-before-the-edit); a review that fails never fails the clip
+  const made = (await docsFor(deps, ctx)).clips[clipId];
+  if (
+    made &&
+    made.shots.length >= 2 &&
+    !shotsWithoutTakes(made).length &&
+    settings.review.scenes &&
+    deps.config.gateway.configured
+  ) {
+    const review = await ctx.spawn('clip.review', { clipId }, { dedupeKey: `review:${clipId}` });
+    const [done] = await ctx.waitFor([review.id]);
+    if (done?.status !== 'succeeded')
+      ctx.log.warn(
+        { clipId, err: done?.error?.message?.slice(0, 300) },
+        'the scene review did not finish; the clip goes on',
+      );
   }
   return { generated: results.length - failed.length, failed: failed.length };
 }

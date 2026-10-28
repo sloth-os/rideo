@@ -50,6 +50,7 @@ import { useProjectRole } from '../../lib/auth';
 import { NO_ELEMENTS, useProject } from '../../store/project';
 import { reportError, useUi } from '../../store/ui';
 import { openThreads, useReviewDialog } from '../review/ReviewHost';
+import { ClipReviewPanel } from './ClipReviewPanel';
 import { CompareDialog, DirectPanel } from './DirectPanel';
 import { LineageBadge, MultiShotBadge, TakeActions } from './TakeActions';
 
@@ -674,6 +675,7 @@ function ClipCard({
             ))}
           </ul>
         ) : null}
+        <ClipReviewPanel clip={clip} projectId={projectId} />
         {[...clip.shots]
           .sort((a, b) => a.index - b.index)
           .map((s) => (

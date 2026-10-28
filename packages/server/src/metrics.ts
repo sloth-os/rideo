@@ -197,6 +197,25 @@ export class Metrics {
       'AI review recommendations applied (by a person or automatically) or dismissed, by stage, action and outcome',
     ),
   );
+  readonly clipReviews = this.add(
+    new Counter(
+      'rideo_clip_reviews_total',
+      'Scenes watched before the edit, by outcome (clean: nothing to fix, fixed: fixes applied, error)',
+    ),
+  );
+  readonly clipReviewScore = this.add(
+    new Histogram(
+      'rideo_clip_review_score',
+      'Overall scores of scenes watched before the edit (0-10), by round (1, or 2 after the fixes)',
+      [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+    ),
+  );
+  readonly clipReviewFixes = this.add(
+    new Counter(
+      'rideo_clip_review_fixes_total',
+      'Shots a scene review generated again, by outcome (fixed, not_fixed, failed)',
+    ),
+  );
   readonly httpSeconds = this.add(
     new Histogram(
       'rideo_http_request_seconds',

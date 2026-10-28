@@ -438,6 +438,28 @@ describe('proxy LLM formats', () => {
     );
     expect(seen.scores).not.toHaveProperty('dialogue');
     expect(seen.transcript).toEqual([]);
+    // Before the edit (docs/design/ai-review.md#mock-gateway): a regeneration is urgent only for a shot with a problem
+    const takes = { ...scene, listening: false, stage: 'takes', video: undefined };
+    const clean = FeedbackSceneOutputSchema.parse(await chat('feedback.scene', takes));
+    expect(clean.recommendations.find((r) => r.action?.kind === 'regenerate_shot')).toMatchObject({
+      priority: 2,
+    });
+    const broken = {
+      ...takes,
+      shots: takes.shots.map((x) =>
+        x.index === 1 ? { ...x, description: 'Sammy holds the ball. Continuity break.' } : x,
+      ),
+    };
+    const seenBroken = FeedbackSceneOutputSchema.parse(await chat('feedback.scene', broken));
+    expect(seenBroken.scores.continuity).toBe(4);
+    expect(seenBroken.issues).toMatchObject([{ shot: 1, dimension: 'continuity', severity: 'major' }]);
+    const fix = seenBroken.recommendations.find((r) => r.action?.kind === 'regenerate_shot')!;
+    expect(fix).toMatchObject({ shot: 1, priority: 1 });
+    // The revision drops the break and keeps who is in frame
+    expect(fix.action).toMatchObject({
+      description: 'Sammy holds the ball. Steady camera, feet planted on the ground.',
+    });
+    expect(fix.action).not.toHaveProperty('characters');
   });
 
   it('reviews a screenplay, rewrites the scene it cannot film, and reviews storyboard frames', async () => {

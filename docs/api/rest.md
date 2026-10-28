@@ -271,7 +271,8 @@ review does not show is `403 forbidden`.
 | Method | Path | Body | Result |
 |---|---|---|---|
 | POST | `/api/projects/:id/clips/plan` | `{sceneId}` | `Job` |
-| POST | `/api/projects/:id/clips/:clipId/generate` | – | `Job` (`clip.generate`: `shot.generate` per shot, or `shot.group` for consecutive shots of a multi-shot model unless `settings.generation.multiShot` is `off`, [multi-shot](../design/multi-shot.md)) |
+| POST | `/api/projects/:id/clips/:clipId/generate` | – | `Job` (`clip.generate`: `shot.generate` per shot, or `shot.group` for consecutive shots of a multi-shot model unless `settings.generation.multiShot` is `off`, [multi-shot](../design/multi-shot.md); then the scene review) |
+| POST | `/api/projects/:id/clips/:clipId/review` | `{fix?: boolean}` | `Job` (`clip.review`: the scene's takes watched and, unless `fix: false`, its priority 1 regenerations applied, [scenes before the edit](../design/ai-review.md#scenes-before-the-edit)); `422` when a shot has no take |
 | PATCH | `/api/projects/:id/clips/:clipId/shots/:shotId` | shot fields, including `camera.{lensMm, aperture, move}`, `startFrame`, `endFrame`, `motionReference` (`mode`: `motion`, `pose`, `camera` or `performance`), `seed` ([directing](../design/directing.md)) | `Clip` |
 | GET | `/api/projects/:id/performance` | – | `{model, available}`: the model performance takes use ([performance](../design/performance.md)); a regenerate or variations of a performance shot without one: `422 performance_unavailable` |
 | POST | `/api/projects/:id/clips/:clipId/shots/:shotId/variations` | `{count: 2–4}` | `Job[]` (`shot.generate` with `variation`) |

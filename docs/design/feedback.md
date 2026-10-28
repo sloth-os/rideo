@@ -118,6 +118,10 @@ type Feedback = {
                    title: string; detail: string; source: 'rule' | 'vision'; rule?: string }[];
   signals: FeedbackSignals;                   // the measurements of step 1
   report: MediaRef | null;                    // media/reports/<exportId>-feedback.md
+  previousFeedbackId: string | null;          // the feedback `retakes` compares with
+  retakes: { clipId: string; shotId: string; shot: string; recommendationId: string | null;
+             before: { takeId: string; issues: number }; after: { takeId: string; issues: number };
+             outcome: 'better' | 'same' | 'worse' }[];
 };
 ```
 
@@ -153,6 +157,26 @@ old one had a stray cut). Which of two flawed takes is better is a person's call
 
 The outcome is derived from the documents (`fixOutcome`, shared), so the REST API, MCP and the panel agree, and a
 take a person put in the cut later shows as theirs.
+
+### What changed since the last feedback
+
+A fix passes the gate's checks, but whether it fixed what the feedback saw shows only in the next export. The swimming
+demo's 23 priority 1 fixes all passed their checks and went into the cut, and the next feedback scored 6.5 against
+6.2 with continuity unchanged, with nothing to say which shots got better. So when a feedback is written, every shot
+whose take in the cut changed since the project's previous feedback (the latest succeeded one of another export) is
+compared (`compareRetakes`, shared, deterministic). Its takes come from the two exports' render timelines, so this
+holds whether the new take came from a fix, a scene review or a person, and after a feedback was run again:
+
+| Field | What it is |
+|---|---|
+| `before`, `after` | the take in each export, and the issues pinned to the shot in each feedback, weighted by severity (critical 3, major 2, minor 1) |
+| `recommendationId` | the previous feedback's recommendation whose job made the new take, when it is still recorded |
+| `outcome` | `better` (`after` < `before`), `worse` (`after` > `before`) or `same` |
+
+The results are on the document (`retakes`, with `previousFeedbackId`), in the report (*What changed since the last
+feedback*), in the retrospective (rule `retake_results`: how many shots with a new take got better, stayed the same or
+got worse, naming the worse ones) and on the panel under the scores (`23 shots have a new take since the last
+feedback: 15 better · 6 same · 2 worse`).
 
 ### What a fix costs
 
@@ -193,6 +217,7 @@ better. Rules are data (`RETROSPECTIVE_RULES`, server), each a predicate over th
 | `rushed_lines` | quality | lines faster than `WORDS_PER_SECOND` for their shot |
 | `undelivered_lines` | quality | lines of the script were not heard in the film (listening feedback) |
 | `target_missed` | quality | the film is more than 10% off its target length |
+| `retake_results` | quality | shots have a new take since the previous feedback: how many got better, stayed the same or got worse ([what changed since the last feedback](#what-changed-since-the-last-feedback)) |
 
 The film call adds lessons the rules cannot see (`source: vision`). The retrospective is part of the document and of
 the report, and the [insights](observability.md#insights) page lists it next to the run's numbers.

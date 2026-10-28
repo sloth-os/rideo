@@ -758,6 +758,11 @@ export interface FeedbackSceneInput {
   stripCount: number;
   /** The model hears the scene as a video with its sound (`feedback.listen`). */
   listening: boolean;
+  /**
+   * `takes`: the selected takes before the edit, a strip per whole take (docs/design/ai-review.md#scenes-before-the-edit);
+   * absent: the export's scene.
+   */
+  stage?: 'takes';
 }
 
 export interface FeedbackFilmInput {

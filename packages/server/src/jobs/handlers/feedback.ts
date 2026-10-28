@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import {
   assembleFeedback,
   compactIdentity,
+  compareRetakes,
   cutPoints,
   dialogueDelivery,
   docPath,
@@ -11,6 +12,7 @@ import {
   type Feedback,
   type FeedbackFilmInput,
   type FeedbackFilmOutput,
+  type FeedbackRetake,
   type FeedbackSceneInput,
   FeedbackSchema,
   type FeedbackShotSpan,
@@ -61,16 +63,18 @@ async function exportTimeline(deps: HandlerDeps, projectId: string, exp: Export)
   return t;
 }
 
-/** Three frames of a shot side by side, labelled by its place in the scene. */
-async function strip(
+/**
+ * Three frames of a shot side by side, from `range` of `file`: the shot's clean part in an export (a transition blends
+ * it with its neighbour, docs/design/feedback.md), or a whole take before the edit (docs/design/ai-review.md).
+ */
+export async function strip(
   deps: HandlerDeps,
   file: string,
-  span: FeedbackShotSpan,
+  range: { start: number; end: number },
   out: string,
   signal: AbortSignal,
 ): Promise<Buffer> {
-  // Within the shot's clean part: a transition blends it with its neighbour (docs/design/feedback.md)
-  const { start, end } = span.clean;
+  const { start, end } = range;
   const len = Math.max(0.1, end - start);
   const times = STRIP_AT.map((f) => Math.max(0, start + f * len));
   const args: string[] = [];
@@ -148,7 +152,7 @@ export function sceneInput(
   clipId: string,
   spans: FeedbackShotSpan[],
   neighbours: { previous: string | null; next: string | null },
-  signals: FeedbackSignals,
+  signals: Pick<FeedbackSignals, 'unexpectedCuts' | 'frozen' | 'black'>,
   listening = false,
 ): FeedbackSceneInput {
   const clip = docs.clips[clipId]!;
@@ -348,7 +352,7 @@ export async function exportFeedback(deps: HandlerDeps, ctx: JobContext) {
           for (const [i, span] of g.spans.entries())
             strips.push({
               label: `${i}: ${span.label} (${span.start.toFixed(1)}–${span.end.toFixed(1)} s)`,
-              data: await strip(deps, file, span, join(dir, `strip-${k}-${i}.jpg`), ctx.signal),
+              data: await strip(deps, file, span.clean, join(dir, `strip-${k}-${i}.jpg`), ctx.signal),
             });
           return deps.llm.feedbackScene(
             sceneInput(docs, g.clipId, g.spans, neighbours, signals),
@@ -475,6 +479,25 @@ export async function exportFeedback(deps: HandlerDeps, ctx: JobContext) {
         const estimate = fixEstimate(r.action, docs, deps.config.prices, attempts);
         return estimate ? { ...r, estimate } : r;
       });
+      // What changed since the last feedback: the shots with a new take in the cut, then and now
+      // (docs/design/feedback.md#what-changed-since-the-last-feedback)
+      const previous =
+        Object.values(docs.feedback)
+          .filter((f) => f.id !== feedbackId && f.exportId !== exportId && f.status === 'succeeded')
+          .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0] ?? null;
+      let retakes: FeedbackRetake[] = [];
+      const before = previous ? docs.exports[previous.exportId] : undefined;
+      if (previous && before) {
+        const then = await exportTimeline(deps, projectId, before).catch(() => null);
+        if (then)
+          retakes = compareRetakes({
+            previous,
+            before: shotSpans(then, docs.clips),
+            after: spans,
+            issues: assembled.issues,
+            clips: docs.clips,
+          });
+      }
       const retro = retrospective({
         docs,
         usage,
@@ -482,6 +505,7 @@ export async function exportFeedback(deps: HandlerDeps, ctx: JobContext) {
         signals,
         scores: assembled.scores,
         spans,
+        retakes,
       });
       const now = new Date().toISOString();
       const current = (await docsFor(deps, ctx)).feedback[feedbackId];
@@ -503,6 +527,8 @@ export async function exportFeedback(deps: HandlerDeps, ctx: JobContext) {
         retrospective: [...retro, ...assembled.retrospective].slice(0, 60),
         signals,
         report: null,
+        previousFeedbackId: previous?.id ?? null,
+        retakes,
       });
       const title = docs.screenplay?.title ?? docs.project.title;
       const markdown = feedbackMarkdown(feedback, {
@@ -541,6 +567,7 @@ export async function exportFeedback(deps: HandlerDeps, ctx: JobContext) {
           overall: feedback.overall,
           issues: feedback.issues.length,
           recommendations: feedback.recommendations.length,
+          retakes: retakes.length,
           scenesFailed: scenes.filter((s) => s.error).length,
           ms: Date.now() - started,
         },

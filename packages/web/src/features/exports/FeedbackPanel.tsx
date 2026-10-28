@@ -7,6 +7,7 @@ import {
   feedbackTime,
   fixOutcome,
   isTerminalJob,
+  retakeCounts,
 } from '@rideo/shared';
 import { Download, Eye, Lightbulb, ListChecks, Play, RefreshCw, Sparkles, X } from 'lucide-react';
 import { useRef, useState } from 'react';
@@ -46,6 +47,38 @@ function Heard({ fb }: { fb: Feedback }) {
       {fb.listened && fb.listener ? ` and heard by ${fb.listener}` : ''}
       {d?.lines ? ` · ${d.heard} of ${d.lines} lines heard` : ''}
     </p>
+  );
+}
+
+/**
+ * The shots with a new take since the previous feedback, then and now (docs/design/feedback.md#what-changed-since-the-last-feedback);
+ * with `list`, each shot's issues before and after.
+ */
+function Retakes({ fb, list }: { fb: Feedback; list?: boolean }) {
+  if (!fb.retakes.length) return null;
+  const c = retakeCounts(fb.retakes);
+  const n = fb.retakes.length;
+  return (
+    <div className="space-y-1">
+      <p className="text-[12px] text-muted" data-testid="feedback-retakes">
+        {n} shot{n === 1 ? ' has' : 's have'} a new take since the last feedback: {c.better} better · {c.same}{' '}
+        same · {c.worse} worse
+      </p>
+      {list ? (
+        <ul className="flex flex-wrap gap-1.5 text-[12px]" aria-label="New takes">
+          {fb.retakes.map((r) => (
+            <li key={r.shotId} data-testid="feedback-retake" data-outcome={r.outcome}>
+              <Badge
+                tone={r.outcome === 'better' ? 'success' : r.outcome === 'worse' ? 'danger' : 'neutral'}
+                title={`Issues weighted by severity: ${r.before.issues} before, ${r.after.issues} now`}
+              >
+                <span className="font-mono tabular-nums">{r.shot}</span> {r.before.issues} → {r.after.issues}
+              </Badge>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
   );
 }
 
@@ -160,6 +193,7 @@ export function FeedbackSummary({ e, projectId }: { e: Export; projectId: string
         <>
           <ScoreBars fb={fb} />
           <Heard fb={fb} />
+          <Retakes fb={fb} />
           {fb.summary ? <p className="line-clamp-3 text-[12px] text-muted">{fb.summary}</p> : null}
           <div className="flex flex-wrap gap-2">
             <Button
@@ -453,6 +487,7 @@ export function FeedbackDialog({
           />
         ) : null}
         <Heard fb={live} />
+        <Retakes fb={live} list />
         {live.summary ? <p className="text-[13px] break-words">{live.summary}</p> : null}
         {live.strengths.length ? (
           <ul className="list-inside list-disc text-[12px] text-muted">

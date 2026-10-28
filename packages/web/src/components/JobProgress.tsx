@@ -12,6 +12,7 @@ const LABEL: Record<string, string> = {
   'character.describe': 'Describing photo',
   'clip.plan': 'Planning shots',
   'clip.generate': 'Generating clip',
+  'clip.review': 'Watching the scene',
   'shot.generate': 'Generating shot',
   'batch.generate': 'Generating the film',
   'music.generate': 'Composing music',

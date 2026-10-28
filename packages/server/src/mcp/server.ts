@@ -776,6 +776,13 @@ function buildServer(studio: Studio): McpServer {
     (a, actor) => studio.clips.generateClip(actor, a.projectId, a.clipId),
   );
   tool(
+    'clip_review',
+    "Watch a scene's takes before the edit as the export feedback will, and generate again the shots that break it (job; fix=false only watches). The scores, issues and fixes land on the clip's `review` (docs/design/ai-review.md#scenes-before-the-edit).",
+    { projectId: PROJECT, clipId: z.string(), fix: z.boolean().optional() },
+    (a, actor) =>
+      studio.clips.reviewClip(actor, a.projectId, a.clipId, a.fix === undefined ? {} : { fix: a.fix }),
+  );
+  tool(
     'shot_update',
     'Edit a shot: description, action, camera (framing, movement, lensMm, aperture, move from camera_moves), characters, duration, continuity, prompt override, start/end frames, motion reference, seed (docs/design/directing.md).',
     {

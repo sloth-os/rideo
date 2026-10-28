@@ -423,6 +423,9 @@ export const api = {
   planClip: (id: string, sceneId: string, generate = false) =>
     request<Job>('POST', `${p(id)}/clips/plan`, { sceneId, generate }),
   generateClip: (id: string, clipId: string) => request<Job>('POST', `${p(id)}/clips/${clipId}/generate`),
+  /** The scene's takes watched before the edit (docs/design/ai-review.md#scenes-before-the-edit). */
+  reviewClip: (id: string, clipId: string, body: { fix?: boolean } = {}) =>
+    request<Job>('POST', `${p(id)}/clips/${clipId}/review`, body),
   updateShot: (id: string, clipId: string, shotId: string, body: Record<string, unknown>) =>
     request<Clip>('PATCH', `${p(id)}/clips/${clipId}/shots/${shotId}`, body),
   // Take edits and extensions (docs/design/take-editing.md)

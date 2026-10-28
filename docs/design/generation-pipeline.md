@@ -156,7 +156,8 @@ loop:
   if planned ≥ 0.97·target or (outline exhausted and story ended): stop planning
   if the next outline beat has no written scene: screenplay.extend(next 3 beats)
   clip.plan(next scene)
-  enqueue clip.generate(clip)   // at most settings.batch.lookahead (3) clip jobs in flight
+  enqueue clip.generate(clip)   // at most settings.batch.lookahead (3) clip jobs in flight;
+                                // each ends with its scene review and fixes (clip.review)
   stop if generations started by this batch would exceed settings.batch.maxGenerations
 wait for in-flight clip jobs
 re-check unverified takes (consistency.recheck) when any remain
@@ -170,6 +171,8 @@ re-check unverified takes (consistency.recheck) when any remain
   draws its references and stops for a person (the panda demo's batch stopped at 36 of 110 shots for one). With
   `settings.batch.approveNewElements` (off by default, for unattended runs) it waits for the references, approves the
   first and locks the element itself (as the system, in the history), and goes on; a person reviews it later.
+- **Scenes before the edit.** A clip job ends when its scene is watched and the shots that break it are made again
+  ([scenes before the edit](ai-review.md#scenes-before-the-edit)), so the cut is assembled from the fixed takes.
 - **Model pinning**: when the pilot is approved, the image and video model ids reported by the gateway in
   the pilot takes (`task.model`) are written to `settings.models`, so auto-routing cannot silently switch
   backends mid-movie.

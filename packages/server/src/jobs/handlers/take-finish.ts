@@ -12,6 +12,7 @@ import {
   type Take,
   type TakeAudio,
   type TakeDerivation,
+  takePassesChecks,
 } from '@rideo/shared';
 import { clipStatusOf } from '../../domain/clips';
 import { notFound } from '../../errors';
@@ -163,6 +164,11 @@ export async function commitTake(
     endKeyframe?: MediaRef | null;
     variation: number;
     derivedFrom?: TakeDerivation | null;
+    /**
+     * A scene review's fix: the take becomes the selected one only when it passes every check, otherwise the shot
+     * stays as it was (docs/design/ai-review.md#scenes-before-the-edit).
+     */
+    selectIfPasses?: boolean;
   },
 ): Promise<Take> {
   const take: Take = {
@@ -198,9 +204,19 @@ export async function commitTake(
       const shot = clip.shots.find((s) => s.id === shotId);
       if (!shot) throw notFound(`shot ${shotId}`);
       shot.takes.push(take);
-      const selectable = !!take.video && take.consistency.status !== 'failed';
+      const selectable =
+        !!take.video &&
+        take.consistency.status !== 'failed' &&
+        (!t.selectIfPasses ||
+          takePassesChecks(
+            take,
+            shot,
+            Object.fromEntries(t.characters.map((c) => [c.id, c])),
+            Object.fromEntries(t.elements.map((e) => [e.id, e])),
+          ));
       if (selectable || (!shot.selectedTakeId && take.video)) shot.selectedTakeId = take.id;
-      shot.status = take.video && take.consistency.status === 'passed' ? 'ready' : 'needs_review';
+      if (!t.selectIfPasses || shot.selectedTakeId === take.id)
+        shot.status = take.video && take.consistency.status === 'passed' ? 'ready' : 'needs_review';
       shot.lastError = null;
       clip.status = clipStatusOf(clip);
       tx.set(docPath.clip(clipId), clip);

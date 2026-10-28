@@ -647,6 +647,7 @@ export async function shotGenerate(deps: HandlerDeps, ctx: JobContext) {
         audio: dialogue ? takeAudio(dialogue, lipSync) : null,
         endKeyframe,
         variation,
+        selectIfPasses: (ctx.job.params as { selectIfPasses?: boolean }).selectIfPasses === true,
       });
       // A regeneration a feedback recommendation asked for replaces the shot's old take in the cut when it passes every
       // check; otherwise a person chooses (docs/design/feedback.md#when-a-fix-does-not-pass).

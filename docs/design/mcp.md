@@ -121,6 +121,7 @@ or keep going and `job_wait` until a tab picks the job up.
 |---|---|
 | `clip_plan` | `projectId`, `sceneId` → job |
 | `clip_generate` | `projectId`, `clipId` → job |
+| `clip_review` | `projectId`, `clipId`, `fix?` → job: the scene's takes watched before the edit and its shots fixed ([scenes before the edit](ai-review.md#scenes-before-the-edit)) |
 | `shot_update` | `projectId`, `clipId`, `shotId`, `fields` |
 | `shot_regenerate` | `projectId`, `clipId`, `shotId` → job |
 | `take_select` | `projectId`, `clipId`, `shotId`, `takeId`, `inCut?` (also put the take in the cut, in place of the shot's items: [when a fix does not pass](feedback.md#when-a-fix-does-not-pass)) |

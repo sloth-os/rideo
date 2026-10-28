@@ -19,6 +19,7 @@ import {
   type Screenplay,
   type Shot,
   type ShotUpdateInput,
+  shotsWithoutTakes,
   type Timeline,
   takeState,
   takeSwapOps,
@@ -185,6 +186,37 @@ export class ClipService extends Service {
       branch: await this.branchOf(projectId),
       dedupeKey: `clip:${clipId}`,
       priority: clip.index === 0 ? 5 : 1,
+    });
+  }
+
+  /**
+   * Watches the scene's takes before the edit and, unless `fix` is false, makes the shots that break it again
+   * (`clip.review`, docs/design/ai-review.md#scenes-before-the-edit).
+   */
+  async reviewClip(
+    actor: Actor,
+    projectId: string,
+    clipId: string,
+    opts: { fix?: boolean } = {},
+  ): Promise<Job> {
+    const docs = await this.docs(projectId);
+    const clip = docs.clips[clipId];
+    if (!clip) throw notFound(`clip ${clipId}`);
+    const missing = shotsWithoutTakes(clip);
+    if (!clip.shots.length || missing.length)
+      throw invalid(
+        missing.length
+          ? `shot ${missing[0]!.index + 1} has no take to watch; generate the clip first`
+          : 'the clip has no shots; plan it first',
+      );
+    return this.deps.jobs.enqueue({
+      projectId,
+      kind: 'clip.review',
+      params: { clipId, ...(opts.fix === false ? { fix: false } : {}) },
+      actor,
+      branch: await this.branchOf(projectId),
+      dedupeKey: `review:${clipId}`,
+      priority: 5,
     });
   }
 

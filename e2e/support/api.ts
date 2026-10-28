@@ -157,8 +157,8 @@ export const TINY = {
   resolution: { width: 320, height: 180 },
   targetDurationSec: 30,
   pilotDurationSec: 10,
-  // the AI reviews have specs of their own (e2e/ai-review.spec.ts)
-  review: { screenplay: false, storyboard: false },
+  // the AI reviews have specs of their own (e2e/ai-review.spec.ts, e2e/clip-review.spec.ts)
+  review: { screenplay: false, storyboard: false, scenes: false },
 };
 
 export function projectIdFrom(url: string): string {

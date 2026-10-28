@@ -7,7 +7,7 @@ test('a story export is watched by itself: scores, issues, recommendations appli
   page,
   request,
 }, testInfo) => {
-  test.setTimeout(360_000);
+  test.setTimeout(480_000);
   const api = new Api(request);
   const pid = await api.storyProject(`Feedback (${testInfo.project.name})`, {
     screenplay: true,
@@ -105,4 +105,20 @@ test('a story export is watched by itself: scores, issues, recommendations appli
     () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
   );
   expect(overflow).toBeLessThanOrEqual(1);
+
+  // The next export's feedback says what the fixed shot's new take changed
+  // (docs/design/feedback.md#what-changed-since-the-last-feedback)
+  await page.goto(`/p/${pid}/editor`);
+  await expect(page.getByTestId('live-status')).toHaveAttribute('data-status', 'live');
+  await exportInThisTab(page, { quality: 'draft', engine: 'ffmpeg' });
+  await page.goto(`/p/${pid}/exports`);
+  const next = page.locator('[data-entity^="export:"]').first().getByTestId('export-feedback');
+  // (the mock's regeneration changes nothing its review sees: the shot's issues weigh the same before and now)
+  await expect(next.getByTestId('feedback-retakes')).toHaveText(
+    '1 shot has a new take since the last feedback: 0 better · 1 same · 0 worse',
+    { timeout: 120_000 },
+  );
+  await next.getByTestId('show-feedback').click();
+  await expect(page.getByTestId('feedback-retake')).toHaveAttribute('data-outcome', 'same');
+  await expect(page.getByTestId('feedback-retake')).toHaveText(/^C1·S\d+ (\d+) → \1$/);
 });

@@ -123,6 +123,8 @@ Measured on the demo server on October 28, 2026, walking every branch and tag th
 |---|---|---|---|---|
 | Sammy and Rosie Go Swimming | 503 | 1,964 | 0 | at most 31 of 810 files (16.5 MB of 2.1 GB, before the history is counted) |
 | Sammy and Rosie Ski Fuji | 604 | 2,390 | 3 (0.1 %) | |
+| Bao and Mei Learn to Surf | 471 | 1,879 | 0 | |
+| Bao and Mei: demo edit (edited in the studio) | 51 | 155 | 0 | |
 
 A collector would have to stop commits while it decides, never trust a lagging folder listing, and forget what the
 object store believes it wrote; for a tenth of a percent that risk is not worth taking. Measure again when a project's

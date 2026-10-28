@@ -118,6 +118,30 @@ describe('retrospective rules (docs/design/feedback.md#retrospective-improvement
     expect(items.find((r) => r.rule === 'llm_retries')!.title).toContain('7');
   });
 
+  it('says what the new takes since the last feedback changed, naming the ones no better', () => {
+    const facts = quiet();
+    const retake = (shot: string, before: number, after: number) => ({
+      clipId: 'clp_0000000000aaaaaa',
+      shotId: `sht_00000000000000${shot.slice(-1)}`,
+      shot,
+      recommendationId: null,
+      before: { takeId: 'tke_0000000000aaaaaa', issues: before },
+      after: { takeId: 'tke_0000000000bbbbbb', issues: after },
+      outcome: (after < before ? 'better' : after > before ? 'worse' : 'same') as 'better' | 'same' | 'worse',
+    });
+    facts.retakes = [retake('C1·S1', 4, 0), retake('C1·S2', 2, 2), retake('C1·S3', 1, 3)];
+    const item = retrospective(facts).find((r) => r.rule === 'retake_results')!;
+    expect(item).toMatchObject({
+      area: 'quality',
+      title: '3 shot(s) have a new take since the last feedback: 1 better, 1 the same, 1 worse',
+    });
+    expect(item.detail).toContain('Worse now: C1·S3. No better: C1·S2.');
+    facts.retakes = [retake('C1·S1', 4, 0)];
+    expect(retrospective(facts).find((r) => r.rule === 'retake_results')!.detail).toBe(
+      'Every new take fixed what the previous feedback saw.',
+    );
+  });
+
   it('prices the film per minute or says which models have no price', () => {
     const priced = quiet();
     priced.usage = usage({ costUsd: 30 });

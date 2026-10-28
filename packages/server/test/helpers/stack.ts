@@ -147,8 +147,8 @@ export async function readyStoryProject(stack: Stack, settings: Record<string, u
       targetDurationSec: 30,
       pilotDurationSec: 10,
       resolution: { width: 320, height: 180 },
-      // the AI reviews have tests of their own (test/integration/ai-review.test.ts)
-      review: { screenplay: false, storyboard: false },
+      // the AI reviews have tests of their own (test/integration/ai-review.test.ts, clip-review.test.ts)
+      review: { screenplay: false, storyboard: false, scenes: false },
       ...settings,
     },
   });

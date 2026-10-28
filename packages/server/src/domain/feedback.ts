@@ -1,5 +1,6 @@
 import {
   type Actor,
+  type Character,
   castIdsOf,
   docPath,
   type Export,
@@ -11,6 +12,7 @@ import {
   feedbackIdFor,
   type Job,
   type ProjectSettingsPatch,
+  type ShotUpdateInput,
 } from '@rideo/shared';
 import { currentPrincipal } from '../auth/context';
 import { AppError, invalid, notFound } from '../errors';
@@ -28,6 +30,32 @@ export function settingsPatchOf(patch: FeedbackSettingsPatch): ProjectSettingsPa
     out[group] = { ...out[group], [field]: value };
   }
   return out as ProjectSettingsPatch;
+}
+
+/**
+ * The shot fields a `regenerate_shot` action revises (docs/design/feedback.md#actions), or null when it revises none:
+ * who is in frame after the change becomes the shot's cast, since the gate checks it.
+ */
+export function shotRevision(
+  action: Extract<FeedbackRecommendation['action'], { kind: 'regenerate_shot' }>,
+  characters: Record<string, Character>,
+): ShotUpdateInput | null {
+  const camera =
+    action.framing || action.movement
+      ? {
+          ...(action.framing ? { framing: action.framing } : {}),
+          ...(action.movement ? { movement: action.movement } : {}),
+        }
+      : undefined;
+  const cast = action.characters?.length ? castIdsOf(action.characters, characters) : [];
+  if (!action.description && !action.action && !action.negativePrompt && !camera && !cast.length) return null;
+  return {
+    ...(action.description ? { description: action.description } : {}),
+    ...(action.action ? { action: action.action } : {}),
+    ...(action.negativePrompt ? { negativePrompt: action.negativePrompt } : {}),
+    ...(camera ? { camera } : {}),
+    ...(cast.length ? { characterIds: cast } : {}),
+  };
 }
 
 /** Feedback on exports (docs/design/feedback.md): REST and MCP call this service. */
@@ -165,23 +193,8 @@ export class FeedbackService extends Service {
       const clip = docs.clips[action.clipId];
       const shot = clip?.shots.find((s) => s.id === action.shotId);
       if (!clip || !shot) throw stale(`shot ${action.shotId} no longer exists`);
-      const camera =
-        action.framing || action.movement
-          ? {
-              ...(action.framing ? { framing: action.framing } : {}),
-              ...(action.movement ? { movement: action.movement } : {}),
-            }
-          : undefined;
-      // Who is in frame after the change: the gate checks the shot's cast (docs/design/feedback.md#actions)
-      const cast = action.characters?.length ? castIdsOf(action.characters, docs.characters) : [];
-      if (action.description || action.action || action.negativePrompt || camera || cast.length)
-        await this.services.clips.updateShot(actor, projectId, clip.id, shot.id, {
-          ...(action.description ? { description: action.description } : {}),
-          ...(action.action ? { action: action.action } : {}),
-          ...(action.negativePrompt ? { negativePrompt: action.negativePrompt } : {}),
-          ...(camera ? { camera } : {}),
-          ...(cast.length ? { characterIds: cast } : {}),
-        });
+      const patch = shotRevision(action, docs.characters);
+      if (patch) await this.services.clips.updateShot(actor, projectId, clip.id, shot.id, patch);
       job = await this.services.clips.regenerateShot(actor, projectId, clip.id, shot.id, { swapInCut: true });
     } else if (action.kind === 'replan_scene') {
       const clip = docs.clips[action.clipId];

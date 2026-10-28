@@ -268,7 +268,7 @@ humming") still left music under 21 of the 110 takes in the cut: 2 of the first 
 of the 104 after. The sound check hears it, but it is advisory, so a five-second shot with its own tune makes the
 cut jump from one tune to the next. *How:* once the gateway passes `negative_prompt` (item 25) put "music" there; a
 project setting that retries takes with music like an unheard line (each retry is a paid 5 s take, $1.40 here); or,
-better, a source-separation step that keeps voices and effects and drops the music of the takes where it is heard. *Partly done:* `consistency.rejectMusic` (off by default; a toggle in the project settings) fails a take whose sound check hears music, so it is generated again like a take whose line is not heard ([quality checks](design/continuity.md#quality-checks-in-the-gate)); Wan 3.0's own words for no music ("No BGM") are in the sound line since 2e039ff. Source separation is still to come.
+better, a source-separation step that keeps voices and effects and drops the music of the takes where it is heard. *Partly done:* `consistency.rejectMusic` (off by default; a toggle in the project settings) fails a take whose sound check hears music, so it is generated again like a take whose line is not heard ([quality checks](design/continuity.md#quality-checks-in-the-gate)); Wan 3.0's own words for no music ("No BGM") are in the sound line since 2e039ff. *Source separation, not needed now:* with that line the sound check heard music in none of the swimming film's 79 takes, and separation needs a model the gateway does not offer (mm-gateway has none; ElevenLabs' voice isolator would drop the effects with the music). Measure again on a film whose takes carry music.
 
 **38. Fixes the feedback cannot see the cost of** (S, done) — the strip review recommended regenerating 68 shots (27 at
 priority 1). Applying all of them is at least $100 at this run's prices ($1.45 an attempt), and some shots fail again
@@ -297,7 +297,7 @@ when its quality checks fail. In the second pass that was right for some shots a
 take of C5·S9 failed only a jump check but had panda Rosie where the old one had a human child, while the new take of
 C4·S13 put a human girl on the chairlift where the old one had a stray cut. *How:* after a fix, the feedback panel
 shows each applied recommendation as fixed or not (the new take's checks), with the previous take one click away,
-and the next feedback on the export compares the two takes of each fixed shot. *Done:* a fix's take replaces the cut's take only when it passes every check; otherwise the panel says *Not fixed* with the new take's issues and offers **Use the new take** (`take_select` with `inCut`, one commit). The outcome is derived from the documents (`fixOutcome`) ([when a fix does not pass](design/feedback.md#when-a-fix-does-not-pass)). Comparing the two takes in the next feedback is still to come.
+and the next feedback on the export compares the two takes of each fixed shot. *Done:* a fix's take replaces the cut's take only when it passes every check; otherwise the panel says *Not fixed* with the new take's issues and offers **Use the new take** (`take_select` with `inCut`, one commit). The outcome is derived from the documents (`fixOutcome`) ([when a fix does not pass](design/feedback.md#when-a-fix-does-not-pass)). The next feedback compares every shot whose take in the cut changed since the previous one: its issues then and now, weighted by severity, as better, the same or worse, on the document, in the report, in the retrospective (`retake_results`) and on the panel ([what changed since the last feedback](design/feedback.md#what-changed-since-the-last-feedback)).
 
 **41. Who is in frame after a fix** (S, done) — a fix that brings a character into the shot ("put Rosie's head and
 pink beanie at frame right") left the shot's cast as planned, so the gate counted that character as an extra: the
@@ -390,4 +390,9 @@ without its own transition or the next one's ([how a film is watched](design/fee
 - **What is left:** continuity across shots. Props change side, count or state between cuts (the ball, the board,
   the watermelon), and the sun moves. The gate judges one take at a time and the storyboard reference fixes only the
   frames, so the feedback's continuity stays at 4. Next: a scene check after a clip is generated, with strips of all its
-  shots as the feedback has them, and its fixes made before the edit.
+  shots as the feedback has them, and its fixes made before the edit. *Done:* `clip.review` watches each scene's
+  selected takes with the export feedback's own scene call when the clip is made, applies its priority 1
+  regenerations (at most `settings.review.sceneFixes`, 3 by default; a new take is selected only when it passes every
+  check) and watches the scene again; the batch assembles the cut from the fixed takes
+  ([scenes before the edit](design/ai-review.md#scenes-before-the-edit)). Its effect on a real film is still to be
+  measured.

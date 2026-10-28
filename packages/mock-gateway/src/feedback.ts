@@ -26,6 +26,8 @@ type Scores = Record<(typeof DIMENSIONS)[number], number>;
 
 /** A shot whose speaker mumbles: the mock never hears its lines (docs/design/feedback.md#mock-gateway). */
 const MUMBLES = /\bmumbl/i;
+/** A shot whose description says so breaks the scene's continuity (docs/design/ai-review.md#mock-gateway). */
+const CONTINUITY_BREAK = /\s*continuity break\.?/i;
 
 /**
  * `sound.check`: hears the shot's lines in their speakers' voices (none when the description says the speaker mumbles,
@@ -78,6 +80,18 @@ export function feedbackScene(input: FeedbackSceneInput, strips: number): Feedba
       score -= 2;
       scores.character = Math.min(scores.character, 6);
     }
+    if (CONTINUITY_BREAK.test(shot.description)) {
+      score -= 4;
+      scores.continuity = Math.min(scores.continuity, 4);
+      issues.push({
+        shot: shot.index,
+        dimension: 'continuity',
+        severity: 'major',
+        title: 'The ball changes hands between cuts',
+        detail: `${shot.label}: the ball is in the other paw than in the shot before.`,
+        at: 0.15,
+      });
+    }
     shotScore.set(shot.index, score);
   }
   for (const at of input.signals.unexpectedCuts) {
@@ -96,6 +110,9 @@ export function feedbackScene(input: FeedbackSceneInput, strips: number): Feedba
   }
   const worst = [...shotScore.entries()].sort((a, b) => a[1] - b[1] || a[0] - b[0])[0];
   const worstShot = worst ? input.shots.find((s) => s.index === worst[0]) : undefined;
+  // Before the edit, a regeneration is urgent only for a shot with a problem, and keeps the shot's cast
+  const takes = input.stage === 'takes';
+  const troubled = !!worst && worst[1] < 8;
   return {
     scores,
     transcript: [],
@@ -108,15 +125,15 @@ export function feedbackScene(input: FeedbackSceneInput, strips: number): Feedba
             {
               shot: worstShot.index,
               dimension: issues.find((i) => i.shot === worstShot.index)?.dimension ?? 'cinematography',
-              priority: 1,
+              priority: !takes || troubled ? 1 : 2,
               title: `Generate ${worstShot.label} again`,
               detail: 'A steadier camera and feet planted on the ground.',
               action: {
                 kind: 'regenerate_shot' as const,
-                description: `${worstShot.description} Steady camera, feet planted on the ground.`,
+                description: `${worstShot.description.replace(CONTINUITY_BREAK, '')} Steady camera, feet planted on the ground.`,
                 negativePrompt: 'floating, jump cut',
                 // the scene's whole cast in frame, so applying it changes who is in the shot
-                characters: input.cast.map((c) => c.name),
+                ...(takes ? {} : { characters: input.cast.map((c) => c.name) }),
               },
             },
           ]

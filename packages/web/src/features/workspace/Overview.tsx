@@ -75,6 +75,7 @@ function SettingsDialog({
           dialogue: s.dialogue,
           storyboard: s.storyboard,
           feedback: s.feedback,
+          review: s.review,
         },
       });
       useUi.getState().toast('Settings saved', 'success');
@@ -210,6 +211,30 @@ function SettingsDialog({
               (v) => setS({ ...s, consistency: { ...s.consistency, rejectMusic: v } }),
               'rejectMusic',
             )}
+            {toggle(
+              'Watch each scene’s takes before the edit and generate again the shots that break it',
+              s.review.scenes,
+              (v) => setS({ ...s, review: { ...s.review, scenes: v } }),
+              'reviewScenes',
+            )}
+            <Field label="Shots a scene review may generate again (0: watch only)">
+              <Input
+                type="number"
+                min={0}
+                max={6}
+                value={s.review.sceneFixes}
+                onChange={(e) =>
+                  setS({
+                    ...s,
+                    review: {
+                      ...s.review,
+                      sceneFixes: Math.min(6, Math.max(0, Math.round(Number(e.target.value)))),
+                    },
+                  })
+                }
+                data-testid="review-scene-fixes"
+              />
+            </Field>
             {toggle(
               'Watch each export and write feedback',
               s.feedback.auto,

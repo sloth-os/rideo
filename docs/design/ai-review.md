@@ -1,11 +1,12 @@
-# AI review of the screenplay and the storyboard
+# AI review of the screenplay, the storyboard and the scenes
 
 The [feedback](feedback.md) on an export finds what went wrong after the video is paid for. Much of what the panda
 demo's feedback found was visible earlier: a chairlift scene of fine mechanical handling the video model cannot keep
 (skis in paws, a pair apart on the chair), props whose state nobody wrote down, shots that all last five seconds, a
 cast-only film whose scenes still mentioned other skiers. Words and stills cost a fraction of video. So Rideo reviews
 the **screenplay** before the cast is made and the **storyboard** before the pilot, and the workflow goes on only when
-the review passes.
+the review passes. Once a scene's takes are made, Rideo watches **the scene** as the export's feedback will, and
+regenerates the shots that break it before the edit ([scenes before the edit](#scenes-before-the-edit)).
 
 ## The gates
 
@@ -26,6 +27,8 @@ settings.review = {
   threshold: number;      // 5–9.5, default 7: the lowest overall score that passes
   maxRounds: number;      // 0–3, default 2: automatic revisions before a person decides
   autoRevise: boolean;    // default true: apply the review's fixes and review again
+  scenes: boolean;        // default true: watch each scene's takes before the edit
+  sceneFixes: number;     // 0–6, default 3: priority 1 regenerations applied per scene (0: watch only)
 };
 ```
 
@@ -134,6 +137,66 @@ again, or continues anyway (`override`, with a note), which the gate accepts for
 **When.** `screenplay.generate` queues the screenplay review when it finishes, and `storyboard.generate` the
 storyboard review (each when its setting is on). Either runs on request at any time.
 
+## Scenes before the edit
+
+The consistency gate judges one take at a time and the storyboard review sees only frames, so what the swimming demo's
+feedback scored lowest was out of their reach: continuity across cuts (4 of 10, before and after 23 fixes) and
+temporal (5). The ball, the swim board and the watermelon changed side, count or state between cuts, and the sun
+moved. The feedback found it after the export, when every fix meant a new export.
+
+`clip.review` (lane `control`; it waits for its fixes) watches one scene's takes **before the edit**, with the
+export's feedback call, so what it finds is what that feedback would find later:
+
+1. **Strips.** For every shot in order, its selected take sampled at 15%, 50% and 85% of the whole take, 384 px
+   wide, side by side and labelled with the shot and its time in the scene as the takes follow each other
+   (`0: C3·S1 (0.0–5.0 s)`). Every shot needs a selected take with a video.
+2. **One `feedback.scene` call** (the vision model) with the export feedback's scene input (the film, the scene as
+   written, its neighbours, the cast, every shot as planned with its take's checks) and `stage: "takes"`: the model is
+   told these are the selected takes before the edit, that the editor will trim them, and to ask for a shot to be
+   generated again only for what a new take can fix.
+3. **Assembly** as the feedback's (`assembleFeedback` with this one scene, no signals): scores, the overall score,
+   issues pinned to their shots with times in the scene, recommendations with their estimates.
+4. **Fixes.** With `settings.review.sceneFixes` above 0, the open priority 1 recommendations that regenerate a shot,
+   one per shot and at most `sceneFixes`, are applied as the feedback applies them (the shot revised: description,
+   action, negative prompt, camera, who is in frame; then `shot.generate` at a person's priority), with one difference:
+   there is no cut yet, so the new take becomes the shot's **selected take only when it passes every check**
+   (`selectIfPasses`); otherwise the shot keeps its take and the fix shows *Not fixed* with the new take's issues. A
+   scene already in the cut gets the passing take there too, as a feedback fix does (`swapInCut`). The job waits for
+   the regenerations.
+5. **Once more.** When a fix was applied, the scene is watched again (round 2) for the record; the first round's
+   overall score, scores and issue count stay as `before`. There is one round of fixes: what still breaks the scene
+   goes to the edit, and the export's feedback has the last word. A retry of the job after its fixes were made (the
+   second watch failed) waits for those fixes and watches again; it never fixes twice.
+
+**When.** `clip.generate` queues it after the clip's shots are made, when it made at least one take, at least two
+shots have a selected take, `settings.review.scenes` is on and a gateway is configured, and waits for it: the batch
+assembles the cut from the fixed takes. A review that fails never fails the clip. It runs on request at any time
+(`fix: false` watches without fixing).
+
+**The record** is on the clip document, `clip.review`:
+
+```ts
+type ClipReview = {
+  status: 'running' | 'succeeded' | 'failed';
+  jobId: string | null; model: string | null;
+  subject: string;                         // the selected takes it watched (clipReviewSubject)
+  round: 1 | 2;
+  overall: number | null;                  // the weighted mean of the scene's scores, as the feedback's
+  scores: Partial<Record<FeedbackDimension, number>>;
+  summary: string;
+  issues: FeedbackIssue[];                 // times in the scene, the takes one after another
+  recommendations: FeedbackRecommendation[];
+  fixes: FeedbackRecommendation[];         // round 1's applied regenerations, each with its job
+  before: { overall: number | null; scores: …; issues: number } | null;   // round 1, when round 2 ran
+  error?: string;
+  checkedAt: string;
+};
+```
+
+A review is **current** while its subject is the clip's selected takes; the clip card says when the takes changed
+since. Cost: one or two vision calls per scene, and each fix is a shot generated again (its estimate is on the
+recommendation).
+
 ## Surfaces
 
 | REST | MCP |
@@ -143,17 +206,24 @@ storyboard review (each when its setting is on). Either runs on request at any t
 | `POST /api/projects/:id/ai-reviews/:stage/recommendations/:rid/apply` → `{review, job}` | `ai_review_apply` |
 | `POST /api/projects/:id/ai-reviews/:stage/recommendations/:rid/dismiss` | `ai_review_dismiss` |
 | `POST /api/projects/:id/ai-reviews/:stage/override` `{note}` | `ai_review_override` |
+| `POST /api/projects/:id/clips/:clipId/review` `{fix?}` → job (the record comes with the clip) | `clip_review` |
 
 REST and MCP call the same `AiReviewService`. The **Story** view and the **Storyboard** view show the stage's review
 above their content: the verdict and the score against the threshold, a bar per dimension, the round, the issues
 (a scene or a shot links to it) and the recommendations with *Apply* and *Dismiss*, *Review again*, and *Continue
-anyway* when it failed. The stepper names the failing review among the gate's unmet requirements.
+anyway* when it failed. The stepper names the failing review among the gate's unmet requirements. Each clip card
+of the **Clips** view shows its scene review: the overall score (and round 1's when the scene was watched again), a
+bar per dimension, the summary, the issues by shot, each fix with what became of it (*Regenerating…*, *Fixed*, *Not
+fixed* with **Use the new take**), and *Review the scene* (`clip-review-run`).
 
 ## Observability
 
 `rideo_ai_reviews_total{stage, outcome}` (`passed`, `failed`, `error`), `rideo_ai_review_score{stage}`,
 `rideo_ai_review_rounds{stage}` and `rideo_ai_review_recommendations_total{stage, action, outcome}` (`applied`,
-`dismissed`, `auto`). Jobs log the project, the stage, the round and the score.
+`dismissed`, `auto`). Jobs log the project, the stage, the round and the score. Scene reviews:
+`rideo_clip_reviews_total{outcome}` (`clean`: nothing to fix, `fixed`: fixes applied, `error`),
+`rideo_clip_review_score{round}` (the overall score) and `rideo_clip_review_fixes_total{outcome}` (`fixed`,
+`not_fixed`, `failed`); the job logs the project, the clip, the round and the score.
 
 ## Mock gateway
 
@@ -162,3 +232,7 @@ names a crowd lowers `feasibility` with a critical issue and a `revise_scene` re
 continuity lowers `continuity`. `screenplay.revise` rewrites the named scenes as instructed (the crowd leaves, the
 continuity is written). `storyboard.review` passes a storyboard whose frames all passed their gate, and otherwise
 recommends redrawing the weakest frame. Tests drive generate → review → revise → review → gate on it.
+`feedback.scene` with `stage: "takes"` recommends a regeneration at priority 1 only for a shot with a problem: a take
+that failed its quality checks or did not pass, or a description that says "continuity break", which it reports as a
+major continuity issue and revises away; every other recommendation is priority 2. Tests drive generate → scene
+review → fix → watched again on it.

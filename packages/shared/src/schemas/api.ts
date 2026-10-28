@@ -107,6 +107,8 @@ export const ProjectSettingsPatchSchema = z
         threshold: z.number().min(5).max(9.5),
         maxRounds: z.number().int().min(0).max(3),
         autoRevise: z.boolean(),
+        scenes: z.boolean(),
+        sceneFixes: z.number().int().min(0).max(6),
       })
       .partial(),
     watermark: z.object({ enabled: z.boolean() }).partial(),
@@ -270,6 +272,9 @@ export const MusicInputSchema = z.object({
   durationSec: z.number().min(5).max(600).optional(),
   instrumental: z.boolean().optional(),
 });
+
+/** `POST /clips/:clipId/review` (docs/design/ai-review.md#scenes-before-the-edit): `fix: false` only watches. */
+export const ClipReviewInputSchema = z.object({ fix: z.boolean().optional() });
 
 export const ShotUpdateInputSchema = z
   .object({

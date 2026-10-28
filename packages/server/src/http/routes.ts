@@ -14,6 +14,7 @@ import {
   BundleImportModeSchema,
   CharacterInputSchema,
   CharacterUpdateInputSchema,
+  ClipReviewInputSchema,
   CloneVoiceInputSchema,
   ConsentInputSchema,
   CreateProjectInputSchema,
@@ -603,6 +604,18 @@ export function registerRoutes(app: FastifyInstance, studio: Studio): void {
   );
   app.post('/api/projects/:id/clips/:clipId/generate', async (req, reply) =>
     reply.code(202).send(await studio.clips.generateClip(actor(), pid(req), p(req, 'clipId'))),
+  );
+  app.post('/api/projects/:id/clips/:clipId/review', async (req, reply) =>
+    reply
+      .code(202)
+      .send(
+        await studio.clips.reviewClip(
+          actor(),
+          pid(req),
+          p(req, 'clipId'),
+          parse(ClipReviewInputSchema, req.body ?? {}),
+        ),
+      ),
   );
   app.patch('/api/projects/:id/clips/:clipId/shots/:shotId', async (req) =>
     studio.clips.updateShot(

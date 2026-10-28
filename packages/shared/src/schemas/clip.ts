@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { CameraMoveIdSchema } from '../directing';
 import { ActorSchema, IdSchema, IsoDateSchema, MediaRefSchema } from './common';
+import { FeedbackIssueSchema, FeedbackRecommendationSchema, FeedbackScoresSchema } from './feedback';
 import { ContentCredentialsStampSchema } from './provenance';
 import { FocusPointSchema } from './timeline';
 
@@ -327,6 +328,39 @@ export type Shot = z.infer<typeof ShotSchema>;
 export const ClipStatusSchema = z.enum(['planned', 'generating', 'review', 'approved']);
 export type ClipStatus = z.infer<typeof ClipStatusSchema>;
 
+const SceneScoresSchema = FeedbackScoresSchema.partial();
+
+/** A scene's takes watched before the edit (docs/design/ai-review.md#scenes-before-the-edit). */
+export const ClipReviewSchema = z.object({
+  status: z.enum(['running', 'succeeded', 'failed']),
+  jobId: IdSchema.nullable().default(null),
+  model: z.string().max(200).nullable().default(null),
+  /** The selected takes it watched (`clipReviewSubject`). */
+  subject: z.string().max(64).default(''),
+  /** 1: watched; 2: watched again after its fixes. */
+  round: z.number().int().min(1).max(2).default(1),
+  overall: z.number().min(0).max(10).nullable().default(null),
+  scores: SceneScoresSchema.default({}),
+  summary: z.string().max(3000).default(''),
+  /** Times in the scene, the takes one after another. */
+  issues: z.array(FeedbackIssueSchema).max(60).default([]),
+  recommendations: z.array(FeedbackRecommendationSchema).max(40).default([]),
+  /** The first round's applied regenerations, each with its job. */
+  fixes: z.array(FeedbackRecommendationSchema).max(6).default([]),
+  /** The first round, when the scene was watched again after its fixes. */
+  before: z
+    .object({
+      overall: z.number().min(0).max(10).nullable(),
+      scores: SceneScoresSchema.default({}),
+      issues: z.number().int().nonnegative(),
+    })
+    .nullable()
+    .default(null),
+  error: z.string().max(2000).optional(),
+  checkedAt: IsoDateSchema,
+});
+export type ClipReview = z.infer<typeof ClipReviewSchema>;
+
 export const ClipSchema = z.object({
   id: IdSchema,
   index: z.number().int().nonnegative(),
@@ -337,6 +371,8 @@ export const ClipSchema = z.object({
   approvedAt: IsoDateSchema.nullable().default(null),
   approvedBy: ActorSchema.nullable().default(null),
   notes: z.string().max(4000).default(''),
+  /** Its scene's takes watched before the edit (docs/design/ai-review.md#scenes-before-the-edit). */
+  review: ClipReviewSchema.nullable().default(null),
 });
 export type Clip = z.infer<typeof ClipSchema>;
 

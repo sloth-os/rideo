@@ -26,6 +26,10 @@ export const ReviewSettingsSchema = z.object({
   maxRounds: z.number().int().min(0).max(3).default(2),
   /** Apply the review's fixes and review again. */
   autoRevise: z.boolean().default(true),
+  /** Watch each scene's takes before the edit (docs/design/ai-review.md#scenes-before-the-edit). */
+  scenes: z.boolean().default(true),
+  /** Priority 1 regenerations a scene review applies (0: it only watches). */
+  sceneFixes: z.number().int().min(0).max(6).default(3),
 });
 export type ReviewSettings = z.infer<typeof ReviewSettingsSchema>;
 export const DEFAULT_REVIEW_SETTINGS: ReviewSettings = ReviewSettingsSchema.parse({});

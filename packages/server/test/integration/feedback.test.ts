@@ -188,6 +188,39 @@ describe('feedback on an export', () => {
     expect(metrics).toMatch(
       /rideo_feedback_recommendations_total\{action="regenerate_shot",outcome="applied"\} 1/,
     );
+
+    // The next export's feedback compares the re-taken shot then and now, even though the first feedback was run
+    // again since (docs/design/feedback.md#what-changed-since-the-last-feedback)
+    const nextEditor = await startEditorWorker(stack, pid);
+    const exp2 = await stack.api<any>('POST', `/projects/${pid}/exports`, { quality: 'draft' });
+    const done2 = await stack.waitExport(pid, exp2.export.id);
+    expect(done2.status).toBe('succeeded');
+    let fb2Job: Job | undefined;
+    for (let t = Date.now(); !fb2Job && Date.now() - t < 60_000; ) {
+      fb2Job = (await stack.api<Job[]>('GET', `/projects/${pid}/jobs`)).find(
+        (j) => j.kind === 'export.feedback' && j.params.exportId === done2.id,
+      );
+      if (!fb2Job) await new Promise((r) => setTimeout(r, 200));
+    }
+    expectSucceeded(await stack.waitJob(pid, fb2Job!.id, 180_000));
+    await nextEditor.stop();
+    const fb2 = (await stack.api<Feedback[]>('GET', `/projects/${pid}/feedback`)).find(
+      (x) => x.exportId === done2.id,
+    )!;
+    expect(fb2.previousFeedbackId).toBe(fb!.id);
+    expect(fb2.retakes).toHaveLength(1);
+    const retake = fb2.retakes[0]!;
+    expect(retake).toMatchObject({
+      shotId: jumpy.id,
+      shot: label,
+      outcome: 'better',
+      after: { takeId: fixed.selectedTakeId },
+    });
+    expect(retake.before.issues).toBeGreaterThan(retake.after.issues);
+    expect(fb2.retrospective.map((r) => r.rule)).toContain('retake_results');
+    const md2 = await (await fetch(`${stack.url}/api/projects/${pid}/media/${fb2.report!.path}`)).text();
+    expect(md2).toContain('## What changed since the last feedback');
+    expect(md2).toContain(`- ${label}: ${retake.before.issues} → ${retake.after.issues} (better)`);
   });
 
   it('refuses an export that has not finished, and one that does not exist', async () => {
