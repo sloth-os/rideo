@@ -14,7 +14,9 @@ the result at its cuts with the same scene-cut detection the footage analysis us
 |---|---|
 | the project's video model has `max_shots ≥ 2` (a pinned model; `auto` resolves to the first model) and `settings.generation.multiShot` is `auto` (default) | the model renders several shots |
 | the dialogue mode is not `native` | native audio is conditioned per speaker sample, shot by shot |
+| the takes neither carry the model's own voices (`dialogue.mode: off` with `generation.includeAudio`) nor run the [quality checks](continuity.md#quality-checks-in-the-gate) | a sequence is rendered silent and its segments are judged for identity only; such projects are generated shot by shot until the group path hears and checks its segments |
 | at least two consecutive shots need a take and have no directing controls that need a request of their own (an image start frame, an end frame, a motion reference) | those shots are generated alone |
+| for a model whose limits say `exclusive_frames_and_references` (Wan 3.0): every shot of the group shows only characters of its first shot, and lasts at most 5 s | the request carries the first shot's frame and no references, so the model knows only the faces in that frame; Wan 3.0's guide gives each shot of a sequence 2–5 s |
 
 Groups take consecutive shots while the group has at most `max_shots` shots and its planned length fits
 `max_duration_seconds`. A shot that cannot join a group is generated alone. `shot.group` jobs run like `shot.generate`
@@ -24,11 +26,14 @@ jobs (lane `video`).
 
 ```
 <style header> A multi-shot sequence of 3 shots separated by hard cuts.
-Shot 1 (5 s): <description>. Action: <action>. Camera: <framing, movement or move; lens>. Dialogue: ….
-Shot 2 (4 s): ….
-Shot 3 (6 s): ….
+Shot 1 [0-5s]: <description>. Action: <action>. Camera: <framing, movement or move; lens>. Dialogue: …. Hard cut.
+Shot 2 [5-9s]: …. Hard cut.
+Shot 3 [9-15s]: ….
 Characters (keep identities exactly as described and as in the reference images): …  Location (…): …
 ```
+
+The shot labels carry their time in the sequence, contiguous from 0, as Wan 3.0's guide writes them
+(`Shot N [start-end s]:`), so the cuts land where the plan puts them.
 
 The first shot's start frame is its verified keyframe (or its approved storyboard frame), the references are the
 union of the group's cast and elements within `max_input_images` (a cast sheet when needed, R3), the duration is the

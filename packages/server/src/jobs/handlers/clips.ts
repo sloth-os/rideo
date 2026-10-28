@@ -1,10 +1,10 @@
 import {
   approvedElementReferences,
   type Clip,
-  DEFAULT_VIDEO_LIMITS,
   dialogueDirection,
   dialogueMode,
   docPath,
+  framedGroupJoins,
   isAcceptable,
   type Job,
   needsOwnRequest,
@@ -12,6 +12,7 @@ import {
   nextUnwrittenBeats,
   normalizePlannedShots,
   plannedDuration,
+  plannedShotRange,
   planShotGroups,
   promptVersionOf,
   type Screenplay,
@@ -40,8 +41,8 @@ export async function clipPlan(deps: HandlerDeps, ctx: JobContext) {
   if (!sp || !scene) throw notFound(`scene ${sceneId}`);
   const settings = docs.project.settings;
   const { limits } = await deps.gateway.limitsFor('video', settings.models.video);
-  const minSec = limits?.min_duration_seconds ?? DEFAULT_VIDEO_LIMITS.min;
-  const maxSec = limits?.max_duration_seconds ?? DEFAULT_VIDEO_LIMITS.max;
+  // The model's range, capped: a long take drifts and cuts itself (docs/design/continuity.md#shot-planning)
+  const { min: minSec, max: maxSec } = plannedShotRange(limits);
   // The first clip is the pilot: its length is the user's pilot setting (10 s – 3 min).
   const target = Math.min(
     180,
@@ -173,12 +174,20 @@ export async function clipGenerate(deps: HandlerDeps, ctx: JobContext) {
   const settings = docs.project.settings;
   const limits = (await deps.gateway.limitsFor('video', settings.models.video)).limits;
   const maxShots = limits?.max_shots ?? 0;
+  // A sequence is rendered silent and judged for identity only: takes that carry the model's voices or run the
+  // quality checks are generated shot by shot (docs/design/multi-shot.md#when)
+  const voiced = dialogueMode(settings) === 'off' && settings.generation.includeAudio === true;
+  const sequencesServe = !voiced && !settings.consistency.qualityChecks;
   const units =
-    maxShots >= 2 && settings.generation.multiShot !== 'off' && dialogueMode(settings) !== 'native'
+    maxShots >= 2 &&
+    settings.generation.multiShot !== 'off' &&
+    dialogueMode(settings) !== 'native' &&
+    sequencesServe
       ? planShotGroups(todo, {
           maxShots,
           maxDurationSec: limits?.max_duration_seconds ?? 10,
           eligible: (id) => !needsOwnRequest(todo.find((s) => s.id === id)!),
+          ...(limits?.exclusive_frames_and_references ? { joins: framedGroupJoins } : {}),
         })
       : todo.map((s) => [s.id]);
   const jobs: Job[] = [];

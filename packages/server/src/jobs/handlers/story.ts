@@ -6,7 +6,6 @@ import {
   type Consent,
   compileElementReferenceRequest,
   compileReferenceRequest,
-  DEFAULT_VIDEO_LIMITS,
   dialogueDirection,
   docPath,
   type Element,
@@ -15,6 +14,7 @@ import {
   newId,
   nextUnwrittenBeats,
   type ProjectSettings,
+  plannedShotRange,
   promptVersionOf,
   type ReferenceView,
   type Resource,
@@ -36,7 +36,7 @@ import { commitAs, docsFor, gatewayOptions, type HandlerDeps } from './common';
 async function writingDirection(deps: HandlerDeps, settings: ProjectSettings) {
   if (promptVersionOf(settings) < 2) return { version: 1 as const, direction: {} };
   const { limits } = await deps.gateway.limitsFor('video', settings.models.video);
-  const maxShot = limits?.max_duration_seconds ?? DEFAULT_VIDEO_LIMITS.max;
+  const maxShot = plannedShotRange(limits).max;
   return {
     version: 2 as const,
     direction: dialogueDirection(settings.dialogue?.level ?? 'any', maxShot),

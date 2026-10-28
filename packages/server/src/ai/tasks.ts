@@ -273,7 +273,7 @@ Return only JSON: {"scenes":[{"beatIndex":0,"heading":"EXT. PLACE - DAY","locati
   'clip.plan': `rideo-task: clip.plan
 You are a film director breaking one scene into shots for an AI video model. Each shot is generated on its own from its text, so every shot must say what it needs.
 Rules:
-- Every shot durationSec must be within [limits.minDurationSec, limits.maxDurationSec]; the durations should sum to targetDurationSec.
+- Every shot durationSec must be within [limits.minDurationSec, limits.maxDurationSec]; the durations should sum to targetDurationSec. Vary the lengths with what happens: 2–3 s for reactions and inserts, 4–6 s for most shots, longer (up to the maximum) for establishing shots and for lines that need the time; never give every shot the same length.
 - A shot is one continuous camera setup. "description": what the first frame shows (who, where, poses, framing). "action": how things move during the shot, as cause and effect with direction and contact (e.g. "Rosie carves left across the slope, snow spraying from the uphill edge of her skis"); describe a gesture, never count repetitions. "endState": what the last frame shows (positions, poses, what is in hand).
 - Film grammar: open the scene (or a new place) with an establishing wide shot; play a conversation as shot and reverse shot with matching eyelines; add reaction shots after important lines and inserts for props; keep the 180-degree rule and screen direction (a character who leaves frame right enters the next shot from the left); no more than two consecutive cuts with the same framing; at most one camera move per shot, motivated by the action.
 - "lensMm": a real focal length for the framing: 18–28 for wide shots, 35–50 for medium, 85–135 for close-ups.

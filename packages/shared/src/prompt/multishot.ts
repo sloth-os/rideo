@@ -6,6 +6,7 @@ import {
   compileShotPrompt,
   dialogueBlockV2,
   elementLines,
+  enhancePromptParam,
   identityFragment,
   inFrameLine,
   negativePromptFor,
@@ -37,12 +38,18 @@ export function needsOwnRequest(shot: Pick<Shot, 'startFrame' | 'endFrame' | 'mo
  * Consecutive shots (by index) grouped while a group has at most `maxShots` shots and its planned length fits
  * `maxDurationSec`. A group starts at a cut and only holds shots that `eligible` accepts; other shots are alone.
  */
-export function planShotGroups(
-  shots: Pick<Shot, 'id' | 'index' | 'durationSec' | 'continuity'>[],
-  opts: { maxShots: number; maxDurationSec: number; eligible: (id: string) => boolean },
+export function planShotGroups<T extends Pick<Shot, 'id' | 'index' | 'durationSec' | 'continuity'>>(
+  shots: T[],
+  opts: {
+    maxShots: number;
+    maxDurationSec: number;
+    eligible: (id: string) => boolean;
+    /** Whether `next` may join the group that `first` opens (docs/design/multi-shot.md#when). */
+    joins?: (first: T, next: T) => boolean;
+  },
 ): string[][] {
   const groups: string[][] = [];
-  let current: Pick<Shot, 'id' | 'index' | 'durationSec'>[] = [];
+  let current: T[] = [];
   let length = 0;
   const flush = () => {
     if (current.length) groups.push(current.map((s) => s.id));
@@ -57,7 +64,12 @@ export function planShotGroups(
     }
     // only the next shot of the film joins a group (a shot that already has a take may sit in between)
     const next = current.length > 0 && current[current.length - 1]!.index + 1 === shot.index;
-    if (next && current.length < opts.maxShots && length + shot.durationSec <= opts.maxDurationSec) {
+    if (
+      next &&
+      current.length < opts.maxShots &&
+      length + shot.durationSec <= opts.maxDurationSec &&
+      (opts.joins?.(current[0]!, shot) ?? true)
+    ) {
       current.push(shot);
       length += shot.durationSec;
       continue;
@@ -75,9 +87,30 @@ export function planShotGroups(
   return groups;
 }
 
-function shotLine(ctx: ShotContext, k: number): string {
-  const label = `Shot ${k + 1} (${Number(ctx.shot.durationSec.toFixed(1))} s):`;
+/**
+ * Wan 3.0 and models like it take a group's first frame and no references (`exclusive_frames_and_references`): a shot
+ * joins only when it shows no one the first frame does not, and lasts the guide's 2-5 s
+ * (docs/design/multi-shot.md#when).
+ */
+export const MULTI_SHOT_SEGMENT_MAX_SEC = 5;
+export function framedGroupJoins(
+  first: Pick<Shot, 'characterIds' | 'durationSec'>,
+  next: Pick<Shot, 'characterIds' | 'durationSec'>,
+): boolean {
+  return (
+    first.durationSec <= MULTI_SHOT_SEGMENT_MAX_SEC &&
+    next.durationSec <= MULTI_SHOT_SEGMENT_MAX_SEC &&
+    next.characterIds.every((id) => first.characterIds.includes(id))
+  );
+}
+
+/** Seconds as a shot label writes them: whole seconds when exact, one decimal otherwise. */
+const secs = (n: number) => String(Math.round(n * 10) / 10);
+
+function shotLine(ctx: ShotContext, k: number, startSec: number, last: boolean): string {
   if (promptVersionOf(ctx.settings) >= 2) {
+    // Wan 3.0's guide: a shot number, its time in the sequence and its content, then the transition
+    const label = `Shot ${k + 1} [${secs(startSec)}-${secs(startSec + ctx.shot.durationSec)}s]:`;
     const dialogue = dialogueBlockV2(ctx);
     const inFrame = inFrameLine(ctx, 'video');
     return [
@@ -85,8 +118,10 @@ function shotLine(ctx: ShotContext, k: number): string {
       ...shotBodyV2(ctx, 'video'),
       ...(inFrame ? [inFrame] : []),
       ...(dialogue ? [dialogue] : []),
+      ...(last ? [] : ['Hard cut.']),
     ].join(' ');
   }
+  const label = `Shot ${k + 1} (${Number(ctx.shot.durationSec.toFixed(1))} s):`;
   // The shot's own prompt without the style header, the cast and the elements (those are said once).
   const full = compileShotPrompt({ ...ctx, characters: [], elements: [] }, 'video');
   const body = full.replace(/^[^.]*\.\s*/, '');
@@ -122,7 +157,14 @@ export function compileMultiShotRequest(
   const lines = [
     header,
     `A multi-shot sequence of ${ctxs.length} shots separated by hard cuts.`,
-    ...ctxs.map((c, k) => shotLine(c, k)),
+    ...ctxs.map((c, k) =>
+      shotLine(
+        c,
+        k,
+        ctxs.slice(0, k).reduce((n, p) => n + p.shot.durationSec, 0),
+        k === ctxs.length - 1,
+      ),
+    ),
   ];
   if (characters.length)
     lines.push(
@@ -135,7 +177,13 @@ export function compileMultiShotRequest(
     lines.push(PHYSICS_LINE, `Avoid: ${EXCLUSIONS_MULTI}.`);
   }
   const total = ctxs.reduce((n, c) => n + c.shot.durationSec, 0);
-  const refs = opts.limits?.supports_reference_image === false ? [] : opts.referenceUris;
+  const framed = !!opts.firstFrameUri && opts.limits?.supports_first_frame !== false;
+  // A start frame and references cannot travel together on some models (Wan 3.0); the frame wins
+  const refs =
+    opts.limits?.supports_reference_image === false ||
+    (framed && opts.limits?.exclusive_frames_and_references)
+      ? []
+      : opts.referenceUris;
   const input: GatewayVideoRequest['input'] = [{ type: 'text', text: lines.join(' ') }];
   if (opts.firstFrameUri && opts.limits?.supports_first_frame !== false)
     input.push({ type: 'image', uri: opts.firstFrameUri, role: 'first_frame' });
@@ -147,9 +195,12 @@ export function compileMultiShotRequest(
       duration_seconds: clampDuration(total, opts.limits),
       dimensions: { width: first.settings.resolution.width, height: first.settings.resolution.height },
       seed: shotSeed(first.shot, first.characters, opts.attempt),
-      negative_prompt: v2 ? negativePromptFor(first).replace(/,\s*jump cut/, '') : BASE_NEGATIVE,
+      ...(opts.limits?.supports_negative_prompt === false
+        ? {}
+        : { negative_prompt: v2 ? negativePromptFor(first).replace(/,\s*jump cut/, '') : BASE_NEGATIVE }),
       include_audio: false,
       camera_motion: 'auto',
+      ...enhancePromptParam(first.settings),
     },
   };
 }

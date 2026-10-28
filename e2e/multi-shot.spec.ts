@@ -11,7 +11,13 @@ test('consecutive shots render in one request and come back as takes of their ow
   // Three 10 s shots (planned on the 10 s model); the multi-shot model renders the first two together.
   const pid = await api.storyProject(`Multi-shot (${testInfo.project.name})`, {
     screenplay: true,
-    settings: { storyboard: { enabled: false }, targetDurationSec: 60, pilotDurationSec: 30 },
+    // sequences are judged for identity only, so this project runs without the quality checks
+    settings: {
+      storyboard: { enabled: false },
+      targetDurationSec: 60,
+      pilotDurationSec: 30,
+      consistency: { qualityChecks: false },
+    },
   });
   await api.readyForStoryboard(pid);
   const state = await api.call<any>('GET', `/projects/${pid}/state`);

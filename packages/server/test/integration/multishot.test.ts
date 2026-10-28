@@ -23,6 +23,8 @@ async function threeShotClip(settings: Record<string, unknown> = {}) {
     storyboard: { enabled: false },
     targetDurationSec: 60,
     pilotDurationSec: 30,
+    // sequences are judged for identity only (docs/design/multi-shot.md#when)
+    consistency: { qualityChecks: false },
     ...settings,
   });
   const plan = await stack.api<Job>('POST', `/projects/${pid}/clips/plan`, {
@@ -42,6 +44,19 @@ async function generate(pid: string, clipId: string) {
 }
 
 describe('multi-shot generation', () => {
+  it('generates shot by shot when the takes run the quality checks or carry the model’s voices', async () => {
+    for (const settings of [
+      { consistency: { qualityChecks: true } },
+      { generation: { includeAudio: true }, dialogue: { mode: 'off' } },
+    ]) {
+      const { pid, clip } = await threeShotClip(settings);
+      await generate(pid, clip.id);
+      const jobs = await jobsOf(pid);
+      expect(jobs.filter((j) => j.kind === 'shot.group')).toEqual([]);
+      expect(jobs.filter((j) => j.kind === 'shot.generate')).toHaveLength(3);
+    }
+  });
+
   it('renders consecutive shots in one request, splits at the detected cut and verifies every shot', async () => {
     const { pid, clip, shots } = await threeShotClip();
     await generate(pid, clip.id);
@@ -71,8 +86,9 @@ describe('multi-shot generation', () => {
     expect(request.model).toBe('mock-multishot-v1');
     expect(request.parameters.duration_seconds).toBe(20);
     expect(request.input[0].text).toContain('A multi-shot sequence of 2 shots separated by hard cuts.');
-    expect(request.input[0].text).toContain('Shot 1 (10 s):');
-    expect(request.input[0].text).toContain('Shot 2 (10 s):');
+    // Wan 3.0's labels: each shot's time in the sequence
+    expect(request.input[0].text).toContain('Shot 1 [0-10s]:');
+    expect(request.input[0].text).toContain('Hard cut. Shot 2 [10-20s]:');
     expect(request.input.filter((p: { role?: string }) => p.role === 'first_frame')).toHaveLength(1);
     // speaking shots of the sequence carry their TTS dialogue
     for (const s of done.shots.filter((x) => x.index < 2 && x.dialogue.some((d) => d.characterId)))

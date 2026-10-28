@@ -57,6 +57,30 @@ export const MOCK_MODELS: MockModel[] = [
     },
   },
   {
+    // Wan 3.0's limits (docs/design/continuity.md#prompts-version-2): long takes, sequences of up to 8 shots, a frame
+    // or references (never both), no negative prompt, sound by default.
+    id: 'mock-wan3-v1',
+    modality: 'video',
+    limits: {
+      modality: 'video',
+      input_modalities: ['text', 'image', 'video', 'audio'],
+      supports_first_frame: true,
+      supports_last_frame: true,
+      supports_reference_image: true,
+      supports_reference_audio: true,
+      supports_reference_video: true,
+      supports_audio_output: true,
+      exclusive_frames_and_references: true,
+      supports_negative_prompt: false,
+      max_input_images: 10,
+      max_output_count: 1,
+      max_shots: 8,
+      min_duration_seconds: 2,
+      max_duration_seconds: 30,
+      notes: 'Rideo mock of Wan 3.0: the first frame or the references, 2-30 s, up to 8 shots in a sequence.',
+    },
+  },
+  {
     id: 'mock-multishot-v1',
     modality: 'video',
     limits: {

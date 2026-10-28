@@ -4,7 +4,7 @@ import { rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { runFfmpeg, synthesizeFrame, synthesizeMusic, synthesizeVideo } from './media';
-import type { Modality } from './models';
+import { MOCK_MODELS, type Modality } from './models';
 import { decodePng, encodePng, isPng, parseDataUri } from './png';
 import { allSignatures, type Rgb, signatureColor } from './signature';
 import { type RunResult, TaskError } from './tasks';
@@ -271,7 +271,10 @@ async function multiShot(
   width: number,
   height: number,
 ): Promise<RunResult> {
-  const durations = [...prompt.matchAll(/Shot \d+ \(([\d.]+) s\)/g)].map((m) => Math.max(1, Number(m[1])));
+  // `Shot k (D s)` (version 1) or `Shot k [a-bs]` (version 2, Wan 3.0's labels)
+  const durations = [...prompt.matchAll(/Shot \d+ (?:\(([\d.]+) s\)|\[([\d.]+)-([\d.]+)s\])/g)].map((m) =>
+    Math.max(1, m[1] !== undefined ? Number(m[1]) : Number(m[3]) - Number(m[2])),
+  );
   const first = parts.find((p) => p.type === 'image' && p.role === 'first_frame');
   const sigs = ctx.flaky ? [] : await signaturesFromImages(parts);
   const files: string[] = [];
@@ -364,7 +367,14 @@ export async function runVideo(body: Record<string, any>, ctx: GenerateContext):
   const params = (body.parameters ?? {}) as Record<string, unknown>;
   const prompt = promptOf(parts);
   const { width, height } = dims(params, { width: 1280, height: 720 });
-  const durationSec = Math.max(2, Math.min(10, Number(params.duration_seconds ?? 5)));
+  // The model's own range (mock-wan3-v1 renders up to 30 s)
+  const limits = MOCK_MODELS.find((m) => m.id === body.model)?.limits as
+    | { max_duration_seconds?: number }
+    | undefined;
+  const durationSec = Math.max(
+    2,
+    Math.min(limits?.max_duration_seconds ?? 10, Number(params.duration_seconds ?? 5)),
+  );
   const first = parts.find((p) => p.type === 'image' && p.role === 'first_frame');
   const name = randomBytes(8).toString('hex');
   // A multi-shot prompt (docs/design/multi-shot.md): one segment per shot, hard cuts between them.

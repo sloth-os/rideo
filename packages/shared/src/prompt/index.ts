@@ -45,6 +45,20 @@ export const SCENE_REFERENCE_PHRASE =
   'The last image is the scene reference: match its place, light, weather and colours, not its composition or people.';
 
 export const DEFAULT_VIDEO_LIMITS = { min: 4, max: 10 };
+/**
+ * The longest shot Rideo plans, whatever the model allows: a long take drifts and cuts itself
+ * (docs/design/continuity.md#shot-planning).
+ */
+export const PLANNED_SHOT_MAX_SEC = 10;
+
+/** The shot lengths to plan for a video model: its range, capped at `PLANNED_SHOT_MAX_SEC`. */
+export function plannedShotRange(
+  limits?: Pick<ModelLimits, 'min_duration_seconds' | 'max_duration_seconds'> | null,
+): { min: number; max: number } {
+  const max = Math.min(limits?.max_duration_seconds ?? DEFAULT_VIDEO_LIMITS.max, PLANNED_SHOT_MAX_SEC);
+  const min = Math.min(limits?.min_duration_seconds ?? DEFAULT_VIDEO_LIMITS.min, max);
+  return { min, max };
+}
 export const DEFAULT_MAX_INPUT_IMAGES = 4;
 
 const MAX_SEED = 2147483647;
@@ -157,6 +171,9 @@ const MOVEMENT: Record<Shot['camera']['movement'], string> = {
   zoom: 'slow zoom',
   orbit: 'orbiting camera',
 };
+
+/** Version 2: a camera that must not move, in Wan 3.0's guide's words. */
+export const STATIC_CAMERA_V2 = 'fixed shot, camera static, position unchanged';
 
 export interface ShotContext {
   shot: Shot;
@@ -294,8 +311,13 @@ export function shotBodyV2(
     lines.push(`Continues from the previous shot: ${previous}.`);
   const move = cameraMove(shot.camera.move);
   const lens = lensFragment(shot.camera);
+  const motion = move
+    ? move.phrase
+    : shot.camera.movement === 'static'
+      ? STATIC_CAMERA_V2
+      : MOVEMENT[shot.camera.movement];
   lines.push(
-    `Camera: ${FRAMING[shot.camera.framing]}${mode === 'video' ? `, ${move ? move.phrase : MOVEMENT[shot.camera.movement]}` : ''}${lens ? `; ${lens}` : ''}.`,
+    `Camera: ${FRAMING[shot.camera.framing]}${mode === 'video' ? `, ${motion}` : ''}${lens ? `; ${lens}` : ''}.`,
   );
   if (mode === 'video' && opts.motionReference && shot.motionReference)
     lines.push(MOTION_REFERENCE_PHRASES[shot.motionReference.mode]);
@@ -325,10 +347,10 @@ export function dialogueBlockV2(ctx: Pick<ShotContext, 'shot' | 'characters' | '
 /** Version 2: the model's own sound (ambient and action; music only when the project lets it). */
 export function soundBlockV2(settings: Pick<ProjectSettings, 'generation' | 'dialogue'>): string | null {
   if (!settings.generation.includeAudio || settings.dialogue?.mode === 'tts') return null;
-  // What the sound is, not only what it is not: "no background music" alone left music in a third of the takes
+  // What the sound is, not only what it is not, and Wan 3.0's own words for no music ("No BGM")
   return settings.generation.modelMusic
     ? 'Sound: natural ambient sound of the place and the action.'
-    : 'Sound: only the voices and the natural sounds of the place and the action; no music, no song, no humming.';
+    : "Sound: the characters' voices and the ambient and action sounds of the place. No BGM, no music, no song, no humming.";
 }
 
 /** The first words of a single shot's version 2 video prompt. */
@@ -609,7 +631,16 @@ export function compileVideoRequest(
   },
 ): GatewayVideoRequest {
   const { shot, settings } = ctx;
-  const refs = opts.limits?.supports_reference_image === false ? [] : opts.referenceUris;
+  const framed =
+    (!!opts.firstFrameUri && opts.limits?.supports_first_frame !== false) ||
+    (!!opts.lastFrameUri && opts.limits?.supports_last_frame !== false);
+  // A frame and references cannot travel together on some models (Wan 3.0): the frame wins, as the gateway would
+  // decide, without carrying the reference images there (docs/design/continuity.md#prompts-version-2)
+  const refs =
+    opts.limits?.supports_reference_image === false ||
+    (framed && opts.limits?.exclusive_frames_and_references)
+      ? []
+      : opts.referenceUris;
   const referenceVideo =
     opts.referenceVideoUri && opts.limits?.supports_reference_video !== false
       ? opts.referenceVideoUri
@@ -633,16 +664,26 @@ export function compileVideoRequest(
       duration_seconds: clampDuration(opts.durationSec ?? shot.durationSec, opts.limits),
       dimensions: { width: settings.resolution.width, height: settings.resolution.height },
       seed: shotSeed(shot, ctx.characters, opts.attempt, opts.variation),
-      negative_prompt: negativePromptFor(ctx),
+      ...(opts.limits?.supports_negative_prompt === false ? {} : { negative_prompt: negativePromptFor(ctx) }),
       include_audio: opts.includeAudio ?? settings.generation.includeAudio,
       camera_motion:
         cameraMove(shot.camera.move)?.cameraMotion ?? (shot.camera.movement === 'static' ? 'fixed' : 'auto'),
-      // The provider's own prompt rewriting, only when the project says (docs/design/continuity.md#prompts-version-2)
-      ...(typeof settings.generation.enhancePrompt === 'boolean'
-        ? { enhance_prompt: settings.generation.enhancePrompt }
-        : {}),
+      ...enhancePromptParam(settings),
     },
   };
+}
+
+/**
+ * The provider's own prompt rewriting (docs/design/continuity.md#prompts-version-2): what the project says, else off
+ * for version 2 prompts (long and structured; the rewriting invents detail and plans its own cuts) and the provider's
+ * default for version 1.
+ */
+export function enhancePromptParam(settings: Pick<ProjectSettings, 'generation'>): {
+  enhance_prompt?: boolean;
+} {
+  const chosen = settings.generation.enhancePrompt;
+  if (typeof chosen === 'boolean') return { enhance_prompt: chosen };
+  return promptVersionOf(settings) >= 2 ? { enhance_prompt: false } : {};
 }
 
 const EDIT_PHRASE: Record<EditKind, (instruction: string) => string> = {

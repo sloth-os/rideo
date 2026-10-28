@@ -16,6 +16,7 @@ import {
   DIALOGUE_LEVELS,
   dialogueDirection,
   fitDialogue,
+  framedGroupJoins,
   heardShares,
   inFrameLine,
   LINE_HEARD_RATIO,
@@ -23,6 +24,8 @@ import {
   negativePromptFor,
   ProjectSettingsSchema,
   parseSceneScores,
+  plannedShotRange,
+  planShotGroups,
   type ShotContext,
   SoundCheckOutputSchema,
   sceneLine,
@@ -93,7 +96,7 @@ describe('prompt version 2 (docs/design/continuity.md#prompts-version-2)', () =>
       'Characters (keep identities exactly as in the first frame and the reference images): Mira:',
       'Dialogue: Mira says, in a',
       ': "Look at the mountain!" Lip sync.',
-      'Sound: only the voices and the natural sounds of the place and the action; no music, no song, no humming.',
+      "Sound: the characters' voices and the ambient and action sounds of the place. No BGM, no music, no song, no humming.",
       'Physics:',
       'Avoid:',
     ];
@@ -169,17 +172,67 @@ describe('prompt version 2 (docs/design/continuity.md#prompts-version-2)', () =>
     expect(req.parameters?.negative_prompt).toBe(BASE_NEGATIVE_V2);
   });
 
-  it('sends enhance_prompt only when the project sets it', () => {
+  it('turns the provider’s prompt rewriting off for version 2 unless the project asks for it', () => {
     const ctx = ctxV2();
-    expect(compileVideoRequest(ctx, { referenceUris: [], attempt: 0 }).parameters).not.toHaveProperty(
-      'enhance_prompt',
-    );
-    const off = {
-      ...ctx,
-      settings: { ...ctx.settings, generation: { ...ctx.settings.generation, enhancePrompt: false } },
-    };
-    expect(compileVideoRequest(off, { referenceUris: [], attempt: 0 }).parameters?.enhance_prompt).toBe(
+    expect(compileVideoRequest(ctx, { referenceUris: [], attempt: 0 }).parameters?.enhance_prompt).toBe(
       false,
+    );
+    const on = {
+      ...ctx,
+      settings: { ...ctx.settings, generation: { ...ctx.settings.generation, enhancePrompt: true } },
+    };
+    expect(compileVideoRequest(on, { referenceUris: [], attempt: 0 }).parameters?.enhance_prompt).toBe(true);
+    // Version 1 keeps the provider's default
+    expect(
+      compileVideoRequest({ ...ctx, settings: v1 }, { referenceUris: [], attempt: 0 }).parameters,
+    ).not.toHaveProperty('enhance_prompt');
+  });
+
+  it('shapes the request by the model’s limits: a frame without references, no negative prompt field', () => {
+    const ctx = ctxV2();
+    const wan3 = { exclusive_frames_and_references: true, supports_negative_prompt: false };
+    const framed = compileVideoRequest(ctx, {
+      firstFrameUri: 'data:image/png;base64,AA',
+      referenceUris: ['data:image/png;base64,BB'],
+      attempt: 0,
+      limits: wan3,
+    });
+    expect(framed.input.map((p) => (p.type === 'text' ? 'text' : p.role))).toEqual(['text', 'first_frame']);
+    expect(framed.parameters).not.toHaveProperty('negative_prompt');
+    // Without a frame the references go; other models keep both and the negative prompt
+    const referenced = compileVideoRequest(ctx, {
+      referenceUris: ['data:image/png;base64,BB'],
+      attempt: 0,
+      limits: wan3,
+    });
+    expect(referenced.input.map((p) => (p.type === 'text' ? 'text' : p.role))).toEqual([
+      'text',
+      'reference_image',
+    ]);
+    const other = compileVideoRequest(ctx, {
+      firstFrameUri: 'data:image/png;base64,AA',
+      referenceUris: ['data:image/png;base64,BB'],
+      attempt: 0,
+      limits: {},
+    });
+    expect(other.input).toHaveLength(3);
+    expect(other.parameters?.negative_prompt).toBeTruthy();
+  });
+
+  it('plans shots within the model’s range, capped at 10 s, and holds a static camera in Wan’s words', () => {
+    expect(plannedShotRange({ min_duration_seconds: 2, max_duration_seconds: 30 })).toEqual({
+      min: 2,
+      max: 10,
+    });
+    expect(plannedShotRange({ min_duration_seconds: 5, max_duration_seconds: 5 })).toEqual({
+      min: 5,
+      max: 5,
+    });
+    expect(plannedShotRange(null)).toEqual({ min: 4, max: 10 });
+    const ctx = ctxV2();
+    ctx.shot.camera = { framing: 'insert', movement: 'static' };
+    expect(compileShotPrompt(ctx, 'video')).toContain(
+      'Camera: insert shot, fixed shot, camera static, position unchanged.',
     );
   });
 
@@ -273,9 +326,11 @@ describe('prompt version 2 (docs/design/continuity.md#prompts-version-2)', () =>
       referenceUris: [],
       attempt: 0,
     });
-    expect((req.input[0] as { text: string }).text).toContain(
-      'Shot 2 (5 s): Rosie points at the chart. Action:',
-    );
+    // Wan 3.0's labels: each shot's time in the sequence, a hard cut between shots
+    const text = (req.input[0] as { text: string }).text;
+    expect(text).toContain('Shot 1 [0-5s]: Mira climbs');
+    expect(text).toContain('No dialogue. Hard cut. Shot 2 [5-10s]: Rosie points at the chart. Action:');
+    expect(text).not.toMatch(/Hard cut\.\s*Characters/);
     expect((req.input[0] as { text: string }).text).toContain('In frame: only Rosie; nobody else.');
   });
 
@@ -556,5 +611,36 @@ describe('the sound check (docs/design/continuity.md#quality-checks-in-the-gate)
       physics: null,
       sound: { lines: [], unexpectedSpeech: false },
     });
+  });
+
+  it('groups a framed sequence only with the first frame’s cast and shots of at most 5 s', () => {
+    const rosie = 'chr_0000000000rosie0';
+    const sammy = 'chr_0000000000sammy0';
+    const shot = (index: number, characterIds: string[], durationSec = 4) => ({
+      id: `s${index}`,
+      index,
+      durationSec,
+      continuity: 'cut' as const,
+      characterIds,
+    });
+    const shots = [
+      shot(0, [rosie, sammy]),
+      shot(1, [rosie]),
+      shot(2, [sammy]),
+      shot(3, [rosie], 8), // too long for a segment
+      shot(4, [rosie]),
+      shot(5, [sammy]), // not in shot 4's frame
+    ];
+    const groups = planShotGroups(shots, {
+      maxShots: 8,
+      maxDurationSec: 30,
+      eligible: () => true,
+      joins: framedGroupJoins,
+    });
+    expect(groups).toEqual([['s0', 's1', 's2'], ['s3'], ['s4'], ['s5']]);
+    // Without the rule the cast does not matter
+    expect(planShotGroups(shots, { maxShots: 8, maxDurationSec: 40, eligible: () => true })).toEqual([
+      ['s0', 's1', 's2', 's3', 's4', 's5'],
+    ]);
   });
 });

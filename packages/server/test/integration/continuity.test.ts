@@ -245,4 +245,29 @@ describe('continuity-aware generation (prompt version 2)', () => {
     expect(video.input[0].text).not.toContain('One continuous shot');
     expect(video.parameters.negative_prompt).not.toContain('morphing');
   });
+
+  it('uses a Wan 3.0-like model as it is documented: shots within 10 s, a frame without references', async () => {
+    const { pid, clip } = await plannedClip({ models: { video: 'mock-wan3-v1' } });
+    // The model renders 2-30 s; Rideo plans within 2-10 s (docs/design/continuity.md#shot-planning)
+    for (const shot of clip.shots) {
+      expect(shot.durationSec).toBeGreaterThanOrEqual(2);
+      expect(shot.durationSec).toBeLessThanOrEqual(10);
+    }
+    const generated = await generate(pid, clip.id);
+    const take = [...generated.shots].sort((a, b) => a.index - b.index)[0]!.takes.at(-1)!;
+    const video = requestOf(take.gatewayTaskIds.at(-1)!);
+    expect(video.model).toBe('mock-wan3-v1');
+    // A first frame and no references (the modes are exclusive), no negative prompt field, no rewriting
+    const roles = video.input
+      .filter((p: { type: string }) => p.type !== 'text')
+      .map((p: { role: string }) => p.role);
+    expect(roles).toEqual(['first_frame']);
+    expect(video.parameters).not.toHaveProperty('negative_prompt');
+    expect(video.parameters.enhance_prompt).toBe(false);
+    expect(video.input[0].text).toMatch(/^One continuous shot, no cuts\. /);
+    expect(video.input[0].text).toContain('No BGM');
+    // Voiced takes with quality checks are generated shot by shot, not as a sequence
+    const jobs = await stack.api<Job[]>('GET', `/projects/${pid}/jobs`);
+    expect(jobs.filter((j) => j.kind === 'shot.group')).toEqual([]);
+  });
 });

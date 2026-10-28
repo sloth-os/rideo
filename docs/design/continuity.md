@@ -87,6 +87,14 @@ including those written hours later by an extension, at the words the audience k
 time is lengthened up to the model's maximum, and lines that still do not fit move to a continuous shot inserted after
 it (same description and camera, `continuity: continuous`). Nothing is cut from a line.
 
+**Shot length.** Shots are planned within the model's range, capped at `PLANNED_SHOT_MAX_SEC` (10 s): Wan 3.0
+renders 2–30 s, but a long take drifts and cuts itself ("longer runs make drift and unwanted cuts more likely"), and
+one 10-second take beats two 5-second ones. `plannedShotRange(limits)` (shared) gives the range to the planner, the
+dialogue fit and the writer's longest line. The planner varies the lengths with what happens: 2–3 s for reactions
+and inserts, 4–6 s for most shots, up to the cap for establishing shots and longer lines. In the panda demo every
+shot lasted exactly 5 s because the gateway's catalogue pinned the model to 5 s, and the feedback named the
+"mechanical 5.04-second cadence".
+
 ## Prompts (version 2)
 
 All of it is compiled by the pure functions of `shared/prompt` from the documents (rule R3), so the same inputs give
@@ -139,13 +147,20 @@ Avoid: <exclusions>.
   from the identity), the same words every time, so a model that voices the lines itself (`include_audio` without
   reference audio, [dialogue](dialogue.md#from-lines-to-audio)) keeps each character sounding alike.
 - **No dialogue.** A shot without lines says `No dialogue.`, otherwise models that render sound invent speech.
-- **Music.** Unless `settings.generation.modelMusic` is on, the sound is `only the voices and the natural sounds of the
-  place and the action; no music, no song, no humming`: a 5-second shot with its own music makes the cut jump from
-  song to song; the score is laid on the Music track ([post audio](post-audio.md)). With the earlier `no background
-  music`, Wan 3.0 still put music under 2 of the panda demo's 6 pilot takes (the sound check hears it); saying what
-  the sound is, not only what it is not, follows its prompt guide.
+- **Music.** Unless `settings.generation.modelMusic` is on, the sound is `the characters' voices and the ambient and
+  action sounds of the place. No BGM, no music, no song, no humming.`: a shot with its own music makes the cut jump
+  from song to song; the score is laid on the Music track ([post audio](post-audio.md)). Wan 3.0's guide disables
+  music with "No BGM, generate only ambient and action sounds"; saying what the sound is, not only what it is not,
+  follows it. With the earlier `no background music` 2 of the panda demo's 6 pilot takes had music, and with `only
+  the voices and the natural sounds of the place and the action; no music, no song, no humming` about 19 of 104.
+- **A static camera** is `fixed shot, camera static, position unchanged`, the guide's words for a frame that must
+  not move (an insert that widened, a close-up that pulled back).
 - **Exclusions in the text.** Some models (Wan 3.0) have no negative prompt field, so the last block lists the
-  exclusions; the `negative_prompt` parameter still carries them for models that do.
+  exclusions; the `negative_prompt` parameter carries them only for models that have one (`supports_negative_prompt`
+  is not `false`).
+- **Frames or references.** A model whose limits say `exclusive_frames_and_references` (Wan 3.0) takes a first or
+  last frame, or references, never both: a request with a start frame sends no references (the frame already shows
+  the cast and the place, and the gateway would drop them after carrying megabytes of images).
 
 **Keyframe prompt.** The still keeps the full identity fragments (they condition the face) and adds the scene line,
 the continuation and the exclusions; it has no dialogue, sound or physics blocks.
@@ -156,8 +171,10 @@ own negative prompt, cut at 500 characters (the limit of Wan models).
 
 **Prompt rewriting.** Some providers rewrite prompts with their own LLM (Wan's `prompt_extend`, on by default), which
 can change a line of dialogue, drop a continuity detail or plan more shots (Wan 2.6 made multi-shot videos only with
-it on). `settings.generation.enhancePrompt` sends the gateway's `enhance_prompt` (`null`, the default, leaves the
-provider's default); the panda demo's third pass turns it off.
+it on; a tested guide found it adds invented detail and recommends it off for structured prompts over about sixty
+words). Version 2 prompts are long and structured, so with `settings.generation.enhancePrompt: null` (the default)
+they send `enhance_prompt: false`; `true` asks for the rewriting, and version 1 keeps the provider's default. The
+panda demo's third pass ran with it off: 8 of 13 shots that had failed every attempt passed at the first.
 
 ## Scene reference frame
 

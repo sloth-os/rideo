@@ -129,8 +129,9 @@ The LLM gets the scene, the cast, the style bible and the video model limits, an
 `{description, action, camera: {framing, movement}, characterIds, wardrobe, dialogue, durationSec,
 continuity}`. The planner then **normalizes** the result deterministically:
 
-- clamp each duration into `[min_duration_seconds, max_duration_seconds]` of the video model (default
-  `[4, 10]` when the limits are unknown);
+- clamp each duration into the planned range: `[min_duration_seconds, max_duration_seconds]` of the video model
+  capped at 10 s (`plannedShotRange`; default `[4, 10]` when the limits are unknown;
+  [shot length](continuity.md#shot-planning));
 - split shots longer than the maximum into continuous sub-shots;
 - scale durations so the clip lands within `[10, 180]` s and near the scene estimate;
 - drop unknown character ids, and make the first shot of a clip a `cut`;

@@ -129,6 +129,7 @@ export const ModelLimitsSchema = z.looseObject({
   max_duration_seconds: z.number().optional(),
   min_duration_seconds: z.number().optional(),
   supported_sizes: z.array(z.string()).optional(),
+  aspect_ratios: z.array(z.string()).optional(),
   supports_image_to_image: z.boolean().optional(),
   supports_first_frame: z.boolean().optional(),
   supports_last_frame: z.boolean().optional(),
@@ -145,6 +146,10 @@ export const ModelLimitsSchema = z.looseObject({
   supports_segmentation: z.boolean().optional(),
   /** Animates the first frame's characters with a driving performance video (docs/design/performance.md). */
   supports_performance: z.boolean().optional(),
+  /** A first or last frame cannot be combined with references in one request (Wan 3.0). */
+  exclusive_frames_and_references: z.boolean().optional(),
+  /** `false`: no negative prompt field; exclusions go in the prompt text. */
+  supports_negative_prompt: z.boolean().optional(),
   notes: z.string().optional(),
 });
 export type ModelLimits = z.infer<typeof ModelLimitsSchema>;

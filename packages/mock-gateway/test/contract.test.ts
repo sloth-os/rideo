@@ -93,6 +93,7 @@ describe('public contract', () => {
     expect(models.data.map((m: any) => m.id)).toEqual([
       'mock-video-v1',
       'mock-video-lite-v1',
+      'mock-wan3-v1',
       'mock-multishot-v1',
       'mock-enhance-v1',
       'mock-segment-v1',
@@ -102,6 +103,13 @@ describe('public contract', () => {
     const limits = (await (await fetch(`${gw.url}/v1/models/limits`, { headers: auth })).json()) as any;
     expectSchema('ModelLimitsListResponse', limits);
     expect(limits.data.find((m: any) => m.id === 'mock-video-v1').limits.max_duration_seconds).toBe(10);
+    // Wan 3.0's limits (docs/design/continuity.md#prompts-version-2)
+    expect(limits.data.find((m: any) => m.id === 'mock-wan3-v1').limits).toMatchObject({
+      max_duration_seconds: 30,
+      max_shots: 8,
+      exclusive_frames_and_references: true,
+      supports_negative_prompt: false,
+    });
     // a segmentation model (docs/design/editor.md#segmentation-masks-remove-the-background)
     expect(limits.data.find((m: any) => m.id === 'mock-segment-v1').limits.supports_segmentation).toBe(true);
     // a performance model (docs/design/performance.md#mock-gateway)
