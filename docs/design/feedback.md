@@ -156,7 +156,9 @@ old one had a stray cut). Which of two flawed takes is better is a person's call
 | fails a check | keeps the previous take | *Not fixed*, with the new take's issues and **Use the new take**: it selects the take and puts it in the cut in one commit (`take_select` with `inCut`) |
 
 The outcome is derived from the documents (`fixOutcome`, shared), so the REST API, MCP and the panel agree, and a
-take a person put in the cut later shows as theirs.
+take a person put in the cut later shows as theirs. A fix made while the judge was down is unverified and shows *Not
+fixed* until the judge is back: a re-check that passes it puts it in the cut, and it shows *Fixed*
+([re-checking](character-consistency.md#re-checking-unverified-takes)).
 
 ### What changed since the last feedback
 

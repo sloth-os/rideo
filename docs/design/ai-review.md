@@ -162,7 +162,8 @@ export's feedback call, so what it finds is what that feedback would find later:
    there is no cut yet, so the new take becomes the shot's **selected take only when it passes every check**
    (`selectIfPasses`); otherwise the shot keeps its take and the fix shows *Not fixed* with the new take's issues. A
    scene already in the cut gets the passing take there too, as a feedback fix does (`swapInCut`). The job waits for
-   the regenerations.
+   the regenerations. A fix made while the judge was down stays unverified until a re-check passes it, which then
+   selects it and puts it in the cut ([re-checking](character-consistency.md#re-checking-unverified-takes)).
 5. **Once more.** When a fix was applied, the scene is watched again (round 2) for the record; the first round's
    overall score, scores and issue count stay as `before`. There is one round of fixes: what still breaks the scene
    goes to the edit, and the export's feedback has the last word. A retry of the job after its fixes were made (the

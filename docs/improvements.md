@@ -447,7 +447,10 @@ keeps one look, and the two remakes match the sequence (no sunset, no rocks). Th
 remake's shot: its remake failed too, so the failed segment stayed in the cut, and it holds a stray cut from Sammy to
 Rosie. Across the three runs (one scene each, its review differing by up to 0.7 between watches) continuity went
 4 → 5 → 5 → 6 as more of the scene was one sequence and its remakes kept its look. The three evaluations and the
-probe cost $39.53.
+probe cost $39.53. Since then a segment's own first frame starts its remake only when what failed was its sound or
+its physics: a segment whose identity failed, that showed someone not in the shot, that showed something twice or
+that jumped may open on the wrong picture, as the third run's did, so it gets a new keyframe
+([splitting and verification](design/multi-shot.md#splitting-and-verification)).
 
 ### Run figures
 
