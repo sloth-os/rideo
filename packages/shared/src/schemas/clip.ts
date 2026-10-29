@@ -220,7 +220,8 @@ export const TakeSchema = z.object({
     seed: z.number().int(),
     durationSec: z.number().positive(),
     /** `storyboard`: the shot's approved board frame (docs/design/storyboard.md#video-pass). */
-    firstFrameSource: z.enum(['keyframe', 'previous_shot', 'storyboard', 'resource', 'none']),
+    /** `sequence`: a remake from its failed segment's first frame (docs/design/multi-shot.md#splitting-and-verification). */
+    firstFrameSource: z.enum(['keyframe', 'previous_shot', 'storyboard', 'resource', 'sequence', 'none']),
     referenceCount: z.number().int().nonnegative(),
     /** What the model was given as the last frame and as the reference video (docs/design/directing.md). */
     lastFrameSource: z.enum(['generated', 'resource']).nullable().default(null),

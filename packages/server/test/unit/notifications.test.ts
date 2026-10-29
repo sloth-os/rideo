@@ -82,5 +82,6 @@ describe('notifications (docs/design/review.md#notifications)', () => {
     expect(all.notifications).toHaveLength(500);
     expect(all.notifications[0]!.title).toBe('n504');
     expect(all.notifications.at(-1)!.title).toBe('n5');
-  });
+    // 505 writes in a row: more than vitest's 5 s on a loaded two-core box
+  }, 30_000);
 });

@@ -249,6 +249,7 @@ const FRAME_SOURCE: Record<Take['request']['firstFrameSource'], string> = {
   previous_shot: 'previous shot',
   storyboard: 'storyboard',
   resource: 'image',
+  sequence: 'its sequence',
   none: 'none',
 };
 

@@ -90,10 +90,13 @@ export async function shotGenerate(deps: HandlerDeps, ctx: JobContext) {
     clipId,
     shotId,
     variation = 0,
+    startFrame,
   } = ctx.job.params as {
     clipId: string;
     shotId: string;
     variation?: number;
+    /** A remake of a failed sequence segment starts from its first frame (docs/design/multi-shot.md). */
+    startFrame?: MediaRef;
   };
   const projectId = ctx.job.projectId;
   const docs = await docsFor(deps, ctx);
@@ -212,6 +215,9 @@ export async function shotGenerate(deps: HandlerDeps, ctx: JobContext) {
       // A start frame chosen by the director wins over continuity, the board and the keyframe.
       if (shot.startFrame.mode === 'resource' && shot.startFrame.resourceId)
         firstFrame = { uri: await resourceUri(shot.startFrame.resourceId, true), source: 'resource' };
+      // A remake of a sequence's segment keeps the sequence's look (docs/design/multi-shot.md#splitting-and-verification)
+      if (!firstFrame && startFrame)
+        firstFrame = { uri: await deps.media.pngDataUri(projectId, startFrame, 1920), source: 'sequence' };
       // An approved, current storyboard frame is the first frame: no second image generation
       // (docs/design/storyboard.md#video-pass).
       if (!firstFrame && shot.board && boardState(shot, docs) === 'approved') {

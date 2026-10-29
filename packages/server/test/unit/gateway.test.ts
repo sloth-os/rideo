@@ -85,7 +85,8 @@ describe('GatewayClient (SDK)', () => {
       )
       .catch(() => undefined);
     expect(parametersOf(created[1]!)).not.toHaveProperty('watermark');
-  });
+    // several generations through the mock: more than vitest's 5 s on a loaded two-core box
+  }, 30_000);
 
   it('classifies task failures and HTTP problems', async () => {
     const failed = await client

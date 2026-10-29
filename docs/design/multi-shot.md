@@ -76,7 +76,13 @@ shot's lines heard (`sound.check`). A render whose every segment passes is used 
 - A voiced or checked group is rendered once. Every segment must pass, so a whole render passes less often than one
   shot does (at the swimming film's 94 % first-attempt rate, eight shots pass together 61 % of the time), and another
   render costs the whole sequence again. A shot whose segment fails keeps it as a failed take and is made again
-  alone (`shot.generate`, with its own attempts and the scene's reference frame); the group's job waits for those.
+  alone (`shot.generate`, with its own attempts and the scene's reference frame), starting from the segment's first
+  frame (`startFrame`; `firstFrameSource: sequence`), so the remake keeps the sequence's light, water and props: made
+  from new keyframes, scene 7's two remakes came back at sunset and among rocks that the sequence did not have. A
+  segment that failed its identity check is made again from a new keyframe. The group's job waits for the remakes.
+
+The segments are checked at the same time, four at once: each check waits on the judge and the listener, and eight
+segments checked one after another made a scene take 30 minutes against 16 for single takes.
 
 `rideo_sequence_segments_total{outcome}` counts the segments that passed and failed.
 

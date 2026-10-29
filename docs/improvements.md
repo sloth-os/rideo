@@ -427,7 +427,15 @@ for single takes, as six shots of up to 6 s, four of them single takes (longer t
 sequence of two shots formed, and the scene review watched 6.8 against main's 6.6 (continuity 5 against 4) — too
 little of it was a sequence to say more, and the same takes watched twice differ by up to 0.7. So the plan is now
 made for sequences when the model renders them ([planning for sequences](design/multi-shot.md#planning-for-sequences)):
-shots of 2–5 s, the scene opening on its whole cast.
+shots of 2–5 s, the scene opening on its whole cast. Made again with that plan (a second branch, the scene review
+watching only), scene 7 became eight shots of 30 s in one sequence: six segments passed every check and two were
+made again alone, in 30 minutes (the eight segments are checked one after another; single takes took 16). The
+review watched 6.8 again, continuity 5 (main: 6.6 and 4) and character 8, with 11 issues and none critical (main: 8,
+one critical). In its frames the six segments of the sequence keep the water, the light, the palms and the ball; the
+two breaks the review named most ("sunset light inside a morning scene", "unestablished rocks") are the two shots
+made again alone. So the sequence holds a scene together, and its single remakes are where it comes apart again.
+Since then a failing segment's shot is made again from the segment's own first frame (the sequence's light, water and
+props; a new keyframe only when its identity failed), and a sequence's segments are checked four at a time.
 
 ### Run figures
 

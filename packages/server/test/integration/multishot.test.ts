@@ -62,7 +62,10 @@ describe('multi-shot generation', () => {
     expect(groups[0]!.result).toMatchObject({ shots: 2, passed: 1, remade: 1 });
     const singles = jobs.filter((j) => j.kind === 'shot.generate');
     expect(singles.map((j) => j.params.shotId).sort()).toEqual([shots[0]!.id, shots[2]!.id].sort());
-    expect(singles.find((j) => j.params.shotId === shots[0]!.id)!.params.selectIfPasses).toBe(true);
+    const remakeJob = singles.find((j) => j.params.shotId === shots[0]!.id)!;
+    expect(remakeJob.params.selectIfPasses).toBe(true);
+    // made again from its segment's first frame: the sequence's look (its identity passed, its sound did not)
+    expect((remakeJob.params.startFrame as { path: string }).path).toMatch(/^media\/keyframes\//);
 
     const done = await clipNow(pid, clip.id);
     const [first, second] = [...done.shots].sort((x, y) => x.index - y.index);
@@ -77,6 +80,7 @@ describe('multi-shot generation', () => {
     expect(segment.consistency.quality?.temporal).toMatchObject({ jumps: [] });
     const remade = first!.takes.find((t) => t.id === first!.selectedTakeId)!;
     expect(remade.request.multiShot).toBeNull();
+    expect(remade.request.firstFrameSource).toBe('sequence');
     expect(remade.consistency.quality).toMatchObject({ passed: true, sound: { lines: [{ heard: 1 }] } });
     // the other segment kept its sound and passed every check
     const kept = second!.takes.find((t) => t.id === second!.selectedTakeId)!;
