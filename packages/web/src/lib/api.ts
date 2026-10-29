@@ -181,6 +181,19 @@ export function setUnauthorizedHandler(fn: (() => void) | null): void {
   onUnauthorized = fn;
 }
 
+/**
+ * The bytes of one upload request: a body of bytes is copied whole into the DevTools protocol's request event, and one
+ * over a few hundred MB kills an automation driver (docs/design/editor.md#memory).
+ */
+export const UPLOAD_SLICE_BYTES = 8 * 1024 * 1024;
+
+/** A staged editor output, or how much of it has arrived. */
+interface StagedFile {
+  name: string;
+  size: number;
+  complete?: boolean;
+}
+
 async function request<T>(
   method: string,
   path: string,
@@ -189,7 +202,7 @@ async function request<T>(
 ): Promise<T> {
   const token = getToken();
   const isForm = typeof FormData !== 'undefined' && body instanceof FormData;
-  const isBlob = typeof Blob !== 'undefined' && body instanceof Blob;
+  const isBlob = (typeof Blob !== 'undefined' && body instanceof Blob) || body instanceof Uint8Array;
   const res = await fetch(apiUrl(path), {
     method,
     headers: {
@@ -202,7 +215,11 @@ async function request<T>(
       ...headers,
     },
     body:
-      body === undefined ? undefined : isForm || isBlob ? (body as FormData | Blob) : JSON.stringify(body),
+      body === undefined
+        ? undefined
+        : isForm || isBlob
+          ? (body as FormData | Blob | Uint8Array<ArrayBuffer>)
+          : JSON.stringify(body),
   });
   if (res.status === 204) return undefined as T;
   const text = await res.text();
@@ -632,12 +649,22 @@ export const api = {
         ...(progress ? { progress } : {}),
       },
     ),
-  editorUpload: (jobId: string, sessionId: string, name: string, data: Blob) =>
-    request<{ name: string; size: number }>(
-      'PUT',
-      `/editor/jobs/${jobId}/files/${name}?sessionId=${encodeURIComponent(sessionId)}`,
-      data,
-    ),
+  /**
+   * Stages an output of the tab's job: a Blob whole, bytes in slices of `UPLOAD_SLICE_BYTES`
+   * (docs/design/editor.md#memory).
+   */
+  editorUpload: async (jobId: string, sessionId: string, name: string, data: Blob | Uint8Array) => {
+    const path = `/editor/jobs/${jobId}/files/${name}?sessionId=${encodeURIComponent(sessionId)}`;
+    if (!(data instanceof Uint8Array)) return request<StagedFile>('PUT', path, data);
+    let staged: StagedFile | null = null;
+    for (let offset = 0; offset === 0 || offset < data.length; offset += UPLOAD_SLICE_BYTES)
+      staged = await request<StagedFile>(
+        'PUT',
+        `${path}&offset=${offset}&total=${data.length}`,
+        data.subarray(offset, offset + UPLOAD_SLICE_BYTES),
+      );
+    return staged!;
+  },
   editorComplete: (jobId: string, sessionId: string, result: unknown) =>
     request<Job>('POST', `/editor/jobs/${jobId}/complete`, { sessionId, result }),
   editorFail: (jobId: string, sessionId: string, error: { code: string; message: string }) =>

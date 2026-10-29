@@ -414,11 +414,18 @@ conversion to 16 bits rounds a few of them (under 0.5 %) the other way, by one s
 
 Neither engine holds the film or all of its media in the tab. The ffmpeg engine loads the media a chunk shows as it
 renders that chunk (each graph names the files it reads, `ChunkGraph.media`), the WebCodecs engine reads ranges of
-the sources (`MediaPool`), and a soundtrack window loads its own media: a browser without a disk-backed profile (an
+the sources (`MediaPool`) and keeps open only the sources of the chunk it renders (`MediaPool.retain`: every source
+it opened stayed open, with its reader's cache and four canvases at the output size, and the Fuji film's tab grew
+from about 200 MB of JavaScript heap at its third chunk to 690 MB at its thirteenth), and a soundtrack window loads
+its own media: a browser without a disk-backed profile (an
 incognito window, Playwright's default context) keeps blobs in memory and fails with `ERR_BLOB_OUT_OF_MEMORY` once
 they outgrow its budget. Downloaded media is kept in an LRU of 512 MB (`media-files.ts`). A rendered chunk or piece is
-uploaded as it is made, as a `Blob`: a body of bytes is copied whole into the DevTools protocol's request event, and
-a 130 MB chunk sent as bytes made one over 512 MB that killed the Playwright driver holding the tab.
+uploaded as it is made, as bytes in slices of 8 MB, never as a `Blob`. A `Blob` lives in the browser's blob memory
+until a garbage collection that its size does not prompt: the Fuji film's 19 chunks of about 115 MB, uploaded as
+Blobs, filled an in-memory profile's budget before its soundtrack, whose second download then failed (`Failed to
+fetch`). Bytes are JavaScript memory the collector counts, but a body of bytes is copied whole into the DevTools
+protocol's request event: one 130 MB chunk made a message over 512 MB, which killed the Playwright driver holding
+the tab. Slices of 8 MB keep each message far below that.
 
 ### Engines
 
@@ -472,7 +479,10 @@ Protocol (REST, see [api/rest.md](../api/rest.md#editor-jobs)):
    the tab's HTTP connection is clogged by media downloads (the WebSocket has a connection of its own). The job also
    holds a Web Lock ([engine performance](engine-performance.md#rendering-in-a-background-tab)).
 3. **Files.** Outputs are uploaded one by one (`PUT /api/editor/jobs/:jobId/files/:name`) into a staging
-   folder on the server's disk (`RIDEO_DATA_DIR/staging/<jobId>/`). The job lists them in `staged`.
+   folder on the server's disk (`RIDEO_DATA_DIR/staging/<jobId>/`). The job lists them in `staged`. A large output
+   is sent in slices (`?offset=…&total=…`, 8 MB each, [memory](#memory)): the server appends each to
+   `<name>.upload` when it starts where the file ends (`offset` 0 starts it again; any other gap is a `409`), and
+   stages the file when the last slice arrives, so a render that stops halfway never counts the half as staged.
 4. **Complete / fail.** The tab posts the result (validated per kind); the server applies it and starts the
    follow-up job. Failures are reported with a code.
 5. **Recovery.** When a lease expires or the tab's live session closes, the job returns to `queued`

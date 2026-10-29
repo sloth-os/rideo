@@ -28,7 +28,7 @@ export async function renderChunkFfmpeg(opts: {
   load: LoadInputs;
   signal?: AbortSignal;
   onTime?: (sec: number) => void;
-}): Promise<Blob> {
+}): Promise<Uint8Array> {
   const g = chunkGraph(opts.timeline, opts.chunk, {
     quality: opts.quality,
     inputPath,
@@ -43,7 +43,7 @@ export async function renderChunkFfmpeg(opts: {
     signal: opts.signal,
     onTime: opts.onTime,
   });
-  return new Blob([r.outputs[out]! as BlobPart], { type: 'video/mp4' });
+  return r.outputs[out]!;
 }
 
 /**
@@ -58,7 +58,7 @@ export async function renderSoundtrack(opts: {
   stems?: boolean;
   signal?: AbortSignal;
   onTime?: (sec: number) => void;
-}): Promise<{ soundtrack: Blob; stems: Record<AudioRole, Blob> | null }> {
+}): Promise<{ soundtrack: Uint8Array; stems: Record<AudioRole, Uint8Array> | null }> {
   const s = soundtrackGraph(opts.timeline, { inputPath, stems: opts.stems, window: opts.window });
   const out = '/out/soundtrack.flac';
   const stemPath = (role: AudioRole) => `/out/stem-${role}.flac`;
@@ -69,13 +69,12 @@ export async function renderSoundtrack(opts: {
     signal: opts.signal,
     onTime: opts.onTime,
   });
-  const blob = (path: string) => new Blob([r.outputs[path]! as BlobPart], { type: 'audio/flac' });
   return {
-    soundtrack: blob(out),
+    soundtrack: r.outputs[out]!,
     stems: s.stems
-      ? (Object.fromEntries(AUDIO_ROLES.map((role) => [role, blob(stemPath(role))])) as Record<
+      ? (Object.fromEntries(AUDIO_ROLES.map((role) => [role, r.outputs[stemPath(role)]!])) as Record<
           AudioRole,
-          Blob
+          Uint8Array
         >)
       : null,
   };

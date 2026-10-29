@@ -173,6 +173,24 @@ export class MediaPool {
     return p;
   }
 
+  /**
+   * Closes every source and still not in `keep`: an export keeps open only what the chunk it renders shows
+   * (docs/design/editor.md#memory). A source asked for again is opened again.
+   */
+  retain(keep: ReadonlySet<string>): void {
+    for (const [hash, p] of this.entries) {
+      if (keep.has(hash)) continue;
+      this.entries.delete(hash);
+      void p.then((e) => e.input.dispose()).catch(() => undefined);
+    }
+    for (const p of this.retired.splice(0)) void p.then((e) => e.input.dispose()).catch(() => undefined);
+    for (const [hash, p] of this.stills) {
+      if (keep.has(hash)) continue;
+      this.stills.delete(hash);
+      void p.then((b) => b.close()).catch(() => undefined);
+    }
+  }
+
   dispose(): void {
     this.disposed = true;
     for (const p of [...this.entries.values(), ...this.retired])

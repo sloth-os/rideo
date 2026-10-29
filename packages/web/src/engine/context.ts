@@ -8,10 +8,10 @@ export interface EditorJobContext {
   /** Progress, reported with the next heartbeat. */
   progress(done: number, total: number, message?: string): void;
   /**
-   * Stages an output file on the server (kept across leases). A Blob, never bytes: Chrome copies a body of bytes whole
-   * into the DevTools protocol's request event (docs/design/editor.md#memory).
+   * Stages an output file on the server (kept across leases). Rendered files are bytes, sent in slices: a Blob holds
+   * the browser's blob memory until a garbage collection its size does not prompt (docs/design/editor.md#memory).
    */
-  upload(name: string, data: Blob): Promise<void>;
+  upload(name: string, data: Blob | Uint8Array): Promise<void>;
 }
 
 export type EditorJobHandler = (ctx: EditorJobContext) => Promise<unknown>;

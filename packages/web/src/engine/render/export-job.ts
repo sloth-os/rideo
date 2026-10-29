@@ -1,6 +1,7 @@
 import {
   AUDIO_ROLES,
   type AudioRole,
+  chunkGraph,
   ExportRenderParamsSchema,
   type ExportRenderResult,
   type MediaRef,
@@ -88,6 +89,16 @@ export async function exportRenderJob(ctx: EditorJobContext): Promise<ExportRend
         continue;
       }
       const label = `chunk ${chunk.index + 1}/${chunks.length} (${engine})`;
+      // Only the sources this chunk shows stay open (docs/design/editor.md#memory)
+      pool?.retain(
+        new Set(
+          chunkGraph(timeline, chunk, {
+            quality: params.quality,
+            inputPath: (m) => m.path,
+            textPath: String,
+          }).media.map((m) => m.hash),
+        ),
+      );
       const blob =
         engine === 'ffmpeg'
           ? await renderChunkFfmpeg({

@@ -66,12 +66,29 @@ export class EditorService extends Service {
     return this.deps.jobs.heartbeat(jobId, input.sessionId, input.progress);
   }
 
-  async stageFile(jobId: string, sessionId: string, name: string, body: NodeJS.ReadableStream) {
+  /**
+   * Stages an output of the tab's job (docs/design/editor.md#editor-jobs): whole, or one slice of it (`slice`); a
+   * file in slices is staged when its last slice arrives.
+   */
+  async stageFile(
+    jobId: string,
+    sessionId: string,
+    name: string,
+    body: NodeJS.ReadableStream,
+    slice?: { offset: number; total: number },
+  ) {
     const job = this.deps.jobs.assertLease(jobId, sessionId);
-    const size = await this.staging.write(jobId, name, body, this.deps.config.editor.fileMaxBytes);
+    const maxBytes = this.deps.config.editor.fileMaxBytes;
+    if (slice) {
+      const out = await this.staging.writeSlice(jobId, name, body, { ...slice, maxBytes });
+      this.deps.metrics.editorStagedBytes.inc({ kind: job.kind }, out.size - slice.offset);
+      if (out.complete) await this.deps.jobs.staged(jobId, sessionId, name);
+      return { name, size: out.size, complete: out.complete };
+    }
+    const size = await this.staging.write(jobId, name, body, maxBytes);
     this.deps.metrics.editorStagedBytes.inc({ kind: job.kind }, size);
     await this.deps.jobs.staged(jobId, sessionId, name);
-    return { name, size };
+    return { name, size, complete: true };
   }
 
   async complete(jobId: string, raw: unknown): Promise<Job> {

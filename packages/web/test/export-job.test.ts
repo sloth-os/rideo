@@ -24,14 +24,21 @@ vi.mock('../src/engine/media-files', async (original) => ({
 }));
 let timeline: Timeline;
 vi.mock('../src/lib/api', () => ({ api: { timeline: async () => timeline, doc: async () => timeline } }));
-vi.mock('../src/features/editor/engine/capabilities', () => ({
-  detectCaps: async () => ({ webcodecs: false, video: null, audio: null, container: null }),
-}));
+let caps = { webcodecs: false, video: null as string | null, audio: null, container: null as string | null };
+vi.mock('../src/features/editor/engine/capabilities', () => ({ detectCaps: async () => caps }));
 vi.mock('../src/features/editor/engine/gpu-choice', () => ({ gpuRenderer: async () => null }));
-vi.mock('../src/features/editor/engine/media-pool', () => ({ MediaPool: class {} }));
+const retain = vi.fn();
+vi.mock('../src/features/editor/engine/media-pool', () => ({
+  MediaPool: class {
+    retain = retain;
+    dispose() {}
+  },
+}));
 vi.mock('../src/engine/fonts', () => ({ ensureVideoFont: async () => undefined }));
 vi.mock('../src/lib/telemetry', () => ({ recordTiming: () => undefined }));
-vi.mock('../src/engine/render/webcodecs-engine', () => ({ renderChunkWebCodecs: vi.fn() }));
+vi.mock('../src/engine/render/webcodecs-engine', () => ({
+  renderChunkWebCodecs: vi.fn(async () => new Uint8Array([1, 2, 3])),
+}));
 vi.mock('../src/engine/codecs', () => ({ webCodecsCanDecode: async () => true }));
 
 const { exportRenderJob } = await import('../src/engine/render/export-job');
@@ -56,14 +63,14 @@ function film(): { t: Timeline; takes: MediaRef[]; bed: MediaRef } {
   return { t, takes, bed };
 }
 
-function job(staged: string[] = [], stems = false): Job {
+function job(staged: string[] = [], stems = false, engine = 'ffmpeg'): Job {
   return {
     id: newId('job'),
     projectId: 'prj_01m3s0000000000000',
     kind: 'export.render',
     lane: 'client',
     status: 'running',
-    params: { exportId: newId('export'), quality: 'draft', engine: 'ffmpeg', chunkSec: 30, stems },
+    params: { exportId: newId('export'), quality: 'draft', engine, chunkSec: 30, stems },
     progress: { done: 0, total: 1 },
     attempts: 1,
     maxAttempts: 5,
@@ -78,7 +85,7 @@ function job(staged: string[] = [], stems = false): Job {
 }
 
 function context(j: Job) {
-  const uploads: { name: string; data: Blob }[] = [];
+  const uploads: { name: string; data: Blob | Uint8Array }[] = [];
   return {
     uploads,
     ctx: {
@@ -86,7 +93,7 @@ function context(j: Job) {
       projectId: j.projectId,
       signal: new AbortController().signal,
       progress: vi.fn(),
-      upload: vi.fn(async (name: string, data: Blob) => {
+      upload: vi.fn(async (name: string, data: Blob | Uint8Array) => {
         uploads.push({ name, data });
       }),
     },
@@ -101,10 +108,12 @@ beforeEach(() => {
     outputs: Object.fromEntries((opts.outputs ?? []).map((p) => [p, new Uint8Array([1, 2, 3])])),
   }));
   mediaBlob.mockClear();
+  retain.mockClear();
+  caps = { webcodecs: false, video: null, audio: null, container: null };
 });
 
 describe('export.render in the tab (docs/design/editor.md#memory)', () => {
-  it('loads each chunk’s and each soundtrack window’s own media, and uploads each output as a Blob', async () => {
+  it('loads each chunk’s and each soundtrack window’s own media, and uploads each output as bytes', async () => {
     const { t, takes, bed } = film();
     timeline = t;
     const { ctx, uploads } = context(job([], true));
@@ -128,8 +137,9 @@ describe('export.render in the tab (docs/design/editor.md#memory)', () => {
       'stem-music-0002.flac',
       'stem-effects-0002.flac',
     ]);
-    // Blobs, never bytes: Chrome copies a body of bytes whole into the DevTools protocol (docs/design/editor.md#memory)
-    expect(uploads.every((u) => u.data instanceof Blob)).toBe(true);
+    // bytes, never Blobs, which hold blob memory until a collection their size does not prompt
+    // (docs/design/editor.md#memory)
+    expect(uploads.every((u) => u.data instanceof Uint8Array)).toBe(true);
     // Every ffmpeg command mounts only what its graph reads: a chunk six takes, a window its takes and the bed
     const mounted = run.mock.calls.map(([, opts]) => Object.keys((opts as { inputs: object }).inputs).length);
     expect(mounted.slice(0, 5)).toEqual([6, 6, 6, 6, 6]);
@@ -150,5 +160,23 @@ describe('export.render in the tab (docs/design/editor.md#memory)', () => {
     expect(uploads.map((u) => u.name)).toEqual(['soundtrack-0002.flac']);
     expect(run).toHaveBeenCalledTimes(1);
     expect(result.soundtrack).toEqual(['soundtrack-0001.flac', 'soundtrack-0002.flac']);
+  });
+
+  it('keeps open only the sources each WebCodecs chunk shows', async () => {
+    const { t, takes } = film();
+    timeline = t;
+    caps = { webcodecs: true, video: 'vp9', audio: null, container: 'webm' };
+    const { ctx } = context(job([], false, 'webcodecs'));
+    const result = (await exportRenderJob(ctx)) as z.infer<typeof ExportRenderResultSchema>;
+    expect(result.engine).toBe('webcodecs');
+    // one call before each of the five chunks, with the six takes it shows
+    expect(retain).toHaveBeenCalledTimes(5);
+    for (const [k, [keep]] of retain.mock.calls.entries())
+      expect([...(keep as Set<string>)].sort()).toEqual(
+        takes
+          .slice(k * 6, k * 6 + 6)
+          .map((m) => m.hash)
+          .sort(),
+      );
   });
 });

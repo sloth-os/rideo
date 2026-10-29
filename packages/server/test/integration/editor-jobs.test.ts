@@ -150,11 +150,23 @@ describe('editor jobs over REST', () => {
       const poster = join(stack.dataDir, 'protocol-poster.jpg');
       ffmpeg(posterCommand(file, poster, probe));
       expect((await put('poster.jpg', s1.sessionId, await readFile(poster))).status).toBe(200);
+      // a large output in slices (docs/design/editor.md#editor-jobs): staged only with its last slice
+      const slice = (offset: number, body: string) =>
+        fetch(
+          `${stack.url}/api/editor/jobs/${job.id}/files/large.bin?sessionId=${s1.sessionId}&offset=${offset}&total=6`,
+          { method: 'PUT', headers: { 'content-type': 'application/octet-stream' }, body },
+        );
+      const stagedNow = async () => (await stack.api<Job>('GET', `/projects/${p.id}/jobs/${job.id}`)).staged;
+      expect(await (await slice(0, 'abc')).json()).toMatchObject({ size: 3, complete: false });
+      expect(await stagedNow()).toEqual(['poster.jpg']);
+      expect((await slice(4, 'ef')).status).toBe(409);
+      expect(await (await slice(3, 'def')).json()).toMatchObject({ size: 6, complete: true });
+      expect(await stagedNow()).toEqual(['poster.jpg', 'large.bin']);
       const done = await stack.api<Job>('POST', `/editor/jobs/${job.id}/complete`, {
         sessionId: s1.sessionId,
         result: { probe, poster: 'poster.jpg' },
       });
-      expect(done).toMatchObject({ status: 'succeeded', lease: null, staged: ['poster.jpg'] });
+      expect(done).toMatchObject({ status: 'succeeded', lease: null, staged: ['poster.jpg', 'large.bin'] });
       const state = await stack.api<any>('GET', `/projects/${p.id}/state`);
       expect(state.docs.resources[res.id]).toMatchObject({
         status: 'ready',

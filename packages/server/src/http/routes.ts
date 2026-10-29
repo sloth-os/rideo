@@ -977,12 +977,31 @@ export function registerRoutes(app: FastifyInstance, studio: Studio): void {
     '/api/editor/jobs/:jobId/files/:name',
     { bodyLimit: studio.config.editor.fileMaxBytes },
     async (req) => {
-      const q = parse(z.object({ sessionId: z.string().min(1).max(100) }), req.query);
+      const q = parse(
+        z
+          .object({
+            sessionId: z.string().min(1).max(100),
+            // a slice of a larger file (docs/design/editor.md#editor-jobs)
+            offset: z.coerce.number().int().nonnegative().optional(),
+            total: z.coerce.number().int().nonnegative().optional(),
+          })
+          .refine(
+            (v) => (v.offset === undefined) === (v.total === undefined),
+            'offset and total go together',
+          ),
+        req.query,
+      );
       const body = req.body as NodeJS.ReadableStream | undefined;
       if (!body || typeof (body as { pipe?: unknown }).pipe !== 'function')
         throw invalid('send the file as application/octet-stream');
       await editorJob(req);
-      return studio.editor.stageFile(jobId(req), q.sessionId, p<string>(req, 'name'), body);
+      return studio.editor.stageFile(
+        jobId(req),
+        q.sessionId,
+        p<string>(req, 'name'),
+        body,
+        q.offset !== undefined && q.total !== undefined ? { offset: q.offset, total: q.total } : undefined,
+      );
     },
   );
   app.post('/api/editor/jobs/:jobId/complete', async (req) => {

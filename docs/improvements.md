@@ -241,14 +241,18 @@ ninth minute of a 1080p film ended in `ERR_BLOB_OUT_OF_MEMORY` after chunk 19 of
 five such attempts failed the export. A persistent profile, which pages blobs to disk, rendered it. *How:* write
 chunks to the origin private file system (OPFS) as they finish, or upload each chunk to the server and join them
 there, so memory does not grow with the length of the film; report the browser's storage quota before a long render.
-*Measured:* the chunks were not what filled the memory; the tab already uploads each one as it finishes and the
-server joins them. The failed attempt's log shows the soundtrack loading its inputs (`loading media 52/110`) when
-Chromium refused the next download: the soundtrack held every input at once (item 15). *Done:* with item 15 the tab
-holds one chunk's or one window's media at a time, and the LRU of downloaded media is 512 MB instead of 1 GB
+*Measured:* the failed attempt's log shows the soundtrack loading its inputs (`loading media 52/110`) when Chromium
+refused the next download, and the soundtrack held every input at once (item 15). That was not all of it. With item
+15 deployed, the same film rendered in Playwright's default context (October 29) failed at its soundtrack's second
+download (`Failed to fetch`, `soundtrack 1/9: loading media 2/13`) after its 19 chunks: the chunks, about 115 MB each,
+were uploaded as Blobs, and an uploaded Blob holds its blob memory until a garbage collection that its size does not
+prompt. Its WebCodecs engine also kept every source it had opened, its JavaScript heap growing from about 200 MB to
+1.1 GB. Sending the chunks as bytes instead killed the Playwright driver: Chrome copies a body of bytes whole into
+the DevTools protocol's request event, and a 130 MB chunk made a message over 512 MB. *Done:* with item 15 the tab
+holds one chunk's or one window's media at a time, and the LRU of downloaded media is 512 MB instead of 1 GB; the
+WebCodecs engine keeps open only the sources of the chunk it renders (`MediaPool.retain`); and rendered chunks and
+pieces are uploaded as bytes in slices of 8 MB, which the server appends and stages when the last arrives
 ([memory](design/editor.md#memory)). Nothing of a render is stored in the browser, so there is no quota to report.
-Uploading the rendered chunks as bytes instead of Blobs was tried and undone: Chrome copies a body of bytes whole
-into the DevTools protocol's request event, and the Fuji film's 130 MB chunks made messages over 512 MB that killed
-the Playwright driver holding the tab.
 
 **35. A cast-only film** (S, done) — the brief said "only these two characters appear", yet the export has a
 red-haired girl with a snowboard in two shots, a human child in place of a panda in four, a brown bear and a dog

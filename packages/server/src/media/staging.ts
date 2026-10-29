@@ -52,6 +52,39 @@ export class Staging {
     return size;
   }
 
+  /**
+   * One slice of a file sent in parts (docs/design/editor.md#editor-jobs): appended to `<name>.upload` when it starts
+   * where that file ends (`offset` 0 starts it again), and the file is staged when it reaches `total` bytes.
+   */
+  async writeSlice(
+    jobId: string,
+    name: string,
+    body: NodeJS.ReadableStream,
+    opts: { offset: number; total: number; maxBytes: number },
+  ): Promise<{ size: number; complete: boolean }> {
+    const target = this.path(jobId, name);
+    if (opts.total > opts.maxBytes) throw invalid(`staged file exceeds ${opts.maxBytes} bytes`);
+    await mkdir(this.dir(jobId), { recursive: true });
+    const upload = `${target}.upload`;
+    if (opts.offset > 0) {
+      const have = (await stat(upload).catch(() => null))?.size ?? 0;
+      if (have !== opts.offset)
+        throw new AppError('conflict', `the upload of ${name} has ${have} bytes, not ${opts.offset}`);
+    }
+    let size = opts.offset;
+    const counter = new Transform({
+      transform(chunk: Buffer, _enc, cb) {
+        size += chunk.length;
+        if (size > opts.total) cb(invalid(`the slices of ${name} exceed its ${opts.total} bytes`));
+        else cb(null, chunk);
+      },
+    });
+    await pipeline(body, counter, createWriteStream(upload, { flags: opts.offset > 0 ? 'a' : 'w' }));
+    if (size < opts.total) return { size, complete: false };
+    await rename(upload, target);
+    return { size, complete: true };
+  }
+
   async exists(jobId: string, name: string): Promise<boolean> {
     return (await stat(this.path(jobId, name)).catch(() => null))?.isFile() ?? false;
   }
