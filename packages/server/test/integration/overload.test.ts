@@ -242,6 +242,8 @@ describe('an overloaded model provider', () => {
     expect(stack.gw.counters.overloaded).toBe(2);
     expect(await metric('rideo_llm_retries_total', 'task="screenplay.generate"', 'status="503"')).toBe(2);
     expect((await stack.api<any>('GET', `/projects/${p.id}/state`)).docs.screenplay.title).toBeTruthy();
+    // The screenplay review follows; its calls would take the next test's failures
+    await stack.waitIdle(p.id);
   });
 
   it('pauses a model that keeps failing; the job waits for it without using up its attempts', async () => {
