@@ -73,6 +73,17 @@ describe('documents written by an older version (docs/design/version-control.md#
     const odd = { ...older, targetDurationSec: -1 } as typeof current;
     expect(withSettingsDefaults(odd)).toBe(odd);
   });
+
+  it('reads an older project with its settings filled, as the server and the tab build the documents', () => {
+    const current = ProjectSettingsSchema.parse({});
+    const { scenes: _s, sceneFixes: _f, ...review } = current.review;
+    const project = { ...f.project(), settings: { ...current, review } };
+    const docs = docsFromEntries([['project.json', project]]);
+    expect(docs.project.settings.review).toMatchObject({ scenes: true, sceneFixes: 3 });
+    // and when a change brings an older project.json
+    const changed = applyDocChanges(docs, { 'project.json': { ...project, title: 'Renamed' } });
+    expect(changed.project).toMatchObject({ title: 'Renamed', settings: { review: { scenes: true } } });
+  });
 });
 
 describe('canonical json and diff', () => {

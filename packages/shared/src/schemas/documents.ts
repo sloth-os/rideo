@@ -7,7 +7,7 @@ import { type Element, ElementSchema } from './element';
 import { type Feedback, FeedbackSchema } from './feedback';
 import { type Export, ExportSchema } from './job';
 import { type Localization, LocalizationSchema } from './localization';
-import { type Project, ProjectSchema } from './project';
+import { type Project, ProjectSchema, withSettingsDefaults } from './project';
 import { type Resource, ResourceSchema } from './resource';
 import { type CommentThread, CommentThreadSchema, type Review, ReviewSchema } from './review';
 import { type Screenplay, ScreenplaySchema } from './screenplay';
@@ -233,7 +233,7 @@ export function applyDocChanges(docs: ProjectDocs, changes: Record<string, unkno
       if (doc === null) delete map[spec.id];
       else map[spec.id] = doc;
     } else if (spec.kind === 'project') {
-      if (doc !== null) next.project = doc as Project;
+      if (doc !== null) next.project = withProjectDefaults(doc as Project);
     } else if (spec.kind === 'screenplay') {
       next.screenplay = (doc as Screenplay | null) ?? null;
     } else if (spec.kind === 'timeline') {
@@ -245,11 +245,19 @@ export function applyDocChanges(docs: ProjectDocs, changes: Record<string, unkno
   return next;
 }
 
+/**
+ * The project as read, its settings filled with the defaults of what was added since: features turn on by a setting,
+ * and an older project never stored the ones added after it (docs/design/version-control.md#objects).
+ */
+function withProjectDefaults(project: Project): Project {
+  return project.settings ? { ...project, settings: withSettingsDefaults(project.settings) } : project;
+}
+
 export function docsFromEntries(entries: Iterable<[string, unknown]>): ProjectDocs {
   let project: Project | null = null;
   const changes: Record<string, unknown> = {};
   for (const [path, doc] of entries) {
-    if (path === 'project.json') project = doc as Project;
+    if (path === 'project.json') project = withProjectDefaults(doc as Project);
     else changes[path] = doc;
   }
   if (!project) throw new Error('project.json missing');

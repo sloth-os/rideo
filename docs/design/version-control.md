@@ -46,8 +46,11 @@ Versioned document paths:
 | `exports/<exportId>.json` | export records |
 
 Documents are read and served as they were written: a field added since is missing from an older document, so every
-reader takes a missing field as its schema default (a feedback without `retakes` has none), and the project settings
-dialog fills an older project's settings with their defaults (`ProjectSettingsSchema`) before it shows them.
+reader takes a missing field as its schema default (a feedback without `retakes` has none). The project's settings
+are the exception: features turn on by a setting, so the project is read with its settings filled with their
+defaults (`withSettingsDefaults` in `docsFromEntries`); without it the swimming film, created before
+`review.scenes`, never had its scenes reviewed, though the setting is on by default. The settings dialog fills them
+the same way.
 
 ## Refs
 
