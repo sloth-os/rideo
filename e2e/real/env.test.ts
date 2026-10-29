@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import {
   backendBaseUrl,
   DEFAULT_GATEWAY_IMAGE,
+  GATEWAY_KEY_ENV,
   gatewayConfig,
+  gatewaySecrets,
   readRealEnv,
   SUITE_TAG,
   studioEnv,
@@ -58,7 +60,7 @@ describe('real-model suite variables', () => {
         base_url: 'https://ai.ctaigw.cn',
         tags: [SUITE_TAG],
         timeout: 300,
-        accounts: [{ id: 'vision', headers: { authorization: `Bearer ${ref('VISION_MODEL_API_KEY')}` } }],
+        accounts: [{ id: 'vision', headers: { authorization: ref('RIDEO_REAL_VISION_CREDENTIAL') } }],
       },
     ]);
     expect(config.keys).toEqual([
@@ -71,6 +73,21 @@ describe('real-model suite variables', () => {
     const text = JSON.stringify(config);
     for (const secret of ['image-secret', 'video-secret', 'vision-secret'])
       expect(text).not.toContain(secret);
+    // The container's environment carries every variable the configuration names, the vision header made whole
+    expect(gatewaySecrets(env)).toEqual({
+      IMAGE_MODEL_API_KEY: 'image-secret',
+      VIDEO_GEN_API_KEY: 'video-secret',
+      RIDEO_REAL_VISION_CREDENTIAL: 'Bearer vision-secret',
+    });
+    const named = [...text.matchAll(/\$\{([A-Z0-9_]+)\}/g)].map((m) => m[1]);
+    expect(new Set(named)).toEqual(new Set([...Object.keys(gatewaySecrets(env)), GATEWAY_KEY_ENV]));
+    // and names each credential whole: the gateway encrypts one that is only partly a reference
+    const credentials = [
+      ...config.backends.map((b) => b.api_key),
+      ...config.proxies.flatMap((p) => p.accounts.flatMap((a) => Object.values(a.headers))),
+      ...config.keys.map((k) => k.key),
+    ];
+    for (const c of credentials) expect(c).toMatch(/^\$\{[A-Z0-9_]+\}$/);
   });
 
   it("give a backend whose base URL names only a host its SDK's API root", () => {
@@ -117,8 +134,9 @@ describe('real-model suite variables', () => {
     });
     expect(visionProxyRoot(gemini)).toBe('https://generativelanguage.googleapis.com');
     expect(gatewayConfig(gemini).proxies[0]?.accounts[0]?.headers).toEqual({
-      'x-goog-api-key': ref('VISION_MODEL_API_KEY'),
+      'x-goog-api-key': ref('RIDEO_REAL_VISION_CREDENTIAL'),
     });
+    expect(gatewaySecrets(gemini).RIDEO_REAL_VISION_CREDENTIAL).toBe('vision-secret');
     expect(studioEnv(gemini, { url: 'u', apiKey: 'k' })).toMatchObject({
       RIDEO_LLM_PROVIDER: 'gemini',
       RIDEO_VISION_PROXY_DOMAIN: 'generativelanguage.googleapis.com',
@@ -131,8 +149,9 @@ describe('real-model suite variables', () => {
     // A base URL without a version is the root already
     expect(visionProxyRoot(anthropic)).toBe('https://api.anthropic.com');
     expect(gatewayConfig(anthropic).proxies[0]?.accounts[0]?.headers).toEqual({
-      'x-api-key': ref('VISION_MODEL_API_KEY'),
+      'x-api-key': ref('RIDEO_REAL_VISION_CREDENTIAL'),
     });
+    expect(gatewaySecrets(anthropic).RIDEO_REAL_VISION_CREDENTIAL).toBe('vision-secret');
     // An OpenAI-compatible API under a path keeps the path
     expect(
       visionProxyRoot({

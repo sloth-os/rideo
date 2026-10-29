@@ -3,7 +3,7 @@ import { randomBytes } from 'node:crypto';
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
-import { GATEWAY_KEY_ENV, gatewayConfig, type RealEnv, SECRET_ENV } from './env';
+import { GATEWAY_KEY_ENV, gatewayConfig, gatewaySecrets, type RealEnv } from './env';
 
 const run = promisify(execFile);
 
@@ -59,6 +59,7 @@ export async function startRealGateway(
   const stale = await docker(['ps', '--all', '--quiet', '--filter', `publish=${opts.port}`]).catch(() => '');
   if (stale) await docker(['rm', '--force', ...stale.split('\n')]);
   const name = `rideo-real-gateway-${process.pid}`;
+  const secrets = gatewaySecrets(env);
   await docker(
     [
       'run',
@@ -71,17 +72,17 @@ export async function startRealGateway(
       `${config}:/etc/mm-gateway/config.yaml:ro`,
       '--env',
       'MM_GATEWAY_CONFIG=/etc/mm-gateway/config.yaml',
-      ...[...SECRET_ENV, GATEWAY_KEY_ENV].flatMap((n) => ['--env', n]),
+      ...[...Object.keys(secrets), GATEWAY_KEY_ENV].flatMap((n) => ['--env', n]),
       env.MM_GATEWAY_IMAGE,
     ],
-    { ...process.env, [GATEWAY_KEY_ENV]: apiKey },
+    { ...process.env, ...secrets, [GATEWAY_KEY_ENV]: apiKey },
   );
   const url = `http://127.0.0.1:${opts.port}`;
   const stop = async () => {
     const logs = await run('docker', ['logs', name], { maxBuffer: 256 * 1024 * 1024 }).catch(
       (err: { stdout?: string; stderr?: string }) => ({ stdout: err.stdout ?? '', stderr: err.stderr ?? '' }),
     );
-    const keys = [...SECRET_ENV.map((n) => process.env[n]), apiKey];
+    const keys = [env.IMAGE_MODEL_API_KEY, env.VIDEO_GEN_API_KEY, env.VISION_MODEL_API_KEY, apiKey];
     await writeFile(opts.logFile, redactKeys(`${logs.stdout}${logs.stderr}`, keys)).catch(() => undefined);
     await docker(['rm', '--force', name]).catch(() => undefined);
   };

@@ -6,7 +6,7 @@ import { z } from 'zod';
  */
 
 /** The gateway image the suite runs; MM_GATEWAY_IMAGE overrides it. */
-export const DEFAULT_GATEWAY_IMAGE = 'ghcr.io/sloth-os/mm-gateway:sha-b11490a';
+export const DEFAULT_GATEWAY_IMAGE = 'ghcr.io/sloth-os/mm-gateway:sha-98b05a9';
 
 /** The tag on everything the suite configures in the gateway, and the only one its key may use. */
 export const SUITE_TAG = 'rideo-real';
@@ -14,8 +14,12 @@ export const SUITE_TAG = 'rideo-real';
 /** The environment variable of the studio's gateway key (generated for a run, given to the gateway container). */
 export const GATEWAY_KEY_ENV = 'RIDEO_REAL_GATEWAY_KEY';
 
-/** The secrets: the gateway's configuration names them, their values only reach its container's environment. */
-export const SECRET_ENV = ['IMAGE_MODEL_API_KEY', 'VIDEO_GEN_API_KEY', 'VISION_MODEL_API_KEY'] as const;
+/**
+ * The environment variable of the vision account's header value, made from VISION_MODEL_API_KEY for a run. The
+ * configuration names it whole: mm-gateway encrypts a credential that is only partly a reference (`Bearer ${…}`) and
+ * writes it back beside the configuration, which the suite mounts read-only.
+ */
+export const VISION_CREDENTIAL_ENV = 'RIDEO_REAL_VISION_CREDENTIAL';
 
 /**
  * How Rideo's language-model adapters reach each vision API through the gateway proxy
@@ -27,14 +31,21 @@ export const VISION_APIS = {
   openai: {
     provider: 'openai',
     version: /\/v1$/,
-    credential: (key: string) => ({ authorization: `Bearer ${key}` }),
+    header: 'authorization',
+    credential: (key: string) => `Bearer ${key}`,
   },
   gemini: {
     provider: 'gemini',
     version: /\/v1(beta)?$/,
-    credential: (key: string) => ({ 'x-goog-api-key': key }),
+    header: 'x-goog-api-key',
+    credential: (key: string) => key,
   },
-  anthropic: { provider: 'anthropic', version: /\/v1$/, credential: (key: string) => ({ 'x-api-key': key }) },
+  anthropic: {
+    provider: 'anthropic',
+    version: /\/v1$/,
+    header: 'x-api-key',
+    credential: (key: string) => key,
+  },
 } as const;
 export type VisionApi = keyof typeof VISION_APIS;
 
@@ -133,7 +144,7 @@ export function gatewayConfig(env: RealEnv) {
         base_url: visionProxyRoot(env),
         tags: [SUITE_TAG],
         timeout: 300,
-        accounts: [{ id: 'vision', headers: vision.credential(ref('VISION_MODEL_API_KEY')) }],
+        accounts: [{ id: 'vision', headers: { [vision.header]: ref(VISION_CREDENTIAL_ENV) } }],
       },
     ],
     keys: [{ id: 'rideo', key: ref(GATEWAY_KEY_ENV), allow_tags: [SUITE_TAG] }],
@@ -146,6 +157,15 @@ export function gatewayConfig(env: RealEnv) {
         },
       },
     },
+  };
+}
+
+/** What the gateway container's environment carries besides its own key: every credential its configuration names. */
+export function gatewaySecrets(env: RealEnv): Record<string, string> {
+  return {
+    IMAGE_MODEL_API_KEY: env.IMAGE_MODEL_API_KEY,
+    VIDEO_GEN_API_KEY: env.VIDEO_GEN_API_KEY,
+    [VISION_CREDENTIAL_ENV]: VISION_APIS[env.VISION_MODEL_TYPE].credential(env.VISION_MODEL_API_KEY),
   };
 }
 

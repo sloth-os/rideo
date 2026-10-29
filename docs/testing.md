@@ -487,7 +487,7 @@ videos through the pipeline. It does not grade the models: an answer passes when
 | `VISION_MODEL` | | `qwen3.8-max` | its id |
 | `VISION_MODEL_API_KEY` | yes | | its key |
 | `VIDEO_GEN_DURATION_SEC` | | `5` (default) | the shot length the video model renders |
-| `MM_GATEWAY_IMAGE` | | `ghcr.io/sloth-os/mm-gateway:sha-b11490a` (default) | the gateway image to run |
+| `MM_GATEWAY_IMAGE` | | `ghcr.io/sloth-os/mm-gateway:sha-98b05a9` (default) | the gateway image to run: the default is the one the demo server runs, with Wan 3.x's native requests (sound, first and last frames, references, the resolution tier) |
 | `MM_GATEWAY_URL` / `MM_GATEWAY_API_KEY` | | | use a running gateway configured the same way instead |
 
 ```bash
@@ -504,7 +504,11 @@ npm run test:e2e:real     # builds the web app, starts mm-gateway in Docker and 
   without the API version (Rideo's adapters add `v1/chat/completions`, `v1beta/…` or `v1/messages`), with the key in
   the header that API reads (`authorization: Bearer`, `x-goog-api-key`, `x-api-key`); one key for the studio; and the
   video model's shot length in `catalog.models`, so the shot planner asks for what the model renders. The file names
-  the keys (`${IMAGE_MODEL_API_KEY}`); their values reach the container's environment only.
+  the keys (`${IMAGE_MODEL_API_KEY}`); their values reach the container's environment only. The vision account's
+  header value is made from `VISION_MODEL_API_KEY` for the run (`Bearer <key>`, or the key itself) and named whole
+  (`${RIDEO_REAL_VISION_CREDENTIAL}`): mm-gateway since `sha-98b05a9` encrypts a credential that is only partly a
+  reference (`Bearer ${…}`) and writes it back with its key file beside the configuration, which the suite mounts
+  read-only, so the gateway did not start.
 - **the studio's environment**: the gateway and its key; the vision model as both the language model
   (`RIDEO_LLM_*`: the screenplay, the shot plans) and the vision model (`RIDEO_VISION_*`: attachments, the consistency
   judge, footage); the image and video models pinned; no speech, effects, embeddings or voice-judge provider.
