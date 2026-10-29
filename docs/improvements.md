@@ -439,7 +439,15 @@ one critical). In its frames the six segments of the sequence keep the water, th
 two breaks the review named most ("sunset light inside a morning scene", "unestablished rocks") are the two shots
 made again alone. So the sequence holds a scene together, and its single remakes are where it comes apart again.
 Since then a failing segment's shot is made again from the segment's own first frame (the sequence's light, water and
-props; a new keyframe only when its identity failed), and a sequence's segments are checked four at a time.
+props; a new keyframe only when its identity failed), and a sequence's segments are checked four at a time. Made a
+third time with both (October 29, $15.17, 27 minutes): eight shots in one sequence again, five segments passing, three
+made again alone from their segments' frames, two of which passed. The review watched 6.9, continuity 6 (main: 4;
+the two runs before: 5 and 5), physics 7, with 6 issues (main 8, the run before 11); in its frames the whole scene
+keeps one look, and the two remakes match the sequence (no sunset, no rocks). The one critical issue is the third
+remake's shot: its remake failed too, so the failed segment stayed in the cut, and it holds a stray cut from Sammy to
+Rosie. Across the three runs (one scene each, its review differing by up to 0.7 between watches) continuity went
+4 → 5 → 5 → 6 as more of the scene was one sequence and its remakes kept its look. The three evaluations and the
+probe cost $39.53.
 
 ### Run figures
 
