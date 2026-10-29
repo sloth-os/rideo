@@ -101,6 +101,29 @@ describe('multi-shot generation', () => {
     expect(metrics).toMatch(/rideo_sequence_segments_total\{outcome="failed"\} 1/);
   }, 300_000);
 
+  it('makes a segment that showed someone not in its shot again from a new keyframe, not from its own frame', async () => {
+    const { pid, clip, shots } = await threeShotClip({
+      consistency: { qualityChecks: true },
+      generation: { includeAudio: true },
+      dialogue: { mode: 'off' },
+    });
+    // the second shot is one character's; the other walks in (the mock judge sees it)
+    expect(shots[1]!.characterIds).toHaveLength(1);
+    await stack.api('PATCH', `/projects/${pid}/clips/${clip.id}/shots/${shots[1]!.id}`, {
+      description: `${shots[1]!.description} Another cast member photobombs the shot.`,
+    });
+    await generate(pid, clip.id);
+    const done = await clipNow(pid, clip.id);
+    const segment = done.shots.find((s) => s.id === shots[1]!.id)!.takes.find((t) => t.request.multiShot)!;
+    expect(segment.consistency.quality?.extras.length).toBeGreaterThan(0);
+    // its first frame may show the wrong cast: the remake does not start from it
+    const remake = (await jobsOf(pid)).find(
+      (j) => j.kind === 'shot.generate' && j.params.shotId === shots[1]!.id,
+    )!;
+    expect(remake).toBeTruthy();
+    expect(remake.params.startFrame).toBeUndefined();
+  }, 300_000);
+
   it('renders consecutive shots in one request, splits at the detected cut and verifies every shot', async () => {
     const { pid, clip, shots } = await threeShotClip();
     await generate(pid, clip.id);

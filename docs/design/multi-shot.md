@@ -80,8 +80,10 @@ shot's lines heard (`sound.check`). A render whose every segment passes is used 
   frame (`startFrame`; `firstFrameSource: sequence`), so the remake keeps the sequence's light, water and props: made
   from new keyframes, scene 7's two remakes came back at sunset and among rocks that the sequence did not have. A
   continuous shot starts from the shot before it, as any continuous shot does (that last frame is the sequence's
-  too), and a segment that failed its identity check is made again from a new keyframe. The group's job waits for the
-  remakes.
+  too). The first frame is trusted only when what failed was the segment's sound or its physics: a segment whose
+  identity failed, that showed someone who is not in the shot, or that jumped may open on the wrong picture (scene 7's
+  fourth segment opened on Sammy before cutting to Rosie, and its remake from that frame failed the same way), so
+  it is made again from a new keyframe. The group's job waits for the remakes.
 
 The segments are checked at the same time, four at once: each check waits on the judge and the listener, and eight
 segments checked one after another made a scene take 30 minutes against 16 for single takes.

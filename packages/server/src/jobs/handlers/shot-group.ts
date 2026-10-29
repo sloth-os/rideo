@@ -39,6 +39,21 @@ import { commitTake, finishTake } from './take-finish';
 /** Segments of a sequence checked at the same time (docs/design/multi-shot.md#splitting-and-verification). */
 const SEGMENT_CHECKS_AT_ONCE = 4;
 
+/**
+ * Whether a failed segment's first frame may start its remake: only when what failed was its sound or its physics. A
+ * wrong face, someone who is not in the shot or a jump may be in that very frame.
+ */
+function trustedStart(r: ConsistencyReport): boolean {
+  const q = r.quality;
+  return (
+    r.status !== 'failed' &&
+    !q?.extras.length &&
+    !q?.others.length &&
+    !q?.duplicates.length &&
+    !q?.temporal?.jumps.length
+  );
+}
+
 interface Segment {
   local: string;
   frames: string[];
@@ -418,16 +433,15 @@ export async function shotGroup(deps: HandlerDeps, ctx: JobContext) {
         ctx.progress(0.95, 1, `${passed}/${shots.length} shots passed; ${remake.length} made again alone`);
         const jobs: Job[] = [];
         for (const { shot, segment } of remake) {
-          // From the segment's first frame, which has the sequence's look, unless its identity failed
+          // From the segment's first frame, which has the sequence's look, when that frame can be trusted
           const start = join(dir, `${label(shot)}-start.png`);
-          const startFrame =
-            segment.report.status === 'failed'
-              ? null
-              : await deps.media.putFile(
-                  projectId,
-                  await extractFrame(deps.ff, segment.local, 0, start, undefined, ctx.signal),
-                  { kind: 'keyframes', name: `${label(shot)}-sequence`, mime: 'image/png', probe: false },
-                );
+          const startFrame = !trustedStart(segment.report)
+            ? null
+            : await deps.media.putFile(
+                projectId,
+                await extractFrame(deps.ff, segment.local, 0, start, undefined, ctx.signal),
+                { kind: 'keyframes', name: `${label(shot)}-sequence`, mime: 'image/png', probe: false },
+              );
           jobs.push(
             await ctx.spawn(
               'shot.generate',
