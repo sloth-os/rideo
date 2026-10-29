@@ -93,7 +93,8 @@ The page answers three questions in order: *is the studio working* (the status r
   OIDC scopes) sit under an *Advanced* disclosure that opens by itself when one of them is changed, locked, refused
   or matched by the search.
 - **Secrets** are never sent to the browser. A stored secret reads *Set* with **Replace** (an empty input that takes
-  the new value, with a show/hide toggle) and **Remove** (clears it on save, with *Undo*).
+  the new value, with a show/hide toggle) and **Remove** (clears it on save, with *Undo*). A replacement stays open
+  until the settings are saved (their `updatedAt` changes), through the page's refreshes.
 - **Endpoint cards** (Language, vision and speech; Voices and sound): one card per endpoint with its provider, model,
   API base URL and API key, what the studio will call (*`https://ai.example.com/v1/chat/completions` through the
   gateway proxy `ai.example.com`*), its status from the server and a **Test** button

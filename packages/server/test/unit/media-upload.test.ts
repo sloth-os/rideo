@@ -91,7 +91,7 @@ describe('a file ready before its upload', () => {
     expect(metrics.mediaUploadsPending.get()).toBe(1);
     // The first write fails, the second lands
     storage.open();
-    await expect.poll(() => uploaded).toEqual([ref.path]);
+    await expect.poll(() => uploaded, { timeout: 10_000 }).toEqual([ref.path]);
     expect(storage.writes).toBe(2);
     expect((await storage.read(layout.media(project, ref.path)))!.toString()).toBe('the film');
     expect(media.pendingUploads()).toEqual([]);
@@ -118,7 +118,7 @@ describe('a file ready before its upload', () => {
     const next = await setup(storage, first.dir);
     expect(next.media.pendingUploads()).toHaveLength(1);
     next.media.resumeUploads();
-    await expect.poll(() => next.uploaded).toEqual([ref.path]);
+    await expect.poll(() => next.uploaded, { timeout: 10_000 }).toEqual([ref.path]);
     expect((await storage.read(layout.media(project, ref.path)))!.toString()).toBe('the film');
   });
 

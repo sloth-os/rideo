@@ -346,8 +346,10 @@ cast ([actions](design/feedback.md#actions)).
   Cannot read properties of null (reading 'type')` right after *Replace*): the page asks for its settings again every
   2 s while API keys register, and every new answer ended a replacement in progress, so an answer landing at the click
   took the field away, in the studio as in the test. A replacement now ends only when the settings were saved
-  (`updatedAt`). It failed once more in a loaded run after that: the test held the field's node across renders, and a
-  later render may replace it (a click on a detached node reaches nothing); it now looks the field up at every step.
+  (`updatedAt`). It failed again in loaded runs after that (once on CI, blocking an image), and the real cause was the
+  field's own: it ended a replacement in an effect keyed on `updatedAt`, which also runs once on mount, and under load
+  a quick first click on Replace landed before that mount effect was flushed, so the effect undid it. A replacement
+  now ends only when `updatedAt` changes from the value the field saw first.
 
 
 ## The swimming demo (October 28, 2026)
