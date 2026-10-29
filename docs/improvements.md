@@ -253,6 +253,10 @@ holds one chunk's or one window's media at a time, and the LRU of downloaded med
 WebCodecs engine keeps open only the sources of the chunk it renders (`MediaPool.retain`); and rendered chunks and
 pieces are uploaded as bytes in slices of 8 MB, which the server appends and stages when the last arrives
 ([memory](design/editor.md#memory)). Nothing of a render is stored in the browser, so there is no quota to report.
+*Measured with them deployed (October 29):* the same film rendered in Playwright's default context, every Blob in
+memory: 19 chunks and 9 soundtrack windows (up to 15 inputs each) in 62 minutes, the JavaScript heap at 599 MB at
+its peak (1.1 GB in the failed run, which then grew with every chunk) and back to about 200 MB after each chunk, and
+no blob error.
 
 **35. A cast-only film** (S, done) — the brief said "only these two characters appear", yet the export has a
 red-haired girl with a snowboard in two shots, a human child in place of a panda in four, a brown bear and a dog

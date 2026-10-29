@@ -52,7 +52,8 @@ describe('multi-shot generation', () => {
       dialogue: { mode: 'off' },
     });
     expect(shots[0]!.dialogue.length && shots[1]!.dialogue.length).toBeTruthy();
-    // The model does not voice the first shot's line once: that segment fails its sound check
+    // The model does not voice one line once: that segment fails its sound check (the segments are checked at the
+    // same time, so either may be the one)
     stack.gw.muffleSpeech(1);
     await generate(pid, clip.id);
     const jobs = await jobsOf(pid);
@@ -60,31 +61,35 @@ describe('multi-shot generation', () => {
     expect(groups.map((j) => j.params.shotIds)).toEqual([[shots[0]!.id, shots[1]!.id]]);
     // rendered once, with sound, each line in its own shot
     expect(groups[0]!.result).toMatchObject({ shots: 2, passed: 1, remade: 1 });
+
+    const done = await clipNow(pid, clip.id);
+    const inGroup = [...done.shots].sort((x, y) => x.index - y.index).slice(0, 2);
+    const segmentOf = (s: (typeof inGroup)[number]) => s.takes.find((t) => t.request.multiShot)!;
+    const muffled = inGroup.find((s) => segmentOf(s).consistency.quality?.passed === false)!;
+    const other = inGroup.find((s) => s !== muffled)!;
     const singles = jobs.filter((j) => j.kind === 'shot.generate');
-    expect(singles.map((j) => j.params.shotId).sort()).toEqual([shots[0]!.id, shots[2]!.id].sort());
-    const remakeJob = singles.find((j) => j.params.shotId === shots[0]!.id)!;
+    expect(singles.map((j) => j.params.shotId).sort()).toEqual([muffled.id, shots[2]!.id].sort());
+    const remakeJob = singles.find((j) => j.params.shotId === muffled.id)!;
     expect(remakeJob.params.selectIfPasses).toBe(true);
     // made again from its segment's first frame: the sequence's look (its identity passed, its sound did not)
     expect((remakeJob.params.startFrame as { path: string }).path).toMatch(/^media\/keyframes\//);
 
-    const done = await clipNow(pid, clip.id);
-    const [first, second] = [...done.shots].sort((x, y) => x.index - y.index);
-    const segment = first!.takes.find((t) => t.request.multiShot)!;
+    const segment = segmentOf(muffled);
     const request = requestOf(segment.gatewayTaskIds.at(-1)!);
     expect(request.parameters.include_audio).toBe(true);
-    for (const s of [first!, second!])
+    for (const s of inGroup)
       expect(request.input[0].text).toContain(`"${s.dialogue[0]!.line.replace(/[.!?]+$/, '')}`);
     // the muffled segment failed its sound check and stays as evidence; the remake alone passed and is selected
     expect(segment.consistency.quality).toMatchObject({ passed: false, sound: { lines: [{ heard: 0 }] } });
     // split half a frame before the detected cut: no frame of the next shot at its end
     expect(segment.consistency.quality?.temporal).toMatchObject({ jumps: [] });
-    const remade = first!.takes.find((t) => t.id === first!.selectedTakeId)!;
+    const remade = muffled.takes.find((t) => t.id === muffled.selectedTakeId)!;
     expect(remade.request.multiShot).toBeNull();
     expect(remade.request.firstFrameSource).toBe('sequence');
     expect(remade.consistency.quality).toMatchObject({ passed: true, sound: { lines: [{ heard: 1 }] } });
     // the other segment kept its sound and passed every check
-    const kept = second!.takes.find((t) => t.id === second!.selectedTakeId)!;
-    expect(kept.request.multiShot).toEqual({ index: 1, of: 2, cut: 'detected' });
+    const kept = other.takes.find((t) => t.id === other.selectedTakeId)!;
+    expect(kept.request.multiShot).toMatchObject({ of: 2, cut: 'detected' });
     expect(kept.video!.hasAudio).toBe(true);
     expect(kept.consistency.quality).toMatchObject({ passed: true, sound: { lines: [{ heard: 1 }] } });
     expect(kept.consistency.quality?.temporal).toMatchObject({ jumps: [] });
