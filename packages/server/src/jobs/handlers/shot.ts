@@ -60,7 +60,13 @@ function label(clip: Clip, shot: Shot): string {
 }
 
 /** Every item of the cut showing the shot now shows `take` (`replace_source`, its range kept within the take). */
-async function swapInCut(deps: HandlerDeps, ctx: JobContext, clipId: string, shotId: string, take: Take) {
+export async function swapInCut(
+  deps: HandlerDeps,
+  ctx: JobContext,
+  clipId: string,
+  shotId: string,
+  take: Take,
+) {
   const timeline = (await docsFor(deps, ctx)).timeline;
   if (!timeline || !take.video) return;
   const ops = takeSwapOps(timeline, { clipId, shotId, takeId: take.id, media: take.video });

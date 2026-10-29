@@ -330,10 +330,21 @@ export function soundVerdict(input: {
     for (const i of input.heard.issues.slice(0, 3)) issues.push(`sound: ${i}`.slice(0, 500));
   }
   return {
-    passed: lines.every((l) => l.heard >= LINE_HEARD_RATIO) && !(unwantedMusic && input.rejectMusic),
+    passed: soundPasses({ lines, music }, input),
     sound: { lines, transcript, music, unexpectedSpeech, score },
     issues,
   };
+}
+
+/** A take's sound passes when every line is heard and it carries no music the film rejects. */
+export function soundPasses(
+  sound: Pick<SoundReport, 'lines' | 'music'>,
+  rules: { musicAllowed: boolean; rejectMusic?: boolean },
+): boolean {
+  return (
+    sound.lines.every((l) => l.heard >= LINE_HEARD_RATIO) &&
+    !(sound.music && !rules.musicAllowed && rules.rejectMusic === true)
+  );
 }
 
 /** A quality verdict with the sound check merged in: it passes only when the sound check passes too. */

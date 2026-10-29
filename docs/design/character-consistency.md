@@ -158,10 +158,17 @@ can be added without touching the gate.
 A judge that was down while takes were made leaves them `unverified`; overriding them one by one is slow (94
 overrides in the October 2026 demo) and skips the check. `consistency.recheck` (lane `llm`) judges them again from the
 evidence frames they keep (`report.frames`), with the characters' current references, without generating anything:
-each take becomes `passed` or `failed` like a fresh check (`note: "re-checked"`), its speaker verdicts and temporal
-check kept. Stale and overridden takes are left alone. When the judge is still unavailable the job stops after three
+each take becomes `passed` or `failed` like a fresh check (`note: "re-checked"`), its speaker verdicts, temporal check
+and sound check kept: the frames are judged again, but what the take was heard to say is not listened to again, and
+a line that was not heard still fails the take (`soundPasses`). Stale and overridden takes are left alone. When the judge is still unavailable the job stops after three
 takes in a row stay unverified. It runs on request (`POST /api/projects/:id/consistency/recheck {clipIds?}`, MCP
 `consistency_recheck`) and by itself when a batch ends with unverified takes.
+
+A fix made while the judge was down waits for it. A scene review's fix or a sequence segment's remake replaces the
+shot's take only when it passes every check (its job's `selectIfPasses`), and a scene review's or a feedback's fix
+goes into the cut only then (`swapInCut`), so an unverified fix stayed out: on the swimming film, two of five scene
+review fixes made while the judge and the listener answered `502`. When the re-check passes such a take and it passes
+every check, it becomes the shot's take and goes into the cut, as its job asked.
 
 ## Reference sheets
 

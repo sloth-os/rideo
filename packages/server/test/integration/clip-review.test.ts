@@ -160,6 +160,66 @@ describe('a scene watched before the edit', () => {
     expect(await cutTake()).toBe(recut.selectedTakeId);
   });
 
+  it('puts a fix made while the judge was down into the cut once a re-check passes it', async () => {
+    const { projectId: pid, state } = await readyStoryProject(stack, {
+      storyboard: { enabled: false },
+      pilotDurationSec: 15,
+      review: { screenplay: false, storyboard: false, scenes: true, sceneFixes: 3 },
+    });
+    const plan = await stack.api<Job>('POST', `/projects/${pid}/clips/plan`, {
+      sceneId: state.docs.screenplay.scenes[0].id,
+    });
+    expectSucceeded(await stack.waitJob(pid, plan.id));
+    let clip = Object.values<Clip>((await docsOf(pid)).clips)[0]!;
+    const gen = await stack.api<Job>('POST', `/projects/${pid}/clips/${clip.id}/generate`);
+    expectSucceeded(await stack.waitJob(pid, gen.id, 300_000));
+    await stack.waitIdle(pid);
+    await stack.api('POST', `/projects/${pid}/clips/${clip.id}/approve`);
+    await stack.api('POST', `/projects/${pid}/timeline/assemble`, {});
+    clip = (await docsOf(pid)).clips[clip.id];
+    let shot = [...clip.shots].sort((a, b) => a.index - b.index)[1]!;
+    const kept = shot.selectedTakeId;
+    const cutTake = async () =>
+      (await stack.api<any>('GET', `/projects/${pid}/timeline`)).tracks
+        .flatMap((t: { items: any[] }) => t.items)
+        .find((i: any) => i.source?.shotId === shot.id).source.takeId;
+    expect(await cutTake()).toBe(kept);
+
+    // The judge is down when a scene review fixes a break: the fix is not verified, so the shot keeps its take
+    await stack.api('PATCH', `/projects/${pid}`, { settings: { consistency: { judge: 'off' } } });
+    await stack.api('PATCH', `/projects/${pid}/clips/${clip.id}/shots/${shot.id}`, {
+      description: `${shot.description} Continuity break.`,
+    });
+    const review = await stack.api<Job>('POST', `/projects/${pid}/clips/${clip.id}/review`, {});
+    expect(expectSucceeded(await stack.waitJob(pid, review.id, 300_000)).result).toMatchObject({
+      fixes: 1,
+      fixed: 0,
+    });
+    shot = (await docsOf(pid)).clips[clip.id].shots.find((s: { id: string }) => s.id === shot.id);
+    const fix = shot.takes.at(-1)!;
+    expect(fix.id).not.toBe(kept);
+    expect(fix.consistency.status).toBe('unverified');
+    expect(shot.selectedTakeId).toBe(kept);
+    expect(await cutTake()).toBe(kept);
+
+    // The judge is back: the re-check passes the fix, which becomes the shot's take and goes into the cut
+    await stack.api('PATCH', `/projects/${pid}`, { settings: { consistency: { judge: 'vision-llm' } } });
+    const recheck = await stack.api<Job>('POST', `/projects/${pid}/consistency/recheck`, {});
+    expect(expectSucceeded(await stack.waitJob(pid, recheck.id)).result).toMatchObject({
+      checked: 1,
+      passed: 1,
+    });
+    shot = (await docsOf(pid)).clips[clip.id].shots.find((s: { id: string }) => s.id === shot.id);
+    expect(shot.takes.find((t) => t.id === fix.id)!.consistency).toMatchObject({
+      status: 'passed',
+      note: 're-checked',
+    });
+    expect(shot.selectedTakeId).toBe(fix.id);
+    expect(await cutTake()).toBe(fix.id);
+    const log = await stack.api<{ message: string }[]>('GET', `/projects/${pid}/history?limit=10`);
+    expect(log.some((c) => c.message.endsWith("now the shot's take"))).toBe(true);
+  }, 400_000);
+
   it('needs a take for every shot, and stays off when the project turns it off', async () => {
     const { projectId: pid, state } = await readyStoryProject(stack, {
       storyboard: { enabled: false },

@@ -482,4 +482,7 @@ probe cost $39.53.
   fixes passing; scene 5 stayed at 5.9 → 5.6 (continuity 4, issues 11) with one of three. The same takes watched twice
   scored up to 0.7 apart, so one scene's change is noisy. Two of the five fixes failed while the newapi proxy answered
   `502` to the judge and the listener: both endpoints paused and the takes stayed unverified, which a fix counts as not
-  passing (item 28).
+  passing (item 28). Since then, when the judge is back and a re-check passes such a fix, the fix becomes the shot's take
+  and goes into the cut as its job asked, and it keeps what it was heard to say: a re-check used to drop the sound
+  verdict, so a take whose line nobody heard passed once re-checked
+  ([re-checking](design/character-consistency.md#re-checking-unverified-takes)).

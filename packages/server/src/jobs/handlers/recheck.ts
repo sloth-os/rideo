@@ -6,6 +6,9 @@ import {
   orderedShotElements,
   shotLabel,
   sortedClips,
+  soundPasses,
+  takePassesChecks,
+  withSound,
 } from '@rideo/shared';
 import { verifyFrames } from '../../consistency/gate';
 import { clipStatusOf } from '../../domain/clips';
@@ -13,6 +16,7 @@ import { throwIfAborted } from '../../util/abort';
 import type { JobContext } from '../queue';
 import { commitAs, docsFor, type HandlerDeps } from './common';
 import { prepareShotReferences } from './keyframe';
+import { swapInCut } from './shot';
 
 /** Takes in a row that may stay unverified before the judge counts as still down. */
 const STILL_DOWN = 3;
@@ -27,6 +31,10 @@ export async function consistencyRecheck(deps: HandlerDeps, ctx: JobContext) {
   const docs = await docsFor(deps, ctx);
   const settings = docs.project.settings;
   const judge = settings.consistency.judge === 'off' ? deps.offJudge : deps.judge;
+  const musicRules = {
+    musicAllowed: settings.generation.modelMusic === true,
+    rejectMusic: settings.consistency.rejectMusic === true,
+  };
   const targets = sortedClips(docs)
     .filter((c) => !clipIds?.length || clipIds.includes(c.id))
     .flatMap((clip) =>
@@ -101,26 +109,51 @@ export async function consistencyRecheck(deps: HandlerDeps, ctx: JobContext) {
     inARow = 0;
     if (report.status === 'passed') passed++;
     else failed++;
-    await commitAs(
+    // A fix made while the judge was down replaces the shot's take, or goes into the cut, only once it passes
+    const made = (take.jobId ? deps.jobs.find(take.jobId)?.params : undefined) as
+      | { selectIfPasses?: boolean; swapInCut?: boolean }
+      | undefined;
+    const { result } = await commitAs(
       deps,
       ctx,
       (tx) => {
         const c = structuredClone(tx.require<Clip>(docPath.clip(clip.id), `clip ${clip.id}`));
         const s = c.shots.find((x) => x.id === shot.id);
         const t = s?.takes.find((x) => x.id === take.id);
-        if (!s || !t || t.consistency.status !== 'unverified') return;
+        if (!s || !t || t.consistency.status !== 'unverified') return null;
+        const before = t.consistency.quality;
         t.consistency = {
           ...report,
           voices: t.consistency.voices,
-          quality: report.quality ?? t.consistency.quality,
+          // The frames are judged again; what the take was heard to say stays
+          quality:
+            report.quality && before?.sound
+              ? withSound(report.quality, {
+                  passed: soundPasses(before.sound, musicRules),
+                  sound: before.sound,
+                  issues: before.issues,
+                })
+              : (report.quality ?? before),
           note: 're-checked',
         };
+        const passes = takePassesChecks(t, s, docs.characters, docs.elements);
+        const chosen = passes && made?.selectIfPasses === true && s.selectedTakeId !== t.id;
+        if (chosen) s.selectedTakeId = t.id;
         if (s.selectedTakeId === t.id) s.status = report.status === 'passed' ? 'ready' : 'needs_review';
         c.status = clipStatusOf(c);
         tx.set(docPath.clip(clip.id), c);
+        return { take: t, chosen, inCut: passes && s.selectedTakeId === t.id && made?.swapInCut === true };
       },
-      `Re-check ${label}: ${report.status} ${report.score.toFixed(2)}`,
+      (r) =>
+        `Re-check ${label}: ${report.status} ${report.score.toFixed(2)}${r?.chosen ? ", now the shot's take" : ''}`,
     );
+    if (result?.inCut)
+      await swapInCut(deps, ctx, clip.id, shot.id, result.take).catch((err) =>
+        ctx.log.warn(
+          { err: (err as Error).message, takeId: take.id },
+          'could not put the re-checked take in the cut',
+        ),
+      );
   }
   ctx.progress(targets.length, targets.length, 'done');
   ctx.log.info({ checked: targets.length, passed, failed, unverified }, 'unverified takes re-checked');

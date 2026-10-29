@@ -33,6 +33,7 @@ import {
   selectReferences,
   shotContextOf,
   soundBlockV2,
+  soundPasses,
   soundVerdict,
   startsFromFrame,
   TEMPORAL_JUMP_SCORE,
@@ -615,6 +616,20 @@ describe('the sound check (docs/design/continuity.md#quality-checks-in-the-gate)
     expect(
       soundVerdict({ lines: [], heard: heard({}), musicAllowed: false, rejectMusic: true, cast: [] }).passed,
     ).toBe(true);
+  });
+
+  it('passes a stored sound report by the same rules, for a take checked again without listening', () => {
+    const line = { character: 'Rosie', line: 'The water is warm', speaker: 'Rosie' };
+    const rules = { musicAllowed: false, rejectMusic: true };
+    expect(soundPasses({ lines: [{ ...line, heard: 1 }], music: false }, rules)).toBe(true);
+    expect(soundPasses({ lines: [{ ...line, heard: LINE_HEARD_RATIO }], music: false }, rules)).toBe(true);
+    expect(soundPasses({ lines: [{ ...line, heard: 0.5 }], music: false }, rules)).toBe(false);
+    expect(soundPasses({ lines: [], music: true }, rules)).toBe(false);
+    expect(soundPasses({ lines: [], music: true }, { musicAllowed: false })).toBe(true);
+    expect(soundPasses({ lines: [], music: true }, { musicAllowed: true, rejectMusic: true })).toBe(true);
+    // the verdict and the rule agree
+    const v = soundVerdict({ lines: [line], heard: heard({}), musicAllowed: false, cast: ['Rosie'] });
+    expect(soundPasses(v.sound, { musicAllowed: false })).toBe(v.passed);
   });
 
   it('reports speech in a shot without lines and allows music when the film wants it', () => {

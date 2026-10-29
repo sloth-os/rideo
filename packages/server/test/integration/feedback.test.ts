@@ -131,13 +131,28 @@ describe('feedback on an export', () => {
     expect(md).toContain('## Retrospective: what to improve next time');
     expect(md).toContain(label);
 
-    // Applying the recommendation revises the shot and regenerates it.
+    // Applying the recommendation revises the shot and regenerates it. The judge is down meanwhile: the new take is
+    // not verified, so the cut keeps the old one until a re-check passes it
+    // (docs/design/character-consistency.md#re-checking-unverified-takes).
+    const cutTake = async () =>
+      (await stack.api<any>('GET', `/projects/${pid}/timeline`)).tracks
+        .flatMap((t: { items: any[] }) => t.items)
+        .find((i: any) => i.source?.shotId === jumpy.id).source.takeId;
+    const cutBefore = await cutTake();
+    await stack.api('PATCH', `/projects/${pid}`, { settings: { consistency: { judge: 'off' } } });
     const applied = await stack.api<{ feedback: Feedback; job: Job }>(
       'POST',
       `/projects/${pid}/feedback/${fb!.id}/recommendations/${regenerate.id}/apply`,
     );
     expect(applied.job.kind).toBe('shot.generate');
     expectSucceeded(await stack.waitJob(pid, applied.job.id));
+    clip = (await stateOf(pid)).docs.clips[clip.id];
+    const unverified = clip.shots.find((s) => s.id === jumpy.id)!.takes.at(-1)!;
+    expect(unverified.consistency.status).toBe('unverified');
+    expect(await cutTake()).toBe(cutBefore);
+    await stack.api('PATCH', `/projects/${pid}`, { settings: { consistency: { judge: 'vision-llm' } } });
+    const recheck = await stack.api<Job>('POST', `/projects/${pid}/consistency/recheck`, {});
+    expectSucceeded(await stack.waitJob(pid, recheck.id));
     clip = (await stateOf(pid)).docs.clips[clip.id];
     const fixed = clip.shots.find((s) => s.id === jumpy.id)!;
     expect(fixed.description).toContain('Steady camera, feet planted on the ground.');
@@ -147,13 +162,14 @@ describe('feedback on an export', () => {
     expect(named.length).toBeGreaterThan(0);
     const people = (await stateOf(pid)).docs.characters as Record<string, { name: string }>;
     expect(fixed.characterIds.map((id) => people[id]!.name).sort()).toEqual([...named].sort());
-    expect(fixed.takes.find((t) => t.id === fixed.selectedTakeId)!.consistency.quality?.passed).toBe(true);
+    expect(fixed.selectedTakeId).toBe(unverified.id);
+    expect(fixed.takes.find((t) => t.id === fixed.selectedTakeId)!.consistency).toMatchObject({
+      status: 'passed',
+      note: 're-checked',
+      quality: { passed: true },
+    });
     // The new take replaces the old one in the cut.
-    const cut = await stack.api<any>('GET', `/projects/${pid}/timeline`);
-    const item = cut.tracks
-      .flatMap((t: { items: any[] }) => t.items)
-      .find((i: any) => i.source?.shotId === jumpy.id);
-    expect(item.source.takeId).toBe(fixed.selectedTakeId);
+    expect(await cutTake()).toBe(fixed.selectedTakeId);
     const rec = applied.feedback.recommendations.find((r) => r.id === regenerate.id)!;
     expect(rec).toMatchObject({ status: 'applied', jobId: applied.job.id });
 

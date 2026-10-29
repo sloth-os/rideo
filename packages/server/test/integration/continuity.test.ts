@@ -296,6 +296,39 @@ describe('continuity-aware generation (prompt version 2)', () => {
     }
   });
 
+  it('keeps what a re-checked take was heard to say: a line nobody heard still fails it', async () => {
+    const { pid, clip } = await plannedClip({ consistency: { judge: 'off' } });
+    const generated = await generate(pid, clip.id);
+    const spoken = generated.shots.find((s) => s.dialogue.some((d) => d.characterId))!;
+    // Its line is not heard on any attempt: the take is kept, unverified and marked
+    stack.gw.muffleSpeech(3);
+    const job = await stack.api<Job>(
+      'POST',
+      `/projects/${pid}/clips/${clip.id}/shots/${spoken.id}/regenerate`,
+    );
+    expectSucceeded(await stack.waitJob(pid, job.id, 180_000));
+    await stack.waitIdle(pid);
+    const shotNow = async () =>
+      ((await stateOf(pid)).docs.clips[clip.id] as Clip).shots.find((s) => s.id === spoken.id)!;
+    const muffled = (await shotNow()).takes.at(-1)!;
+    expect(muffled.consistency).toMatchObject({
+      status: 'unverified',
+      quality: { passed: false, sound: { lines: [{ heard: 0 }] } },
+    });
+    // The judge is back: the frames pass, and what was heard still fails the take
+    await stack.api('PATCH', `/projects/${pid}`, { settings: { consistency: { judge: 'vision-llm' } } });
+    const recheck = await stack.api<Job>('POST', `/projects/${pid}/consistency/recheck`, {});
+    expectSucceeded(await stack.waitJob(pid, recheck.id));
+    const after = (await shotNow()).takes.find((t) => t.id === muffled.id)!;
+    expect(after.consistency).toMatchObject({
+      status: 'passed',
+      note: 're-checked',
+      quality: { passed: false, sound: { lines: [{ heard: 0 }] } },
+    });
+    expect(after.consistency.quality!.physics).not.toBeNull();
+    expect(after.consistency.quality!.issues.join(' ')).toContain('not heard');
+  });
+
   it('leaves version 1 projects as they were', async () => {
     const { pid, clip } = await plannedClip({
       generation: { promptVersion: 1, includeAudio: true },
