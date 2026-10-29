@@ -9,6 +9,7 @@ import { Badge, Button, EmptyState, SectionHeader } from '../../components/ui';
 import { api, mediaUrl, type WatermarkDetection } from '../../lib/api';
 import { useProject } from '../../store/project';
 import { reportError } from '../../store/ui';
+import { AiReviewPanel } from '../ai-review/AiReviewPanel';
 import { openThreads, useReviewDialog } from '../review/ReviewHost';
 import { FeedbackSummary } from './FeedbackPanel';
 import { InterchangeCard } from './InterchangeCard';
@@ -260,6 +261,7 @@ export function ExportsView() {
       {running.map((j) => (
         <JobRow key={j.id} job={j} projectId={projectId} />
       ))}
+      <AiReviewPanel stage="cut" />
       <InterchangeCard />
       {exports.length === 0 ? (
         <EmptyState icon={<Download className="size-8" />} title="No exports yet">

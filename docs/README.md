@@ -27,9 +27,11 @@
 | [design/multi-shot.md](design/multi-shot.md) | Multi-shot generation: consecutive shots in one request for models that render several shots, split at the cuts and verified shot by shot |
 | [design/directing.md](design/directing.md) | Directing controls: camera moves, lens and aperture, start and end frames, motion references, seeds, variations and A/B comparison |
 | [design/storyboard.md](design/storyboard.md) | The storyboard stage, board frames reused by the video pass, the animatic, screenplay import (Fountain, FDX, PDF), shot lists |
+| [design/director-desk.md](design/director-desk.md) | The 3D director's desk: every scene blocked in a small 3D set (mannequins, props, a camera per shot), AI blocking with a camera solver and the 180° rule, the blocking line and camera view given to the image model, the desk in the Storyboard view |
 | [design/dialogue.md](design/dialogue.md) | Character voices (designed or cloned, locked), TTS or native dialogue, lip sync, the speaker check, the Dialogue track |
 | [design/character-consistency.md](design/character-consistency.md) | How consistency is guaranteed: identity lock, deterministic conditioning, judge gate, continuity, drift |
 | [design/continuity.md](design/continuity.md) | Continuity, storytelling and realism: prompt version 2 (scene lines, video prompt blocks, voices, exclusions), story structure, dialogue levels, film grammar in shot planning, the scene reference frame, temporal and physics checks |
+| [design/ai-review.md](design/ai-review.md) | AI review of every step: the screenplay, the cast, the storyboard (and every production scene's), each take watched whole, each scene watched as one video and heard, and the cut before export; autopilot approves a gate only when its review passed |
 | [design/feedback.md](design/feedback.md) | Feedback on the finished film: the vision model watches each export with the project in hand, scores it, pins issues to shots, recommends actions Rideo can apply, and writes the retrospective of every project |
 | [design/observability.md](design/observability.md) | Logs, metrics, the usage and cost ledger of each project, the Insights view and telemetry from the studio |
 | [design/generation-pipeline.md](design/generation-pipeline.md) | Job queue, shot pipeline, batch generation to target length, retries, idempotency |
@@ -60,6 +62,9 @@
 | Take | One generated attempt of a shot: keyframe, watermarked video, poster, consistency report, watermark id. |
 | Timeline | Tracks of items that reference takes or media, edited with pure operations. |
 | Gate | An approval that moves a workflow to its next stage. |
+| Blocking | A scene's 3D layout: the set, the characters' marks and a camera per shot ([director's desk](design/director-desk.md)). |
+| Camera view | A shot's camera seeing the blocking: the mannequins and the set, given to the image model as a layout. |
+| Clip gate | What a clip must pass before autopilot approves it: every take's checks (watched whole), the scene's review, its frames ([AI review](design/ai-review.md#the-clip-gate)). |
 | Actor | Who made a change: `user`, `agent` (MCP client), `system` (jobs), or `webdav` (external edit). |
 | Workspace | A browser's project store (IndexedDB) when projects are kept in browsers. |
 | Project file | A project as one `.rideo` file (documents, history, media) to export and import. |

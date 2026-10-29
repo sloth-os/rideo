@@ -272,7 +272,14 @@ review does not show is `403 forbidden`.
 |---|---|---|---|
 | POST | `/api/projects/:id/clips/plan` | `{sceneId}` | `Job` |
 | POST | `/api/projects/:id/clips/:clipId/generate` | – | `Job` (`clip.generate`: `shot.generate` per shot, or `shot.group` for consecutive shots of a multi-shot model unless `settings.generation.multiShot` is `off`, [multi-shot](../design/multi-shot.md); then the scene review) |
-| POST | `/api/projects/:id/clips/:clipId/review` | `{fix?: boolean}` | `Job` (`clip.review`: the scene's takes watched and, unless `fix: false`, its priority 1 regenerations applied, [scenes before the edit](../design/ai-review.md#scenes-before-the-edit)); `422` when a shot has no take |
+| POST | `/api/projects/:id/clips/:clipId/review` | `{fix?: boolean}` | `Job` (`clip.review`: the scene watched as one video and heard, and, unless `fix: false`, its priority 1 regenerations applied, [scenes before the edit](../design/ai-review.md#scenes-before-the-edit)); `422` when a shot has no take |
+| GET | `/api/projects/:id/clips/:clipId/blocking` | – | `{blocking, state, draft, issues, lines}`: the scene's 3D blocking, `missing` / `incomplete` / `ready`, the completed draft the desk edits, its issues and each shot's blocking line ([director's desk](../design/director-desk.md#surfaces)) |
+| PUT | `/api/projects/:id/clips/:clipId/blocking` | `{blocking, fix?}` (`fix`: keep the cameras of cuts on the line) | the same; `422` for a blocking that does not validate, `409` for an approved clip |
+| POST | `/api/projects/:id/clips/:clipId/blocking/generate` | – | `Job` (`scene.block`: the AI's floor plan, its cameras solved) |
+| GET | `/api/projects/:id/clips/:clipId/shots/:shotId/blocking.png` | `?width=160–1920` | the shot's camera view (PNG) |
+| POST | `/api/projects/:id/clips/:clipId/storyboard` | – | `Job` (`clip.storyboard`: a production scene blocked, drawn, reviewed and its frames approved, [production storyboards](../design/ai-review.md#production-storyboards)) |
+| POST | `/api/projects/:id/clips/:clipId/board-review/override` | `{note?}` | `Clip`: continue without passing the scene's storyboard review (an approval) |
+| POST | `/api/projects/:id/takes/watch` | `{takes?: [{clipId, shotId, takeId}]}` (the cut's takes when empty) | `Job` (`takes.watch`: takes watched whole from their videos, [takes watched whole](../design/ai-review.md#takes-watched-whole)) |
 | PATCH | `/api/projects/:id/clips/:clipId/shots/:shotId` | shot fields, including `camera.{lensMm, aperture, move}`, `startFrame`, `endFrame`, `motionReference` (`mode`: `motion`, `pose`, `camera` or `performance`), `seed` ([directing](../design/directing.md)) | `Clip` |
 | GET | `/api/projects/:id/performance` | – | `{model, available}`: the model performance takes use ([performance](../design/performance.md)); a regenerate or variations of a performance shot without one: `422 performance_unavailable` |
 | POST | `/api/projects/:id/clips/:clipId/shots/:shotId/variations` | `{count: 2–4}` | `Job[]` (`shot.generate` with `variation`) |

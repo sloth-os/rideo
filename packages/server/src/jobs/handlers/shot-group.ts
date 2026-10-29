@@ -23,6 +23,7 @@ import {
 } from '@rideo/shared';
 import { verifyFrames } from '../../consistency/gate';
 import { checkSound, silentTakeVerdict, spokenLines, withSoundVerdict } from '../../consistency/sound';
+import { watchTake, withWatchResult } from '../../consistency/watch';
 import { assertCastReady, assertVoicesReady, clipStatusOf } from '../../domain/clips';
 import { invalid, notFound } from '../../errors';
 import { extractFrame, sampleFrames } from '../../media/frames';
@@ -285,6 +286,28 @@ export async function shotGroup(deps: HandlerDeps, ctx: JobContext) {
                       signal: ctx.signal,
                     }).catch(() => null)
                   : null;
+              // Watched whole, as a single take is (docs/design/ai-review.md#takes-watched-whole)
+              const watched =
+                settings.review?.watchTakes === true && qualityChecks
+                  ? watchTake({
+                      llm: deps.llm,
+                      ff: deps.ff,
+                      video: local,
+                      clip: join(dir, `seq-${attempt}-watch-${k}.mp4`),
+                      shot,
+                      characters: shotCtx.characters,
+                      references: refs.judgeRefs,
+                      offscreen: shotCtx.offscreen ?? [],
+                      allCharacters: docs.characters,
+                      place,
+                      castOnly,
+                      durationSec: to - from,
+                      qualityThreshold: settings.consistency.qualityThreshold,
+                      metrics: deps.metrics,
+                      log: ctx.log,
+                      signal: ctx.signal,
+                    }).catch(() => null)
+                  : null;
               const frames = await sampleFrames(deps.ff, local, to - from, dir, `seq-${attempt}-${k}`, {
                 maxWidth: 512,
                 signal: ctx.signal,
@@ -318,6 +341,7 @@ export async function shotGroup(deps: HandlerDeps, ctx: JobContext) {
               if (heard) report = withSoundVerdict(report, await heard);
               else if (listen && !sound && spokenLines(shot, docs.characters).length)
                 report = withSoundVerdict(report, silentTakeVerdict(spokenLines(shot, docs.characters)));
+              if (watched) report = withWatchResult(report, await watched);
               return {
                 local,
                 frames,

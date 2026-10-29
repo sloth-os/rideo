@@ -233,6 +233,21 @@ mm-gateway backends for cost and privacy, with a documented GPU setup. *Why:* [L
 
 **22. Installable mobile app (PWA)** (S) — *done:* [design/pwa.md](design/pwa.md) — review, approvals and agent monitoring on phones. *Why:* Flow mobile apps.
 
+### P1 — added October 2026
+
+**23. 3D director's desk** (M) — *done:* [design/director-desk.md](design/director-desk.md) — every storyboarded scene
+blocked in a small 3D set (mannequins on marks, props, landmarks, the sun, a camera per shot) by the AI with a camera
+solver that keeps the 180° rule, edited on a desk with a director's view and a view through each camera; each frame is
+drawn from its camera view and blocking line. *Why:* the swimming demo's continuity across cuts scored 4 of 10, its
+props and shoreline swapping sides; previs desks lock camera and staging before AI paints them (the open-source 3D
+Director Desk, Morphic 3D Scene, Autodesk Flow Studio 3D Editor, PrevizWhiz).
+
+**24. AI review of every step** (M) — *done:* [design/ai-review.md](design/ai-review.md) — on autopilot no gate opens
+without a review that passed: the cast's references, every production scene's storyboard before its video, every
+take watched whole by the vision model (not three frames), every scene watched as one video and heard, and the cut
+reviewed at the take and the scene level before export. *Why:* frames sampled at 15/50/85 % missed morphs and
+walk-ins between them, and autopilot stopped at the cast for a person.
+
 ## Suggested sequencing
 
 | Milestone | Items | Outcome |

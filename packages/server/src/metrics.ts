@@ -238,6 +238,44 @@ export class Metrics {
       'Shots a scene review generated again, by outcome (fixed, not_fixed, failed)',
     ),
   );
+  /** The scene's video in its review (docs/design/ai-review.md#scenes-before-the-edit). */
+  readonly clipReviewWatched = this.add(
+    new Counter(
+      'rideo_clip_review_watched_total',
+      'Scene reviews by what the vision model watched (video: the scene as one video and its strips; frames: strips only)',
+    ),
+  );
+  /** Takes watched whole (docs/design/ai-review.md#takes-watched-whole). */
+  readonly takeWatches = this.add(
+    new Counter(
+      'rideo_take_watches_total',
+      'Takes watched whole, by the model that watched (vision, omni) and result (passed, failed, error)',
+    ),
+  );
+  readonly takeWatchScore = this.add(
+    new Histogram(
+      'rideo_take_watch_score',
+      'Overall scores of takes watched whole (0-10)',
+      [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+    ),
+  );
+  /** The 3D director's desk (docs/design/director-desk.md#observability). */
+  readonly blockings = this.add(
+    new Counter('rideo_blocking_total', 'Blockings saved, by source (ai, user) and outcome (clean, issues)'),
+  );
+  readonly blockingIssues = this.add(
+    new Counter('rideo_blocking_issues_total', 'Issues found in blockings when they were saved, by code'),
+  );
+  readonly blockingLineFixes = this.add(
+    new Counter('rideo_blocking_line_fixes_total', 'Cameras the solver brought back over the line of action'),
+  );
+  /** Gates and clips approved by autopilot after their reviews (docs/design/ai-review.md#autopilot-every-step-reviewed-and-approved). */
+  readonly autopilotApprovals = this.add(
+    new Counter(
+      'rideo_autopilot_approvals_total',
+      'Approvals autopilot made after a passing review, by step (cast, resources, frames, clip, pilot, production, cut)',
+    ),
+  );
   readonly httpSeconds = this.add(
     new Histogram(
       'rideo_http_request_seconds',

@@ -76,8 +76,11 @@ export async function counters(
 export const REAL_PROJECT_SETTINGS = {
   targetDurationSec: 10,
   pilotDurationSec: 10,
-  storyboard: { enabled: false },
+  storyboard: { enabled: false, production: false },
+  // The director's desk blocks storyboarded scenes only; the suite has none
+  blocking: { enabled: false },
   consistency: { threshold: 0.5, maxAttempts: 2 },
-  // One review of the screenplay and no automatic revisions: the suite checks the review runs, not the story
-  review: { maxRounds: 0 },
+  // One review of the screenplay and no automatic revisions: the suite checks the review runs, not the story. The
+  // reviews of the cast, the takes and the cut have their own tests on the mock gateway (autopilot.test.ts).
+  review: { maxRounds: 0, cast: false, cut: false, watchTakes: false, extensions: false },
 };

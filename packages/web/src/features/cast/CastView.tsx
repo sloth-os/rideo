@@ -40,6 +40,7 @@ import { api } from '../../lib/api';
 import { useConfig } from '../../lib/config';
 import { useProject } from '../../store/project';
 import { reportError, useUi } from '../../store/ui';
+import { AiReviewPanel } from '../ai-review/AiReviewPanel';
 import { VoicePanel } from './VoicePanel';
 
 const IDENTITY_FIELDS: [keyof Identity, string][] = [
@@ -390,6 +391,7 @@ export function CastView() {
           </>
         }
       />
+      <AiReviewPanel stage="cast" />
       {workflow?.stage === 'cast' && gate && !gate.satisfied ? (
         <div
           className="space-y-1 rounded-[var(--radius-control)] border border-border bg-surface-2 p-3 text-[13px]"

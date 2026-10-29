@@ -37,7 +37,16 @@ describe('story → movie workflow (REST, mock gateway)', () => {
       kind: 'story',
       title: 'The Keeper',
       brief: { prompt: 'A lighthouse keeper receives letters from the future' },
-      settings: { targetDurationSec: 30, pilotDurationSec: 10, resolution: { width: 320, height: 180 } },
+      settings: {
+        targetDurationSec: 30,
+        pilotDurationSec: 10,
+        resolution: { width: 320, height: 180 },
+        // The reviews of the cast, the takes and the cut, the production storyboards and the director's desk have
+        // tests of their own (autopilot.test.ts, director-desk.test.ts): this one follows the gates a person approves
+        review: { cast: false, cut: false, watchTakes: false, extensions: false },
+        storyboard: { production: false },
+        blocking: { enabled: false },
+      },
     });
     expect(created.workflow.stage).toBe('brief');
     const pid = created.id;

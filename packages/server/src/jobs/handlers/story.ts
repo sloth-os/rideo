@@ -310,7 +310,33 @@ export async function characterRefs(deps: HandlerDeps, ctx: JobContext) {
     done++;
   }
   ctx.progress(done, views.length, 'done');
+  await castFollowUp(deps, ctx);
   return { generated: done };
+}
+
+/**
+ * The cast is reviewed once every character and element in use has a reference (docs/design/ai-review.md), by the
+ * last reference job to finish: a review made while views are still being drawn would be outdated at once.
+ */
+async function castFollowUp(deps: HandlerDeps, ctx: JobContext): Promise<void> {
+  const docs = await docsFor(deps, ctx);
+  if (docs.project.workflow.stage !== 'cast') return;
+  if (activeReferenceJobs(deps, ctx).length) return;
+  await deps.services.aiReviews
+    .followUp(ctx.actor, ctx.job.projectId, 'cast')
+    .catch((err) => ctx.log.warn({ err: (err as Error).message }, 'could not queue the cast review'));
+}
+
+/** The reference jobs of the project still queued or running, besides this one. */
+export function activeReferenceJobs(deps: HandlerDeps, ctx: JobContext) {
+  return deps.jobs
+    .list(ctx.job.projectId)
+    .filter(
+      (j) =>
+        (j.kind === 'character.refs' || j.kind === 'element.refs') &&
+        j.id !== ctx.job.id &&
+        (j.status === 'queued' || j.status === 'running'),
+    );
 }
 
 /** Reference views of a location, prop or style (docs/design/elements.md#jobs). */
@@ -367,6 +393,7 @@ export async function elementRefs(deps: HandlerDeps, ctx: JobContext) {
     done++;
   }
   ctx.progress(done, views.length, 'done');
+  await castFollowUp(deps, ctx);
   return { generated: done };
 }
 

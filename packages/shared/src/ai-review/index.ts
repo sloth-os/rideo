@@ -13,6 +13,7 @@ import type { ProjectDocs } from '../schemas/documents';
 import type { LlmStageAction, StageReviewOutput } from '../schemas/llm';
 import { storyboardClips } from '../storyboard';
 import { fnv1a32 } from '../util/hash';
+import { castReviewSubject, cutReviewSubject } from './gates';
 
 /** A dimension below this fails the review whatever the score (docs/design/ai-review.md#the-verdict). */
 export const REVIEW_MIN_DIMENSION = 4;
@@ -95,7 +96,16 @@ export function storyboardReviewSubject(docs: Pick<ProjectDocs, 'screenplay' | '
 }
 
 export function reviewSubject(docs: ProjectDocs, stage: ReviewStage): string {
-  return stage === 'screenplay' ? screenplayReviewSubject(docs) : storyboardReviewSubject(docs);
+  switch (stage) {
+    case 'screenplay':
+      return screenplayReviewSubject(docs);
+    case 'cast':
+      return castReviewSubject(docs);
+    case 'storyboard':
+      return storyboardReviewSubject(docs);
+    case 'cut':
+      return cutReviewSubject(docs);
+  }
 }
 
 export function reviewSettings(docs: Pick<ProjectDocs, 'project'>) {
@@ -104,7 +114,8 @@ export function reviewSettings(docs: Pick<ProjectDocs, 'project'>) {
 
 export function reviewEnabled(docs: Pick<ProjectDocs, 'project'>, stage: ReviewStage): boolean {
   if (stage === 'storyboard' && docs.project.settings.storyboard?.enabled === false) return false;
-  return reviewSettings(docs)[stage];
+  if (stage === 'cut' && docs.project.kind !== 'story') return false;
+  return reviewSettings(docs)[stage] === true;
 }
 
 export type ReviewState =
@@ -167,6 +178,9 @@ export interface ReviewTargets {
   scenes: Map<number, string>;
   /** Storyboard: scene number → its clip and its shots in order. */
   clips?: Map<number, { clipId: string; shots: { shotId: string; label: string }[] }>;
+  /** Cast: names (lower case) → character and element ids. */
+  characters?: Map<string, string>;
+  elements?: Map<string, string>;
 }
 
 function dimensionOf(stage: ReviewStage, raw: string): ReviewDimension {
@@ -178,12 +192,24 @@ function dimensionOf(stage: ReviewStage, raw: string): ReviewDimension {
 function actionOf(
   stage: ReviewStage,
   a: LlmStageAction | undefined,
-  at: { scene?: number; shot?: number },
+  at: { scene?: number; shot?: number; character?: string; element?: string },
   fallback: string,
   targets: ReviewTargets,
 ): StageAction | null {
   if (!a) return null;
   const instruction = (a.instruction || a.direction || fallback).slice(0, 2000);
+  if (stage === 'cast') {
+    if (a.kind !== 'regenerate_refs') return { kind: 'note' };
+    const characterId = at.character ? targets.characters?.get(at.character.trim().toLowerCase()) : undefined;
+    const elementId = at.element ? targets.elements?.get(at.element.trim().toLowerCase()) : undefined;
+    if (!characterId && !elementId) return { kind: 'note' };
+    return {
+      kind: 'regenerate_refs',
+      ...(characterId ? { characterId } : { elementId: elementId! }),
+      ...(a.instruction ? { instruction: a.instruction.slice(0, 2000) } : {}),
+    };
+  }
+  if (stage === 'cut') return { kind: 'note' };
   if (stage === 'screenplay') {
     if (a.kind === 'revise_scene') {
       const sceneId = at.scene !== undefined ? targets.scenes.get(at.scene) : undefined;
@@ -234,8 +260,14 @@ export function assembleStageReview(
     const v = out.scores[d];
     scores[d] = typeof v === 'number' ? round1(Math.min(10, Math.max(0, v))) : null;
   }
-  const place = (scene?: number, shot?: number) => {
+  const place = (scene?: number, shot?: number, who?: { character?: string; element?: string }) => {
     const where: Partial<StageIssue> = {};
+    const characterId = who?.character
+      ? targets.characters?.get(who.character.trim().toLowerCase())
+      : undefined;
+    const elementId = who?.element ? targets.elements?.get(who.element.trim().toLowerCase()) : undefined;
+    if (characterId) where.characterId = characterId;
+    if (elementId) where.elementId = elementId;
     if (scene !== undefined) {
       where.scene = scene;
       const sceneId = targets.scenes.get(scene);
@@ -252,7 +284,7 @@ export function assembleStageReview(
     severity: i.severity,
     title: i.title,
     detail: i.detail,
-    ...place(i.scene, i.shot),
+    ...place(i.scene, i.shot, i),
   }));
   const recommendations: StageRecommendation[] = out.recommendations
     .map((r, k) => ({ r, k }))
@@ -265,15 +297,29 @@ export function assembleStageReview(
       title: r.title,
       detail: r.detail,
       issueIds: issues
-        .filter(
-          (i) =>
+        .filter((i) => {
+          if (stage === 'cast') {
+            const at = place(undefined, undefined, r);
+            return (
+              (!!at.characterId && i.characterId === at.characterId) ||
+              (!!at.elementId && i.elementId === at.elementId)
+            );
+          }
+          return (
             r.scene !== undefined &&
             i.scene === r.scene &&
-            (r.shot === undefined || i.shot === place(r.scene, r.shot).shot),
-        )
+            (r.shot === undefined || i.shot === place(r.scene, r.shot).shot)
+          );
+        })
         .map((i) => i.id)
         .slice(0, 50),
-      action: actionOf(stage, r.action, { scene: r.scene, shot: r.shot }, r.detail || r.title, targets),
+      action: actionOf(
+        stage,
+        r.action,
+        { scene: r.scene, shot: r.shot, character: r.character, element: r.element },
+        r.detail || r.title,
+        targets,
+      ),
       status: 'open' as const,
     }));
   return {
@@ -332,3 +378,4 @@ export function carriedFixes(
 }
 
 export * from './clip-review';
+export * from './gates';

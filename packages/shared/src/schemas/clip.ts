@@ -1,5 +1,7 @@
 import { z } from 'zod';
 import { CameraMoveIdSchema } from '../directing';
+import { StageReviewSchema, StageVerdictSchema } from './ai-review';
+import { SceneBlockingSchema } from './blocking';
 import { ActorSchema, IdSchema, IsoDateSchema, MediaRefSchema } from './common';
 import { FeedbackIssueSchema, FeedbackRecommendationSchema, FeedbackScoresSchema } from './feedback';
 import { ContentCredentialsStampSchema } from './provenance';
@@ -58,6 +60,35 @@ export const SoundReportSchema = z.object({
 });
 export type SoundReport = z.infer<typeof SoundReportSchema>;
 
+/** The whole take watched by the vision model (docs/design/ai-review.md#takes-watched-whole). */
+export const TakeWatchSchema = z.object({
+  model: z.string().max(200).default(''),
+  /** The model that watched: the vision model, or the audio-visual model when the vision model takes no video. */
+  via: z.enum(['vision', 'omni']).default('vision'),
+  overall: z.number().min(0).max(10),
+  motion: z.number().min(0).max(1),
+  physics: z.number().min(0).max(1),
+  action: z.number().min(0).max(1),
+  camera: z.number().min(0).max(1),
+  identity: z.number().min(0).max(1),
+  /** People seen who should not be there. */
+  others: z.array(z.string().max(200)).max(10).default([]),
+  issues: z
+    .array(
+      z.object({
+        time: z.number().min(0).max(600),
+        severity: z.enum(['critical', 'major', 'minor']),
+        title: z.string().max(200),
+        detail: z.string().max(1000).default(''),
+      }),
+    )
+    .max(20)
+    .default([]),
+  passed: z.boolean(),
+  checkedAt: IsoDateSchema.optional(),
+});
+export type TakeWatch = z.infer<typeof TakeWatchSchema>;
+
 export const QualityVerdictSchema = z.object({
   /** Temporal, physics and sound passed (continuity is advisory). */
   passed: z.boolean(),
@@ -78,6 +109,8 @@ export const QualityVerdictSchema = z.object({
   duplicates: z.array(z.string().max(200)).max(10).default([]),
   /** What the audio-visual model heard; null when the take was not listened to. */
   sound: SoundReportSchema.nullable().default(null),
+  /** The whole take watched (docs/design/ai-review.md#takes-watched-whole); null when it was not. */
+  watch: TakeWatchSchema.nullable().default(null),
   issues: z.array(z.string().max(500)).max(20).default([]),
 });
 export type QualityVerdict = z.infer<typeof QualityVerdictSchema>;
@@ -342,6 +375,12 @@ export const ClipReviewSchema = z.object({
   round: z.number().int().min(1).max(2).default(1),
   overall: z.number().min(0).max(10).nullable().default(null),
   scores: SceneScoresSchema.default({}),
+  /** The scene watched as one video (and its strips), or only its strips. */
+  watched: z.enum(['video', 'frames']).default('frames'),
+  /** The audio-visual model listened to the scene. */
+  heard: z.boolean().default(false),
+  /** `clipReviewVerdict` (docs/design/ai-review.md#the-clip-gate); null for reviews from before it. */
+  verdict: StageVerdictSchema.nullable().default(null),
   summary: z.string().max(3000).default(''),
   /** Times in the scene, the takes one after another. */
   issues: z.array(FeedbackIssueSchema).max(60).default([]),
@@ -374,6 +413,10 @@ export const ClipSchema = z.object({
   notes: z.string().max(4000).default(''),
   /** Its scene's takes watched before the edit (docs/design/ai-review.md#scenes-before-the-edit). */
   review: ClipReviewSchema.nullable().default(null),
+  /** The scene blocked in 3D (docs/design/director-desk.md). */
+  blocking: SceneBlockingSchema.nullable().default(null),
+  /** A production scene's storyboard review (docs/design/ai-review.md#production-storyboards). */
+  boardReview: StageReviewSchema.nullable().default(null),
 });
 export type Clip = z.infer<typeof ClipSchema>;
 

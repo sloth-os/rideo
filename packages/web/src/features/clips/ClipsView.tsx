@@ -27,7 +27,7 @@ import {
   Undo2,
 } from 'lucide-react';
 import { useState } from 'react';
-import { ConsistencyBadge, QualityBadge } from '../../components/ConsistencyBadge';
+import { ConsistencyBadge, QualityBadge, WatchBadge } from '../../components/ConsistencyBadge';
 import { Editable } from '../../components/Editable';
 import { ElementPicker } from '../../components/ElementPicker';
 import { Entity } from '../../components/Entity';
@@ -78,6 +78,7 @@ function EvidenceDialog({
         <div className="flex flex-wrap items-center gap-2 text-[13px]">
           <ConsistencyBadge take={take} shot={shot} characters={characters} />
           <QualityBadge take={take} />
+          <WatchBadge take={take} />
           <span className="text-muted">
             judge {take.consistency.judge} · threshold {take.consistency.threshold} · attempts{' '}
             {take.consistency.attempts}
@@ -327,6 +328,7 @@ function TakeTile({
         <div className="flex flex-wrap items-center gap-1">
           <ConsistencyBadge take={take} shot={shot} characters={characters} />
           <QualityBadge take={take} />
+          <WatchBadge take={take} />
           {selected ? <Badge tone="accent">selected</Badge> : null}
           {take.variation ? <Badge testid="take-variation">v{take.variation}</Badge> : null}
           <LineageBadge take={take} />

@@ -121,7 +121,14 @@ or keep going and `job_wait` until a tab picks the job up.
 |---|---|
 | `clip_plan` | `projectId`, `sceneId` → job |
 | `clip_generate` | `projectId`, `clipId` → job |
-| `clip_review` | `projectId`, `clipId`, `fix?` → job: the scene's takes watched before the edit and its shots fixed ([scenes before the edit](ai-review.md#scenes-before-the-edit)) |
+| `clip_review` | `projectId`, `clipId`, `fix?` → job: the scene watched as one video and heard before the edit, and its shots fixed ([scenes before the edit](ai-review.md#scenes-before-the-edit)) |
+| `clip_storyboard` | `projectId`, `clipId` → job: a production scene blocked, drawn, reviewed and its frames approved ([production storyboards](ai-review.md#production-storyboards)) |
+| `clip_board_review_override` | `projectId`, `clipId`, `note?` → clip: continue without passing its storyboard review (an approval) |
+| `takes_watch` | `projectId`, `takes?[]` (`clipId`, `shotId`, `takeId`; the cut's when empty) → job: takes watched whole ([takes watched whole](ai-review.md#takes-watched-whole)) |
+| `blocking_get` | `projectId`, `clipId` → `{blocking, state, draft, issues, lines}` ([director's desk](director-desk.md#surfaces)) |
+| `blocking_set` | `projectId`, `clipId`, `blocking`, `fix?` → the same |
+| `blocking_generate` | `projectId`, `clipId` → job (`scene.block`) |
+| `blocking_render` | `projectId`, `clipId`, `shotId`, `width?` → the shot's camera view as image content (PNG) |
 | `shot_update` | `projectId`, `clipId`, `shotId`, `fields` |
 | `shot_regenerate` | `projectId`, `clipId`, `shotId` → job |
 | `take_select` | `projectId`, `clipId`, `shotId`, `takeId`, `inCut?` (also put the take in the cut, in place of the shot's items: [when a fix does not pass](feedback.md#when-a-fix-does-not-pass)) |
@@ -153,9 +160,9 @@ or keep going and `job_wait` until a tab picks the job up.
 | `feedback_get` | `projectId`, `exportId?` → the export's feedback (the newest when no export is given) |
 | `feedback_apply` | `projectId`, `feedbackId`, `recommendationId` → `{feedback, job}` (regenerates, re-plans or changes settings as the action says) |
 | `feedback_dismiss` | `projectId`, `feedbackId`, `recommendationId` → `feedback` |
-| `ai_review_get` | `projectId` → the [AI reviews](ai-review.md) of the screenplay and the storyboard: verdict, scores, issues, recommendations, rounds, override |
-| `ai_review_run` | `projectId`, `stage` (`screenplay` \| `storyboard`) → `{job}`: review (and revise, up to `settings.review.maxRounds`) |
-| `ai_review_apply` | `projectId`, `stage`, `recommendationId` → `{review, job}` (rewrites a scene or the outline, redraws a frame or re-plans a scene) |
+| `ai_review_get` | `projectId` → the [AI reviews](ai-review.md) of the screenplay, the cast, the storyboard and the cut: verdict, scores, issues, recommendations, rounds, override |
+| `ai_review_run` | `projectId`, `stage` (`screenplay` \| `cast` \| `storyboard` \| `cut`) → `{job}`: review (and revise, up to `settings.review.maxRounds`) |
+| `ai_review_apply` | `projectId`, `stage`, `recommendationId` → `{review, job}` (rewrites a scene or the outline, redraws a frame, re-plans a scene, draws references again, or generates a shot of the cut again) |
 | `ai_review_dismiss` | `projectId`, `stage`, `recommendationId` → `review` |
 | `ai_review_override` | `projectId`, `stage`, `note?` → `review`: continue anyway (an approval) |
 | `project_insights` | `projectId` → usage and estimated cost, job times and failures, take quality, feedback scores and the latest retrospective ([observability](observability.md#insights)) |

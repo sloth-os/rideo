@@ -9,12 +9,14 @@ import {
   JUDGE_FRAME_LABEL,
   JUDGE_REFERENCE_LABEL,
   JudgeOutputSchema,
+  SceneBlockOutputSchema,
   ScorePlanOutputSchema,
   ScreenplayGenerateOutputSchema,
   ScreenplayReviseOutputSchema,
   SfxPlanOutputSchema,
   SoundCheckOutputSchema,
   StageReviewOutputSchema,
+  TakeWatchOutputSchema,
   ThumbnailPickOutputSchema,
   TranslateOutputSchema,
 } from '@rideo/shared';
@@ -521,6 +523,101 @@ describe('proxy LLM formats', () => {
     expect(board.recommendations[0]).toMatchObject({
       shot: 1,
       action: { kind: 'redraw_board', description: 'A sharp pier' },
+    });
+  });
+
+  it("answers the director's desk and the reviews of every step (docs/design/ai-review.md#mock-gateway)", async () => {
+    const plan = SceneBlockOutputSchema.parse(
+      await chat('scene.block', {
+        scene: {
+          heading: 'EXT. BEACH - DAY',
+          location: 'the beach',
+          timeOfDay: 'day',
+          continuity: '',
+          summary: '',
+          action: '',
+        },
+        place: { name: 'the beach', description: 'sand and sea' },
+        props: [{ name: 'beach ball', description: 'red and white' }],
+        cast: [
+          { name: 'Rosie', heightM: 1.2, look: 'a panda' },
+          { name: 'Sammy', heightM: 1.25, look: 'a panda' },
+        ],
+        shots: [
+          {
+            index: 0,
+            framing: 'wide',
+            movement: 'static',
+            lensMm: null,
+            description: 'Both on the sand',
+            action: '',
+            endState: '',
+            characters: ['Rosie', 'Sammy'],
+            speakers: [],
+            continuity: 'cut',
+          },
+          {
+            index: 1,
+            framing: 'close_up',
+            movement: 'static',
+            lensMm: null,
+            description: 'Rosie, cross the line',
+            action: '',
+            endState: '',
+            characters: ['Rosie'],
+            speakers: [],
+            continuity: 'cut',
+          },
+        ],
+        conventions: 'metres',
+      }),
+    );
+    expect(plan.set).toMatchObject({ ground: 'sand' });
+    expect(plan.set.landmarks[0]).toMatchObject({ shape: 'water' });
+    expect(plan.actors.map((a) => [a.name, a.facingDeg])).toEqual([
+      ['Rosie', 90],
+      ['Sammy', 270],
+    ]);
+    expect(plan.shots.map((x) => x.camera.angle)).toEqual(['front', 'back']);
+    const watched = TakeWatchOutputSchema.parse(
+      await chat(
+        'take.watch',
+        {
+          shot: {
+            description: 'Rosie spins (motion glitch)',
+            action: '',
+            camera: 'wide',
+            durationSec: 5,
+            place: '',
+            endState: '',
+          },
+          cast: [],
+          absent: [],
+          castOnly: false,
+          watching: 'video',
+          durationSec: 5,
+        },
+        [{ type: 'video_url', video_url: { url: 'data:video/mp4;base64,AAAA' } }],
+      ),
+    );
+    expect(watched).toMatchObject({ motion: 0.2, issues: [{ severity: 'critical' }] });
+    const cast = StageReviewOutputSchema.parse(
+      await chat('cast.review', {
+        film: { title: 'T', style: '', tone: '' },
+        subject: {
+          kind: 'character',
+          name: 'Rosie',
+          role: 'protagonist',
+          identity: 'inconsistent face',
+          wardrobe: '',
+          references: [],
+        },
+        others: [],
+      }),
+    );
+    expect(cast.recommendations[0]).toMatchObject({
+      character: 'Rosie',
+      action: { kind: 'regenerate_refs' },
     });
   });
 

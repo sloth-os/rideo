@@ -219,6 +219,30 @@ function SettingsDialog({
               (v) => setS({ ...s, review: { ...s.review, scenes: v } }),
               'reviewScenes',
             )}
+            {toggle(
+              'Watch every take whole, not only some of its frames, and retry the ones that fail',
+              s.review.watchTakes,
+              (v) => setS({ ...s, review: { ...s.review, watchTakes: v } }),
+              'reviewWatchTakes',
+            )}
+            {toggle(
+              'Review the cast’s references before the cast is locked',
+              s.review.cast,
+              (v) => setS({ ...s, review: { ...s.review, cast: v } }),
+              'reviewCast',
+            )}
+            {toggle(
+              'Review the scenes production writes before they are planned',
+              s.review.extensions,
+              (v) => setS({ ...s, review: { ...s.review, extensions: v } }),
+              'reviewExtensions',
+            )}
+            {toggle(
+              'Review the cut, every take and every scene, before it is exported',
+              s.review.cut,
+              (v) => setS({ ...s, review: { ...s.review, cut: v } }),
+              'reviewCut',
+            )}
             <Field label="Shots a scene review may generate again (0: watch only)">
               <Input
                 type="number"
@@ -256,6 +280,24 @@ function SettingsDialog({
               s.storyboard.enabled,
               (v) => setS({ ...s, storyboard: { ...s.storyboard, enabled: v } }),
               'storyboardEnabled',
+            )}
+            {toggle(
+              'Storyboard every production scene, reviewed and approved, before its video',
+              s.storyboard.production,
+              (v) => setS({ ...s, storyboard: { ...s.storyboard, production: v } }),
+              'storyboardProduction',
+            )}
+            {toggle(
+              'Block each scene in 3D on the director’s desk before its frames are drawn',
+              s.blocking.enabled,
+              (v) => setS({ ...s, blocking: { ...s.blocking, enabled: v } }),
+              'blockingEnabled',
+            )}
+            {toggle(
+              'Give the image model each shot’s camera view as its layout',
+              s.blocking.layoutImage,
+              (v) => setS({ ...s, blocking: { ...s.blocking, layoutImage: v } }),
+              'blockingLayoutImage',
             )}
             <Field label="Scenes to storyboard">
               <Input

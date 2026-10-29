@@ -78,7 +78,11 @@ export const ProjectSettingsPatchSchema = z
       .object({ mode: DialogueModeSchema, lipSync: z.boolean(), level: DialogueLevelSchema })
       .partial(),
     /** The storyboard stage (docs/design/storyboard.md). */
-    storyboard: z.object({ enabled: z.boolean(), scenes: z.number().int().min(1).max(50) }).partial(),
+    storyboard: z
+      .object({ enabled: z.boolean(), scenes: z.number().int().min(1).max(50), production: z.boolean() })
+      .partial(),
+    /** The 3D director's desk (docs/design/director-desk.md#jobs). */
+    blocking: z.object({ enabled: z.boolean(), layoutImage: z.boolean() }).partial(),
     generation: z
       .object({
         includeAudio: z.boolean(),
@@ -109,6 +113,11 @@ export const ProjectSettingsPatchSchema = z
         autoRevise: z.boolean(),
         scenes: z.boolean(),
         sceneFixes: z.number().int().min(0).max(6),
+        cast: z.boolean(),
+        cut: z.boolean(),
+        sceneThreshold: z.number().min(4).max(9.5),
+        watchTakes: z.boolean(),
+        extensions: z.boolean(),
       })
       .partial(),
     watermark: z.object({ enabled: z.boolean() }).partial(),
@@ -275,6 +284,23 @@ export const MusicInputSchema = z.object({
 
 /** `POST /clips/:clipId/review` (docs/design/ai-review.md#scenes-before-the-edit): `fix: false` only watches. */
 export const ClipReviewInputSchema = z.object({ fix: z.boolean().optional() });
+
+/** `PUT /clips/:clipId/blocking` (docs/design/director-desk.md#surfaces). */
+export const BlockingInputSchema = z.object({
+  blocking: z.record(z.string(), z.unknown()),
+  /** Keep the cameras of cuts on the scene's side of the line, and the rest normalized. */
+  fix: z.boolean().optional(),
+});
+
+/** `POST /takes/watch`: the takes to watch whole (the cut's when empty). */
+export const TakesWatchInputSchema = z.object({
+  takes: z
+    .array(z.object({ clipId: z.string(), shotId: z.string(), takeId: z.string() }))
+    .max(500)
+    .optional(),
+});
+
+export const OverrideNoteSchema = z.object({ note: z.string().max(1000).default('') });
 
 export const ShotUpdateInputSchema = z
   .object({

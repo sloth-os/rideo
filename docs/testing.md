@@ -200,6 +200,15 @@ only those names as extras, and reading verdicts that name a character instead o
   direct panel sending only the camera fields that changed (`direct-panel.test.tsx`: a lens then an aperture changed
   before the store hears of the first keep both). Resuming an interrupted render
   is covered by the editor-jobs integration test, local proxies by the story e2e spec.
+- **blocking** (`packages/shared/test/blocking.test.ts`): the camera solver (framing, lens, distance, the front side,
+  over the shoulder, moves and the library move they make), the 180° rule (a crossed cut mirrored back, an orbit kept,
+  the main pair), the blocking line and the figures' legend, normalization (cast, set bounds, overlaps, missing
+  cameras), the AI floor plan to a blocking, the checks, the camera view drawing the same pixels with each shot's
+  figures only, and prompts with a blocking (the line, the camera view phrase, frames outdated when it moves).
+- **reviews of every step** (`packages/shared/test/ai-review-gates.test.ts`): the whole-take watch's verdict and its
+  merge into the quality checks, the scene review's verdict, the clip gate, the cast review's subject and merge
+  (fixes pointed at the character), the `cast.reviewPassed` gate (off for older projects, continue anyway), the cut's
+  subject, a production scene's storyboard review state.
 
 - **web, settings, workspace and library** (`settings.test.tsx`, `workspace.test.ts`, `runtime.test.ts`,
   `embed.test.tsx`, `library-build.test.ts`, `pwa.test.tsx`): the Settings page (sections from the table and the
@@ -224,6 +233,19 @@ only those names as extras, and reading verdicts that name a character instead o
 
 ### Integration
 
+- **The director's desk** (`director-desk.test.ts`): a storyboarded scene blocked by the AI before its frames (a
+  camera per shot, no crossed line), every frame's prompt carrying its blocking line and the camera view as a labelled
+  reference; a blocking saved from the desk with a camera moved over the line (`line_crossed`, the moved shot's frame
+  outdated), fixed back by the solver, refused when it does not validate; the camera view as a PNG over REST and as
+  MCP image content; a scene blocked again on request (`rideo_blocking_total`).
+- **Autopilot** (`autopilot.test.ts`): a new project's defaults (every review on, the desk on) taken from the brief to
+  the export on autopilot: each gate approved by the system after its review (screenplay, cast, storyboard, cut;
+  `resources_ready` at once), the cast approved and locked by its review, every clip blocked, its frames approved
+  before its video, every take watched whole by the vision model, every scene watched as one video and passed, the
+  production scenes' storyboard reviews passed, and the export queued for a studio tab; a cast review that still fails
+  after its rounds keeps the gate for a person, who continues anyway. Takes watched whole: an attempt the mock sees
+  morph (`motion glitch`) made again and kept failed with what was seen; the cut's takes from before the watch watched
+  from their videos (`takes.watch`).
 - **Storage conformance** (`storage.test.ts`): one suite against `MemoryBackend`, the embedded WebDAV server
   and (optionally) an external server: read/write/stat/list/move/delete, nested MKCOL, streaming, ranges,
   conditional writes when advertised.
@@ -442,6 +464,7 @@ when a new stack starts. Specs:
 | `post-audio.spec.ts` | (desktop and mobile) the Mix card: ducking on after assembly, depth −18 dB, *Score the cut* with a direction (Cue 1 on the Music track), *Add sound effects* (an Effects track, its lane on desktop); an export rendered in the tab at broadcast loudness with stems; the export card shows about −23 LUFS and the three stem downloads |
 | `multi-shot.spec.ts` | (desktop and mobile) the multi-shot setting off and on in the project settings; a clip on `mock-multishot-v1` renders two shots in one request (`shot 1 of 2`, `shot 2 of 2` badges) and the third alone |
 | `directing.spec.ts` | (desktop and mobile) the Direct panel sets a push-in, an 85 mm lens, f/2 and a generated end frame; two variations are generated, compared side by side and B is chosen |
+| `director-desk.spec.ts` | (desktop and mobile) a storyboarded scene blocked by the AI: the desk's plan, its cameras and the drawn camera view with the blocking line; a character dragged across the plan, posed, a camera move and *Auto camera*; saved (the frames it changed say *shot edited*), fixed, redrawn; the cast review's panel in the Cast view passing; no sideways scroll |
 | `storyboard.spec.ts` | (desktop and mobile) generate the storyboard, approve a frame, move it later, approve all; download the shot list CSV and PDF; build the animatic, play it, export it in the tab (listed as an animatic export); approve the storyboard; import a Fountain screenplay in the Story view |
 | `dialogue.spec.ts` | (desktop and mobile) the Cast view's voice panel: design three voices, the previews play, pick one, lock it; clone a recording of a real person through the consent dialog and lock it; the gate stops asking for voices; the dialogue mode setting |
 | `elements.spec.ts` | (desktop and mobile) the screenplay's location in the Elements view → generate, approve, lock; add a prop and link it to a scene in the Story view |

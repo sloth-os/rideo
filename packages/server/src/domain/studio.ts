@@ -2,10 +2,10 @@ import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { Actor, AutoActionId, Export, Job, ProjectDocs } from '@rideo/shared';
 import {
+  castReadyForReview,
   checkRequirement,
   dialogueMode,
   docPath,
-  elementsInUse,
   SYSTEM_ACTOR,
   sortedClips,
   speakingCharacters,
@@ -28,6 +28,7 @@ import { GatewayClient } from '../gateway/gateway-client';
 import { ProxyClient } from '../gateway/proxy-client';
 import { GatewayProxies } from '../gateway/proxy-sync';
 import { screenplayReview, screenplayRevise, storyboardReview } from '../jobs/handlers/ai-review';
+import { sceneBlock } from '../jobs/handlers/blocking';
 import { clipReview } from '../jobs/handlers/clip-review';
 import { batchGenerate, clipGenerate, clipPlan } from '../jobs/handlers/clips';
 import type { HandlerDeps } from '../jobs/handlers/common';
@@ -39,6 +40,7 @@ import { analysisSuggest, editAuto, exportFinish, timelineAssemble } from '../jo
 import { scoreGenerate, sfxGenerate } from '../jobs/handlers/post-audio';
 import { consistencyRecheck } from '../jobs/handlers/recheck';
 import { recipeRun } from '../jobs/handlers/recipe';
+import { castReview, clipStoryboard, cutReview, takesWatch } from '../jobs/handlers/reviews';
 import { searchIndex } from '../jobs/handlers/search-index';
 import { shotGenerate } from '../jobs/handlers/shot';
 import { shotGroup } from '../jobs/handlers/shot-group';
@@ -340,12 +342,14 @@ export function createStudio(
   const projectService = new ProjectService(deps);
   const clipService = new ClipService(deps);
   const storyboardService = new StoryboardService(deps);
+  const storyService = new StoryService(deps);
+  const elementService = new ElementService(deps);
   const services = {
     projects: projectService,
     bundles: new BundleService(deps, projectService),
     workflow,
-    story: new StoryService(deps),
-    elements: new ElementService(deps),
+    story: storyService,
+    elements: elementService,
     voices: new VoiceService(deps),
     storyboard: storyboardService,
     clips: clipService,
@@ -361,7 +365,12 @@ export function createStudio(
     brand: new BrandService(deps),
     editor: new EditorService(deps),
     feedback: new FeedbackService(deps, { clips: clipService, projects: projectService }),
-    aiReviews: new AiReviewService(deps, { clips: clipService, storyboard: storyboardService }),
+    aiReviews: new AiReviewService(deps, {
+      clips: clipService,
+      storyboard: storyboardService,
+      story: storyService,
+      elements: elementService,
+    }),
     insights: new InsightsService(deps),
   } satisfies Record<string, unknown>;
   // Editor jobs: failures and cancellations are recorded on their documents; a closed tab releases its jobs.
@@ -430,6 +439,11 @@ export function createStudio(
   reg('screenplay.revise', screenplayRevise);
   reg('storyboard.review', storyboardReview);
   reg('clip.review', clipReview);
+  reg('scene.block', sceneBlock);
+  reg('clip.storyboard', clipStoryboard);
+  reg('cast.review', castReview);
+  reg('takes.watch', takesWatch);
+  reg('cut.review', cutReview);
   reg('consistency.recheck', consistencyRecheck);
   reg('edit.auto', editAuto);
   reg('timeline.assemble', timelineAssemble);
@@ -456,6 +470,29 @@ export function createStudio(
               await services.voices.design(actor, projectId, c.id);
           }
           return;
+        case 'cast.review':
+          // References that exist already (uploaded, or drawn before) are reviewed now; new ones when drawn
+          if (castReadyForReview(docs)) await services.aiReviews.followUp(actor, projectId, 'cast');
+          return;
+        case 'resources.continue':
+          // Nothing is generated in the stage, so there is nothing to review (docs/design/workflows.md)
+          await services.workflow.approve(actor, projectId, 'resources_ready');
+          metrics.autopilotApprovals.inc({ step: 'resources' });
+          return;
+        case 'export.start': {
+          // The reviewed cut is exported once (an editor job a studio tab of the project runs)
+          const current = Object.values(docs.exports).some(
+            (e) =>
+              e.source !== 'animatic' &&
+              (e.status === 'queued' ||
+                e.status === 'rendering' ||
+                e.status === 'finishing' ||
+                e.status === 'succeeded'),
+          );
+          if (!current && docs.timeline?.tracks.some((t) => t.kind === 'video' && t.items.length))
+            await services.edit.createExport(actor, projectId, {});
+          return;
+        }
         case 'storyboard.generate':
           // Plan and draw the storyboarded scenes that still need frames (docs/design/storyboard.md).
           if (docs.project.settings.storyboard?.enabled === false || !docs.screenplay?.scenes.length) return;
@@ -463,7 +500,8 @@ export function createStudio(
             await services.storyboard.generate(actor, projectId);
           return;
         case 'elements.generateRefs':
-          for (const e of elementsInUse(docs)) {
+          // Every element of the library: the pilot gate locks them all before production (docs/design/workflows.md)
+          for (const e of Object.values(docs.elements)) {
             if (!e.lock.locked && e.references.length === 0)
               await services.elements.generateReferences(actor, projectId, e.id);
           }

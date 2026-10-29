@@ -1,4 +1,6 @@
 import {
+  CAST_REFERENCE_LABEL,
+  type CastReviewInput,
   type CharacterDescribeInput,
   type CharacterDescribeOutput,
   CharacterDescribeOutputSchema,
@@ -35,6 +37,10 @@ import {
   type MediaDescribeOutput,
   MediaDescribeOutputSchema,
   SCENE_VIDEO_LABEL,
+  SCENE_WATCH_LABEL,
+  type SceneBlockInput,
+  type SceneBlockOutput,
+  SceneBlockOutputSchema,
   type ScorePlanInput,
   type ScorePlanOutput,
   ScorePlanOutputSchema,
@@ -59,6 +65,10 @@ import {
   type StoryboardSceneReviewInput,
   TAKE_AUDIO_LABEL,
   TAKE_VIDEO_LABEL,
+  TAKE_WATCH_LABEL,
+  type TakeWatchInput,
+  type TakeWatchOutput,
+  TakeWatchOutputSchema,
   type ThumbnailPickInput,
   type ThumbnailPickOutput,
   ThumbnailPickOutputSchema,
@@ -69,6 +79,7 @@ import {
   type VoiceJudgeInput,
   type VoiceJudgeOutput,
   VoiceJudgeOutputSchema,
+  WATCH_REFERENCE_LABEL,
 } from '@rideo/shared';
 import type { z } from 'zod';
 import { AppError } from '../errors';
@@ -207,6 +218,7 @@ Score the scene 0–10 on each dimension (10 = a professional feature film, 5 = 
 - cinematography: framing, composition, coverage, lens choice, camera movement?
 - editing: shot lengths, rhythm, cut points, no repetition?
 Then list concrete issues, as many as matter, most severe first: "shot" (the shot's index), "dimension", "severity" (critical: breaks the film; major: clearly visible; minor: polish), "title" (short), "detail" (what is wrong and where in the frame), "at" (0–1: where in the shot).
+When "watching" is true, the scene's video follows the strips ("Scene video:"): the selected takes one after another, the shots at the times "shots[].video" gives. Watch all of it for what happens between the strips' frames (morphing, popping, someone walking in, an action that never happens, a jump inside a shot, a prop that changes) and report it at its shot and time, but only what the shot's strip confirms is there: a video model's picture of a whole scene can mislead, and a claim no frame shows is not an issue.
 When "stage" is "takes", the strips are the scene's selected takes before the edit, each sampled over the whole take, and the editor will trim them later: recommend generating a shot again at priority 1 only for a clearly visible problem a new take can fix (continuity across cuts: props, wardrobe, positions, light and time of day; a character who looks wrong or appears twice; morphing; broken physics), and anything else at priority 2 or 3.
 Then recommendations, most important first, to fix the issues or make the scene better. When a shot should be generated again, give "action": {"kind":"regenerate_shot","description":"the revised first-frame description","action":"the revised motion","negativePrompt":"what to avoid","framing":"...","movement":"...","characters":["the cast names in frame after the change"]} for that "shot" (only the fields that change; "characters" only when the change brings someone into the frame or takes someone out); when the scene's shots should be planned again, {"kind":"replan_scene","direction":"what the new plan must do"}; otherwise {"kind":"note"}. "priority": 1 = do first, 3 = nice to have.
 Be specific and honest; praise only what deserves it ("strengths").
@@ -254,6 +266,7 @@ Score each dimension 0–10 (10 = ready to shoot, 7 = good with small fixes, 5 =
 List the issues, most severe first: "scene" (its number, when it is about one), "dimension", "severity" ("critical": the film cannot be made or breaks the brief; "major": clearly visible; "minor"), "title", "detail".
 Then the recommendations, most important first: "scene", "dimension", "priority" (1 = must fix before the cast is made, 2 = should, 3 = could), "title", "detail", and an "action": {"kind":"revise_scene","instruction":"what the writer must change in that scene"} for a scene, {"kind":"revise_outline","instruction":"what must change in the outline"}, or {"kind":"note"}. An instruction is concrete enough for a writer to follow without reading the review.
 Be honest and specific; praise only what deserves it ("strengths").
+When "focus" lists scene numbers, the film is in production and only those scenes were just written: review those scenes (the rest of the screenplay is their context, already reviewed), and give issues and recommendations about them only.
 Return only JSON: {"scores":{"story":7,"character":7,"dialogue":7,"pacing":7,"visual":7,"continuity":7,"feasibility":7,"brief":7},"summary":"...","strengths":["..."],"issues":[{"scene":2,"dimension":"feasibility","severity":"major","title":"...","detail":"..."}],"recommendations":[{"scene":2,"dimension":"feasibility","priority":1,"title":"...","detail":"...","action":{"kind":"revise_scene","instruction":"..."}}]}`,
 
   'screenplay.revise': `rideo-task: screenplay.revise
@@ -274,10 +287,45 @@ Score each dimension 0–10 (10 = ready to shoot, 7 = good with small fixes, 5 =
 - storytelling: the frames tell the scene's beats in order.
 - feasibility: each frame can be animated for its shot: clear poses, one simple action, nothing in "video.weaknesses".
 - pacing: each shot's length fits its action and its lines (about two words a second, plus a beat).
+- blocking: only when shots have "blocking": the scene is blocked in 3D and each such frame is followed by its camera view ("Blocking <label>:", coloured mannequins for the cast, as its "blocking" line says). Does each frame keep its camera view's angle and framing, who stands where and faces which way, and the light's side? Leave it out when no shot has one. "blockingIssues" lists what the blocking itself breaks.
 List the issues: "shot" (its index), "dimension", "severity" ("critical", "major", "minor"), "title", "detail" (what you see in the frame).
 Then the recommendations, most important first: "shot" when it is about one, "dimension", "priority" (1 = must fix before video, 2 = should, 3 = could), "title", "detail", and an "action": {"kind":"redraw_board", with only the fields that change: "description" (the revised first frame), "action", "framing", "movement", "characters" (the names in frame), "durationSec"} to draw that frame again, {"kind":"replan_scene","direction":"what the new shot plan must do"} when the scene's shots must be planned again, or {"kind":"note"}.
 Be honest and specific; praise only what deserves it.
 Return only JSON: {"scores":{"composition":7,"continuity":7,"character":7,"coverage":7,"storytelling":7,"feasibility":7,"pacing":7},"summary":"...","strengths":["..."],"issues":[{"shot":2,"dimension":"continuity","severity":"major","title":"...","detail":"..."}],"recommendations":[{"shot":2,"dimension":"continuity","priority":1,"title":"...","detail":"...","action":{"kind":"redraw_board","description":"..."}}]}`,
+
+  'scene.block': `rideo-task: scene.block
+You are a director blocking one scene of a film in a small 3D set before it is storyboarded, like a previs artist on a director's desk. You get the scene, its place and props, the cast with their heights, and every shot in order (framing, movement, lens, description, action, end state, who is in it, who speaks). "conventions" says what the numbers mean.
+Lay the scene out as a floor plan a camera team could use:
+- The set: its width and depth in metres (big enough for every mark and the cameras of the wide shots), the ground ("sand", "snow", "wooden floor"...), interior or not, and where the sun or key light comes from (azimuth in degrees: 0 the front, 90 the right, 180 the back, 270 the left; elevation 5–90). Keep the light where the scene's time of day puts it.
+- Landmarks the scene's geography needs, as simple shapes in metres: the sea or a lake as "water", a building or rock as "box", a tree or pillar as "cylinder", walls as "wall". Put them where the scene says (the sea behind them, the lodge on the left) and keep them there: every shot of the scene shares this geography.
+- Every character's opening mark: x and z in metres, facingDeg, and a pose (stand, walk, run, sit, crouch, kneel, lie, reach, point, wave). Two people talking stand 1–2 m apart facing each other.
+- Props on the floor where they are (or "heldBy" a character's name).
+- For each shot (by "index"): the marks of the characters who move or change pose in it (toX/toZ where they walk to during the shot), and the camera described, not placed: "subjects" (the names it frames), "angle" (front, three_quarter_left, three_quarter_right, profile_left, profile_right, back, over_shoulder with the shoulder's owner first, pov with the viewer first), "height" (eye, low, high, overhead) and "move" (none, push_in, pull_out, dolly_left, dolly_right, orbit_left, orbit_right, crane_up). A solver places each camera from that and the shot's framing and lens.
+Keep the 180-degree rule: once the scene shows two characters from one side of the line between them, every cut stays on that side (shot and reverse shot are both on it). Keep screen direction: a character leaving frame right enters the next shot from the left.
+Return only JSON: {"set":{"width":12,"depth":10,"ground":"sand","interior":false,"sun":{"azimuthDeg":200,"elevationDeg":35},"landmarks":[{"label":"the sea","shape":"water","x":0,"z":-7,"width":30,"depth":6,"height":0.05}]},"actors":[{"name":"Rosie","x":-1,"z":0,"facingDeg":90,"pose":"stand"}],"props":[{"name":"beach ball","x":0.5,"z":0.6,"size":0.4}],"shots":[{"index":0,"marks":[{"name":"Rosie","x":-1,"z":0,"facingDeg":90,"pose":"walk","toX":0,"toZ":0}],"camera":{"subjects":["Rosie","Sammy"],"angle":"front","height":"eye","move":"none"}}]}`,
+
+  'take.watch': `rideo-task: take.watch
+You are a script supervisor and a VFX supervisor watching one take of an AI-generated film from its first frame to its last, to catch what still frames miss. You get the shot as planned (description, action, camera, length, place, the end state it should reach), who is in it with how they look ("cast", each with its reference image before the take), who must not be in it ("absent"), and the take ("Take video:"; when "watching" is "frames", its frames in order instead).
+Score from 0 to 1:
+- motion: no morphing, warping, melting, flicker, popping, sudden cuts or frames that jump; bodies and faces keep their shape while they move.
+- physics: weight, gravity, momentum, feet and equipment on the ground, hands holding what they hold, objects keeping their shape and number.
+- action: the planned action happens, in order, within the take, and the take reaches its end state.
+- camera: the framing and the camera movement are the planned ones.
+- identity: every cast member stays the same face, hair, body and outfit as their reference from the first frame to the last, and nobody turns into someone else.
+"overall" (0–10): the take as a professional shot of the film. "others": anyone who appears though they are not in "cast" (a name from "absent", or a short description). Then the issues, most severe first: "time" (seconds into the take), "severity" (critical: unusable, such as a morph, a duplicated or melting body, someone appearing from nowhere, the action not happening; major: clearly visible; minor: polish), "title", "detail" (what is seen, where in the frame). Report only what you see; never guess.
+Return only JSON: {"overall":7,"motion":0.9,"physics":0.8,"action":0.9,"camera":0.8,"identity":0.9,"others":[],"issues":[{"time":2.5,"severity":"major","title":"...","detail":"..."}]}`,
+
+  'cast.review': `rideo-task: cast.review
+You are a casting director and a character designer reviewing the reference images of one character (or one place or prop) of an AI-generated film before they are locked: every frame of the film is drawn from them, so anything wrong here is wrong in every shot. You get the film's style, the subject (a character's identity, outfit and role, or a place's or prop's description) with each of its references ("Reference <index> (<view>):"), and how the other characters look.
+Score each dimension 0–10 (10 = ready to lock, 7 = good, 5 = clear problems, below 4 = must be redrawn):
+- likeness: the references show what the identity and the outfit say (age, build, face, hair, eyes, the clothes), or the place or prop as described.
+- consistency: every view shows the same face, hair, build and outfit (a place: the same layout and materials).
+- distinct: the character can be told apart from the others at a glance (silhouette, colours, face); a place or prop: 10 unless it is easily confused.
+- clarity: one whole figure, unobstructed, on a plain background; a place without people in it; a prop on its own.
+- style: the references share the film's look.
+List the issues: "character" or "element" (the subject's name), "dimension", "severity" (critical, major, minor), "title", "detail" (which reference, what is wrong).
+Then recommendations, most important first, each with "character" or "element", "dimension", "priority" (1 = must fix before locking, 2 = should, 3 = could), "title", "detail", and an "action": {"kind":"regenerate_refs","instruction":"what the new references must show differently"} to draw the subject's references again, or {"kind":"note"}.
+Return only JSON: {"scores":{"likeness":8,"consistency":8,"distinct":8,"clarity":8,"style":8},"summary":"...","strengths":["..."],"issues":[{"character":"Rosie","dimension":"consistency","severity":"major","title":"...","detail":"..."}],"recommendations":[{"character":"Rosie","dimension":"consistency","priority":1,"title":"...","detail":"...","action":{"kind":"regenerate_refs","instruction":"..."}}]}`,
 
   'frame.caption': `rideo-task: frame.caption
 You describe one frame of a film project so people can find it later by searching in words. Write one sentence of at most 300 characters: who is in it, where it is, what is happening, the shot size (extreme close-up, close-up, medium, wide or extreme wide) and the light (daylight, night, dusk, dawn, interior...), with notable colours and objects.
@@ -665,6 +713,8 @@ export class LlmTasks {
       maxTokens?: number;
       /** Prompt version 2 of a writing task (docs/design/continuity.md). */
       version?: 1 | 2;
+      /** Who watches the video: the audio-visual model (default) or the vision model (docs/design/ai-review.md). */
+      watcher?: 'vision' | 'omni';
     } = {},
   ): Promise<T> {
     const watching = !!opts.video?.length;
@@ -675,7 +725,8 @@ export class LlmTasks {
         throw new AppError('llm_error', 'no audio-capable model is configured', [], false);
       adapter = this.deps.audio;
     }
-    if (watching) {
+    if (watching && opts.watcher === 'vision') adapter = this.vision;
+    else if (watching) {
       if (!this.deps.omni) throw new AppError('llm_error', 'no audio-visual model is configured', [], false);
       adapter = this.deps.omni;
     }
@@ -864,20 +915,133 @@ export class LlmTasks {
     return this.run('consistency.judge', JudgeOutputSchema, input, { images, temperature: 0, signal });
   }
 
-  /** One scene's picture, from a strip of three frames per shot (the vision model, docs/design/feedback.md). */
-  feedbackScene(
+  /**
+   * One scene's picture, from a strip of three frames per shot (the vision model, docs/design/feedback.md), and with
+   * `video` the scene as one video after them (docs/design/ai-review.md#scenes-before-the-edit): a vision model that
+   * takes no video watches the strips alone (`watched: frames`).
+   */
+  async feedbackScene(
     input: FeedbackSceneInput,
     strips: { label: string; data: Buffer }[],
     signal?: AbortSignal,
-  ): Promise<FeedbackSceneOutput> {
-    return this.run('feedback.scene', FeedbackSceneOutputSchema, input, {
-      images: strips.map((s) => ({
-        label: `${FEEDBACK_STRIP_LABEL} ${s.label}:`,
-        data: s.data,
-        mime: 'image/jpeg',
+    video?: Buffer,
+  ): Promise<FeedbackSceneOutput & { watched?: 'video' | 'frames' }> {
+    const images = strips.map((s) => ({
+      label: `${FEEDBACK_STRIP_LABEL} ${s.label}:`,
+      data: s.data,
+      mime: 'image/jpeg',
+    }));
+    const opts = { images, temperature: 0.2, maxTokens: 6000, signal };
+    if (video && !this.visionRefusesVideo) {
+      try {
+        const out = await this.run(
+          'feedback.scene',
+          FeedbackSceneOutputSchema,
+          { ...input, watching: true },
+          {
+            ...opts,
+            video: [{ label: `${SCENE_WATCH_LABEL}:`, data: video, mime: 'video/mp4' }],
+            watcher: 'vision',
+          },
+        );
+        return { ...out, watched: 'video' };
+      } catch (err) {
+        if (!this.refusedVideo(err, 'feedback.scene')) throw err;
+      }
+    }
+    const out = await this.run(
+      'feedback.scene',
+      FeedbackSceneOutputSchema,
+      { ...input, watching: false },
+      opts,
+    );
+    return video ? { ...out, watched: 'frames' } : out;
+  }
+
+  /** The vision endpoint answered that it takes no video: the audio-visual model watches from then on. */
+  private visionRefusesVideo = false;
+
+  /** Whether an error is the vision endpoint refusing a video part; remembers it (docs/design/ai-review.md). */
+  private refusedVideo(err: unknown, task: LlmTaskId): boolean {
+    if (!(err instanceof LlmError)) return false;
+    const text = `${err.message} ${err.body ?? ''}`;
+    // A 400 naming the video part, or an adapter whose API takes no video at all (Anthropic's)
+    const status = err.status;
+    const refused = status === 400 || status === 415 || status === 422 || status === undefined;
+    if (!refused || !/video/i.test(text)) return false;
+    this.visionRefusesVideo = true;
+    this.deps.log?.info(
+      { task, model: this.vision.model, err: text.slice(0, 200) },
+      'the vision model takes no video; the audio-visual model watches instead',
+    );
+    return true;
+  }
+
+  /** Who watches a take whole: the vision model, else the audio-visual model; null when neither can. */
+  get watcher(): 'vision' | 'omni' | null {
+    if (!this.visionRefusesVideo) return 'vision';
+    return this.deps.omni ? 'omni' : null;
+  }
+
+  /**
+   * A take watched whole (docs/design/ai-review.md#takes-watched-whole): the cast's references, then the take as a
+   * video, to the vision model (or the audio-visual model when the vision model takes no video).
+   */
+  async watchTake(
+    input: TakeWatchInput,
+    references: { name: string; data: Buffer }[],
+    video: Buffer,
+    signal?: AbortSignal,
+  ): Promise<{ out: TakeWatchOutput; via: 'vision' | 'omni'; model: string }> {
+    const images = references.map((r) => ({
+      label: `${WATCH_REFERENCE_LABEL} ${r.name}:`,
+      data: r.data,
+      mime: 'image/png',
+    }));
+    const call = (watcher: 'vision' | 'omni') =>
+      this.run('take.watch', TakeWatchOutputSchema, input, {
+        images,
+        video: [{ label: `${TAKE_WATCH_LABEL}:`, data: video, mime: 'video/mp4' }],
+        watcher,
+        temperature: 0,
+        maxTokens: 2500,
+        signal,
+      });
+    const first = this.watcher;
+    if (!first) throw new AppError('llm_error', 'no model that watches video is configured', [], false);
+    if (first === 'vision') {
+      try {
+        return { out: await call('vision'), via: 'vision', model: this.vision.model };
+      } catch (err) {
+        if (!this.refusedVideo(err, 'take.watch') || !this.deps.omni) throw err;
+      }
+    }
+    return { out: await call('omni'), via: 'omni', model: this.deps.omni!.model };
+  }
+
+  /** The text model's floor plan of a scene (docs/design/director-desk.md#jobs). */
+  blockScene(input: SceneBlockInput, signal?: AbortSignal): Promise<SceneBlockOutput> {
+    return this.run('scene.block', SceneBlockOutputSchema, input, {
+      temperature: 0.3,
+      maxTokens: 8000,
+      signal,
+    });
+  }
+
+  /** One character's or element's references reviewed by the vision model (docs/design/ai-review.md#how-a-review-runs). */
+  reviewCast(
+    input: CastReviewInput,
+    references: { label: string; data: Buffer }[],
+    signal?: AbortSignal,
+  ): Promise<StageReviewOutput> {
+    return this.run('cast.review', StageReviewOutputSchema, input, {
+      images: references.map((r) => ({
+        label: `${CAST_REFERENCE_LABEL} ${r.label}:`,
+        data: r.data,
+        mime: 'image/png',
       })),
       temperature: 0.2,
-      maxTokens: 6000,
+      maxTokens: 4000,
       signal,
     });
   }
@@ -900,14 +1064,17 @@ export class LlmTasks {
     });
   }
 
-  /** One storyboarded scene, its frames attached in shot order (the vision model). */
+  /** One storyboarded scene, its frames attached in shot order, each followed by its camera view when blocked. */
   reviewStoryboardScene(
     input: StoryboardSceneReviewInput,
-    frames: { label: string; data: Buffer }[],
+    frames: { label: string; data: Buffer; blocking?: Buffer }[],
     signal?: AbortSignal,
   ): Promise<StageReviewOutput> {
     return this.run('storyboard.review', StageReviewOutputSchema, input, {
-      images: frames.map((f) => ({ label: `Frame ${f.label}:`, data: f.data, mime: 'image/png' })),
+      images: frames.flatMap((f) => [
+        { label: `Frame ${f.label}:`, data: f.data, mime: 'image/png' },
+        ...(f.blocking ? [{ label: `Blocking ${f.label}:`, data: f.blocking, mime: 'image/png' }] : []),
+      ]),
       temperature: 0.2,
       maxTokens: 8000,
       signal,

@@ -1,3 +1,4 @@
+import { blockingLine, blockingMoves, figureLegend, shotLayout } from '../blocking';
 import { isStale, takeState } from '../consistency';
 import {
   compileShotPrompt,
@@ -55,6 +56,52 @@ export function shotContextOf(shot: Shot, docs: BoardDocs, clip?: Clip): ShotCon
         }
       : null,
     previousEndState: previous?.endState || null,
+    blocking: owner ? blockingContextOf(owner, shot, docs) : null,
+  };
+}
+
+/**
+ * A blocked shot's blocking line, moves and figure colours (docs/design/director-desk.md), when the project blocks its
+ * scenes and the shot has a camera on the desk; null otherwise.
+ */
+export function blockingContextOf(
+  clip: Pick<Clip, 'blocking'>,
+  shot: Shot,
+  docs: Pick<BoardDocs, 'characters' | 'project'>,
+): ShotContext['blocking'] {
+  const settings = docs.project.settings;
+  const b = clip.blocking;
+  if (!b || settings.blocking?.enabled !== true || !b.shots[shot.id]) return null;
+  const names = Object.fromEntries(Object.values(docs.characters).map((c) => [c.id, c.name]));
+  const aspect = settings.resolution.width / Math.max(1, settings.resolution.height);
+  const input = blockingShotOf(shot);
+  const layout = shotLayout(b, input, names, aspect);
+  // What the camera view is drawn from: the set, the shot's characters, the props and the shot's own marks and camera
+  const signature = fnv1a32(
+    JSON.stringify([
+      b.set,
+      b.actors.filter((a) => shot.characterIds.includes(a.characterId)),
+      b.props,
+      b.shots[shot.id],
+    ]),
+  ).toString(16);
+  return {
+    line: blockingLine(layout),
+    moves: blockingMoves(layout),
+    legend: figureLegend(b, input, names),
+    signature,
+  };
+}
+
+/** What the desk needs of a planned shot. */
+export function blockingShotOf(shot: Shot) {
+  return {
+    id: shot.id,
+    index: shot.index,
+    characterIds: shot.characterIds,
+    elementIds: shot.elementIds,
+    camera: { framing: shot.camera.framing, lensMm: shot.camera.lensMm ?? null },
+    continuity: shot.continuity,
   };
 }
 
@@ -65,8 +112,10 @@ export function shotContextOf(shot: Shot, docs: BoardDocs, clip?: Clip): ShotCon
  * around it outdated).
  */
 export function boardPromptHash(ctx: ShotContext): string {
+  // A blocked shot's frame is drawn from its camera view too: moving its mannequins or its camera outdates it
+  const blocking = ctx.blocking?.signature ? `\n${ctx.blocking.signature}` : '';
   return fnv1a32(
-    `${compileShotPrompt({ ...ctx, sceneReference: false, previousEndState: null, offscreen: [], referenceLabels: [] }, 'keyframe')}\n${ctx.shot.negativePrompt ?? ''}`,
+    `${compileShotPrompt({ ...ctx, sceneReference: false, blockingImage: false, previousEndState: null, offscreen: [], referenceLabels: [] }, 'keyframe')}\n${ctx.shot.negativePrompt ?? ''}${blocking}`,
   ).toString(16);
 }
 

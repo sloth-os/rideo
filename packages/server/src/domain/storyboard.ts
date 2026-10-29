@@ -3,23 +3,33 @@ import { join } from 'node:path';
 import {
   type Actor,
   assembleAnimatic,
+  type BlockingView,
+  blockingContextFor,
+  blockingShotOf,
+  blockingView,
   boardApprovable,
   boardState,
   type Character,
   type Clip,
+  cameraMoveOf,
+  clipBoardSubject,
   detectScriptFormat,
   docPath,
   type Element,
   fountainFromPdfLines,
   importedToScreenplayOutput,
   type Job,
+  normalizeBlocking,
   type ParsedScript,
   type Project,
   type ProjectDocs,
   parseFdx,
   parseFountain,
+  renderShotView,
+  SceneBlockingSchema,
   type Screenplay,
   type ScriptFormat,
+  StageReviewSchema,
   sceneSeconds,
   screenplayFromLlm,
   shotListCsv,
@@ -30,10 +40,13 @@ import {
 } from '@rideo/shared';
 import { AppError, conflict, invalid, notFound } from '../errors';
 import { PdfDocument, pdfTextLines, wrapText } from '../media/pdf';
+import { encodePng } from '../media/png';
 import type { Tx } from '../vcs/repo';
 import { Service } from './base';
 import { assertCastReady, clipStatusOf } from './clips';
 import type { UploadSource } from './story';
+
+export { blockingContextFor } from '@rideo/shared';
 
 export type ScriptSource = UploadSource | { text: string; format?: ScriptFormat; filename?: string };
 
@@ -175,6 +188,32 @@ export class StoryboardService extends Service {
     return result;
   }
 
+  /** Approves every current, unapproved frame of one clip (a production scene whose storyboard review passed). */
+  async approveFrames(actor: Actor, projectId: string, clipId: string): Promise<{ approved: number }> {
+    const { result } = await this.mutate(
+      actor,
+      projectId,
+      (tx) => {
+        const docs = this.txDocs(tx);
+        this.assertAgentMay(docs.project, actor, 'approve');
+        const clip = docs.clips[clipId];
+        if (!clip) throw notFound(`clip ${clipId}`);
+        const next = structuredClone(clip);
+        const at = new Date().toISOString();
+        let approved = 0;
+        for (const shot of next.shots)
+          if (shot.board && boardState(shot, docs) === 'unapproved') {
+            shot.board = { ...shot.board, approved: true, approvedAt: at, approvedBy: actor };
+            approved++;
+          }
+        if (approved) tx.set(docPath.clip(clipId), next);
+        return { approved, index: clip.index };
+      },
+      { message: (r) => `Approve ${r.approved} storyboard frame(s) of scene ${r.index + 1}` },
+    );
+    return { approved: result.approved };
+  }
+
   /**
    * Reorders the shots of a clip. The first shot is a cut, and a continuous shot whose predecessor changed becomes a
    * cut (it no longer continues the same frame).
@@ -230,6 +269,166 @@ export class StoryboardService extends Service {
       message: `Build the animatic (${timeline.tracks.find((t) => t.kind === 'video')!.items.length} frames)`,
     });
     return timeline;
+  }
+
+  /** The scene's blocking on the desk (docs/design/director-desk.md#surfaces). */
+  async getBlocking(projectId: string, clipId: string): Promise<BlockingView> {
+    const docs = await this.docs(projectId);
+    const clip = docs.clips[clipId];
+    if (!clip) throw notFound(`clip ${clipId}`);
+    return blockingView(docs, clip);
+  }
+
+  /**
+   * Saves a scene's blocking: validated, completed and, with `fix`, kept on the line (docs/design/director-desk.md#the-solver).
+   * A shot's lens follows its camera on the desk, and a camera move becomes the shot's move when it has none.
+   */
+  async setBlocking(
+    actor: Actor,
+    projectId: string,
+    clipId: string,
+    input: unknown,
+    opts: { fix?: boolean; source?: 'ai' | 'user' } = {},
+  ): Promise<BlockingView> {
+    const parsed = SceneBlockingSchema.safeParse({
+      ...(input && typeof input === 'object' ? input : {}),
+      updatedAt: new Date().toISOString(),
+      source: opts.source ?? 'user',
+    });
+    if (!parsed.success)
+      throw invalid(
+        `invalid blocking: ${parsed.error.issues
+          .slice(0, 5)
+          .map((i) => `${i.path.join('.')}: ${i.message}`)
+          .join('; ')}`,
+      );
+    let fixed: string[] = [];
+    const { result } = await this.mutate(
+      actor,
+      projectId,
+      (tx) => {
+        const docs = this.txDocs(tx);
+        const clip = structuredClone(docs.clips[clipId]);
+        if (!clip) throw notFound(`clip ${clipId}`);
+        if (clip.status === 'approved')
+          throw conflict(`clip ${clip.index + 1} is approved; unapprove it to change its blocking`);
+        const ctx = blockingContextFor(docs, clip);
+        const norm = normalizeBlocking(parsed.data, ctx, { line: opts.fix === true });
+        fixed = norm.fixed;
+        clip.blocking = norm.blocking;
+        // The shot's lens is its camera's on the desk; a blocked move is its move when it has none
+        for (const shot of clip.shots) {
+          const cam = norm.blocking.shots[shot.id]?.camera;
+          if (!cam) continue;
+          if (shot.camera.lensMm !== cam.lensMm)
+            shot.camera = { ...shot.camera, lensMm: Math.round(cam.lensMm) };
+          const move = cameraMoveOf(cam, ctx.aspect);
+          if (move && !shot.camera.move) shot.camera = { ...shot.camera, move };
+        }
+        tx.set(docPath.clip(clipId), clip);
+        return { view: blockingView(docs, clip), index: clip.index };
+      },
+      {
+        message: (r) =>
+          `${opts.source === 'ai' ? 'Block' : 'Edit the blocking of'} scene ${r.index + 1}${r.view.issues.length ? ` (${r.view.issues.length} issue(s))` : ''}${fixed.length ? `, ${fixed.length} camera(s) back over the line` : ''}`,
+      },
+    );
+    const view = result.view;
+    const source = opts.source ?? 'user';
+    this.deps.metrics.blockings.inc({ source, outcome: view.issues.length ? 'issues' : 'clean' });
+    for (const i of view.issues) this.deps.metrics.blockingIssues.inc({ code: i.code });
+    if (fixed.length) this.deps.metrics.blockingLineFixes.inc({}, fixed.length);
+    this.deps.log.info(
+      { projectId, clipId, source, issues: view.issues.map((i) => i.code), lineFixes: fixed.length },
+      'blocking saved',
+    );
+    return view;
+  }
+
+  /** The AI's blocking of a scene (`scene.block`). */
+  async generateBlocking(actor: Actor, projectId: string, clipId: string): Promise<Job> {
+    const docs = await this.docs(projectId);
+    const clip = docs.clips[clipId];
+    if (!clip) throw notFound(`clip ${clipId}`);
+    if (!clip.shots.length) throw invalid(`plan the shots of clip ${clip.index + 1} first`);
+    return this.deps.jobs.enqueue({
+      projectId,
+      kind: 'scene.block',
+      params: { clipId },
+      actor,
+      branch: await this.branchOf(projectId),
+      dedupeKey: `block:${clipId}`,
+      priority: 5,
+    });
+  }
+
+  /** A shot's camera view as a PNG (the picture the image model gets). */
+  async renderBlocking(projectId: string, clipId: string, shotId: string, width = 1024): Promise<Buffer> {
+    const docs = await this.docs(projectId);
+    const clip = docs.clips[clipId];
+    if (!clip) throw notFound(`clip ${clipId}`);
+    const shot = this.requireShot(clip, shotId);
+    const view = blockingView(docs, clip);
+    const w = Math.min(1920, Math.max(160, Math.round(width)));
+    const { width: rw, height: rh } = docs.project.settings.resolution;
+    const img = renderShotView(view.draft, blockingShotOf(shot), {
+      width: w,
+      height: Math.round((w * rh) / rw),
+    });
+    return encodePng(img);
+  }
+
+  /** A production scene's storyboard: blocked, drawn, reviewed and approved (`clip.storyboard`). */
+  async storyboardClip(actor: Actor, projectId: string, clipId: string): Promise<Job> {
+    const docs = await this.docs(projectId);
+    const clip = docs.clips[clipId];
+    if (!clip) throw notFound(`clip ${clipId}`);
+    assertCastReady(clip.shots, docs.characters, docs.elements);
+    return this.deps.jobs.enqueue({
+      projectId,
+      kind: 'clip.storyboard',
+      params: { clipId },
+      actor,
+      branch: await this.branchOf(projectId),
+      dedupeKey: `clip-storyboard:${clipId}`,
+      priority: 4,
+    });
+  }
+
+  /** "Continue anyway" for a production scene's storyboard review (docs/design/ai-review.md#production-storyboards). */
+  async overrideBoardReview(actor: Actor, projectId: string, clipId: string, note: string): Promise<Clip> {
+    const { result } = await this.mutate(
+      actor,
+      projectId,
+      (tx) => {
+        const docs = this.txDocs(tx);
+        this.assertAgentMay(docs.project, actor, 'approve');
+        const clip = structuredClone(docs.clips[clipId]);
+        if (!clip) throw notFound(`clip ${clipId}`);
+        const review = clip.boardReview;
+        if (review?.status !== 'succeeded')
+          throw invalid(`review the storyboard of clip ${clip.index + 1} first`);
+        const subject = clipBoardSubject(clip);
+        if (review.subject !== subject)
+          throw new AppError(
+            'review_stale',
+            `the storyboard of clip ${clip.index + 1} changed since its review`,
+          );
+        const at = new Date().toISOString();
+        clip.boardReview = StageReviewSchema.parse({
+          ...review,
+          override: { by: actor, at, note: note.slice(0, 1000), subject },
+          updatedAt: at,
+        });
+        tx.set(docPath.clip(clipId), clip);
+        return clip;
+      },
+      {
+        message: (c) =>
+          `Continue without passing the storyboard review of scene ${c.index + 1}${note ? `: ${note.slice(0, 100)}` : ''}`,
+      },
+    );
+    return result;
   }
 
   /** Fountain, Final Draft or PDF → the screenplay, draft characters and locations (docs/design/storyboard.md). */

@@ -796,3 +796,90 @@ describe('fallback endpoints (docs/design/ai-gateway.md#outages)', () => {
     expect(metrics.llmFallbacks.get({ task: 'consistency.judge' })).toBe(0);
   });
 });
+
+describe('who watches video (docs/design/ai-review.md#takes-watched-whole)', () => {
+  const answering = (
+    model: string,
+    answer: object,
+    calls: { model: string; req: LlmRequest }[],
+  ): LlmAdapter => ({
+    provider: 'openai',
+    model,
+    endpoint: `${model}.example`,
+    complete: async (req) => {
+      calls.push({ model, req });
+      return { text: JSON.stringify(answer) };
+    },
+  });
+  const watch = { overall: 8, motion: 0.9, physics: 0.9, action: 0.9, camera: 0.8, identity: 0.9 };
+  const input = {
+    shot: { description: 'x', action: '', camera: 'wide', durationSec: 5, place: '', endState: '' },
+    cast: [],
+    absent: [],
+    castOnly: false,
+    watching: 'video' as const,
+    durationSec: 5,
+  };
+
+  it('sends the whole take to the vision model, with the cast references before it', async () => {
+    const calls: { model: string; req: LlmRequest }[] = [];
+    const vision = answering('vision-x', watch, calls);
+    const tasks = new LlmTasks(vision, vision, { omni: answering('omni-x', watch, calls) });
+    const { out, via, model } = await tasks.watchTake(
+      input,
+      [{ name: 'Rosie', data: Buffer.from('png') }],
+      Buffer.from('mp4'),
+    );
+    expect({ via, model, motion: out.motion }).toEqual({ via: 'vision', model: 'vision-x', motion: 0.9 });
+    expect(calls.map((c) => c.model)).toEqual(['vision-x']);
+    expect(calls[0]!.req.parts.map((p) => p.type)).toEqual(['text', 'text', 'image', 'text', 'video']);
+    expect(calls[0]!.req.system.startsWith('rideo-task: take.watch')).toBe(true);
+  });
+
+  it('lets the audio-visual model watch once the vision model refuses video, and remembers it', async () => {
+    const calls: { model: string; req: LlmRequest }[] = [];
+    const refusing: LlmAdapter = {
+      provider: 'openai',
+      model: 'vision-x',
+      complete: async (req) => {
+        calls.push({ model: 'vision-x', req });
+        if (req.parts.some((p) => p.type === 'video'))
+          throw new LlmError('400', 400, false, '{"error":"unsupported content type: video_url"}');
+        return { text: JSON.stringify({ scores: {}, summary: 'frames only' }) };
+      },
+    };
+    const tasks = new LlmTasks(refusing, refusing, { omni: answering('omni-x', watch, calls) });
+    const first = await tasks.watchTake(input, [], Buffer.from('mp4'));
+    expect(first.via).toBe('omni');
+    await tasks.watchTake(input, [], Buffer.from('mp4'));
+    expect(calls.map((c) => c.model)).toEqual(['vision-x', 'omni-x', 'omni-x']);
+    expect(tasks.watcher).toBe('omni');
+    // A scene review then sees the strips alone, from the vision model
+    const scene = await tasks.feedbackScene(
+      { shots: [] } as never,
+      [{ label: '0', data: Buffer.from('jpg') }],
+      undefined,
+      Buffer.from('mp4'),
+    );
+    expect(scene.watched).toBe('frames');
+    expect(calls.at(-1)!.req.parts.some((p) => p.type === 'video')).toBe(false);
+  });
+
+  it('watches a scene as one video with its strips', async () => {
+    const calls: { model: string; req: LlmRequest }[] = [];
+    const vision = answering('vision-x', { scores: { continuity: 7 }, summary: 'ok' }, calls);
+    const tasks = new LlmTasks(vision, vision);
+    const out = await tasks.feedbackScene(
+      { shots: [] } as never,
+      [{ label: '0', data: Buffer.from('jpg') }],
+      undefined,
+      Buffer.from('mp4'),
+    );
+    expect(out.watched).toBe('video');
+    const parts = calls[0]!.req.parts;
+    expect(parts.filter((p) => p.type === 'video')).toHaveLength(1);
+    expect(JSON.parse((parts[0] as { text: string }).text.replace(/^INPUT:\n/, ''))).toMatchObject({
+      watching: true,
+    });
+  });
+});

@@ -56,6 +56,11 @@ type Job = {
 | `screenplay.review` | llm | the screenplay reviewed by the text model, revised and reviewed again up to `settings.review.maxRounds`; a pass approves the gate on autopilot ([AI review](ai-review.md)) |
 | `screenplay.revise` | llm | rewrites the scenes and the outline as instructions say (a review's fix) |
 | `storyboard.review` | control | each storyboarded scene reviewed with its frames by the vision model; frames redrawn and scenes re-planned, then reviewed again |
+| `scene.block` | llm | the 3D blocking of one clip's scene by the text model, normalized and its cameras solved ([director's desk](director-desk.md)) |
+| `clip.storyboard` | control | a production scene's storyboard: blocked, drawn, reviewed (rounds with fixes) and approved ([production storyboards](ai-review.md#production-storyboards)) |
+| `cast.review` | llm | the cast's references reviewed by the vision model, drawn again and reviewed again; a pass approves, locks and approves `cast_locked` on autopilot |
+| `takes.watch` | llm | takes watched whole from their stored videos (`take.watch`) without generating anything ([takes watched whole](ai-review.md#takes-watched-whole)) |
+| `cut.review` | control | the cut reviewed before export: its takes watched whole, its scenes reviewed, fixes applied; a pass approves `cut_approved` on autopilot ([the cut before export](ai-review.md#the-cut-before-export)) |
 
 Lane concurrency defaults: `control=16, llm=2, image=2, video=2, music=1, media=1`. Override with
 `RIDEO_LANES="video=3,image=2"`. The `client` lane has no server concurrency: its jobs are claimed and run
@@ -116,7 +121,7 @@ music 10 min (`RIDEO_GATEWAY_TIMEOUT_*`).
 | end frame | 0.30 | the shot's end frame ([directing](directing.md)): a generated keyframe verified like the start one, or an image resource; sent as `last_frame` when the model accepts it |
 | dialogue | 0.33 | `tts`: reuse the storyboard frame's mix when it is current, else speak every voiced line with its locked voice and mix them (ffmpeg); `native`: the speakers' voice samples ([dialogue](dialogue.md)) |
 | video | 0.35–0.80 | video task with `first_frame`, `last_frame`, references, the motion reference as `reference_video`, the dialogue as `reference_audio` (each when the model accepts it), the seed (fixed or derived, offset by attempt and variation) and the clamped duration (long enough for the lines) → download |
-| verify | 0.80–0.90 | sample frames (ffmpeg) → judge; native audio: the speaker check (V4); with quality checks, the temporal check (ffmpeg scene scores) and the physics and continuity scores of the same judge call ([continuity](continuity.md#quality-checks-in-the-gate)) → retry the video up to `maxAttempts` |
+| verify | 0.80–0.90 | sample frames (ffmpeg) → judge; native audio: the speaker check (V4); with quality checks, the temporal check (ffmpeg scene scores) and the physics and continuity scores of the same judge call ([continuity](continuity.md#quality-checks-in-the-gate)); at the same time the sound check and, with `review.watchTakes`, the whole take watched by the vision model ([takes watched whole](ai-review.md#takes-watched-whole)) → retry the video up to `maxAttempts` |
 | lip sync | 0.86 | `tts` takes whose model could not take the mix: lip-sync pass (`reference_video` + `reference_audio`) → judge again |
 | watermark | 0.90–0.96 | embed the invisible watermark (raw frame pipe) + provenance metadata, register the id |
 | poster | 0.96–0.99 | JPEG poster and the last frame (continuity); browsers that cannot decode H.264 build their own local proxy ([editor](editor.md#playback-compatibility-local-proxies)) |
@@ -155,12 +160,18 @@ loop:
   planned = Σ planned clip durations
   if planned ≥ 0.97·target or (outline exhausted and story ended): stop planning
   if the next outline beat has no written scene: screenplay.extend(next 3 beats)
+                                // then screenplay.review of the new scenes (sceneIds), revised up to maxRounds;
+                                // a review that still fails stops the batch for a person
   clip.plan(next scene)
+  clip.storyboard(clip)         // settings.storyboard.production: blocked, drawn, reviewed and approved;
+                                // a storyboard that still fails its review stops the batch for a person
   enqueue clip.generate(clip)   // at most settings.batch.lookahead (3) clip jobs in flight;
-                                // each ends with its scene review and fixes (clip.review)
+                                // each ends with its scene review and fixes (clip.review), and on autopilot
+                                // with the clip approved when its clip gate holds
   stop if generations started by this batch would exceed settings.batch.maxGenerations
 wait for in-flight clip jobs
 re-check unverified takes (consistency.recheck) when any remain
+on autopilot: approve production_approved when its requirements hold
 ```
 
 - Clips are generated **in order**, because continuity chaining and the story extension depend on earlier
@@ -170,7 +181,9 @@ re-check unverified takes (consistency.recheck) when any remain
 - **New places and props.** A scene the extension writes may bring a location or prop nobody approved; the batch
   draws its references and stops for a person (the panda demo's batch stopped at 36 of 110 shots for one). With
   `settings.batch.approveNewElements` (off by default, for unattended runs) it waits for the references, approves the
-  first and locks the element itself (as the system, in the history), and goes on; a person reviews it later.
+  first and locks the element itself (as the system, in the history), and goes on; a person reviews it later. On
+  autopilot with the cast review on, the batch draws its references, runs the cast review, and on a pass approves them
+  and locks the element; a review that does not pass stops the batch for a person.
 - **Scenes before the edit.** A clip job ends when its scene is watched and the shots that break it are made again
   ([scenes before the edit](ai-review.md#scenes-before-the-edit)), so the cut is assembled from the fixed takes.
 - **Model pinning**: when the pilot is approved, the image and video model ids reported by the gateway in

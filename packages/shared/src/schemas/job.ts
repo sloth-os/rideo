@@ -42,6 +42,11 @@ export const JOB_KINDS = [
   'screenplay.revise',
   'storyboard.review',
   'clip.review',
+  'scene.block',
+  'clip.storyboard',
+  'cast.review',
+  'takes.watch',
+  'cut.review',
 ] as const;
 export const JobKindSchema = z.enum(JOB_KINDS);
 export type JobKind = z.infer<typeof JobKindSchema>;
@@ -92,6 +97,13 @@ export const JOB_LANES: Record<JobKind, Lane> = {
   'storyboard.review': 'control',
   // waits for the shots its fixes generate again
   'clip.review': 'control',
+  'scene.block': 'llm',
+  // waits for its blocking, frames and review
+  'clip.storyboard': 'control',
+  'cast.review': 'llm',
+  'takes.watch': 'llm',
+  // waits for the takes' watches, the scene reviews and their fixes
+  'cut.review': 'control',
 };
 
 /**
@@ -138,6 +150,11 @@ export const JOB_GATEWAY: Record<JobKind, 'required' | 'optional' | 'none'> = {
   'screenplay.revise': 'required',
   'storyboard.review': 'required',
   'clip.review': 'required',
+  'scene.block': 'required',
+  'clip.storyboard': 'required',
+  'cast.review': 'required',
+  'takes.watch': 'required',
+  'cut.review': 'required',
 };
 
 export const EDITOR_JOB_KINDS = ['media.process', 'analysis.signals', 'export.render'] as const;

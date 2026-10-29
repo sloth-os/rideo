@@ -104,7 +104,7 @@ export const DOC_SPECS: DocSpec[] = [
   /** The AI review of a stage (docs/design/ai-review.md#the-document), keyed by the stage. */
   {
     kind: 'aiReview',
-    pattern: /^ai-reviews\/(screenplay|storyboard)\.json$/,
+    pattern: /^ai-reviews\/(screenplay|cast|storyboard|cut)\.json$/,
     schema: StageReviewSchema,
     dir: 'ai-reviews',
     embedsId: false,

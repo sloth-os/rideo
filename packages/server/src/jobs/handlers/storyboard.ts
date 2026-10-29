@@ -22,6 +22,7 @@ import {
 import { assertCastReady } from '../../domain/clips';
 import { notFound } from '../../errors';
 import type { JobContext } from '../queue';
+import { cameraView, ensureBlocking, withCameraView } from './blocking';
 import { commitAs, docsFor, type HandlerDeps } from './common';
 import { speakLines } from './dialogue';
 import { generateKeyframe, prepareShotReferences } from './keyframe';
@@ -100,16 +101,17 @@ export async function shotBoard(deps: HandlerDeps, ctx: JobContext) {
     const withScene =
       sceneFrame &&
       (maxImages === undefined || (maxImages >= 3 && shotRefs.referenceUris.length < maxImages));
-    const refs = withScene
-      ? {
-          ...shotRefs,
-          referenceUris: [
-            ...shotRefs.referenceUris,
-            await deps.media.pngDataUri(ctx.job.projectId, sceneFrame, 1024),
-          ],
-        }
-      : shotRefs;
-    const shotCtx: ShotContext = { ...baseCtx, sceneReference: !!withScene };
+    // The shot's camera view on the desk, before the scene reference (docs/design/director-desk.md)
+    const view = withCameraView(shotRefs, cameraView(docs, clip, shot), {
+      maxImages,
+      sceneReferenceUri: withScene ? await deps.media.pngDataUri(ctx.job.projectId, sceneFrame, 1024) : null,
+    });
+    const refs = view.refs;
+    const shotCtx: ShotContext = {
+      ...baseCtx,
+      sceneReference: view.sceneReference,
+      blockingImage: view.blockingImage,
+    };
     const kf = await generateKeyframe(deps, ctx, {
       shotCtx,
       refs,
@@ -205,6 +207,16 @@ export async function storyboardGenerate(deps: HandlerDeps, ctx: JobContext) {
     docs = await docsFor(deps, ctx);
   }
   const ids = new Set(scenes.map((s) => s.id));
+  // Each scene blocked in 3D before its frames are drawn (docs/design/director-desk.md#jobs)
+  ctx.progress(0.15, 1, 'blocking the scenes');
+  await ensureBlocking(
+    deps,
+    ctx,
+    Object.values(docs.clips)
+      .filter((c) => c.sceneId && ids.has(c.sceneId))
+      .map((c) => c.id),
+  );
+  docs = await docsFor(deps, ctx);
   const targets = Object.values(docs.clips)
     .filter((c) => c.sceneId && ids.has(c.sceneId))
     .flatMap((clip) =>

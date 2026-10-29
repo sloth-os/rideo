@@ -84,6 +84,8 @@ const OPTIONAL_FIELDS: Record<string, RegExp> = {
   max_tokens: /\bmax_tokens\b/,
   // Qwen's switch for its reasoning (docs/design/ai-gateway.md#reasoning)
   enable_thinking: /\benable_thinking\b/,
+  // Omni models' text-only answer; a vision model that watches video may not know it (docs/design/ai-review.md)
+  modalities: /\bmodalities\b/,
 };
 
 /**

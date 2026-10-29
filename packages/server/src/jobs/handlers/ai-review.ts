@@ -2,11 +2,13 @@ import {
   type Actor,
   assembleStageReview,
   autoApplicable,
+  blockingView,
   boardApprovable,
   boardState,
   type Character,
   type Clip,
   carriedFixes,
+  castElements,
   castIdsOf,
   compactIdentity,
   docPath,
@@ -38,6 +40,7 @@ import {
 import { invalid } from '../../errors';
 import { throwIfAborted } from '../../util/abort';
 import type { JobContext } from '../queue';
+import { cameraView, ensureBlocking } from './blocking';
 import { commitAs, docsFor, type HandlerDeps } from './common';
 import { drawBoards } from './storyboard';
 
@@ -151,6 +154,9 @@ export function storyboardSceneInput(
   const castIds = [...new Set(clip.shots.flatMap((s) => s.characterIds))];
   const names = (ids: string[]) => ids.map((id) => docs.characters[id]?.name ?? '').filter(Boolean);
   const level = docs.project.settings.dialogue?.level ?? 'any';
+  // A blocked scene: each shot's blocking line, and what the blocking breaks (docs/design/director-desk.md)
+  const blocked =
+    clip.blocking && docs.project.settings.blocking?.enabled === true ? blockingView(docs, clip) : null;
   return {
     film: {
       title: sp.title,
@@ -179,13 +185,54 @@ export function storyboardSceneInput(
         line: d.line,
       })),
       frame: s.board ? 'attached' : 'missing',
+      ...(blocked?.lines[s.id] ? { blocking: blocked.lines[s.id]! } : {}),
     })),
     video,
+    ...(blocked ? { blockingIssues: blocked.issues.map((i) => i.message).slice(0, 20) } : {}),
+  };
+}
+
+/**
+ * One scene's frames reviewed by the vision model (docs/design/ai-review.md#how-a-review-runs): each frame followed by
+ * its camera view when the scene is blocked; with where its scene numbers and shots point.
+ */
+export async function reviewSceneFrames(
+  deps: HandlerDeps,
+  ctx: JobContext,
+  docs: ProjectDocs,
+  clip: Clip,
+  scene: Scene,
+  number: number,
+  video: VideoModelFacts,
+) {
+  const shots = [...clip.shots].sort(byIndex);
+  const frames = [];
+  for (const s of shots)
+    if (s.board) {
+      const view = cameraView(docs, clip, s, 512);
+      frames.push({
+        label: `C${clip.index + 1}·S${s.index + 1}`,
+        data: await deps.media.pngBuffer(ctx.job.projectId, s.board.keyframe, 512),
+        ...(view ? { blocking: view.png } : {}),
+      });
+    }
+  const out = await deps.llm.reviewStoryboardScene(
+    storyboardSceneInput(docs, clip, scene, number, video),
+    frames,
+    ctx.signal,
+  );
+  return {
+    out,
+    durationSec: shots.reduce((n, s) => n + s.durationSec, 0),
+    target: {
+      clipId: clip.id,
+      shots: shots.map((s) => ({ shotId: s.id, label: `C${clip.index + 1}·S${s.index + 1}` })),
+    },
   };
 }
 
 /** Writes the stage's review over what is there (the history and the override stay unless replaced). */
-async function writeReview(
+export async function writeReview(
   deps: HandlerDeps,
   ctx: JobContext,
   stage: ReviewStage,
@@ -213,7 +260,7 @@ async function writeReview(
 }
 
 /** Marks recommendations applied by the review's own round. */
-async function markApplied(
+export async function markApplied(
   deps: HandlerDeps,
   ctx: JobContext,
   stage: ReviewStage,
@@ -236,7 +283,10 @@ async function markApplied(
   );
 }
 
-function historyEntry(review: StageReview, applied: number) {
+export function historyEntry(
+  review: Pick<StageReview, 'round' | 'updatedAt' | 'verdict' | 'issues'>,
+  applied: number,
+) {
   return {
     round: Math.max(1, review.round),
     at: review.updatedAt,
@@ -251,7 +301,7 @@ function historyEntry(review: StageReview, applied: number) {
  * Runs a review job: the document says `running` while it works and `failed` with the error when it cannot finish
  * (a review left `running` would hold its gate forever).
  */
-async function asReview<T>(
+export async function asReview<T>(
   deps: HandlerDeps,
   ctx: JobContext,
   stage: ReviewStage,
@@ -285,7 +335,7 @@ async function asReview<T>(
 }
 
 /** A round's review with the fixes this run's earlier rounds applied (a new run starts its list afresh). */
-function withCarried<T extends { recommendations: StageRecommendation[] }>(
+export function withCarried<T extends { recommendations: StageRecommendation[] }>(
   parts: T,
   previous: StageReview | undefined,
   round: number,
@@ -295,18 +345,38 @@ function withCarried<T extends { recommendations: StageRecommendation[] }>(
     : parts;
 }
 
-/** Approves the stage's gate when the project is on autopilot and the gate's requirements hold. */
-async function approveOnAutopilot(deps: HandlerDeps, ctx: JobContext, stage: ReviewStage): Promise<boolean> {
+const GATE_OF: Record<ReviewStage, string> = {
+  screenplay: 'screenplay_approved',
+  cast: 'cast_locked',
+  storyboard: 'storyboard_approved',
+  cut: 'cut_approved',
+};
+const STAGE_OF: Record<ReviewStage, string> = {
+  screenplay: 'screenplay',
+  cast: 'cast',
+  storyboard: 'storyboard',
+  cut: 'edit',
+};
+
+/**
+ * Approves the stage's gate when the project is on autopilot and the gate's requirements hold; a passing cast review
+ * first approves the references and locks the cast (docs/design/ai-review.md#autopilot-every-step-reviewed-and-approved).
+ */
+export async function approveOnAutopilot(
+  deps: HandlerDeps,
+  ctx: JobContext,
+  stage: ReviewStage,
+): Promise<boolean> {
   const docs = await docsFor(deps, ctx);
   if (!docs.project.settings.autopilot) return false;
   const projectId = ctx.job.projectId;
+  // Only while the project is at the stage: a review run later approves nothing
+  if (docs.project.workflow.stage !== STAGE_OF[stage]) return false;
   try {
     if (stage === 'storyboard') await deps.services.storyboard.approveAll(ctx.actor, projectId);
-    await deps.services.workflow.approve(
-      ctx.actor,
-      projectId,
-      stage === 'screenplay' ? 'screenplay_approved' : 'storyboard_approved',
-    );
+    if (stage === 'cast') await lockReviewedCast(deps, ctx);
+    await deps.services.workflow.approve(ctx.actor, projectId, GATE_OF[stage]);
+    deps.metrics.autopilotApprovals.inc({ step: stage });
     return true;
   } catch (err) {
     ctx.log.info(
@@ -314,6 +384,34 @@ async function approveOnAutopilot(deps: HandlerDeps, ctx: JobContext, stage: Rev
       'the gate stays open after the review',
     );
     return false;
+  }
+}
+
+/**
+ * A passing cast review on autopilot: every reference it did not flag approved (all of a subject's when it flagged
+ * them all), every character and every element in use locked.
+ */
+async function lockReviewedCast(deps: HandlerDeps, ctx: JobContext): Promise<void> {
+  const projectId = ctx.job.projectId;
+  const docs = await docsFor(deps, ctx);
+  const review = docs.aiReviews.cast;
+  const flagged = new Set(
+    (review?.issues ?? []).filter((i) => i.severity !== 'minor').flatMap((i) => [i.characterId, i.elementId]),
+  );
+  for (const c of Object.values(docs.characters)) {
+    if (c.lock.locked) continue;
+    if (!c.references.some((r) => r.approved))
+      for (const r of flagged.has(c.id) ? c.references.slice(0, 1) : c.references)
+        await deps.services.story.setReferenceApproval(ctx.actor, projectId, c.id, r.id, true);
+    await deps.services.story.lockCharacter(ctx.actor, projectId, c.id);
+  }
+  // Every element the review saw: the pilot gate locks the whole library before production
+  for (const e of castElements(docs)) {
+    if (e.lock.locked || !e.references.length) continue;
+    if (!e.references.some((r) => r.approved))
+      for (const r of flagged.has(e.id) ? e.references.slice(0, 1) : e.references)
+        await deps.services.elements.setReferenceApproval(ctx.actor, projectId, e.id, r.id, true);
+    await deps.services.elements.lock(ctx.actor, projectId, e.id);
   }
 }
 
@@ -392,6 +490,8 @@ export async function screenplayReview(deps: HandlerDeps, ctx: JobContext) {
 }
 
 async function reviewScreenplayRounds(deps: HandlerDeps, ctx: JobContext) {
+  // A scoped review: the scenes an extension wrote, the rest of the screenplay as their context
+  const sceneIds = (ctx.job.params as { sceneIds?: string[] }).sceneIds ?? [];
   let docs = await docsFor(deps, ctx);
   const settings = reviewSettings(docs);
   const { limits } = await deps.gateway.limitsFor('video', docs.project.settings.models.video);
@@ -405,8 +505,12 @@ async function reviewScreenplayRounds(deps: HandlerDeps, ctx: JobContext) {
     ctx.progress(round - 1, settings.maxRounds + 1, `reviewing the screenplay (round ${round})`);
     docs = await docsFor(deps, ctx);
     const subject = screenplayReviewSubject(docs);
-    const out = await deps.llm.reviewScreenplay(screenplayReviewInput(docs, video), ctx.signal);
     const ordered = [...docs.screenplay!.scenes].sort(byIndex);
+    const focus = sceneIds.map((id) => ordered.findIndex((s) => s.id === id) + 1).filter((n) => n > 0);
+    const out = await deps.llm.reviewScreenplay(
+      { ...screenplayReviewInput(docs, video), ...(focus.length ? { focus } : {}) },
+      ctx.signal,
+    );
     const targets: ReviewTargets = { scenes: new Map(ordered.map((s, i) => [i + 1, s.id])) };
     const review = await writeReview(
       deps,
@@ -435,7 +539,10 @@ async function reviewScreenplayRounds(deps: HandlerDeps, ctx: JobContext) {
       'reviewed',
     );
     if (review.verdict!.passed) return finish(deps, ctx, 'screenplay', review, round);
-    const todo = settings.autoRevise && round - 1 < settings.maxRounds ? autoApplicable(review) : [];
+    const scoped = (r: StageRecommendation) =>
+      !sceneIds.length || (r.action?.kind === 'revise_scene' && sceneIds.includes(r.action.sceneId));
+    const todo =
+      settings.autoRevise && round - 1 < settings.maxRounds ? autoApplicable(review).filter(scoped) : [];
     const instructions = todo.map((r) => instructionOf(r.action)).filter((i) => !!i);
     if (!instructions.length) return finish(deps, ctx, 'screenplay', review, round);
     ctx.progress(
@@ -470,7 +577,7 @@ export async function screenplayRevise(deps: HandlerDeps, ctx: JobContext) {
   return { changed };
 }
 
-async function finish(
+export async function finish(
   deps: HandlerDeps,
   ctx: JobContext,
   stage: ReviewStage,
@@ -544,6 +651,8 @@ export async function applyStoryboardFixes(
   const replanned = replans
     .map((r) => Object.values(fresh.clips).find((c) => c.sceneId === docs.clips[r.clipId]?.sceneId)?.id)
     .filter((id): id is string => !!id);
+  // The new shots get their cameras on the desk before their frames are drawn (docs/design/director-desk.md)
+  if (replanned.length) await ensureBlocking(deps, ctx, replanned);
   await drawFrames(deps, ctx, [...new Set([...redraw, ...replanned])]);
 }
 
@@ -586,25 +695,18 @@ async function reviewStoryboardRounds(deps: HandlerDeps, ctx: JobContext) {
       );
       const scene = ordered.find((s) => s.id === clip.sceneId)!;
       const number = numberOf(scene.id);
-      const shots = [...clip.shots].sort(byIndex);
       targets.scenes.set(number, scene.id);
-      targets.clips!.set(number, {
-        clipId: clip.id,
-        shots: shots.map((s) => ({ shotId: s.id, label: `C${clip.index + 1}·S${s.index + 1}` })),
-      });
-      const frames = [];
-      for (const s of shots)
-        if (s.board)
-          frames.push({
-            label: `C${clip.index + 1}·S${s.index + 1}`,
-            data: await deps.media.pngBuffer(ctx.job.projectId, s.board.keyframe, 512),
-          });
-      const out = await deps.llm.reviewStoryboardScene(
-        storyboardSceneInput(docs, clip, scene, number, video),
-        frames,
-        ctx.signal,
+      const { out, durationSec, target } = await reviewSceneFrames(
+        deps,
+        ctx,
+        docs,
+        clip,
+        scene,
+        number,
+        video,
       );
-      parts.push({ number, durationSec: shots.reduce((n, s) => n + s.durationSec, 0), out });
+      targets.clips!.set(number, target);
+      parts.push({ number, durationSec, out });
     }
     const review = await writeReview(
       deps,

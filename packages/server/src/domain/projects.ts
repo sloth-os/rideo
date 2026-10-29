@@ -85,6 +85,12 @@ export class ProjectService extends Service {
       dialogue: { mode: c.tts ? 'tts' : 'off', lipSync: true },
       // and use continuity-aware prompts (docs/design/continuity.md#prompt-version).
       generation: { promptVersion: 2 },
+      // Every scene blocked on the director's desk (docs/design/director-desk.md), every production scene storyboarded,
+      // and every step reviewed: the cast, the extensions, every take watched whole, the cut before export
+      // (docs/design/ai-review.md#autopilot-every-step-reviewed-and-approved).
+      blocking: { enabled: true, layoutImage: true },
+      storyboard: { enabled: true, scenes: 3, production: true },
+      review: { cast: true, cut: true, watchTakes: true, extensions: true },
     });
     const merged = mergeSettings(
       base as unknown as Record<string, unknown>,

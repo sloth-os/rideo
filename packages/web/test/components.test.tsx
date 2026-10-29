@@ -21,6 +21,7 @@ describe('QualityBadge (docs/design/continuity.md#quality-checks-in-the-gate)', 
     others: [],
     duplicates: [],
     sound: null,
+    watch: null,
     issues: [],
     ...over,
   });

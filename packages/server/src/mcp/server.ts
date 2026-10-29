@@ -35,6 +35,7 @@ import {
   MotionReferenceSchema,
   type Permission,
   ProjectSettingsPatchSchema,
+  REVIEW_STAGES,
   RecipeInputSchema,
   ReferenceViewSchema,
   RenderEngineChoiceSchema,
@@ -299,6 +300,10 @@ function buildServer(studio: Studio): McpServer {
             projectId,
             detail: { tool: name },
           });
+        // A picture (blocking_render) is image content
+        const image = (result as { [MCP_IMAGE]?: { data: string; mimeType: string } } | null)?.[MCP_IMAGE];
+        if (image)
+          return { content: [{ type: 'image' as const, data: image.data, mimeType: image.mimeType }] };
         return {
           content: [{ type: 'text' as const, text: JSON.stringify(result ?? { ok: true }, null, 2) }],
         };
@@ -1128,24 +1133,24 @@ function buildServer(studio: Studio): McpServer {
     { projectId: PROJECT, feedbackId: z.string(), recommendationId: z.string() },
     (a, actor) => studio.feedback.dismiss(actor, a.projectId, a.feedbackId, a.recommendationId),
   );
-  // AI review of the screenplay and the storyboard (docs/design/ai-review.md#surfaces)
-  const STAGE = z.enum(['screenplay', 'storyboard']);
+  // AI review of every step (docs/design/ai-review.md#surfaces)
+  const STAGE = z.enum(REVIEW_STAGES);
   tool(
     'ai_review_get',
-    "The AI reviews of the screenplay and the storyboard: each stage's verdict (passed, score against the threshold, what blocks it), scores per dimension, issues pinned to scenes and shots, recommendations with their actions and status, the rounds so far and any 'continue anyway'.",
+    "The AI reviews of the screenplay, the cast, the storyboard and the cut: each stage's verdict (passed, score against the threshold, what blocks it), scores per dimension, issues pinned to scenes and shots, recommendations with their actions and status, the rounds so far and any 'continue anyway'.",
     { projectId: PROJECT },
     (a) => studio.aiReviews.list(a.projectId),
     ro,
   );
   tool(
     'ai_review_run',
-    'Review the screenplay (before the cast is made) or the storyboard (before any video) with the AI reviewer; with settings.review.autoRevise it applies its own fixes and reviews again up to settings.review.maxRounds, and on autopilot a pass approves the stage gate. Returns {job}; use job_wait, then ai_review_get.',
+    "Review the screenplay (before the cast is made), the cast's references (before they are locked), the storyboard (before any video) or the cut (every take watched whole, every scene's review, before export) with the AI reviewer; with settings.review.autoRevise it applies its own fixes and reviews again up to settings.review.maxRounds, and on autopilot a pass approves the stage gate. Returns {job}; use job_wait, then ai_review_get.",
     { projectId: PROJECT, stage: STAGE },
     (a, actor) => studio.aiReviews.run(actor, a.projectId, a.stage),
   );
   tool(
     'ai_review_apply',
-    "Apply an AI review recommendation's action: revise_scene / revise_outline (the writer rewrites it), redraw_board (revises the shot and draws its frame again) or replan_scene (plans the scene again and draws its frames). Returns {review, job}; review again afterwards.",
+    "Apply an AI review recommendation's action: revise_scene / revise_outline (the writer rewrites it), redraw_board (revises the shot and draws its frame again), replan_scene (plans the scene again and draws its frames), regenerate_refs (draws a character's or element's references again) or regenerate_shot (generates a shot of the cut again; its take replaces the old one only when it passes every check). Returns {review, job}; review again afterwards.",
     { projectId: PROJECT, stage: STAGE, recommendationId: z.string() },
     (a, actor) => studio.aiReviews.apply(actor, a.projectId, a.stage, a.recommendationId),
   );
@@ -1160,6 +1165,71 @@ function buildServer(studio: Studio): McpServer {
     "Continue anyway: the stage's gate accepts a review that did not pass, for the screenplay or frames as they are now (an approval; agents need settings.approvals.allowAgents).",
     { projectId: PROJECT, stage: STAGE, note: z.string().max(1000).default('') },
     (a, actor) => studio.aiReviews.override(actor, a.projectId, a.stage, a.note),
+  );
+  // The 3D director's desk (docs/design/director-desk.md#surfaces)
+  tool(
+    'blocking_get',
+    "A scene's 3D blocking: the set (size, ground, landmarks, the sun), every character's mark, the props and each shot's camera (position, target, lens, end of a move), its state (missing, incomplete, ready), the completed draft the desk edits, the issues (a crossed line, a character out of frame, a camera in a wall) and each shot's blocking line as the prompts say it.",
+    { projectId: PROJECT, clipId: z.string() },
+    (a) => studio.storyboard.getBlocking(a.projectId, a.clipId),
+    ro,
+  );
+  tool(
+    'blocking_set',
+    "Save a scene's blocking (the shape blocking_get returns as `draft`; metres, y up, x right, z towards the front, facing 0° = the front). fix=true also keeps the cameras of cuts on the scene's side of the line. A shot's lens follows its camera; a camera move becomes the shot's move when it has none. Its frames become outdated: draw them again.",
+    {
+      projectId: PROJECT,
+      clipId: z.string(),
+      blocking: z.record(z.string(), z.unknown()),
+      fix: z.boolean().optional(),
+    },
+    (a, actor) => studio.storyboard.setBlocking(actor, a.projectId, a.clipId, a.blocking, { fix: a.fix }),
+  );
+  tool(
+    'blocking_generate',
+    "Block a scene with the AI (job scene.block): the text model lays out the set, the marks and a camera described per shot; a solver places the cameras from the shots' framing and lens and keeps the 180° rule. Returns the job; use job_wait, then blocking_get.",
+    { projectId: PROJECT, clipId: z.string() },
+    (a, actor) => studio.storyboard.generateBlocking(actor, a.projectId, a.clipId),
+  );
+  tool(
+    'blocking_render',
+    "A shot's camera view on the desk as a PNG (the mannequins and the set through its camera: the picture the image model gets as the layout of its frame).",
+    {
+      projectId: PROJECT,
+      clipId: z.string(),
+      shotId: z.string(),
+      width: z.number().int().min(160).max(1920).optional(),
+    },
+    async (a) => ({
+      [MCP_IMAGE]: {
+        data: (
+          await studio.storyboard.renderBlocking(a.projectId, a.clipId, a.shotId, a.width ?? 768)
+        ).toString('base64'),
+        mimeType: 'image/png',
+      },
+    }),
+    ro,
+  );
+  tool(
+    'clip_storyboard',
+    "Storyboard one production scene before its video (job clip.storyboard): blocked, its frames drawn, reviewed by the vision model with its camera views (fixes and rounds), and its frames approved when the review passes. The review is the clip's `boardReview`.",
+    { projectId: PROJECT, clipId: z.string() },
+    (a, actor) => studio.storyboard.storyboardClip(actor, a.projectId, a.clipId),
+  );
+  tool(
+    'clip_board_review_override',
+    "Continue anyway: a production scene's storyboard review that did not pass is accepted for the frames as they are now (an approval); resume the batch afterwards.",
+    { projectId: PROJECT, clipId: z.string(), note: z.string().max(1000).default('') },
+    (a, actor) => studio.storyboard.overrideBoardReview(actor, a.projectId, a.clipId, a.note),
+  );
+  tool(
+    'takes_watch',
+    'Watch takes whole from their stored videos (job takes.watch): the vision model watches each from its first frame to its last and scores motion, physics, action, camera and identity; a take watched already is left alone. Without takes, every take of the cut.',
+    {
+      projectId: PROJECT,
+      takes: z.array(z.object({ clipId: z.string(), shotId: z.string(), takeId: z.string() })).optional(),
+    },
+    (a, actor) => studio.aiReviews.watchTakes(actor, a.projectId, a.takes),
   );
   tool(
     'project_insights',
@@ -1818,12 +1888,16 @@ interface Session {
 
 const ownerOf = (p: Principal | null) => (p ? `${p.kind}:${p.token?.id ?? p.user.id}` : 'anonymous');
 
+/** A tool result that is a picture: `{ [MCP_IMAGE]: { data, mimeType } }` becomes MCP image content. */
+const MCP_IMAGE = '$image';
+
 /** Tools that need more than reading (read-only tools) or editing (the rest). */
 const TOOL_PERMISSIONS: Record<string, Permission> = {
   workflow_approve: 'project.approve',
   workflow_reopen: 'project.approve',
   shot_board_approve: 'project.approve',
   storyboard_approve_all: 'project.approve',
+  clip_board_review_override: 'project.approve',
   take_override: 'project.approve',
   clip_approve: 'project.approve',
   project_update: 'project.manage',

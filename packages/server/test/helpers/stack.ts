@@ -138,7 +138,23 @@ export async function startStack(
 }
 
 /** Story project with screenplay generated, references approved and cast locked (ready for clips). */
+/** Every AI review off: what tests of other things create their projects with. */
+export const NO_REVIEWS = {
+  screenplay: false,
+  storyboard: false,
+  scenes: false,
+  cast: false,
+  cut: false,
+  watchTakes: false,
+  extensions: false,
+};
+
 export async function readyStoryProject(stack: Stack, settings: Record<string, unknown> = {}) {
+  const { review, blocking, storyboard, ...rest } = settings as {
+    review?: object;
+    blocking?: object;
+    storyboard?: object;
+  };
   const p = await stack.api<{ id: string }>('POST', '/projects', {
     kind: 'story',
     title: 'The Keeper',
@@ -147,9 +163,12 @@ export async function readyStoryProject(stack: Stack, settings: Record<string, u
       targetDurationSec: 30,
       pilotDurationSec: 10,
       resolution: { width: 320, height: 180 },
-      // the AI reviews have tests of their own (test/integration/ai-review.test.ts, clip-review.test.ts)
-      review: { screenplay: false, storyboard: false, scenes: false },
-      ...settings,
+      // The AI reviews and the director's desk have tests of their own (test/integration/ai-review.test.ts,
+      // clip-review.test.ts, autopilot.test.ts, director-desk.test.ts)
+      review: { ...NO_REVIEWS, ...review },
+      blocking: { enabled: false, ...blocking },
+      storyboard: { production: false, ...storyboard },
+      ...rest,
     },
   });
   const job = await stack.api<Job>('POST', `/projects/${p.id}/screenplay/generate`, {});

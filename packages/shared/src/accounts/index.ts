@@ -71,6 +71,7 @@ export const ROUTE_PERMISSIONS: RoutePermission[] = [
   },
   { method: 'POST', path: /^\/clips\/[^/]+\/shots\/[^/]+\/board\/approve$/, permission: 'project.approve' },
   { method: 'POST', path: /^\/storyboard\/approve-all$/, permission: 'project.approve' },
+  { method: 'POST', path: /^\/clips\/[^/]+\/board-review\/override$/, permission: 'project.approve' },
   // Settings, access, branches, deletion
   { method: 'PATCH', path: /^$/, permission: 'project.manage' },
   { method: 'DELETE', path: /^$/, permission: 'project.manage' },

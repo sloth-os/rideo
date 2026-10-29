@@ -49,6 +49,8 @@ export type RequirementId =
   | 'storyboard.approved'
   | 'screenplay.reviewPassed'
   | 'storyboard.reviewPassed'
+  | 'cast.reviewPassed'
+  | 'cut.reviewPassed'
   | 'clips.pilotApproved'
   | 'clips.allApproved'
   | 'duration.targetReached'
@@ -63,10 +65,13 @@ export type AutoActionId =
   | 'characters.generateRefs'
   | 'elements.generateRefs'
   | 'voices.design'
+  | 'cast.review'
+  | 'resources.continue'
   | 'storyboard.generate'
   | 'clip.pilot'
   | 'batch.generate'
   | 'timeline.assemble'
+  | 'export.start'
   | 'analysis.start'
   | 'edit.auto';
 
@@ -122,16 +127,18 @@ export const STORY_WORKFLOW: WorkflowDefinition = {
           'voices.speakingLocked',
           'elements.inUseLocked',
           'elements.inUseHaveApprovedRefs',
+          'cast.reviewPassed',
         ],
         tag: 'cast-locked',
       },
-      autoOnEnter: ['characters.generateRefs', 'voices.design', 'elements.generateRefs'],
+      autoOnEnter: ['characters.generateRefs', 'voices.design', 'elements.generateRefs', 'cast.review'],
     },
     {
       id: 'resources',
       title: 'Resources',
       description: 'Add audio, music, images or footage (optional).',
       gate: { id: 'resources_ready', title: 'Continue', requirements: [], tag: 'resources-ready' },
+      autoOnEnter: ['resources.continue'],
     },
     {
       id: 'storyboard',
@@ -177,12 +184,17 @@ export const STORY_WORKFLOW: WorkflowDefinition = {
       gate: {
         id: 'cut_approved',
         title: 'Approve cut',
-        requirements: ['timeline.nonEmpty', 'timeline.consistencyVerified'],
+        requirements: ['timeline.nonEmpty', 'timeline.consistencyVerified', 'cut.reviewPassed'],
         tag: 'cut-approved',
       },
       autoOnEnter: ['timeline.assemble'],
     },
-    { id: 'export', title: 'Export', description: 'Render and download the movie.' },
+    {
+      id: 'export',
+      title: 'Export',
+      description: 'Render and download the movie.',
+      autoOnEnter: ['export.start'],
+    },
   ],
 };
 
@@ -325,6 +337,8 @@ const CHECKS: Record<RequirementId, Check> = {
   },
   'screenplay.reviewPassed': (d) => reviewRequirement(d, 'screenplay'),
   'storyboard.reviewPassed': (d) => reviewRequirement(d, 'storyboard'),
+  'cast.reviewPassed': (d) => reviewRequirement(d, 'cast'),
+  'cut.reviewPassed': (d) => reviewRequirement(d, 'cut'),
   'storyboard.approved': (d) => {
     if (d.project.settings.storyboard?.enabled === false)
       return { ok: true, message: 'The storyboard is off' };

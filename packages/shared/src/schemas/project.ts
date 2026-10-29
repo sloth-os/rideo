@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { ProjectBrandSchema } from '../brand/schema';
 import { ProjectAccessSchema } from './accounts';
 import { DEFAULT_REVIEW_SETTINGS, ReviewSettingsSchema } from './ai-review';
+import { BlockingSettingsSchema } from './blocking';
 import { ActorSchema, AspectRatioSchema, IdSchema, IsoDateSchema } from './common';
 
 export const ProjectKindSchema = z.enum(['story', 'edit']);
@@ -61,6 +62,8 @@ export const StoryboardSettingsSchema = z.object({
   enabled: z.boolean().default(true),
   /** How many scenes (from the first) are storyboarded before the pilot. */
   scenes: z.number().int().min(1).max(50).default(3),
+  /** Storyboard every production scene before its video (docs/design/ai-review.md#production-storyboards). */
+  production: z.boolean().default(false),
 });
 export type StoryboardSettings = z.infer<typeof StoryboardSettingsSchema>;
 
@@ -114,7 +117,9 @@ export const ProjectSettingsSchema = z.object({
     rejectMusic: false,
   }),
   dialogue: DialogueSettingsSchema.default({ mode: 'off', lipSync: true, level: 'any' }),
-  storyboard: StoryboardSettingsSchema.default({ enabled: true, scenes: 3 }),
+  storyboard: StoryboardSettingsSchema.default({ enabled: true, scenes: 3, production: false }),
+  /** The 3D director's desk (docs/design/director-desk.md#jobs). */
+  blocking: BlockingSettingsSchema.default({ enabled: false, layoutImage: true }),
   generation: z
     .object({
       includeAudio: z.boolean().default(false),

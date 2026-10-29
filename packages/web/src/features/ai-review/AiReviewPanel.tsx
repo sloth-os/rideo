@@ -16,11 +16,20 @@ import { useProject } from '../../store/project';
 import { reportError, useUi } from '../../store/ui';
 
 /**
- * The AI review of the screenplay or the storyboard (docs/design/ai-review.md#surfaces): the verdict against the
- * threshold, a bar per dimension, the issues and the recommendations to apply, review again or continue anyway.
+ * The AI review of a step (docs/design/ai-review.md#surfaces): the screenplay, the cast, the storyboard or the cut; the
+ * verdict against the threshold, a bar per dimension, the issues and the recommendations to apply, review again or
+ * continue anyway.
  */
 
-const STATE_LABEL: Record<ReviewState, { label: string; tone: Tone }> = {
+/** What each stage's review is of, in words. */
+export const STAGE_WHAT: Record<ReviewStage, string> = {
+  screenplay: 'screenplay',
+  cast: 'cast',
+  storyboard: 'storyboard',
+  cut: 'cut',
+};
+
+export const STATE_LABEL: Record<ReviewState, { label: string; tone: Tone }> = {
   off: { label: 'Off', tone: 'neutral' },
   missing: { label: 'Not reviewed yet', tone: 'neutral' },
   running: { label: 'Reviewing…', tone: 'info' },
@@ -49,14 +58,33 @@ const DIMENSION_LABEL: Record<string, string> = {
   composition: 'Composition',
   coverage: 'Coverage',
   storytelling: 'Storytelling',
+  blocking: 'Keeps the blocking',
+  likeness: 'Likeness',
+  consistency: 'Consistent views',
+  distinct: 'Told apart',
+  clarity: 'Clarity',
+  style: 'Style',
+  takes: 'Takes (watched whole)',
+  scenes: 'Scenes',
+  sound: 'Sound',
 };
 
 const scoreTone = (v: number | null | undefined): Tone =>
   typeof v !== 'number' ? 'neutral' : v >= 7.5 ? 'success' : v >= 5 ? 'warning' : 'danger';
 
 /** What applying a recommendation does, in words. */
-function actionText(a: StageAction | null, review: StageReview): string | null {
+function actionText(
+  a: StageAction | null,
+  review: StageReview,
+  names: (id: string | undefined) => string | null,
+): string | null {
   if (!a || a.kind === 'note') return null;
+  if (a.kind === 'regenerate_refs')
+    return `Draw ${names(a.characterId ?? a.elementId) ?? 'the'}'s references again${a.instruction ? `: ${a.instruction}` : ''}`;
+  if (a.kind === 'regenerate_shot') {
+    const shot = review.issues.find((i) => i.shotId === a.shotId)?.shot;
+    return `Generate ${shot ?? 'the shot'} again (used only when it passes every check)`;
+  }
   if (a.kind === 'revise_scene') {
     const scene = review.issues.find((i) => i.sceneId === a.sceneId)?.scene;
     return `Rewrite ${scene ? `scene ${scene}` : 'the scene'}: ${a.instruction}`;
@@ -68,9 +96,13 @@ function actionText(a: StageAction | null, review: StageReview): string | null {
 }
 
 function Bars({ review, stage }: { review: StageReview; stage: ReviewStage }) {
+  // A dimension the review did not score (the blocking of a scene without one) is left out
+  const dims = (REVIEW_DIMENSIONS[stage] as readonly string[]).filter(
+    (d) => d !== 'blocking' || typeof review.scores[d] === 'number',
+  );
   return (
     <ul className="grid grid-cols-1 gap-x-4 gap-y-1 sm:grid-cols-2" aria-label="Scores">
-      {REVIEW_DIMENSIONS[stage].map((d) => {
+      {dims.map((d) => {
         const v = review.scores[d];
         const tone = scoreTone(v);
         return (
@@ -100,12 +132,18 @@ function Recommendation({
   review,
   stage,
   projectId,
+  applicable,
 }: {
   rec: StageRecommendation;
   review: StageReview;
   stage: ReviewStage;
   projectId: string;
+  /** The stage's own review (a production scene's is applied by storyboarding it again). */
+  applicable: boolean;
 }) {
+  const { docs } = useProject();
+  const names = (id: string | undefined) =>
+    id ? (docs?.characters[id]?.name ?? docs?.elements[id]?.name ?? null) : null;
   const [busy, setBusy] = useState<'apply' | 'dismiss' | null>(null);
   const run = async (what: 'apply' | 'dismiss') => {
     setBusy(what);
@@ -120,7 +158,7 @@ function Recommendation({
       setBusy(null);
     }
   };
-  const doing = actionText(rec.action, review);
+  const doing = actionText(rec.action, review, names);
   return (
     <li
       className="space-y-1.5 rounded-[var(--radius-control)] border border-border p-3"
@@ -142,7 +180,7 @@ function Recommendation({
       <p className="text-[13px] font-medium break-words">{rec.title}</p>
       {rec.detail ? <p className="text-[12px] break-words text-muted">{rec.detail}</p> : null}
       {doing ? <p className="text-[12px] break-words">{doing}</p> : null}
-      {rec.status === 'open' ? (
+      {rec.status === 'open' && applicable ? (
         <div className="flex flex-wrap gap-2">
           {rec.action && rec.action.kind !== 'note' ? (
             <Button
@@ -176,13 +214,11 @@ function Recommendation({
 export function AiReviewPanel({ stage }: { stage: ReviewStage }) {
   const { docs, projectId } = useProject();
   const [busy, setBusy] = useState<'run' | 'override' | null>(null);
-  const [open, setOpen] = useState(false);
   if (!docs || !projectId) return null;
   const state = reviewState(docs, stage);
   if (state === 'off') return null;
   const review = docs.aiReviews[stage];
-  const badge = STATE_LABEL[state];
-  const what = stage === 'screenplay' ? 'screenplay' : 'storyboard';
+  const what = STAGE_WHAT[stage];
   const run = async () => {
     setBusy('run');
     try {
@@ -205,14 +241,61 @@ export function AiReviewPanel({ stage }: { stage: ReviewStage }) {
       setBusy(null);
     }
   };
+  return (
+    <ReviewCard
+      testid={`ai-review-${stage}`}
+      title={`AI review of the ${what}`}
+      stage={stage}
+      state={state}
+      review={review ?? null}
+      projectId={projectId}
+      applicable
+      busy={busy}
+      onRun={run}
+      onOverride={override}
+    />
+  );
+}
+
+/** A review's card: its state, score, blocking reasons, bars, issues and recommendations. */
+export function ReviewCard({
+  testid,
+  title,
+  stage,
+  state,
+  review,
+  projectId,
+  applicable,
+  busy,
+  onRun,
+  onOverride,
+  runLabel,
+}: {
+  testid: string;
+  title: string;
+  stage: ReviewStage;
+  state: ReviewState;
+  review: StageReview | null;
+  projectId: string;
+  applicable: boolean;
+  busy: 'run' | 'override' | null;
+  onRun: () => void;
+  onOverride: () => void;
+  runLabel?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const { docs } = useProject();
+  const badge = STATE_LABEL[state];
   const openRecs = review?.recommendations.filter((r) => r.status === 'open').length ?? 0;
   const done = review && review.status === 'succeeded';
+  const nameOf = (id: string | undefined) =>
+    id ? (docs?.characters[id]?.name ?? docs?.elements[id]?.name ?? null) : null;
   return (
-    <Card className="space-y-3 p-4" data-testid={`ai-review-${stage}`} data-state={state}>
+    <Card className="space-y-3 p-4" data-testid={testid} data-state={state}>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex min-w-0 flex-wrap items-center gap-2">
           <Bot className="size-4 text-muted" aria-hidden />
-          <h3 className="text-[14px] font-semibold">AI review of the {what}</h3>
+          <h3 className="text-[14px] font-semibold">{title}</h3>
           <Badge tone={badge.tone} testid="ai-review-state">
             {badge.label}
           </Badge>
@@ -229,10 +312,10 @@ export function AiReviewPanel({ stage }: { stage: ReviewStage }) {
             icon={<RefreshCw className="size-3.5" />}
             loading={busy === 'run' || state === 'running'}
             disabled={!!busy || state === 'running'}
-            onClick={run}
+            onClick={onRun}
             data-testid="run-ai-review"
           >
-            {review ? 'Review again' : 'Review'}
+            {runLabel ?? (review ? 'Review again' : 'Review')}
           </Button>
           {state === 'failed' ? (
             <Button
@@ -241,7 +324,7 @@ export function AiReviewPanel({ stage }: { stage: ReviewStage }) {
               icon={<Check className="size-3.5" />}
               loading={busy === 'override'}
               disabled={!!busy}
-              onClick={override}
+              onClick={onOverride}
               data-testid="override-ai-review"
             >
               Continue anyway
@@ -301,6 +384,7 @@ export function AiReviewPanel({ stage }: { stage: ReviewStage }) {
                           review={review}
                           stage={stage}
                           projectId={projectId}
+                          applicable={applicable}
                         />
                       ))}
                     </ul>
@@ -321,6 +405,8 @@ export function AiReviewPanel({ stage }: { stage: ReviewStage }) {
                               <Badge tone="info">{i.shot}</Badge>
                             ) : i.scene ? (
                               <Badge tone="info">Scene {i.scene}</Badge>
+                            ) : nameOf(i.characterId ?? i.elementId) ? (
+                              <Badge tone="info">{nameOf(i.characterId ?? i.elementId)}</Badge>
                             ) : null}
                           </div>
                           <p className="text-[13px] font-medium break-words">{i.title}</p>

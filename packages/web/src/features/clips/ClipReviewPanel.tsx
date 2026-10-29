@@ -140,6 +140,17 @@ export function ClipReviewPanel({ clip, projectId }: { clip: Clip; projectId: st
             {fmt(review.before.overall)} before {fixed} fix{fixed === 1 ? '' : 'es'}
           </span>
         ) : null}
+        {done && review.verdict ? (
+          <Badge tone={review.verdict.passed ? 'success' : 'danger'} testid="clip-review-verdict">
+            {review.verdict.passed ? 'passed' : 'did not pass'}
+          </Badge>
+        ) : null}
+        {done ? (
+          <span className="text-[12px] text-muted" data-testid="clip-review-watched">
+            {review.watched === 'video' ? 'watched as one video' : 'seen in frames'}
+            {review.heard ? ' · heard' : ''}
+          </span>
+        ) : null}
         {badge ? <Badge tone={badge.tone}>{badge.label}</Badge> : null}
         {!review && !job ? <span className="text-[12px] text-muted">Not watched yet</span> : null}
         <span className="ml-auto">
@@ -166,6 +177,18 @@ export function ClipReviewPanel({ clip, projectId }: { clip: Clip; projectId: st
           <p className="text-[12px] break-words text-danger">{review.error}</p>
         ) : null}
         {review?.summary ? <p className="text-[12px] break-words text-muted">{review.summary}</p> : null}
+        {done && review.verdict && !review.verdict.passed && review.verdict.blocking.length ? (
+          <ul
+            className="list-disc space-y-0.5 pl-5 text-[12px] text-danger"
+            data-testid="clip-review-blocking"
+          >
+            {review.verdict.blocking.slice(0, 4).map((b) => (
+              <li key={b} className="break-words">
+                {b}
+              </li>
+            ))}
+          </ul>
+        ) : null}
         {done && scored.length ? (
           <ul className="grid grid-cols-1 gap-x-4 gap-y-1 sm:grid-cols-2" aria-label="Scores">
             {scored.map((d) => {

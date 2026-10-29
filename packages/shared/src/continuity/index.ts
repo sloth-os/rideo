@@ -1,6 +1,6 @@
 import { compactIdentity } from '../prompt';
 import type { Character } from '../schemas/character';
-import type { ConsistencyReport, QualityVerdict, SoundReport } from '../schemas/clip';
+import type { ConsistencyReport, QualityVerdict, SoundReport, TakeWatch } from '../schemas/clip';
 import type { DialogueDirection, SoundCheckOutput } from '../schemas/llm';
 import type { DialogueLevel } from '../schemas/project';
 
@@ -225,6 +225,7 @@ export function aggregateQuality(input: {
     others,
     duplicates,
     sound: null,
+    watch: null,
     issues: [...issues].slice(0, 20),
   };
 }
@@ -361,6 +362,7 @@ export function withSound(
     others: [],
     duplicates: [],
     sound: null,
+    watch: null,
     issues: [],
   };
   return {
@@ -368,6 +370,35 @@ export function withSound(
     passed: base.passed && verdict.passed,
     sound: verdict.sound,
     issues: [...new Set([...base.issues, ...verdict.issues.map((i) => i.slice(0, 500))])].slice(0, 20),
+  };
+}
+
+/**
+ * A quality verdict with the whole-take watch merged in (docs/design/ai-review.md#takes-watched-whole): it passes only
+ * when the watch passes too.
+ */
+export function withWatch(
+  quality: QualityVerdict | null,
+  watch: TakeWatch,
+  issues: string[],
+): QualityVerdict {
+  const base: QualityVerdict = quality ?? {
+    passed: true,
+    temporal: null,
+    physics: null,
+    continuity: null,
+    extras: [],
+    others: [],
+    duplicates: [],
+    sound: null,
+    watch: null,
+    issues: [],
+  };
+  return {
+    ...base,
+    passed: base.passed && watch.passed,
+    watch,
+    issues: [...new Set([...base.issues, ...issues.map((i) => i.slice(0, 500))])].slice(0, 20),
   };
 }
 

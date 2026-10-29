@@ -36,6 +36,9 @@ test('a scene is watched after its takes, the shot that breaks it is generated a
   await expect(panel).toHaveAttribute('data-state', 'current', { timeout: 240_000 });
   await expect(panel.getByTestId('clip-review-score')).toContainText('/10');
   await expect(panel.getByTestId('clip-review-before')).toContainText('before 1 fix');
+  // The scene was watched as one video (with its strips as anchors), and passed after its fix
+  await expect(panel.getByTestId('clip-review-watched')).toContainText('watched as one video');
+  await expect(panel.getByTestId('clip-review-verdict')).toHaveText('passed');
   await panel.locator('summary').getByText('Scene review', { exact: true }).click();
   const fix = panel.getByTestId('clip-review-fix');
   await expect(fix).toHaveAttribute('data-outcome', 'fixed');
@@ -46,7 +49,8 @@ test('a scene is watched after its takes, the shot that breaks it is generated a
   // Watched again from the panel: nothing breaks the scene now, so one round and no fix
   await panel.getByTestId('clip-review-run').click();
   await expect(panel.getByTestId('clip-review-before')).toBeHidden({ timeout: 120_000 });
-  await expect(panel).toHaveAttribute('data-state', 'current');
+  // The scene is cut into one video before it is watched: give the watch the time the first one had
+  await expect(panel).toHaveAttribute('data-state', 'current', { timeout: 120_000 });
   await expect(panel.getByTestId('clip-review-fix')).toHaveCount(0);
 
   // Nothing scrolls sideways at this width

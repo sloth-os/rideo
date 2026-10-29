@@ -214,6 +214,7 @@ describe('feedback on the export card (docs/design/feedback.md#surfaces)', () =>
       others: [],
       duplicates: [],
       sound: null,
+      watch: null,
       issues: ['the picture jumps at 2.1 s'],
     };
     const newTake = f.take({ jobId: 'job_0000000000aaaaaa', consistency: f.report({ quality }) });

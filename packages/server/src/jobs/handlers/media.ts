@@ -597,5 +597,11 @@ export async function timelineAssemble(deps: HandlerDeps, ctx: JobContext) {
     captions,
     musicResourceId,
   });
+  // On autopilot the cut is reviewed before it is approved and exported (docs/design/ai-review.md#the-cut-before-export)
+  const docs = await docsFor(deps, ctx);
+  if (docs.project.settings.autopilot && docs.project.workflow.stage === 'edit')
+    await deps.services.aiReviews
+      .followUp(ctx.actor, ctx.job.projectId, 'cut')
+      .catch((err) => ctx.log.warn({ err: (err as Error).message }, 'could not queue the cut review'));
   return { commit: commit?.id ?? null };
 }

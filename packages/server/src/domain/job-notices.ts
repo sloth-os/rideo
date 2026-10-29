@@ -19,16 +19,40 @@ const NOTICES: Partial<Record<JobKind, { done: string; failed: string; view: Vie
     failed: 'Storyboard review failed',
     view: 'storyboard',
   },
+  'cast.review': { done: 'Cast reviewed', failed: 'Cast review failed', view: 'cast' },
+  'cut.review': { done: 'Cut reviewed', failed: 'Cut review failed', view: 'exports' },
+  'clip.storyboard': { done: 'Scene storyboarded', failed: 'Scene storyboard failed', view: 'storyboard' },
+  'scene.block': { done: 'Scene blocked', failed: 'Blocking failed', view: 'storyboard' },
+};
+
+const REVIEWED: Partial<Record<JobKind, string>> = {
+  'screenplay.review': 'Screenplay',
+  'storyboard.review': 'Storyboard',
+  'cast.review': 'Cast',
+  'cut.review': 'Cut',
+  'clip.storyboard': 'Scene storyboard',
 };
 
 /** An AI review's verdict in its notice (docs/design/ai-review.md). */
 function reviewTitle(job: Job, base: string): string {
   const r = job.result as { passed?: boolean; score?: number; threshold?: number } | undefined;
   if (typeof r?.passed !== 'boolean' || typeof r.score !== 'number') return base;
-  const stage = job.kind === 'screenplay.review' ? 'Screenplay' : 'Storyboard';
+  const stage = REVIEWED[job.kind] ?? 'Storyboard';
   return r.passed
     ? `${stage} review passed (${r.score})`
     : `${stage} review did not pass (${r.score} of ${r.threshold})`;
+}
+
+/**
+ * Why a batch stopped before its end, for a person (docs/design/ai-review.md#autopilot-every-step-reviewed-and-approved):
+ * a review that did not pass, a place or a voice to approve; empty when it reached its end.
+ */
+function stopped(job: Job): string {
+  const reason = (job.result as { stopReason?: string } | undefined)?.stopReason;
+  if (job.kind !== 'batch.generate' || !reason) return '';
+  return reason === 'target reached' || reason === 'the outline is complete'
+    ? ''
+    : `Stopped: ${reason}`.slice(0, 300);
 }
 
 /** A finished top-level job's notice: the kinds above when they succeed, any job when it fails for good. */
@@ -36,7 +60,7 @@ export function jobNotice(job: Job): { title: string; detail: string; link: stri
   if (job.parentId) return null;
   const n = NOTICES[job.kind];
   if (job.status === 'succeeded' && n)
-    return { title: reviewTitle(job, n.done), detail: '', link: `/p/${job.projectId}/${n.view}` };
+    return { title: reviewTitle(job, n.done), detail: stopped(job), link: `/p/${job.projectId}/${n.view}` };
   if (job.status === 'failed')
     return {
       title: n?.failed ?? `${job.kind} failed`,

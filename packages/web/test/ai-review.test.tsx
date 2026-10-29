@@ -1,4 +1,5 @@
 import {
+  castReviewSubject,
   evaluateWorkflow,
   ProjectSettingsSchema,
   type StageReview,
@@ -181,5 +182,64 @@ describe('AI review panel (docs/design/ai-review.md#surfaces)', () => {
     setup(null, { review: { screenplay: false } });
     render(<AiReviewPanel stage="screenplay" />);
     expect(screen.queryByTestId('ai-review-screenplay')).toBeNull();
+  });
+});
+
+describe('the reviews of every step (docs/design/ai-review.md#autopilot-every-step-reviewed-and-approved)', () => {
+  it('shows the cast review with its fix to draw a character again, named', async () => {
+    const rosie = f.character({ name: 'Rosie', references: [f.reference()] });
+    const docs = f.docs({
+      project: f.project({ settings: ProjectSettingsSchema.parse({ review: { cast: true } }) }),
+      characters: { [rosie.id]: rosie },
+    });
+    const review = StageReviewSchema.parse({
+      stage: 'cast',
+      status: 'succeeded',
+      subject: castReviewSubject(docs),
+      round: 1,
+      threshold: 7,
+      verdict: { passed: false, score: 5.5, blocking: ["critical: Rosie's views do not match"] },
+      scores: { likeness: 8, consistency: 3, distinct: 8, clarity: 8, style: 8 },
+      issues: [
+        {
+          id: 'i1',
+          dimension: 'consistency',
+          severity: 'critical',
+          title: "Rosie's views do not match",
+          characterId: rosie.id,
+        },
+      ],
+      recommendations: [
+        {
+          id: 'r1',
+          priority: 1,
+          dimension: 'consistency',
+          title: 'Draw Rosie again',
+          action: { kind: 'regenerate_refs', characterId: rosie.id, instruction: 'one face in every view' },
+        },
+      ],
+      createdAt: at,
+      updatedAt: at,
+    });
+    const reviewed = { ...docs, aiReviews: { cast: review } };
+    useProject.setState({
+      ...emptySlice,
+      projectId: docs.project.id,
+      docs: reviewed,
+      workflow: evaluateWorkflow(reviewed),
+    });
+    render(<AiReviewPanel stage="cast" />);
+    expect(screen.getByRole('heading').textContent).toBe('AI review of the cast');
+    expect(screen.getByTestId('ai-review-state').textContent).toBe('Did not pass');
+    expect(screen.getByTestId('ai-review-score-consistency').textContent).toContain('3.0');
+    fireEvent.click(screen.getByTestId('ai-review-details'));
+    expect(screen.getAllByTestId('ai-review-recommendation')[0]!.textContent).toContain(
+      "Draw Rosie's references again: one face in every view",
+    );
+    expect(screen.getAllByTestId('ai-review-issue')[0]!.textContent).toContain('Rosie');
+    fireEvent.click(screen.getByTestId('apply-ai-review'));
+    await waitFor(() =>
+      expect(calls.some((c) => c.url.endsWith('/ai-reviews/cast/recommendations/r1/apply'))).toBe(true),
+    );
   });
 });

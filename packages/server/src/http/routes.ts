@@ -9,6 +9,7 @@ import {
   ApproveInputSchema,
   AssembleInputSchema,
   BatchVariationsInputSchema,
+  BlockingInputSchema,
   BoardApproveInputSchema,
   BUNDLE_MIME,
   BundleImportModeSchema,
@@ -33,6 +34,7 @@ import {
   MaskInputSchema,
   MusicInputSchema,
   OverrideInputSchema,
+  OverrideNoteSchema,
   RecipeInputSchema,
   RecipeRunInputSchema,
   ReferenceViewSchema,
@@ -50,6 +52,7 @@ import {
   TakeEditInputSchema,
   TakeExtendInputSchema,
   TakesOverrideInputSchema,
+  TakesWatchInputSchema,
   TelemetryInputSchema,
   TimelineExtendInputSchema,
   TimelineOpBatchesInputSchema,
@@ -606,6 +609,57 @@ export function registerRoutes(app: FastifyInstance, studio: Studio): void {
   );
   app.post('/api/projects/:id/clips/:clipId/generate', async (req, reply) =>
     reply.code(202).send(await studio.clips.generateClip(actor(), pid(req), p(req, 'clipId'))),
+  );
+  // The 3D director's desk (docs/design/director-desk.md#surfaces)
+  app.get('/api/projects/:id/clips/:clipId/blocking', async (req) =>
+    studio.storyboard.getBlocking(pid(req), p(req, 'clipId')),
+  );
+  app.put('/api/projects/:id/clips/:clipId/blocking', async (req) => {
+    const body = parse(BlockingInputSchema, req.body);
+    return studio.storyboard.setBlocking(actor(), pid(req), p(req, 'clipId'), body.blocking, {
+      fix: body.fix,
+    });
+  });
+  app.post('/api/projects/:id/clips/:clipId/blocking/generate', async (req, reply) =>
+    reply.code(202).send(await studio.storyboard.generateBlocking(actor(), pid(req), p(req, 'clipId'))),
+  );
+  app.get('/api/projects/:id/clips/:clipId/shots/:shotId/blocking.png', async (req, reply) => {
+    const width = Number((req.query as { width?: string }).width ?? 1024);
+    return reply
+      .type('image/png')
+      .header('cache-control', 'no-store')
+      .send(
+        await studio.storyboard.renderBlocking(
+          pid(req),
+          p(req, 'clipId'),
+          p(req, 'shotId'),
+          Number.isFinite(width) ? width : 1024,
+        ),
+      );
+  });
+  // A production scene's storyboard and its review (docs/design/ai-review.md#production-storyboards)
+  app.post('/api/projects/:id/clips/:clipId/storyboard', async (req, reply) =>
+    reply.code(202).send(await studio.storyboard.storyboardClip(actor(), pid(req), p(req, 'clipId'))),
+  );
+  app.post('/api/projects/:id/clips/:clipId/board-review/override', async (req) =>
+    studio.storyboard.overrideBoardReview(
+      actor(),
+      pid(req),
+      p(req, 'clipId'),
+      parse(OverrideNoteSchema, req.body ?? {}).note,
+    ),
+  );
+  // Takes watched whole (docs/design/ai-review.md#takes-watched-whole)
+  app.post('/api/projects/:id/takes/watch', async (req, reply) =>
+    reply
+      .code(202)
+      .send(
+        await studio.aiReviews.watchTakes(
+          actor(),
+          pid(req),
+          parse(TakesWatchInputSchema, req.body ?? {}).takes,
+        ),
+      ),
   );
   app.post('/api/projects/:id/clips/:clipId/review', async (req, reply) =>
     reply

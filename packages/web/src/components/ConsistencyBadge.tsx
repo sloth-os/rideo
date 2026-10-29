@@ -74,6 +74,9 @@ export function QualityBadge({ take }: { take: Take }) {
     q.continuity !== null ? `continuity ${q.continuity.toFixed(2)}` : null,
     q.sound?.lines.length ? `${q.sound.lines.length - unheard}/${q.sound.lines.length} lines heard` : null,
     q.sound?.transcript ? `heard: “${q.sound.transcript}”` : null,
+    q.watch
+      ? `watched whole (${q.watch.via}): ${q.watch.overall}/10 · motion ${q.watch.motion.toFixed(2)} · action ${q.watch.action.toFixed(2)} · camera ${q.watch.camera.toFixed(2)} · identity ${q.watch.identity.toFixed(2)}`
+      : null,
   ].filter(Boolean);
   return (
     <Badge
@@ -89,7 +92,32 @@ export function QualityBadge({ take }: { take: Take }) {
             ? 'wrong cast in frame'
             : unheard
               ? 'line not heard'
-              : 'physics'}
+              : q.watch && !q.watch.passed
+                ? 'failed its watch'
+                : 'physics'}
+    </Badge>
+  );
+}
+
+/**
+ * A take watched whole by the vision model (docs/design/ai-review.md#takes-watched-whole): its overall score, a bar per
+ * score and the issues at their times.
+ */
+export function WatchBadge({ take }: { take: Take }) {
+  const w = take.consistency.quality?.watch;
+  if (!w) return null;
+  const issues = w.issues.map((i) => `${i.time.toFixed(1)} s ${i.severity}: ${i.title}`);
+  return (
+    <Badge
+      tone={w.passed ? 'success' : 'danger'}
+      title={[
+        `watched whole by ${w.model || w.via}`,
+        `motion ${w.motion.toFixed(2)}, physics ${w.physics.toFixed(2)}, action ${w.action.toFixed(2)}, camera ${w.camera.toFixed(2)}, identity ${w.identity.toFixed(2)}`,
+        ...issues,
+      ].join('; ')}
+      testid="watch-badge"
+    >
+      watched {w.overall.toFixed(1)}
     </Badge>
   );
 }

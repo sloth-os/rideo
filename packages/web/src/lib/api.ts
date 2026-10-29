@@ -3,6 +3,7 @@ import type {
   Annotation,
   AuditEvent,
   AuthMe,
+  BlockingView,
   BranchInfo,
   BrandKit,
   BrandSlot,
@@ -42,6 +43,7 @@ import type {
   ReviewItem,
   ReviewStage,
   ReviewTarget,
+  SceneBlocking,
   Screenplay,
   SearchKind,
   SearchResponse,
@@ -576,7 +578,21 @@ export const api = {
   // Insights (docs/design/observability.md#insights)
   insights: (id: string) => request<Insights>('GET', `${p(id)}/insights`),
   // Storyboard and animatic (docs/design/storyboard.md#surfaces)
-  generateStoryboard: (id: string) => request<Job>('POST', `${p(id)}/storyboard/generate`, {}),
+  generateStoryboard: (id: string, sceneIds?: string[]) =>
+    request<Job>('POST', `${p(id)}/storyboard/generate`, sceneIds?.length ? { sceneIds } : {}),
+  // The 3D director's desk (docs/design/director-desk.md#surfaces)
+  getBlocking: (id: string, clipId: string) =>
+    request<BlockingView>('GET', `${p(id)}/clips/${clipId}/blocking`),
+  setBlocking: (id: string, clipId: string, blocking: SceneBlocking, fix = false) =>
+    request<BlockingView>('PUT', `${p(id)}/clips/${clipId}/blocking`, { blocking, fix }),
+  generateBlocking: (id: string, clipId: string) =>
+    request<Job>('POST', `${p(id)}/clips/${clipId}/blocking/generate`, {}),
+  storyboardClip: (id: string, clipId: string) =>
+    request<Job>('POST', `${p(id)}/clips/${clipId}/storyboard`, {}),
+  overrideBoardReview: (id: string, clipId: string, note: string) =>
+    request<Clip>('POST', `${p(id)}/clips/${clipId}/board-review/override`, { note }),
+  watchTakes: (id: string, takes?: { clipId: string; shotId: string; takeId: string }[]) =>
+    request<Job>('POST', `${p(id)}/takes/watch`, takes ? { takes } : {}),
   generateBoard: (id: string, clipId: string, shotId: string) =>
     request<Job>('POST', `${p(id)}/clips/${clipId}/shots/${shotId}/board/generate`, {}),
   approveBoard: (id: string, clipId: string, shotId: string, approved: boolean) =>

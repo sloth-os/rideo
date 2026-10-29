@@ -1,3 +1,4 @@
+import { readFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
   assembleFeedback,
@@ -5,6 +6,7 @@ import {
   type ClipReview,
   ClipReviewSchema,
   clipReviewSubject,
+  clipReviewVerdict,
   docPath,
   type FeedbackRecommendation,
   FeedbackSignalsSchema,
@@ -12,6 +14,7 @@ import {
   fixOutcome,
   madeFixes,
   meanAttempts,
+  mergeSceneOutputs,
   overallScore,
   type SceneReview,
   sceneFixes,
@@ -25,7 +28,85 @@ import type { JobContext } from '../queue';
 import { commitAs, docsFor, type HandlerDeps } from './common';
 import { sceneInput, strip } from './feedback';
 
-type Watched = Pick<ClipReview, 'subject' | 'overall' | 'scores' | 'summary' | 'issues' | 'recommendations'>;
+type Watched = Pick<
+  ClipReview,
+  | 'subject'
+  | 'overall'
+  | 'scores'
+  | 'summary'
+  | 'issues'
+  | 'recommendations'
+  | 'watched'
+  | 'heard'
+  | 'verdict'
+>;
+
+/** The largest scene video sent inline (models take base64 video under 10 MB, docs/design/ai-gateway.md). */
+const SCENE_VIDEO_MAX_BYTES = 7 * 1024 * 1024;
+const SCENE_AUDIO_KBPS = 48;
+
+/**
+ * The scene as one video (docs/design/ai-review.md#scenes-before-the-edit): its selected takes one after another, each
+ * scaled to the same frame, with its sound or silence, H.264 CRF 32 with mono AAC; at the bitrate that fits 7 MB when
+ * it is longer, 360p past 90 s; null when even that does not fit.
+ */
+export async function sceneTakesVideo(
+  deps: HandlerDeps,
+  takes: { file: string; durationSec: number; hasAudio: boolean }[],
+  aspect: number,
+  out: string,
+  signal: AbortSignal,
+): Promise<Buffer | null> {
+  const total = takes.reduce((n, t) => n + t.durationSec, 0);
+  const h = total > 90 ? 360 : 480;
+  const w = Math.max(2, Math.round((h * aspect) / 2) * 2);
+  const graph: string[] = [];
+  const inputs: string[] = [];
+  takes.forEach((t, i) => {
+    inputs.push('-i', t.file);
+    graph.push(
+      `[${i}:v]scale=${w}:${h}:force_original_aspect_ratio=decrease,pad=${w}:${h}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=24,format=yuv420p[v${i}]`,
+    );
+    graph.push(
+      t.hasAudio
+        ? `[${i}:a]aresample=48000,aformat=channel_layouts=mono,atrim=0:${t.durationSec.toFixed(3)},asetpts=PTS-STARTPTS[a${i}]`
+        : `anullsrc=channel_layout=mono:sample_rate=48000,atrim=0:${t.durationSec.toFixed(3)}[a${i}]`,
+    );
+  });
+  graph.push(`${takes.map((_, i) => `[v${i}][a${i}]`).join('')}concat=n=${takes.length}:v=1:a=1[v][a]`);
+  const encode = async (rate: string[]) => {
+    await deps.ff.run(
+      [
+        ...inputs,
+        '-filter_complex',
+        graph.join(';'),
+        '-map',
+        '[v]',
+        '-map',
+        '[a]',
+        '-c:v',
+        'libx264',
+        '-preset',
+        'veryfast',
+        ...rate,
+        '-c:a',
+        'aac',
+        '-b:a',
+        `${SCENE_AUDIO_KBPS}k`,
+        '-movflags',
+        '+faststart',
+        out,
+      ],
+      { signal },
+    );
+    return (await stat(out)).size;
+  };
+  if ((await encode(['-crf', '32'])) <= SCENE_VIDEO_MAX_BYTES) return readFile(out);
+  const kbps = Math.floor((SCENE_VIDEO_MAX_BYTES * 8 * 0.9) / Math.max(1, total) / 1000) - SCENE_AUDIO_KBPS;
+  if (kbps < 100) return null;
+  const size = await encode(['-b:v', `${kbps}k`, '-maxrate', `${kbps}k`, '-bufsize', `${kbps * 2}k`]);
+  return size <= SCENE_VIDEO_MAX_BYTES ? readFile(out) : null;
+}
 
 /** Writes the clip's scene review over what is there. */
 async function writeReview(
@@ -73,10 +154,13 @@ async function watch(
     throw invalid(`shot ${missing[0]!.index + 1} of clip ${clip.index + 1} has no take to watch`);
   const spans = takeSpans(clip);
   const strips: { label: string; data: Buffer }[] = [];
+  const files: { file: string; durationSec: number; hasAudio: boolean }[] = [];
   for (const [i, span] of spans.entries()) {
     throwIfAborted(ctx.signal);
     const take = clip.shots.find((s) => s.id === span.shotId)!.takes.find((t) => t.id === span.takeId)!;
     const file = await deps.media.localPath(ctx.job.projectId, take.video!);
+    const probe = await deps.ff.probe(file);
+    files.push({ file, durationSec: Math.max(0.1, span.end - span.start), hasAudio: probe.hasAudio });
     strips.push({
       label: `${i}: ${span.label} (${span.start.toFixed(1)}–${span.end.toFixed(1)} s)`,
       data: await strip(
@@ -93,11 +177,49 @@ async function watch(
   const neighbours = { previous: ordered[at - 1]?.id ?? null, next: ordered[at + 1]?.id ?? null };
   const durationSec = spans.at(-1)!.end;
   const signals = FeedbackSignalsSchema.parse({ durationSec });
-  const output = await deps.llm.feedbackScene(
-    { ...sceneInput(docs, clipId, spans, neighbours, signals), stage: 'takes' },
-    strips,
+  // The scene as one video: the picture watched by the vision model, the sound heard by the audio-visual model
+  const { width, height } = docs.project.settings.resolution;
+  const video = await sceneTakesVideo(
+    deps,
+    files,
+    width / Math.max(1, height),
+    join(dir, `scene-${round}.mp4`),
     ctx.signal,
-  );
+  ).catch((err) => {
+    if (ctx.signal.aborted) throw err;
+    ctx.log.warn({ clipId, err: (err as Error).message.slice(0, 300) }, 'could not cut the scene video');
+    return null;
+  });
+  const base = sceneInput(docs, clipId, spans, neighbours, signals);
+  const round2 = (n: number) => Math.round(n * 100) / 100;
+  const where = (i: number) => ({ from: round2(spans[i]!.start), to: round2(spans[i]!.end) });
+  const pictureInput = {
+    ...base,
+    stage: 'takes' as const,
+    shots: base.shots.map((s, i) => ({ ...s, video: where(i) })),
+  };
+  const listen = !!video && !!deps.llm.omni && files.some((f) => f.hasAudio);
+  const [seen, heard] = await Promise.allSettled([
+    deps.llm.feedbackScene(pictureInput, strips, ctx.signal, video ?? undefined),
+    listen
+      ? deps.llm.feedbackListen(
+          { ...sceneInput(docs, clipId, spans, neighbours, signals, true), stage: 'takes' },
+          video!,
+          ctx.signal,
+        )
+      : Promise.resolve(null),
+  ]);
+  throwIfAborted(ctx.signal);
+  if (seen.status === 'rejected') throw seen.reason;
+  if (heard.status === 'rejected')
+    ctx.log.warn(
+      { clipId, err: (heard.reason as Error)?.message?.slice(0, 300) },
+      'the scene could not be heard; the picture review goes on',
+    );
+  const heardOut = heard.status === 'fulfilled' ? heard.value : null;
+  const watched = seen.value.watched === 'video' ? 'video' : 'frames';
+  deps.metrics.clipReviewWatched.inc({ watched });
+  const output = mergeSceneOutputs(seen.value, heardOut)!;
   const scene: SceneReview = {
     clipId,
     index: clip.index,
@@ -111,12 +233,17 @@ async function watch(
   const scores = parts.scenes[0]?.scores ?? {};
   // What each fix is expected to cost (docs/design/feedback.md#what-a-fix-costs)
   const attempts = meanAttempts(docs.clips);
+  const overall = overallScore(scores);
+  const issues = parts.issues.slice(0, 60);
   return {
     subject: clipReviewSubject(clip),
-    overall: overallScore(scores),
+    overall,
     scores,
+    watched,
+    heard: !!heardOut,
+    verdict: clipReviewVerdict({ overall, scores, issues }, docs.project.settings.review.sceneThreshold),
     summary: output.summary,
-    issues: parts.issues.slice(0, 60),
+    issues,
     recommendations: parts.recommendations.slice(0, 40).map((r) => {
       const estimate = fixEstimate(r.action, docs, deps.config.prices, attempts);
       return estimate ? { ...r, estimate } : r;
@@ -157,6 +284,9 @@ export async function clipReview(deps: HandlerDeps, ctx: JobContext) {
           subject: r.subject,
           overall: r.overall,
           scores: r.scores,
+          watched: r.watched,
+          heard: r.heard,
+          verdict: r.verdict,
           summary: r.summary,
           issues: r.issues,
           recommendations: r.recommendations,

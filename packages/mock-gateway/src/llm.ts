@@ -10,6 +10,7 @@ import {
   VOICE_REFERENCE_LABEL,
 } from '@rideo/shared';
 import { screenplayReview, screenplayRevise, storyboardReview } from './ai-review';
+import { castReview, sceneBlock, takeWatch } from './blocking';
 import { feedbackFilm, feedbackListen, feedbackScene, soundCheck } from './feedback';
 import {
   characterDescribe,
@@ -257,7 +258,7 @@ export function answer(req: ChatRequest, opts: ChatOptions = {}): string {
       out = frameCaption(input, imagesOf(req.parts));
       break;
     case 'feedback.scene':
-      out = feedbackScene(input, imagesOf(req.parts).length);
+      out = feedbackScene(input, imagesOf(req.parts).length, videoCount > 0);
       break;
     case 'feedback.listen':
       out = feedbackListen(input, videoCount > 0);
@@ -276,6 +277,15 @@ export function answer(req: ChatRequest, opts: ChatOptions = {}): string {
       break;
     case 'storyboard.review':
       out = storyboardReview(input, imagesOf(req.parts).length);
+      break;
+    case 'scene.block':
+      out = sceneBlock(input);
+      break;
+    case 'take.watch':
+      out = takeWatch(input, videoCount > 0);
+      break;
+    case 'cast.review':
+      out = castReview(input, imageCount);
       break;
     default:
       out = { ok: true, echo: text.slice(0, 200) };

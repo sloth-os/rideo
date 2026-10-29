@@ -89,10 +89,17 @@ cost), as does a take replaced by a regeneration: the cost of quality, which the
 | `rideo_feedback_total` | counter | `outcome` | [feedback](feedback.md) runs |
 | `rideo_feedback_score` | histogram | `dimension` | film scores 0–10 |
 | `rideo_feedback_recommendations_total` | counter | `action`, `outcome` | applied and dismissed recommendations |
-| `rideo_ai_reviews_total` | counter | `stage`, `outcome` (`passed`, `failed`, `error`) | [AI reviews](ai-review.md) of the screenplay and the storyboard |
+| `rideo_ai_reviews_total` | counter | `stage`, `outcome` (`passed`, `failed`, `error`) | [AI reviews](ai-review.md) of the screenplay, the cast, the storyboard and the cut |
 | `rideo_ai_review_score` | histogram | `stage` | overall review scores 0–10 |
 | `rideo_ai_review_rounds` | histogram | `stage` | reviews a stage needed before it stopped |
 | `rideo_ai_review_recommendations_total` | counter | `stage`, `action`, `outcome` (`applied`, `dismissed`, `auto`, `stale`) | review recommendations |
+| `rideo_take_watches_total` | counter | `model` (`vision`, `omni`), `result` (`passed`, `failed`, `error`) | takes [watched whole](ai-review.md#takes-watched-whole) |
+| `rideo_take_watch_score` | histogram | – | overall scores 0–10 of takes watched whole |
+| `rideo_clip_review_watched_total` | counter | `watched` (`video`, `frames`) | scene reviews by what the vision model watched |
+| `rideo_autopilot_approvals_total` | counter | `step` (`cast`, `resources`, `frames`, `clip`, `pilot`, `production`, `cut`) | approvals autopilot made after a passing review |
+| `rideo_blocking_total` | counter | `source` (`ai`, `user`), `outcome` (`clean`, `issues`) | blockings saved on the [director's desk](director-desk.md) |
+| `rideo_blocking_issues_total` | counter | `code` | issues of the blockings saved |
+| `rideo_blocking_line_fixes_total` | counter | – | cameras the solver brought back over the line |
 | `rideo_http_request_seconds` | histogram | `method`, `route` (the route pattern), `status` (class: `2xx`…) | REST latency |
 | `rideo_storage_seconds` | histogram | `op` | WebDAV operations, buckets up to 300 s (uploads to slow cloud drives) |
 | `rideo_storage_ops_per_request` | histogram | – | storage operations one request made |

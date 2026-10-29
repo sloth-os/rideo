@@ -3,14 +3,25 @@ import { ActorSchema, IdSchema, IsoDateSchema } from './common';
 import { FeedbackFramingSchema, FeedbackMovementSchema } from './feedback';
 
 /** The stages an AI review gates (docs/design/ai-review.md). */
-export const REVIEW_STAGES = ['screenplay', 'storyboard'] as const;
+export const REVIEW_STAGES = ['screenplay', 'cast', 'storyboard', 'cut'] as const;
 export const ReviewStageSchema = z.enum(REVIEW_STAGES);
 export type ReviewStage = z.infer<typeof ReviewStageSchema>;
 
 /** What each stage's reviewer scores (docs/design/ai-review.md#dimensions). */
 export const REVIEW_DIMENSIONS = {
   screenplay: ['story', 'character', 'dialogue', 'pacing', 'visual', 'continuity', 'feasibility', 'brief'],
-  storyboard: ['composition', 'continuity', 'character', 'coverage', 'storytelling', 'feasibility', 'pacing'],
+  cast: ['likeness', 'consistency', 'distinct', 'clarity', 'style'],
+  storyboard: [
+    'composition',
+    'continuity',
+    'character',
+    'coverage',
+    'storytelling',
+    'feasibility',
+    'pacing',
+    'blocking',
+  ],
+  cut: ['takes', 'scenes', 'continuity', 'sound'],
 } as const satisfies Record<ReviewStage, readonly string[]>;
 export type ReviewDimension = (typeof REVIEW_DIMENSIONS)[ReviewStage][number];
 const ALL_DIMENSIONS = [...new Set(Object.values(REVIEW_DIMENSIONS).flat())] as [string, ...string[]];
@@ -19,7 +30,11 @@ export const ReviewDimensionSchema = z.enum(ALL_DIMENSIONS);
 /** `settings.review` (docs/design/ai-review.md#the-gates). */
 export const ReviewSettingsSchema = z.object({
   screenplay: z.boolean().default(true),
+  /** Review the cast's references before it is locked (off in the schema, on for new projects). */
+  cast: z.boolean().default(false),
   storyboard: z.boolean().default(true),
+  /** Review the cut at the take and the scene level before it is exported (off in the schema, on for new projects). */
+  cut: z.boolean().default(false),
   /** The lowest overall score (0–10) that passes. */
   threshold: z.number().min(5).max(9.5).default(7),
   /** Automatic revisions before a person decides. */
@@ -30,6 +45,12 @@ export const ReviewSettingsSchema = z.object({
   scenes: z.boolean().default(true),
   /** Priority 1 regenerations a scene review applies (0: it only watches). */
   sceneFixes: z.number().int().min(0).max(6).default(3),
+  /** The lowest overall score (0–10) a scene's review passes with (docs/design/ai-review.md#the-clip-gate). */
+  sceneThreshold: z.number().min(4).max(9.5).default(6),
+  /** Watch every video attempt whole (docs/design/ai-review.md#takes-watched-whole); on for new projects. */
+  watchTakes: z.boolean().default(false),
+  /** Review the scenes each production extension writes before they are planned; on for new projects. */
+  extensions: z.boolean().default(false),
 });
 export type ReviewSettings = z.infer<typeof ReviewSettingsSchema>;
 export const DEFAULT_REVIEW_SETTINGS: ReviewSettings = ReviewSettingsSchema.parse({});
@@ -50,6 +71,18 @@ export const StageActionSchema = z.discriminatedUnion('kind', [
     durationSec: z.number().min(1).max(60).optional(),
   }),
   z.object({ kind: z.literal('replan_scene'), clipId: IdSchema, direction: z.string().min(1).max(2000) }),
+  z.object({
+    kind: z.literal('regenerate_refs'),
+    characterId: IdSchema.optional(),
+    elementId: IdSchema.optional(),
+    instruction: z.string().max(2000).optional(),
+  }),
+  z.object({
+    kind: z.literal('regenerate_shot'),
+    clipId: IdSchema,
+    shotId: IdSchema,
+    instruction: z.string().max(2000).optional(),
+  }),
   z.object({ kind: z.literal('note') }),
 ]);
 export type StageAction = z.infer<typeof StageActionSchema>;
@@ -63,7 +96,10 @@ export const StageIssueSchema = z.object({
   /** The scene it is about (screenplay: by id and 1-based number). */
   sceneId: IdSchema.optional(),
   scene: z.number().int().positive().optional(),
-  /** The shot it is about (storyboard). */
+  /** The character or element it is about (cast). */
+  characterId: IdSchema.optional(),
+  elementId: IdSchema.optional(),
+  /** The shot it is about (storyboard, cut). */
   clipId: IdSchema.optional(),
   shotId: IdSchema.optional(),
   /** "C2·S3" */

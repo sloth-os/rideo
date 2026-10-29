@@ -8,6 +8,7 @@ can also upload existing footage and let the AI suggest and apply an edit.
 | Capability | How Rideo does it |
 |---|---|
 | Asset management | Every project asset (screenplay, characters, clips, timeline, media) lives on a **WebDAV** store: an external server (OpenList, Nextcloud, Apache, rclone…) or the embedded `/dav` server. You can mount it in Finder or Explorer and edit it there. |
+| 3D blocking | A **3D director's desk**: every storyboarded scene is blocked in a small 3D set (mannequins on marks, props, landmarks, the sun, a camera per shot) by the AI and by hand, with a camera solver and the 180° rule. Each frame is drawn from its shot's camera view and blocking line, so cuts keep their geography. See [docs/design/director-desk.md](docs/design/director-desk.md). |
 | Character consistency | A hard **consistency gate**. Characters are identity-locked with approved reference images, every generation is conditioned on those references, and every keyframe and clip is judged against them before it can enter the cut. See [docs/design/character-consistency.md](docs/design/character-consistency.md). |
 | Version control | A git-like, content-addressed history (commits, branches, tags, diff, restore) stored next to the assets on WebDAV. |
 | Generation | Images, video and music go through the [`@sloth-os/mm-gateway-ts`](https://github.com/sloth-os/mm-gateway-ts) SDK for [mm-gateway](https://github.com/sloth-os/mm-gateway). All other AI calls (LLM, vision, speech-to-text) go through the gateway's `/proxy/{domain}/{path}` reverse proxy. |
@@ -40,6 +41,9 @@ can also upload existing footage and let the AI suggest and apply an edit.
 
 Both workflows are declarative stage machines with approval gates. The UI, the
 REST API and MCP tools all drive them. See [docs/design/workflows.md](docs/design/workflows.md).
+On autopilot every step is reviewed by the AI before the next one starts: the screenplay, the cast, each scene's
+storyboard (before any of its video), every take watched whole and heard, every scene watched as one video, and the
+cut before export. See [docs/design/ai-review.md](docs/design/ai-review.md).
 
 ## Quick start
 

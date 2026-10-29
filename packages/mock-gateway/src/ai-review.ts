@@ -114,7 +114,11 @@ export function screenplayRevise(input: ScreenplayReviseInput): ScreenplayRevise
 
 /** `storyboard.review`: a missing or blurry frame is redrawn; the rest scores 8. */
 export function storyboardReview(input: StoryboardSceneReviewInput, frames: number): StageReviewOutput {
-  const scores = scoresOf(STORYBOARD_DIMENSIONS, 8);
+  // A blocked scene's frames are also scored against their camera views (docs/design/director-desk.md)
+  const scores = scoresOf(
+    input.shots.some((s) => s.blocking) ? [...STORYBOARD_DIMENSIONS, 'blocking'] : STORYBOARD_DIMENSIONS,
+    8,
+  );
   const issues: StageReviewOutput['issues'] = [];
   const recommendations: StageReviewOutput['recommendations'] = [];
   for (const s of input.shots) {

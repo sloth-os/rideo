@@ -49,7 +49,11 @@ export function soundCheck(
   };
 }
 
-export function feedbackScene(input: FeedbackSceneInput, strips: number): FeedbackSceneOutput {
+export function feedbackScene(
+  input: FeedbackSceneInput,
+  strips: number,
+  watched = false,
+): FeedbackSceneOutput {
   const scores: Scores = {
     storytelling: 7,
     continuity: 7.5,
@@ -116,7 +120,7 @@ export function feedbackScene(input: FeedbackSceneInput, strips: number): Feedba
   return {
     scores,
     transcript: [],
-    summary: `Scene ${input.scene.number} (${input.scene.heading}) seen in ${strips} strip(s): ${input.shots.length} shot(s).`,
+    summary: `${watched ? 'Watched: s' : 'S'}cene ${input.scene.number} (${input.scene.heading}) seen in ${strips} strip(s)${watched ? ' and as one video' : ''}: ${input.shots.length} shot(s).`,
     strengths: ['The cast stays recognisable from shot to shot.'],
     issues,
     recommendations: [

@@ -29,6 +29,7 @@ import {
 import { verifyFrames } from '../../consistency/gate';
 import { checkSound, silentTakeVerdict, spokenLines, withSoundVerdict } from '../../consistency/sound';
 import { verifyVoices } from '../../consistency/voice';
+import { watchTake, withWatchResult } from '../../consistency/watch';
 import {
   assertCastReady,
   assertDirectingResources,
@@ -41,6 +42,7 @@ import { sampleFrames } from '../../media/frames';
 import { sceneChanges } from '../../media/temporal';
 import { throwIfAborted } from '../../util/abort';
 import type { JobContext } from '../queue';
+import { cameraView, withCameraView } from './blocking';
 import { commitAs, docsFor, gatewayOptions, type HandlerDeps } from './common';
 import { lipSyncPass, prepareDialogue, takeAudio, takeAudioWav } from './dialogue';
 import { generateKeyframe, prepareShotReferences } from './keyframe';
@@ -178,11 +180,14 @@ export async function shotGenerate(deps: HandlerDeps, ctx: JobContext) {
           }
         : null;
       const maxImages = imageLimits.limits?.max_input_images;
-      // One more image for the keyframe, when the image model takes at least three and there is room.
-      const keyframeRefs =
-        sceneRef && (maxImages === undefined || (maxImages >= 3 && referenceUris.length < maxImages))
-          ? { refs: { ...refs, referenceUris: [...referenceUris, sceneRef.uri] }, sceneReference: true }
-          : { refs, sceneReference: false };
+      // One more image for the keyframe, when the image model takes at least three and there is room; and the shot's
+      // camera view on the desk before it (docs/design/director-desk.md)
+      const withScene =
+        !!sceneRef && (maxImages === undefined || (maxImages >= 3 && referenceUris.length < maxImages));
+      const keyframeRefs = withCameraView(refs, cameraView(docs, clip, shot), {
+        maxImages,
+        sceneReferenceUri: withScene ? sceneRef!.uri : null,
+      });
       const qualityChecks = settings.consistency.qualityChecks === true;
       // Who must not be in the frames: the clip's cast who are not in this shot
       const absent = absentCast(shotCtx.offscreen, docs.characters);
@@ -235,7 +240,11 @@ export async function shotGenerate(deps: HandlerDeps, ctx: JobContext) {
       if (!firstFrame && settings.generation.keyframes) {
         const keyframeStarted = Date.now();
         const kf = await generateKeyframe(deps, ctx, {
-          shotCtx: { ...shotCtx, sceneReference: keyframeRefs.sceneReference },
+          shotCtx: {
+            ...shotCtx,
+            sceneReference: keyframeRefs.sceneReference,
+            blockingImage: keyframeRefs.blockingImage,
+          },
           refs: keyframeRefs.refs,
           judge,
           judgedElements,
@@ -464,6 +473,28 @@ export async function shotGenerate(deps: HandlerDeps, ctx: JobContext) {
                 signal: ctx.signal,
               }).catch(() => null)
             : null;
+        // Watched whole while the judge looks at the frames (docs/design/ai-review.md#takes-watched-whole)
+        const watched =
+          settings.review?.watchTakes === true && qualityChecks && !performed
+            ? watchTake({
+                llm: deps.llm,
+                ff: deps.ff,
+                video: raw,
+                clip: join(dir, `watch-${attempt}.mp4`),
+                shot,
+                characters,
+                references: judgeRefs,
+                offscreen: shotCtx.offscreen ?? [],
+                allCharacters: docs.characters,
+                place,
+                castOnly,
+                durationSec: probe.durationSec || shot.durationSec,
+                qualityThreshold: settings.consistency.qualityThreshold,
+                metrics: deps.metrics,
+                log: ctx.log,
+                signal: ctx.signal,
+              }).catch(() => null)
+            : null;
         ctx.progress(0.8, 1, 'verifying identity');
         const framePaths = await sampleFrames(
           deps.ff,
@@ -503,6 +534,7 @@ export async function shotGenerate(deps: HandlerDeps, ctx: JobContext) {
         if (sound) report = withSoundVerdict(report, await sound);
         else if (listen && !probe.hasAudio && spokenLines(shot, docs.characters).length)
           report = withSoundVerdict(report, silentTakeVerdict(spokenLines(shot, docs.characters)));
+        if (watched) report = withWatchResult(report, await watched);
         if (judgeVoices && dialogue) {
           // Rule V4: the speakers must sound like their locked voices.
           ctx.progress(0.82, 1, 'checking the voices');

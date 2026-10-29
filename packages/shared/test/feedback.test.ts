@@ -161,6 +161,7 @@ describe('feedback signals (docs/design/feedback.md#how-a-film-is-watched)', () 
       others: [],
       duplicates: [],
       sound: null,
+      watch: null,
       issues: [],
     };
     c.shots[1]!.takes[0]!.consistency.status = 'unverified';
@@ -714,6 +715,7 @@ describe('the outcome of a shot fix (docs/design/feedback.md#when-a-fix-does-not
       others: ['a human girl in pink'],
       duplicates: [],
       sound: null,
+      watch: null,
       issues: ['a human girl in pink is in the frame'],
     };
     const bad = f.take({

@@ -43,6 +43,9 @@ export const PHYSICS_LINE =
   'Physics: real weight, gravity and momentum; bodies, feet and equipment keep contact with the ground; objects keep their shape and number.';
 export const SCENE_REFERENCE_PHRASE =
   'The last image is the scene reference: match its place, light, weather and colours, not its composition or people.';
+/** The camera view of a blocked shot, sent as a reference image (docs/design/director-desk.md). */
+export const BLOCKING_IMAGE_PHRASE =
+  'Keep the camera angle, the framing and where each figure stands and faces from the blocking; draw the real characters and place, never the mannequins.';
 
 export const DEFAULT_VIDEO_LIMITS = { min: 4, max: 10 };
 /**
@@ -197,6 +200,19 @@ export interface ShotContext {
   offscreen?: string[];
   /** Version 2: what each reference image of a keyframe request shows, in order (docs/design/continuity.md). */
   referenceLabels?: string[];
+  /**
+   * Version 2, a blocked scene (docs/design/director-desk.md#what-the-image-and-video-models-get): where everyone
+   * stands and faces (keyframes), who walks where (videos), and the colours of the camera view's figures.
+   */
+  blocking?: {
+    line: string | null;
+    moves: string | null;
+    legend: string;
+    /** Hash of what the shot's camera view is drawn from: a storyboard frame is outdated when it changes. */
+    signature?: string;
+  } | null;
+  /** The keyframe request carries the shot's camera view (a reference image before the scene reference). */
+  blockingImage?: boolean;
 }
 
 /**
@@ -348,6 +364,9 @@ export function shotBodyV2(
   lines.push(
     `Camera: ${FRAMING[shot.camera.framing]}${mode === 'video' ? `, ${motion}` : ''}${lens ? `; ${lens}` : ''}.`,
   );
+  // The blocking: where everyone stands in the frame (keyframes), who walks where (videos)
+  if (mode === 'keyframe' && ctx.blocking?.line) lines.push(ctx.blocking.line);
+  if (mode === 'video' && ctx.blocking?.moves) lines.push(ctx.blocking.moves);
   if (mode === 'video' && opts.motionReference && shot.motionReference)
     lines.push(MOTION_REFERENCE_PHRASES[shot.motionReference.mode]);
   return lines;
@@ -431,6 +450,7 @@ function compileShotPromptV2(
         `Reference images, in order: ${ctx.referenceLabels.map((l, i) => `${i + 1} ${l}`).join('; ')}.`,
       );
     if (ctx.sceneReference) lines.push(SCENE_REFERENCE_PHRASE);
+    if (ctx.blockingImage) lines.push(BLOCKING_IMAGE_PHRASE);
     lines.push(`Avoid: ${EXCLUSIONS_STILL}.`);
     return lines.join(' ');
   }

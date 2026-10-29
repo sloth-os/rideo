@@ -2,6 +2,8 @@ import {
   approvedElementReferences,
   boardState,
   type Clip,
+  clipBoardReviewState,
+  clipFramesApproved,
   dialogueDirection,
   dialogueMode,
   docPath,
@@ -15,10 +17,13 @@ import {
   plannedDuration,
   planShotGroups,
   promptVersionOf,
+  reviewEnabled,
+  reviewState,
   type Screenplay,
   shotRangeFor,
   shotsWithoutTakes,
   sortedClips,
+  storyboardClips,
   TARGET_REACHED_RATIO,
   takeState,
   voiceOf,
@@ -29,7 +34,9 @@ import { assertCastReady, assertVoicesReady, clipStatusOf } from '../../domain/c
 import { AppError, notFound } from '../../errors';
 import { throwIfAborted } from '../../util/abort';
 import type { JobContext } from '../queue';
+import { ensureBlocking } from './blocking';
 import { commitAs, docsFor, type HandlerDeps } from './common';
+import { approveClipOnAutopilot, approveProductionOnAutopilot } from './reviews';
 
 export async function clipPlan(deps: HandlerDeps, ctx: JobContext) {
   const { sceneId, thenGenerate, thenBoard, direction } = ctx.job.params as {
@@ -127,8 +134,17 @@ export async function clipPlan(deps: HandlerDeps, ctx: JobContext) {
     ctx,
     (tx) => {
       const existing = tx.list<Clip>('clips/').find((c) => c.sceneId === sceneId);
+      // A plan again keeps the scene's set and marks: its new shots get cameras when it is blocked again
       const next: Clip = existing
-        ? { ...existing, shots, status: 'planned', approvedAt: null, approvedBy: null, review: null }
+        ? {
+            ...existing,
+            shots,
+            status: 'planned',
+            approvedAt: null,
+            approvedBy: null,
+            review: null,
+            boardReview: null,
+          }
         : {
             id: newId('clip'),
             index: scene.index,
@@ -140,6 +156,8 @@ export async function clipPlan(deps: HandlerDeps, ctx: JobContext) {
             approvedBy: null,
             notes: '',
             review: null,
+            blocking: null,
+            boardReview: null,
           };
       tx.set(docPath.clip(next.id), next);
       return next;
@@ -153,6 +171,7 @@ export async function clipPlan(deps: HandlerDeps, ctx: JobContext) {
     assertVoicesReady(deps, clip.shots, fresh.characters, fresh.project.settings);
     await ctx.spawn('clip.generate', { clipId: clip.id }, { dedupeKey: `clip:${clip.id}` });
   }
+  if (thenBoard) await ensureBlocking(deps, ctx, [clip.id]);
   if (thenBoard)
     for (const shot of clip.shots)
       await ctx.spawn('shot.board', { clipId: clip.id, shotId: shot.id }, { dedupeKey: `board:${shot.id}` });
@@ -263,7 +282,9 @@ export async function clipGenerate(deps: HandlerDeps, ctx: JobContext) {
         'the scene review did not finish; the clip goes on',
       );
   }
-  return { generated: results.length - failed.length, failed: failed.length };
+  // On autopilot the clip is approved when its takes and its scene passed their reviews (docs/design/ai-review.md)
+  const approved = await approveClipOnAutopilot(deps, ctx, clipId);
+  return { generated: results.length - failed.length, failed: failed.length, approved };
 }
 
 /**
@@ -306,6 +327,47 @@ async function approveNewElements(
 }
 
 /**
+ * On autopilot, a new place or prop is reviewed like the cast (docs/design/ai-review.md#autopilot-every-step-reviewed-and-approved):
+ * its references drawn, the cast review run, and on a pass its references approved and the element locked. Returns
+ * the names of those still waiting for a person.
+ */
+async function reviewNewElements(
+  deps: HandlerDeps,
+  ctx: JobContext,
+  elementIds: string[],
+): Promise<string[]> {
+  const projectId = ctx.job.projectId;
+  let docs = await docsFor(deps, ctx);
+  const jobs = [];
+  for (const id of elementIds) {
+    const e = docs.elements[id];
+    if (e && !e.lock.locked && e.references.length === 0)
+      jobs.push(await deps.services.elements.generateReferences(ctx.actor, projectId, id));
+  }
+  if (jobs.length) await ctx.waitFor(jobs.map((j) => j.id));
+  const review = await ctx.spawn('cast.review', {}, { dedupeKey: 'ai-review:cast' });
+  await ctx.waitFor([review.id]);
+  docs = await docsFor(deps, ctx);
+  const names = elementIds.map((id) => docs.elements[id]?.name ?? id);
+  const state = reviewState(docs, 'cast');
+  if (state !== 'passed' && state !== 'overridden') return names;
+  const flagged = new Set(
+    (docs.aiReviews.cast?.issues ?? []).filter((i) => i.severity !== 'minor').map((i) => i.elementId),
+  );
+  for (const id of elementIds) {
+    const e = docs.elements[id];
+    if (!e || e.lock.locked) continue;
+    if (!e.references.some((r) => r.approved))
+      for (const r of flagged.has(id) ? e.references.slice(0, 1) : e.references)
+        await deps.services.elements.setReferenceApproval(ctx.actor, projectId, id, r.id, true);
+    await deps.services.elements.lock(ctx.actor, projectId, id);
+    deps.metrics.autopilotApprovals.inc({ step: 'cast' });
+  }
+  ctx.log.info({ elements: names }, 'reviewed, approved and locked new elements on autopilot');
+  return [];
+}
+
+/**
  * Generates the film up to the target length (docs/design/generation-pipeline.md#batch-generation): clips in
  * order, `settings.batch.lookahead` of them at once, planning and extending the screenplay just in time, under a
  * generation budget.
@@ -317,6 +379,8 @@ export async function batchGenerate(deps: HandlerDeps, ctx: JobContext) {
   let generations = 0;
   let stopReason = 'target reached';
   const planFailures = new Set<string>();
+  // Production scenes whose storyboard this batch made or approved (docs/design/ai-review.md#production-storyboards)
+  const boardTried = new Set<string>();
   for (let guard = 0; guard < 10_000; guard++) {
     throwIfAborted(ctx.signal);
     const docs = await docsFor(deps, ctx);
@@ -368,6 +432,21 @@ export async function batchGenerate(deps: HandlerDeps, ctx: JobContext) {
         stopReason = `new locations or props need approval: ${missing.join(', ')} (no reference could be drawn)`;
         break;
       }
+      // On autopilot with the cast review: the cast review approves them (docs/design/ai-review.md)
+      const reviewed =
+        docs.project.settings.autopilot && reviewEnabled(docs, 'cast')
+          ? pending.filter((e) => !e!.lock.locked)
+          : [];
+      if (reviewed.length && reviewed.length === pending.length) {
+        const waiting = await reviewNewElements(
+          deps,
+          ctx,
+          reviewed.map((e) => e!.id),
+        );
+        if (!waiting.length) continue;
+        stopReason = `new locations or props did not pass the cast review: ${waiting.join(', ')}`;
+        break;
+      }
       if (pending.length) {
         for (const e of pending)
           if (!e!.lock.locked && e!.references.length === 0)
@@ -388,6 +467,47 @@ export async function batchGenerate(deps: HandlerDeps, ctx: JobContext) {
       }
       assertCastReady(next.shots, docs.characters, docs.elements);
       assertVoicesReady(deps, next.shots, docs.characters, docs.project.settings);
+      // Production storyboards (docs/design/ai-review.md#production-storyboards): the scene is blocked, drawn, reviewed
+      // and its frames approved before any of its video is made
+      const sb = docs.project.settings.storyboard;
+      if (
+        sb?.production &&
+        sb.enabled !== false &&
+        !storyboardClips(docs).some((c) => c.id === next.id) &&
+        !clipFramesApproved(next, docs)
+      ) {
+        const state = clipBoardReviewState(next);
+        if (state === 'failed') {
+          stopReason = `the storyboard of scene ${next.index + 1} did not pass its review`;
+          break;
+        }
+        if ((state === 'passed' || state === 'overridden') && !boardTried.has(next.id)) {
+          await deps.services.storyboard.approveFrames(ctx.actor, ctx.job.projectId, next.id);
+          boardTried.add(next.id);
+          continue;
+        }
+        if (boardTried.has(next.id) && state !== 'outdated' && state !== 'missing') {
+          stopReason = `the storyboard of scene ${next.index + 1} needs a person: its frames are not all approved`;
+          break;
+        }
+        boardTried.add(next.id);
+        ctx.progress(
+          Math.min(planned, target),
+          target,
+          `storyboarding scene ${next.index + 1} before its video`,
+        );
+        const board = await ctx.spawn(
+          'clip.storyboard',
+          { clipId: next.id },
+          { dedupeKey: `clip-storyboard:${next.id}` },
+        );
+        const [boarded] = await ctx.waitFor([board.id]);
+        if (boarded?.status !== 'succeeded') {
+          stopReason = `the storyboard of scene ${next.index + 1} could not be made: ${boarded?.error?.message ?? 'unknown'}`;
+          break;
+        }
+        continue;
+      }
       const job = await ctx.spawn('clip.generate', { clipId: next.id }, { dedupeKey: `clip:${next.id}` });
       started.add(next.id);
       inFlight.push(job);
@@ -411,11 +531,32 @@ export async function batchGenerate(deps: HandlerDeps, ctx: JobContext) {
       continue;
     }
     if (sp && underTarget && nextUnwrittenBeats(sp, 1).length) {
+      const before = new Set(sp.scenes.map((s) => s.id));
       const job = await ctx.spawn('screenplay.extend', { beats: 3 }, { dedupeKey: 'screenplay.extend' });
       const [done] = await ctx.waitFor([job.id]);
       if (done?.status !== 'succeeded') {
         stopReason = `screenplay extension failed: ${done?.error?.message ?? 'unknown'}`;
         break;
+      }
+      // The new scenes are reviewed (and revised) before they are planned (docs/design/ai-review.md#how-a-review-runs)
+      const review = docs.project.settings.review;
+      if (review.extensions && review.screenplay && deps.config.gateway.configured) {
+        const written = ((await docsFor(deps, ctx)).screenplay?.scenes ?? [])
+          .filter((s) => !before.has(s.id))
+          .map((s) => s.id);
+        if (written.length) {
+          const reviewJob = await ctx.spawn(
+            'screenplay.review',
+            { sceneIds: written },
+            { dedupeKey: 'ai-review:screenplay' },
+          );
+          const [reviewed] = await ctx.waitFor([reviewJob.id]);
+          const state = reviewState(await docsFor(deps, ctx), 'screenplay');
+          if (reviewed?.status !== 'succeeded' || (state !== 'passed' && state !== 'overridden')) {
+            stopReason = `the new scenes did not pass their review (${written.length} scene(s))`;
+            break;
+          }
+        }
       }
       continue;
     }
@@ -437,10 +578,16 @@ export async function batchGenerate(deps: HandlerDeps, ctx: JobContext) {
     await deps.services.clips
       .recheck(ctx.actor, ctx.job.projectId)
       .catch((err) => ctx.log.warn({ err: (err as Error).message }, 'could not start the re-check'));
+  // On autopilot the production gate is approved once every clip passed its gate (docs/design/ai-review.md)
+  const approved =
+    stopReason === 'target reached' || stopReason === 'the outline is complete'
+      ? await approveProductionOnAutopilot(deps, ctx)
+      : false;
   return {
     clips: started.size,
     plannedDurationSec: plannedDuration(docs),
     stopReason,
     generationsBudgeted: generations,
+    approved,
   };
 }

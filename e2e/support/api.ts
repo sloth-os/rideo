@@ -56,7 +56,7 @@ export class Api {
       kind: 'story',
       title,
       brief: { prompt: opts.brief ?? 'A lighthouse keeper receives letters from the future' },
-      settings: { ...TINY, ...opts.settings },
+      settings: tinyWith(opts.settings),
     });
     if (opts.screenplay) {
       const job = await this.call<Job>('POST', `/projects/${p.id}/screenplay/generate`, {});
@@ -157,9 +157,36 @@ export const TINY = {
   resolution: { width: 320, height: 180 },
   targetDurationSec: 30,
   pilotDurationSec: 10,
-  // the AI reviews have specs of their own (e2e/ai-review.spec.ts, e2e/clip-review.spec.ts)
-  review: { screenplay: false, storyboard: false, scenes: false },
+  // The AI reviews and the director's desk have specs of their own (e2e/ai-review.spec.ts, e2e/clip-review.spec.ts,
+  // e2e/director-desk.spec.ts)
+  review: {
+    screenplay: false,
+    storyboard: false,
+    scenes: false,
+    cast: false,
+    cut: false,
+    watchTakes: false,
+    extensions: false,
+  },
+  blocking: { enabled: false },
+  storyboard: { production: false },
 };
+
+/** TINY with a spec's settings, the nested review, blocking and storyboard settings merged into TINY's. */
+export function tinyWith(settings: Record<string, unknown> = {}) {
+  const { review, blocking, storyboard, ...rest } = settings as {
+    review?: object;
+    blocking?: object;
+    storyboard?: object;
+  };
+  return {
+    ...TINY,
+    ...rest,
+    review: { ...TINY.review, ...review },
+    blocking: { ...TINY.blocking, ...blocking },
+    storyboard: { ...TINY.storyboard, ...storyboard },
+  };
+}
 
 export function projectIdFrom(url: string): string {
   const m = /\/p\/(prj_[0-9a-z]+)/.exec(url);

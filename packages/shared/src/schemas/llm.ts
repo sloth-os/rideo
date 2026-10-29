@@ -348,6 +348,9 @@ export const LLM_TASKS = [
   'screenplay.review',
   'screenplay.revise',
   'storyboard.review',
+  'scene.block',
+  'take.watch',
+  'cast.review',
 ] as const;
 export type LlmTaskId = (typeof LLM_TASKS)[number];
 
@@ -770,6 +773,8 @@ export interface FeedbackSceneInput {
    * absent: the export's scene.
    */
   stage?: 'takes';
+  /** The picture is watched as the scene's video too (with its strips as anchors): docs/design/ai-review.md. */
+  watching?: boolean;
 }
 
 export interface FeedbackFilmInput {
@@ -819,7 +824,9 @@ function lenientArray<T extends z.ZodType>(item: T, max: number) {
 
 export const LlmStageActionSchema = z
   .object({
-    kind: z.enum(['revise_scene', 'revise_outline', 'redraw_board', 'replan_scene', 'note']).catch('note'),
+    kind: z
+      .enum(['revise_scene', 'revise_outline', 'redraw_board', 'replan_scene', 'regenerate_refs', 'note'])
+      .catch('note'),
     instruction: optionalText(2000),
     description: optionalText(4000),
     action: optionalText(4000),
@@ -835,6 +842,9 @@ export type LlmStageAction = z.infer<typeof LlmStageActionSchema>;
 const stageIssue = z.object({
   /** The scene's number (1-based). */
   scene: z.coerce.number().int().positive().optional().catch(undefined),
+  /** The character or the place or prop it is about, by name (cast). */
+  character: optionalText(100),
+  element: optionalText(100),
   /** The shot's index in its scene (storyboard). */
   shot: z.coerce.number().int().nonnegative().optional().catch(undefined),
   dimension: z.string().max(40).catch(''),
@@ -844,6 +854,8 @@ const stageIssue = z.object({
 });
 const stageRecommendation = z.object({
   scene: z.coerce.number().int().positive().optional().catch(undefined),
+  character: optionalText(100),
+  element: optionalText(100),
   shot: z.coerce.number().int().nonnegative().optional().catch(undefined),
   dimension: z.string().max(40).catch(''),
   priority: z.coerce.number().int().min(1).max(3).catch(2),
@@ -889,6 +901,8 @@ export interface VideoModelFacts {
 
 export interface ScreenplayReviewInput {
   brief: { prompt: string; targetDurationSec: number; dialogueLevel: string | null; castOnly: boolean };
+  /** Production: review only these scenes (by number); the rest of the screenplay is their context. */
+  focus?: number[];
   screenplay: {
     title: string;
     logline: string;
@@ -930,6 +944,216 @@ export interface ScreenplayReviseInput extends Omit<ScreenplayReviewInput, 'vide
   instructions: { scene?: number; outline?: boolean; instruction: string }[];
 }
 
+/** `cast.review`: one character or one element and its references (docs/design/ai-review.md#how-a-review-runs). */
+export interface CastReviewInput {
+  film: { title: string; style: string; tone: string };
+  subject:
+    | {
+        kind: 'character';
+        name: string;
+        role: string;
+        identity: string;
+        wardrobe: string;
+        references: { index: number; view: string; approved: boolean }[];
+      }
+    | {
+        kind: 'element';
+        elementKind: string;
+        name: string;
+        description: string;
+        references: { index: number; view: string; approved: boolean }[];
+      };
+  /** The rest of the cast, by look: the character must be told apart from them. */
+  others: { name: string; look: string }[];
+}
+
+/** The label before each reference image of `cast.review`. */
+export const CAST_REFERENCE_LABEL = 'Reference';
+
+/** `scene.block`: the scene and its shots for the text model's floor plan (docs/design/director-desk.md#jobs). */
+export interface SceneBlockInput {
+  scene: {
+    heading: string;
+    location: string;
+    timeOfDay: string;
+    continuity: string;
+    summary: string;
+    action: string;
+  };
+  place: { name: string; description: string } | null;
+  props: { name: string; description: string }[];
+  cast: { name: string; heightM: number; look: string }[];
+  shots: {
+    index: number;
+    framing: string;
+    movement: string;
+    lensMm: number | null;
+    description: string;
+    action: string;
+    endState: string;
+    characters: string[];
+    speakers: string[];
+    continuity: 'cut' | 'continuous';
+  }[];
+  /** What the floor plan means: units, axes, facings. */
+  conventions: string;
+}
+
+const coord = z.coerce.number().min(-500).max(500).catch(0);
+const facing = z.coerce.number().min(-3600).max(3600).catch(0);
+const poseName = z
+  .enum(['stand', 'walk', 'run', 'sit', 'crouch', 'kneel', 'lie', 'reach', 'point', 'wave'])
+  .catch('stand');
+const blockMark = z.object({
+  name: z.string().min(1).max(100),
+  x: coord,
+  z: coord,
+  facingDeg: facing,
+  pose: poseName.default('stand'),
+  toX: z.coerce.number().min(-500).max(500).nullable().optional().catch(null),
+  toZ: z.coerce.number().min(-500).max(500).nullable().optional().catch(null),
+});
+
+/** The text model's floor plan of a scene: marks in metres, a camera described per shot. */
+export const SceneBlockOutputSchema = z.object({
+  set: z
+    .object({
+      width: z.coerce.number().min(2).max(200).catch(12).default(12),
+      depth: z.coerce.number().min(2).max(200).catch(10).default(10),
+      ground: str(80),
+      interior: flag.default(false),
+      sun: z
+        .object({
+          azimuthDeg: z.coerce.number().min(-3600).max(3600).catch(135).default(135),
+          elevationDeg: z.coerce.number().min(2).max(90).catch(40).default(40),
+        })
+        .catch({ azimuthDeg: 135, elevationDeg: 40 })
+        .default({ azimuthDeg: 135, elevationDeg: 40 }),
+      landmarks: lenientArray(
+        z.object({
+          label: z.string().min(1).max(80),
+          shape: z.enum(['box', 'cylinder', 'water', 'wall']).catch('box').default('box'),
+          x: coord,
+          z: coord,
+          width: z.coerce.number().min(0.05).max(500).catch(1),
+          depth: z.coerce.number().min(0.05).max(500).catch(1),
+          height: z.coerce.number().min(0.01).max(200).catch(1),
+          rotationDeg: facing.default(0),
+        }),
+        24,
+      ),
+    })
+    .catch({
+      width: 12,
+      depth: 10,
+      ground: '',
+      interior: false,
+      sun: { azimuthDeg: 135, elevationDeg: 40 },
+      landmarks: [],
+    }),
+  actors: lenientArray(blockMark, 8),
+  props: lenientArray(
+    z.object({
+      name: z.string().min(1).max(80),
+      x: coord,
+      z: coord,
+      size: z.coerce.number().min(0.05).max(20).catch(0.4).default(0.4),
+      heldBy: optionalText(100),
+    }),
+    16,
+  ),
+  shots: lenientArray(
+    z.object({
+      index: z.coerce.number().int().nonnegative(),
+      marks: lenientArray(blockMark, 8),
+      camera: z
+        .object({
+          subjects: lenientArray(z.string().min(1).max(100), 8),
+          angle: z
+            .enum([
+              'front',
+              'three_quarter_left',
+              'three_quarter_right',
+              'profile_left',
+              'profile_right',
+              'back',
+              'over_shoulder',
+              'pov',
+            ])
+            .catch('front')
+            .default('front'),
+          height: z.enum(['eye', 'low', 'high', 'overhead']).catch('eye').default('eye'),
+          move: z
+            .enum([
+              'none',
+              'push_in',
+              'pull_out',
+              'dolly_left',
+              'dolly_right',
+              'orbit_left',
+              'orbit_right',
+              'crane_up',
+            ])
+            .catch('none')
+            .default('none'),
+        })
+        .catch({ subjects: [], angle: 'front', height: 'eye', move: 'none' }),
+    }),
+    60,
+  ),
+});
+export type SceneBlockOutput = z.infer<typeof SceneBlockOutputSchema>;
+
+/** `take.watch`: one take as planned, watched whole by the vision model (docs/design/ai-review.md#takes-watched-whole). */
+export interface TakeWatchInput {
+  shot: {
+    description: string;
+    action: string;
+    camera: string;
+    durationSec: number;
+    place: string;
+    /** What the take should end on. */
+    endState: string;
+  };
+  /** Who is in the shot, with how they look. */
+  cast: { name: string; look: string }[];
+  /** Who must not be in it: the scene's cast who are not, with how they look. */
+  absent: { name: string; look: string }[];
+  /** A film with only its cast: anyone else is a failure. */
+  castOnly: boolean;
+  /** How the take is attached: a video, or frames in order when the model takes no video. */
+  watching: 'video' | 'frames';
+  durationSec: number;
+}
+
+const unit = z.coerce.number().min(0).max(1).catch(0.5).default(0.5);
+/** What the watcher answers about a whole take. */
+export const TakeWatchOutputSchema = z.object({
+  overall: z.coerce.number().min(0).max(10).catch(5).default(5),
+  motion: unit,
+  physics: unit,
+  action: unit,
+  camera: unit,
+  identity: unit,
+  others: lenientArray(z.string().min(1).max(200), 10),
+  issues: lenientArray(
+    z.object({
+      time: z.coerce.number().min(0).max(600).catch(0).default(0),
+      severity: z.enum(['critical', 'major', 'minor']).catch('minor').default('minor'),
+      title: z.string().min(1).max(200),
+      detail: str(1000),
+    }),
+    20,
+  ),
+});
+export type TakeWatchOutput = z.infer<typeof TakeWatchOutputSchema>;
+/** The label before the take of `take.watch`. */
+export const TAKE_WATCH_LABEL = 'Take video';
+/** The label before the cast's references of `take.watch`. */
+export const WATCH_REFERENCE_LABEL = 'Reference of';
+/** The label before a scene's video of `feedback.scene` (the picture: its sound is listened to separately). */
+export const SCENE_WATCH_LABEL = 'Scene video';
+
 export interface StoryboardSceneReviewInput {
   film: { title: string; tone: string; style: string; dialogueLevel: string | null; castOnly: boolean };
   scene: { number: number; heading: string; continuity: string; summary: string };
@@ -946,6 +1170,10 @@ export interface StoryboardSceneReviewInput {
     characters: string[];
     dialogue: { character: string; line: string }[];
     frame: 'attached' | 'missing';
+    /** With a blocking (docs/design/director-desk.md): the shot's blocking line; its camera view follows its frame. */
+    blocking?: string;
   }[];
   video: VideoModelFacts;
+  /** The scene's blocking issues (docs/design/director-desk.md#checks), when it is blocked. */
+  blockingIssues?: string[];
 }

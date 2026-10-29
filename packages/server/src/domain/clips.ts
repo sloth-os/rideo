@@ -386,8 +386,11 @@ export class ClipService extends Service {
     projectId: string,
     clipId: string,
     shotId: string,
-    /** `swapInCut`: the new take replaces the shot's old take in the cut (feedback, docs/design/feedback.md#actions). */
-    opts: { swapInCut?: boolean } = {},
+    /**
+     * `swapInCut`: the new take replaces the shot's old take in the cut (feedback, docs/design/feedback.md#actions);
+     * `selectIfPasses`: it becomes the selected take only when it passes every check (a review's fix).
+     */
+    opts: { swapInCut?: boolean; selectIfPasses?: boolean } = {},
   ): Promise<Job> {
     const docs = await this.docs(projectId);
     const clip = docs.clips[clipId];
@@ -401,7 +404,12 @@ export class ClipService extends Service {
     return this.deps.jobs.enqueue({
       projectId,
       kind: 'shot.generate',
-      params: { clipId, shotId, ...(opts.swapInCut ? { swapInCut: true } : {}) },
+      params: {
+        clipId,
+        shotId,
+        ...(opts.swapInCut ? { swapInCut: true } : {}),
+        ...(opts.selectIfPasses ? { selectIfPasses: true } : {}),
+      },
       actor,
       branch: await this.branchOf(projectId),
       dedupeKey: `shot:${shotId}`,
