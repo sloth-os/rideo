@@ -148,8 +148,10 @@ test('a brief with a picture and a video → screenplay → locked cast → pilo
     // The vision model judged: a verdict, not `unverified` (which is what a failed judge call leaves)
     expect(take.consistency.judge).toBe(`vision-llm:${env.VISION_MODEL}`);
     expect(['passed', 'failed'], take.consistency.note).toContain(take.consistency.status);
-    // A cut starts from a keyframe of the image model; a continuous shot from the last frame of the one before
-    if (take.request.firstFrameSource !== 'previous_shot') {
+    // A cut starts from a keyframe of the image model; a continuous shot from the last frame of the one before; a
+    // later shot of a multi-shot sequence from the sequence itself (docs/design/multi-shot.md)
+    const inSequence = (take.request.multiShot?.index ?? 0) > 0;
+    if (take.request.firstFrameSource !== 'previous_shot' && !inSequence) {
       expect(take.keyframe).not.toBeNull();
       expect(take.request.imageModel).toBe(env.IMAGE_MODEL);
     }
@@ -163,16 +165,23 @@ test('a brief with a picture and a video → screenplay → locked cast → pilo
   expect(filmed.length, 'a take with a video from the video model').toBeGreaterThan(0);
   for (const take of filmed) {
     expect(take.request.videoModel).toBe(env.VIDEO_GEN_MODEL);
-    expect(['keyframe', 'previous_shot']).toContain(take.request.firstFrameSource);
-    expect(take.video.durationSec).toBeGreaterThan(env.VIDEO_GEN_DURATION_SEC - 1.5);
+    if (take.request.multiShot) {
+      // a segment of a sequence: the first starts from its keyframe, and each lasts what the model cut (2-5 s on Wan 3.0)
+      expect(take.request.firstFrameSource).toBe(take.request.multiShot.index === 0 ? 'keyframe' : 'none');
+      expect(take.video.durationSec).toBeGreaterThan(1);
+    } else {
+      expect(['keyframe', 'previous_shot']).toContain(take.request.firstFrameSource);
+      expect(take.video.durationSec).toBeGreaterThan(env.VIDEO_GEN_DURATION_SEC - 1.5);
+    }
     expect(take.video.width).toBeGreaterThan(0);
     // Signed with the keyframe as its ingredient, in the format the image model returned (Seedream: JPEG)
     if (take.keyframe) expect(take.contentCredentials).toMatchObject({ ingredients: 1 });
   }
   const after = await counters(request);
+  // one task per take, or one for every take of a sequence
   expect(
     after('rideo_gateway_tasks_total', { modality: 'video', status: 'succeeded' }),
-  ).toBeGreaterThanOrEqual(filmed.length);
+  ).toBeGreaterThanOrEqual(new Set(filmed.map((t: any) => t.gatewayTaskIds.at(-1))).size);
   // The takes are in the clip on the page, each with its evidence
   const shown = clip.shots.reduce((n: number, s: any) => n + s.takes.length, 0);
   await expect(page.getByTestId('clips')).toBeVisible();
