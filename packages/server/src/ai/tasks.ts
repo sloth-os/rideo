@@ -335,6 +335,7 @@ Rules:
 - Name only the characters in frame in a shot's "description" and "action": write where an unseen character is ("looks off-screen right"), never their name (the video model shows whoever the text names).
 - Use "continuity":"continuous" only when the shot continues the previous shot's final frame without a cut; the first shot is always "cut".
 - camera.framing: extreme_wide|wide|medium|medium_close|close_up|extreme_close_up|over_shoulder|pov|insert; camera.movement: static|pan|tilt|dolly_in|dolly_out|tracking|handheld|crane|zoom|orbit.
+- When "sequence" is given, the video model renders up to sequence.maxShots consecutive shots (sequence.maxDurationSec seconds together) as one video that starts from the first one's frame, so it knows only the characters that frame shows: open the scene with a shot that shows every character in it, and give no shot more than limits.maxDurationSec.
 - When "direction" is given (what a new plan must do), follow it.
 Return only JSON: {"shots":[{"description":"...","action":"...","endState":"...","camera":{"framing":"wide","movement":"static"},"lensMm":24,"characters":["Name"],"props":["prop name"],"durationSec":5,"continuity":"cut","dialogue":[{"character":"Name","line":"..."}]}]}`,
 };

@@ -98,7 +98,8 @@ one 10-second take beats two 5-second ones. `plannedShotRange(limits)` (shared) 
 dialogue fit and the writer's longest line. The planner varies the lengths with what happens: 2–3 s for reactions
 and inserts, 4–6 s for most shots, up to the cap for establishing shots and longer lines. In the panda demo every
 shot lasted exactly 5 s because the gateway's catalogue pinned the model to 5 s, and the feedback named the
-"mechanical 5.04-second cadence".
+"mechanical 5.04-second cadence". A model that renders sequences from a first frame (Wan 3.0) gets shots of
+at most 5 s instead, rendered several to a request ([planning for sequences](multi-shot.md#planning-for-sequences)).
 
 ## Prompts (version 2)
 

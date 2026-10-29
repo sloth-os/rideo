@@ -5,6 +5,8 @@ import {
   needsOwnRequest,
   ProjectSettingsSchema,
   planShotGroups,
+  plansForSequences,
+  shotRangeFor,
 } from '../src';
 import * as f from '../src/testing/fixtures';
 
@@ -43,6 +45,33 @@ describe('shot groups (docs/design/multi-shot.md#when)', () => {
     expect(
       needsOwnRequest(f.shot({ endFrame: { mode: 'generate', description: 'x', resourceId: null } })),
     ).toBe(true);
+  });
+});
+
+describe('planning for sequences (docs/design/multi-shot.md#planning-for-sequences)', () => {
+  const wan = {
+    max_shots: 8,
+    exclusive_frames_and_references: true,
+    min_duration_seconds: 2,
+    max_duration_seconds: 30,
+  };
+  it('plans shots of at most 5 s for a model that renders sequences from a first frame', () => {
+    const settings = ProjectSettingsSchema.parse({});
+    expect(plansForSequences(settings, wan)).toBe(true);
+    expect(shotRangeFor(settings, wan)).toEqual({ min: 2, max: 5, sequences: true });
+    // a model that takes references with its frame, or renders one shot, plans as before (up to 10 s)
+    expect(shotRangeFor(settings, { ...wan, exclusive_frames_and_references: false })).toEqual({
+      min: 2,
+      max: 10,
+      sequences: false,
+    });
+    expect(shotRangeFor(settings, { ...wan, max_shots: 1 }).sequences).toBe(false);
+    expect(shotRangeFor(settings, null).sequences).toBe(false);
+    // multi-shot off, or native dialogue (spoken shot by shot)
+    const off = ProjectSettingsSchema.parse({ generation: { multiShot: 'off' } });
+    expect(plansForSequences(off, wan)).toBe(false);
+    const native = ProjectSettingsSchema.parse({ dialogue: { mode: 'native' } });
+    expect(plansForSequences(native, wan)).toBe(false);
   });
 });
 

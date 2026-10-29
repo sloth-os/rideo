@@ -14,7 +14,7 @@ import {
   type ModelLimits,
   mergeSceneReviews,
   type ProjectDocs,
-  plannedShotRange,
+  type ProjectSettings,
   type ReviewStage,
   type ReviewTargets,
   reviewSettings,
@@ -29,6 +29,7 @@ import {
   StageReviewSchema,
   type StoryboardSceneReviewInput,
   screenplayReviewSubject,
+  shotRangeFor,
   storyboardClips,
   storyboardReviewSubject,
   type VideoModelFacts,
@@ -61,8 +62,12 @@ export const VIDEO_MODEL_FACTS = {
   ],
 };
 
-export function videoFacts(limits: ModelLimits | null): VideoModelFacts {
-  const { min, max } = plannedShotRange(limits);
+/** What the reviewer knows of the video model: the shots the planner will make for it, and what it renders badly. */
+export function videoFacts(
+  limits: ModelLimits | null,
+  settings: Pick<ProjectSettings, 'generation' | 'dialogue'>,
+): VideoModelFacts {
+  const { min, max } = shotRangeFor(settings, limits);
   return { shotSeconds: { min, max }, ...VIDEO_MODEL_FACTS };
 }
 
@@ -331,7 +336,7 @@ export async function reviseScreenplayWith(
     .filter((i) => !('scene' in i) || (i.scene ?? 0) > 0);
   if (!asked.length) return 0;
   const { limits } = await deps.gateway.limitsFor('video', docs.project.settings.models.video);
-  const { video: _video, ...base } = screenplayReviewInput(docs, videoFacts(limits));
+  const { video: _video, ...base } = screenplayReviewInput(docs, videoFacts(limits, docs.project.settings));
   const out = await deps.llm.reviseScreenplay({ ...base, instructions: asked }, ctx.signal);
   // Only the scenes asked for change; the outline only when an instruction is about it
   const wanted = new Set(asked.flatMap((i) => ('scene' in i && i.scene ? [i.scene] : [])));
@@ -390,7 +395,7 @@ async function reviewScreenplayRounds(deps: HandlerDeps, ctx: JobContext) {
   let docs = await docsFor(deps, ctx);
   const settings = reviewSettings(docs);
   const { limits } = await deps.gateway.limitsFor('video', docs.project.settings.models.video);
-  const video = videoFacts(limits);
+  const video = videoFacts(limits, docs.project.settings);
   const previous = docs.aiReviews.screenplay;
   let history = previous?.verdict
     ? [...previous.history, historyEntry(previous, 0)].slice(-20)
@@ -557,7 +562,7 @@ async function reviewStoryboardRounds(deps: HandlerDeps, ctx: JobContext) {
   let docs = await docsFor(deps, ctx);
   const settings = reviewSettings(docs);
   const { limits } = await deps.gateway.limitsFor('video', docs.project.settings.models.video);
-  const video = videoFacts(limits);
+  const video = videoFacts(limits, docs.project.settings);
   const previous = docs.aiReviews.storyboard;
   let history = previous?.verdict
     ? [...previous.history, historyEntry(previous, 0)].slice(-20)

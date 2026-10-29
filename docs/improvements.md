@@ -416,7 +416,12 @@ each segment keeps its part of it and is checked like a single take, a render wh
 and a voiced or checked group is rendered once, its failing shots made again alone (a new take replaces the segment
 only when it passes). On the way, the split at the detected cuts was found to end a take on one frame of the next
 shot: a cut's time is its new shot's first frame rounded to the millisecond, so segments now end half a frame
-earlier.
+earlier. *Measured on the swimming film (October 29):* scene 7 made again on a branch was planned
+for single takes, as six shots of up to 6 s, four of them single takes (longer than 5 s, or opening on one panda): one
+sequence of two shots formed, and the scene review watched 6.8 against main's 6.6 (continuity 5 against 4) — too
+little of it was a sequence to say more, and the same takes watched twice differ by up to 0.7. So the plan is now
+made for sequences when the model renders them ([planning for sequences](design/multi-shot.md#planning-for-sequences)):
+shots of 2–5 s, the scene opening on its whole cast.
 
 ### Run figures
 

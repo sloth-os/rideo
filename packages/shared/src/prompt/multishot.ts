@@ -1,5 +1,6 @@
 import type { Shot } from '../schemas/clip';
 import type { GatewayVideoRequest, ModelLimits } from '../schemas/gateway';
+import type { ProjectSettings } from '../schemas/project';
 import {
   BASE_NEGATIVE,
   clampDuration,
@@ -11,6 +12,7 @@ import {
   inFrameLine,
   negativePromptFor,
   PHYSICS_LINE,
+  plannedShotRange,
   promptVersionOf,
   type ShotContext,
   sceneLine,
@@ -103,6 +105,36 @@ export function framedGroupJoins(
     next.durationSec <= MULTI_SHOT_SEGMENT_MAX_SEC &&
     next.characterIds.every((id) => first.characterIds.includes(id))
   );
+}
+
+/**
+ * Whether the plan is made for sequences (docs/design/multi-shot.md#planning-for-sequences): the model renders them
+ * from a first frame only (Wan 3.0), multi-shot is on and the dialogue is not native.
+ */
+export function plansForSequences(
+  settings: Pick<ProjectSettings, 'generation' | 'dialogue'>,
+  limits?: Pick<ModelLimits, 'max_shots' | 'exclusive_frames_and_references'> | null,
+): boolean {
+  return (
+    (limits?.max_shots ?? 0) >= 2 &&
+    limits?.exclusive_frames_and_references === true &&
+    settings.generation.multiShot !== 'off' &&
+    (settings.dialogue?.mode ?? 'off') !== 'native'
+  );
+}
+
+/** The planned shot range (`plannedShotRange`), at most `MULTI_SHOT_SEGMENT_MAX_SEC` a shot when it is made for sequences. */
+export function shotRangeFor(
+  settings: Pick<ProjectSettings, 'generation' | 'dialogue'>,
+  limits?: Pick<
+    ModelLimits,
+    'min_duration_seconds' | 'max_duration_seconds' | 'max_shots' | 'exclusive_frames_and_references'
+  > | null,
+): { min: number; max: number; sequences: boolean } {
+  const range = plannedShotRange(limits);
+  if (!plansForSequences(settings, limits)) return { ...range, sequences: false };
+  const max = Math.min(range.max, MULTI_SHOT_SEGMENT_MAX_SEC);
+  return { min: Math.min(range.min, max), max, sequences: true };
 }
 
 /** Seconds as a shot label writes them: whole seconds when exact, one decimal otherwise. */

@@ -15,12 +15,12 @@ import {
   nextUnwrittenBeats,
   type Project,
   type ProjectSettings,
-  plannedShotRange,
   promptVersionOf,
   type ReferenceView,
   type Resource,
   type Screenplay,
   screenplayFromLlm,
+  shotRangeFor,
   slugify,
 } from '@rideo/shared';
 import type { LabelledImage } from '../../ai/tasks';
@@ -37,7 +37,8 @@ import { commitAs, docsFor, gatewayOptions, type HandlerDeps } from './common';
 async function writingDirection(deps: HandlerDeps, settings: ProjectSettings) {
   if (promptVersionOf(settings) < 2) return { version: 1 as const, direction: {} };
   const { limits } = await deps.gateway.limitsFor('video', settings.models.video);
-  const maxShot = plannedShotRange(limits).max;
+  // A sequence's shots last at most 5 s, and so do the lines (docs/design/multi-shot.md#planning-for-sequences)
+  const maxShot = shotRangeFor(settings, limits).max;
   return {
     version: 2 as const,
     direction: dialogueDirection(settings.dialogue?.level ?? 'any', maxShot),

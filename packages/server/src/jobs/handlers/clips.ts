@@ -13,10 +13,10 @@ import {
   nextUnwrittenBeats,
   normalizePlannedShots,
   plannedDuration,
-  plannedShotRange,
   planShotGroups,
   promptVersionOf,
   type Screenplay,
+  shotRangeFor,
   shotsWithoutTakes,
   sortedClips,
   TARGET_REACHED_RATIO,
@@ -44,8 +44,9 @@ export async function clipPlan(deps: HandlerDeps, ctx: JobContext) {
   if (!sp || !scene) throw notFound(`scene ${sceneId}`);
   const settings = docs.project.settings;
   const { limits } = await deps.gateway.limitsFor('video', settings.models.video);
-  // The model's range, capped: a long take drifts and cuts itself (docs/design/continuity.md#shot-planning)
-  const { min: minSec, max: maxSec } = plannedShotRange(limits);
+  // The model's range, capped: a long take drifts and cuts itself (docs/design/continuity.md#shot-planning); at most
+  // 5 s a shot when the model renders sequences from a first frame (docs/design/multi-shot.md#planning-for-sequences)
+  const { min: minSec, max: maxSec, sequences } = shotRangeFor(settings, limits);
   // The first clip is the pilot: its length is the user's pilot setting (10 s – 3 min).
   const target = Math.min(
     180,
@@ -77,6 +78,14 @@ export async function clipPlan(deps: HandlerDeps, ctx: JobContext) {
           ? { description: previousShot.description, endState: previousShot.endState ?? '' }
           : null,
         ...dialogueDirection(settings.dialogue?.level ?? 'any', maxSec),
+        ...(sequences
+          ? {
+              sequence: {
+                maxShots: limits?.max_shots ?? 2,
+                maxDurationSec: limits?.max_duration_seconds ?? maxSec * 2,
+              },
+            }
+          : {}),
       }
     : {};
   const out = await deps.llm.planClip(

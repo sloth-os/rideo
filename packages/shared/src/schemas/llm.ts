@@ -422,6 +422,11 @@ export interface ClipPlanInput extends DialogueDirection {
   previousShot?: { description: string; endState: string } | null;
   /** What a new plan must do (a feedback recommendation, docs/design/feedback.md#actions). */
   direction?: string;
+  /**
+   * Version 2: the video model renders consecutive shots together from the first one's frame
+   * (docs/design/multi-shot.md#planning-for-sequences).
+   */
+  sequence?: { maxShots: number; maxDurationSec: number };
 }
 
 export interface MediaDescribeInput {

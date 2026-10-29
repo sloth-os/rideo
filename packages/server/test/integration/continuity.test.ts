@@ -310,29 +310,36 @@ describe('continuity-aware generation (prompt version 2)', () => {
     expect(video.parameters.negative_prompt).not.toContain('morphing');
   });
 
-  it('uses a Wan 3.0-like model as it is documented: shots within 10 s, a frame without references', async () => {
+  it('uses a Wan 3.0-like model as it is documented: shots within 5 s, rendered as a sequence from a frame', async () => {
     const { pid, clip } = await plannedClip({ models: { video: 'mock-wan3-v1' } });
-    // The model renders 2-30 s; Rideo plans within 2-10 s (docs/design/continuity.md#shot-planning)
-    for (const shot of clip.shots) {
+    // The model renders sequences from a first frame: 2-5 s shots, the first showing the whole cast
+    // (docs/design/multi-shot.md#planning-for-sequences)
+    const shots = [...clip.shots].sort((a, b) => a.index - b.index);
+    for (const shot of shots) {
       expect(shot.durationSec).toBeGreaterThanOrEqual(2);
-      expect(shot.durationSec).toBeLessThanOrEqual(10);
+      expect(shot.durationSec).toBeLessThanOrEqual(5);
     }
+    const cast = new Set(shots.flatMap((s) => s.characterIds));
+    expect(new Set(shots[0]!.characterIds)).toEqual(cast);
     const generated = await generate(pid, clip.id);
-    const take = [...generated.shots].sort((a, b) => a.index - b.index)[0]!.takes.at(-1)!;
+    const jobs = await stack.api<Job[]>('GET', `/projects/${pid}/jobs`);
+    const groups = jobs.filter((j) => j.kind === 'shot.group');
+    expect(groups.length).toBeGreaterThan(0);
+    const first = [...generated.shots].sort((a, b) => a.index - b.index)[0]!;
+    const take = first.takes.find((t) => t.request.multiShot)!;
     const video = requestOf(take.gatewayTaskIds.at(-1)!);
     expect(video.model).toBe('mock-wan3-v1');
-    // A first frame and no references (the modes are exclusive), no negative prompt field, no rewriting
+    // A first frame and no references (the modes are exclusive), no negative prompt field, no rewriting, its sound
     const roles = video.input
       .filter((p: { type: string }) => p.type !== 'text')
       .map((p: { role: string }) => p.role);
     expect(roles).toEqual(['first_frame']);
     expect(video.parameters).not.toHaveProperty('negative_prompt');
     expect(video.parameters.enhance_prompt).toBe(false);
-    expect(video.input[0].text).toMatch(/^One continuous shot, no cuts\. /);
+    expect(video.parameters.include_audio).toBe(true);
+    expect(video.input[0].text).toMatch(
+      /A multi-shot sequence of \d+ shots separated by hard cuts\. Shot 1 \[0-/,
+    );
     expect(video.input[0].text).toContain('No BGM');
-    // Shots longer than 5 s are generated one by one: Wan 3.0's sequences hold shots of 2-5 s
-    // (docs/design/multi-shot.md#when)
-    const jobs = await stack.api<Job[]>('GET', `/projects/${pid}/jobs`);
-    expect(jobs.filter((j) => j.kind === 'shot.group')).toEqual([]);
   });
 });

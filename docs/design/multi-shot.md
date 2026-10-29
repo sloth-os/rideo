@@ -22,6 +22,17 @@ Groups take consecutive shots while the group has at most `max_shots` shots and 
 `max_duration_seconds`. A shot that cannot join a group is generated alone. `shot.group` jobs run like `shot.generate`
 jobs (lane `video`).
 
+## Planning for sequences
+
+A sequence can only form from shots that can join it, so when the project's video model renders sequences from a
+first frame (`max_shots ≥ 2` and `exclusive_frames_and_references`: Wan 3.0) and multi-shot is `auto` and the
+dialogue is not `native` (`plansForSequences`), the plan is made for them: `clip.plan` plans shots of at most 5 s
+(`plannedShotRange(limits, {sequences: true})`; the writer's longest line follows) and is told so
+(`sequence: {maxShots, maxDurationSec}`), and it opens the scene with a shot that shows every character in it, so the
+shots after it show only faces its first frame has. Planned for single takes, the swimming film's scene 7 was made
+again as six shots, four of them single takes (longer than 5 s, or opening on one panda), and only one sequence of
+two shots formed.
+
 ## Request
 
 ```
