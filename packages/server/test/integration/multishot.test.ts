@@ -85,7 +85,10 @@ describe('multi-shot generation', () => {
     expect(segment.consistency.quality?.temporal).toMatchObject({ jumps: [] });
     const remade = muffled.takes.find((t) => t.id === muffled.selectedTakeId)!;
     expect(remade.request.multiShot).toBeNull();
-    expect(remade.request.firstFrameSource).toBe('sequence');
+    // (a continuous shot starts from the shot before it, whose last frame is the sequence's too)
+    expect(remade.request.firstFrameSource).toBe(
+      muffled.continuity === 'continuous' ? 'previous_shot' : 'sequence',
+    );
     expect(remade.consistency.quality).toMatchObject({ passed: true, sound: { lines: [{ heard: 1 }] } });
     // the other segment kept its sound and passed every check
     const kept = other.takes.find((t) => t.id === other.selectedTakeId)!;

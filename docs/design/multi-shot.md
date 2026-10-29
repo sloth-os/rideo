@@ -79,7 +79,9 @@ shot's lines heard (`sound.check`). A render whose every segment passes is used 
   alone (`shot.generate`, with its own attempts and the scene's reference frame), starting from the segment's first
   frame (`startFrame`; `firstFrameSource: sequence`), so the remake keeps the sequence's light, water and props: made
   from new keyframes, scene 7's two remakes came back at sunset and among rocks that the sequence did not have. A
-  segment that failed its identity check is made again from a new keyframe. The group's job waits for the remakes.
+  continuous shot starts from the shot before it, as any continuous shot does (that last frame is the sequence's
+  too), and a segment that failed its identity check is made again from a new keyframe. The group's job waits for the
+  remakes.
 
 The segments are checked at the same time, four at once: each check waits on the judge and the listener, and eight
 segments checked one after another made a scene take 30 minutes against 16 for single takes.
