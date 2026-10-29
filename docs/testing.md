@@ -506,7 +506,7 @@ npm run test:e2e:real     # builds the web app, starts mm-gateway in Docker and 
   video model's shot length in `catalog.models`, so the shot planner asks for what the model renders. The file names
   the keys (`${IMAGE_MODEL_API_KEY}`); their values reach the container's environment only. The vision account's
   header value is made from `VISION_MODEL_API_KEY` for the run (`Bearer <key>`, or the key itself) and named whole
-  (`${RIDEO_REAL_VISION_CREDENTIAL}`): mm-gateway since `sha-98b05a9` encrypts a credential that is only partly a
+  (`${RIDEO_REAL_VISION_CREDENTIAL}`): mm-gateway since `c5dc21e` (October 18) encrypts a credential that is only partly a
   reference (`Bearer ${…}`) and writes it back with its key file beside the configuration, which the suite mounts
   read-only, so the gateway did not start.
 - **the studio's environment**: the gateway and its key; the vision model as both the language model
