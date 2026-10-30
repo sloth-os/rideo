@@ -49,6 +49,7 @@ describe('makers aim at what their reviewers score', () => {
   it('asks the planner for one geography and the writer for a last pass over the weaknesses', () => {
     expect(SYSTEM_PROMPTS_V2['clip.plan']).toContain("Fix the scene's geography before the shots");
     expect(SYSTEM_PROMPTS_V2['clip.plan']).toContain('a reverse shot shows what was behind the first camera');
+    expect(SYSTEM_PROMPTS_V2['clip.plan']).toContain('The video model moves one thing well at a time');
     expect(SYSTEM_PROMPTS_V2['screenplay.generate']).toContain('go through your screenplay moment by moment');
   });
 
