@@ -37,6 +37,7 @@ import {
   type VideoModelFacts,
   videoFacts,
   voicePhrase,
+  workingBrief,
 } from '@rideo/shared';
 import { invalid } from '../../errors';
 import { throwIfAborted } from '../../util/abort';
@@ -60,7 +61,8 @@ export function screenplayReviewInput(docs: ProjectDocs, video: VideoModelFacts)
   const level = settings.dialogue?.level ?? 'any';
   return {
     brief: {
-      prompt: docs.project.brief.prompt,
+      // The brief as adapted for the video model, when it was (docs/design/first-pass.md#the-brief-adapted-for-the-video-model)
+      prompt: workingBrief(docs.project),
       targetDurationSec: settings.targetDurationSec,
       dialogueLevel: level === 'any' ? null : level,
       castOnly: settings.consistency.castOnly === true,

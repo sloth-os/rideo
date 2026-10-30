@@ -116,6 +116,25 @@ still disagreed with each other (the wind blowing both ways, a tree on either si
 - **Places and props** are described by what a picture shows clearly (shapes, materials, colours, where things
   stand), never by traces or tiny details: "gentle hoofprints" came out as tufts of grass.
 
+## The brief, adapted for the video model
+
+A brief can ask for what the video model renders badly: the riding brief's two riders side by side over a pole are four
+characters in one moment, its "bouncing up and down" a quick repeated motion, its slide into the hay a fall; the kite
+brief's kite caught in a tree and its shared sandwich, contact and food in paws. The screenplay reviewer marks
+feasibility down for each (5–7 on every measured screenplay), and marks the brief down when the writer leaves one out.
+No draft can satisfy both, because the conflict is in the brief.
+
+So with `settings.brief.adapt` (on for new projects, off in the schema) `screenplay.generate` first reads the brief as a
+producer would (`brief.adapt`, the text model, with `VIDEO_MODEL_FACTS`): it names each moment the video model renders
+badly, why, and the filmable form that keeps what it means for the story (far off and small, one slow motion, the
+contact out of sight, the before and after of a cut, one attempt shown), and rewrites the brief with those forms. The
+project keeps it beside the brief as written (`brief.adapted`: the moments, the adapted text, the hash of the brief it
+adapts); the writer, the extensions, the shot planner and the screenplay reviewer work from it (`workingBrief`), so
+the reviewer judges the screenplay against the brief as adapted. A brief edited since is adapted again before the next
+screenplay; a call that fails writes from the brief as it is (`rideo_brief_adaptations_total{outcome}`). The Story view
+lists what was adapted ("Asked: riding side by side · four characters in one moment. Filmed as: they ride side by side
+along the far fence, small against the hills"), and the project settings turn it off.
+
 ## Lines fit their shots
 
 `WORDS_PER_SECOND` is 2 and every shot with lines keeps `LINE_BEAT_SEC` (1 s) after them: a line of six words needs
@@ -295,10 +314,8 @@ cell is one run's first round; the scores of the same build and brief differ by 
 What still keeps a first pass under 8, with what to try next:
 
 1. **A brief that asks for what the video model cannot film** (screenplay feasibility 5–7). The reviewer is right
-   about the model, and the writer cannot satisfy both the brief and the model. *Next:* check the brief before writing
-   (the same `VIDEO_MODEL_FACTS`): name the moments the model renders badly (four characters together, a jump, a
-   bouncing trot, a kite caught in a tree, food in paws) and offer the filmable form to the person, who accepts it as
-   part of the brief, so the reviewer judges the writer's staging against an agreed brief.
+   about the model, and the writer cannot satisfy both the brief and the model: the brief is now adapted before it
+   is written ([the brief, adapted](#the-brief-adapted-for-the-video-model)); its measurement is below.
 2. **Small details that drift between views** (cast consistency 7.5–8.3): a backpack's buckles, a coat open in one view
    and closed in another, sole colours. *Next:* draw a character's views in one picture (a turnaround of three figures
    side by side on one background, which an image model keeps consistent within one image) and split it into the

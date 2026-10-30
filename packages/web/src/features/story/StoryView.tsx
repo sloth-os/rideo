@@ -1,4 +1,4 @@
-import { formatDuration, isTerminalJob, type Scene } from '@rideo/shared';
+import { briefAdaptation, formatDuration, isTerminalJob, type Scene } from '@rideo/shared';
 import {
   Check,
   Clapperboard,
@@ -305,6 +305,37 @@ function SceneCard({ scene }: { scene: Scene }) {
   );
 }
 
+/**
+ * The moments of the brief the video model renders badly and how they are filmed instead, when the brief was adapted
+ * before it was written (docs/design/first-pass.md#the-brief-adapted-for-the-video-model).
+ */
+function BriefAdaptation() {
+  const { docs } = useProject();
+  const adapted = docs ? briefAdaptation(docs.project) : null;
+  if (!adapted?.moments.length) return null;
+  return (
+    <Card className="space-y-2 p-4" data-testid="brief-adapted">
+      <p className="text-[13px] font-medium">The brief, adapted for the video model</p>
+      <ul className="space-y-2">
+        {adapted.moments.map((m) => (
+          <li key={m.asked} className="text-[13px]" data-testid="brief-moment">
+            <span className="text-muted">Asked: </span>
+            {m.asked}
+            <span className="text-muted"> · {m.why}</span>
+            <br />
+            <span className="text-muted">Filmed as: </span>
+            {m.filmed}
+          </li>
+        ))}
+      </ul>
+      <p className="text-[12px] text-muted">
+        The screenplay and its review follow this version; your brief stays as you wrote it. Turn the
+        adaptation off in the project settings to write from your brief as it is.
+      </p>
+    </Card>
+  );
+}
+
 export function StoryView() {
   const { docs, projectId, workflow, jobs } = useProject();
   if (!docs || !projectId) return null;
@@ -361,6 +392,7 @@ export function StoryView() {
           </>
         }
       />
+      <BriefAdaptation />
       <AiReviewPanel stage="screenplay" />
       <Card className="space-y-3 p-4">
         <Field label="Title">

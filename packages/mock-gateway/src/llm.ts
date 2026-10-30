@@ -266,6 +266,9 @@ export function answer(req: ChatRequest, opts: ChatOptions = {}): string {
     case 'reference.check':
       out = referenceCheck(input);
       break;
+    case 'brief.adapt':
+      out = briefAdapt(input);
+      break;
     case 'feedback.scene':
       out = feedbackScene(input, imagesOf(req.parts).length, videoCount > 0);
       break;
@@ -436,4 +439,25 @@ function referenceCheck(input: { subject: { description: string } }) {
   return /drawn wrong/i.test(input.subject.description)
     ? { matches: false, issues: ['a toy peeks out of the backpack'] }
     : { matches: true, issues: [] };
+}
+
+/**
+ * `brief.adapt` (docs/design/first-pass.md#the-brief-adapted-for-the-video-model): two riders "side by side" are four
+ * characters in one moment, filmed far off; any other brief is left as it is.
+ */
+function briefAdapt(input: { prompt: string }) {
+  if (!/side by side/i.test(input.prompt)) return { moments: [], prompt: input.prompt };
+  return {
+    moments: [
+      {
+        asked: 'riding side by side',
+        why: 'four characters in one moment; the video model keeps three at most',
+        filmed: 'they ride side by side along the far fence, small against the hills',
+      },
+    ],
+    prompt: input.prompt.replace(
+      /side by side/gi,
+      'side by side along the far fence, small against the hills',
+    ),
+  };
 }

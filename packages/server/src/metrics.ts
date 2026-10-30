@@ -266,6 +266,13 @@ export class Metrics {
       'First frames read before a video starts from them, by source (storyboard, keyframe) and outcome (agreed, adjusted, error)',
     ),
   );
+  /** Briefs adapted for the video model (docs/design/first-pass.md#the-brief-adapted-for-the-video-model). */
+  readonly briefAdaptations = this.add(
+    new Counter(
+      'rideo_brief_adaptations_total',
+      'Briefs read for the video model before they are written, by outcome (adapted, unchanged, error)',
+    ),
+  );
   /** References checked as they are drawn (docs/design/first-pass.md#references-that-match-their-subject). */
   readonly referenceChecks = this.add(
     new Counter(

@@ -239,3 +239,33 @@ describe('references that match their subject (docs/design/first-pass.md#referen
     expect(metrics).toMatch(/rideo_reference_checks_total\{[^}]*outcome="mismatched"[^}]*\} \d+/);
   }, 300_000);
 });
+
+describe('the brief adapted for the video model (docs/design/first-pass.md#the-brief-adapted-for-the-video-model)', () => {
+  it('adapts a brief before it is written, and the writer and the reviewer work from the adaptation', async () => {
+    const brief = 'Two friends learn to ride ponies; at the end they ride side by side over a pole.';
+    const created = await stack.api<Project>('POST', '/projects', {
+      kind: 'story',
+      title: 'The Riders',
+      brief: { prompt: brief },
+      settings: { targetDurationSec: 30, pilotDurationSec: 10, resolution: { width: 320, height: 180 } },
+    });
+    expect(created.settings.brief.adapt).toBe(true);
+    const pid = created.id;
+    const gen = await stack.api<Job>('POST', `/projects/${pid}/screenplay/generate`, {});
+    expectSucceeded(await stack.waitJob(pid, gen.id));
+    await stack.waitIdle(pid);
+    const project = (await stack.api<any>('GET', `/projects/${pid}/state`)).docs.project as Project;
+    // The brief as written stays; its adaptation names the moment and how it is filmed
+    expect(project.brief.prompt).toBe(brief);
+    expect(project.brief.adapted).toMatchObject({
+      moments: [{ asked: 'riding side by side' }],
+      prompt: expect.stringContaining('along the far fence'),
+    });
+    const written = stack.gw.counters.lastInputs['screenplay.generate'] as { prompt: string };
+    expect(written.prompt).toContain('along the far fence');
+    const reviewed = stack.gw.counters.lastInputs['screenplay.review'] as { brief: { prompt: string } };
+    expect(reviewed.brief.prompt).toContain('along the far fence');
+    const metrics = await (await fetch(`${stack.url}/metrics`)).text();
+    expect(metrics).toMatch(/rideo_brief_adaptations_total\{outcome="adapted"\} \d+/);
+  }, 300_000);
+});

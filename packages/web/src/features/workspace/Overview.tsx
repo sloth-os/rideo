@@ -79,6 +79,7 @@ function SettingsDialog({
           storyboard: s.storyboard,
           feedback: s.feedback,
           review: s.review,
+          brief: s.brief,
         },
       });
       useUi.getState().toast('Settings saved', 'success');
@@ -250,6 +251,12 @@ function SettingsDialog({
               s.review.watchTakes,
               (v) => setS({ ...s, review: { ...s.review, watchTakes: v } }),
               'reviewWatchTakes',
+            )}
+            {toggle(
+              'Adapt the brief to what the video model can film before it is written',
+              s.brief.adapt,
+              (v) => setS({ ...s, brief: { adapt: v } }),
+              'briefAdapt',
             )}
             {toggle(
               'Review the cast’s references before the cast is locked',

@@ -1,4 +1,7 @@
 import {
+  type BriefAdaptInput,
+  type BriefAdaptOutput,
+  BriefAdaptOutputSchema,
   CAST_REFERENCE_LABEL,
   type CastReviewInput,
   type CharacterDescribeInput,
@@ -327,6 +330,13 @@ You describe one frame of a film project so people can find it later by searchin
 - Name others from "cast" only when you are sure; never guess at what you cannot see.
 - "kind" says what the frame is from: a generated take, footage, a still, or a reference image of a character or element.
 Return only JSON: {"caption":"..."}`,
+
+  'brief.adapt': `rideo-task: brief.adapt
+You are a producer reading a film's brief before the screenplay is written, for a film generated shot by shot by an AI video model; "video" says what it renders well ("strengths") and badly ("weaknesses") and how long its shots are.
+Find every moment the brief asks for that the video model renders badly: what is in "video.weaknesses", more than three characters together in one moment (a rider and the animal ridden count as two), a fall, a jump, a quick repeated motion (bouncing, waving again and again), food or small objects handled, getting on or off an animal or a vehicle, something caught, tied, tangled or freed.
+For each, give the filmable form that keeps what the moment means for the story, what a camera sees instead: from far away or from behind with the characters small, one slow motion, the contact out of sight, the before and the after across a cut, one attempt shown for several.
+Then rewrite the brief with those forms in place of the hard moments, and every other word, name, place, look, constraint and line as it is.
+Return only JSON: {"moments":[{"asked":"what the brief asks","why":"why the video model renders it badly","filmed":"how it is filmed instead"}],"prompt":"the brief, adapted"}. When nothing is hard, "moments" is empty and "prompt" is the brief unchanged.`,
 
   'reference.check': `rideo-task: reference.check
 You check one reference image of a film's cast before it is kept: every frame of the film is drawn from it, so whatever is wrong in it is wrong in every shot. You get the subject (a character with its identity and outfit, or a place, a prop or a style with its description), the view that was drawn, the views of it drawn before ("Earlier view 1:" and on, when "earlier" is above 0) and the new view ("New view:").
@@ -1213,6 +1223,11 @@ export class LlmTasks {
   }
 
   /** One frame described for search (docs/design/search.md#captions). */
+  /** The brief adapted for the video model (docs/design/first-pass.md#the-brief-adapted-for-the-video-model). */
+  adaptBrief(input: BriefAdaptInput, signal?: AbortSignal): Promise<BriefAdaptOutput> {
+    return this.run('brief.adapt', BriefAdaptOutputSchema, input, { temperature: 0.3, signal });
+  }
+
   /** A reference as it is drawn, against its subject and the earlier views (docs/design/first-pass.md). */
   checkReference(
     input: ReferenceCheckInput,

@@ -2,6 +2,8 @@ import {
   appendScenes,
   approvedElementReferences,
   approvedReferences,
+  briefAdaptation,
+  briefHash,
   CHARACTER_VIEWS,
   type Character,
   type Consent,
@@ -29,7 +31,9 @@ import {
   screenplayFromLlm,
   shotRangeFor,
   slugify,
+  type VideoModelFacts,
   videoFacts,
+  workingBrief,
 } from '@rideo/shared';
 import type { LabelledImage } from '../../ai/tasks';
 import { AppError, notFound } from '../../errors';
@@ -107,11 +111,18 @@ export async function screenplayGenerate(deps: HandlerDeps, ctx: JobContext) {
       description: `${d.summary} Style: ${d.style}. Setting: ${d.setting}.${people ? ` People: ${people}.` : ''}`,
     });
   }
-  ctx.progress(0.3, 1, 'writing the screenplay');
   const writing = await writingDirection(deps, p.settings);
+  // The brief adapted for the video model before it is written (docs/design/first-pass.md#the-brief-adapted-for-the-video-model)
+  const prompt = await adaptBrief(
+    deps,
+    ctx,
+    p,
+    'video' in writing.direction ? writing.direction.video : undefined,
+  );
+  ctx.progress(0.3, 1, 'writing the screenplay');
   const out = await deps.llm.generateScreenplay(
     {
-      prompt: p.brief.prompt,
+      prompt,
       targetDurationSec: p.settings.targetDurationSec,
       pilotDurationSec: p.settings.pilotDurationSec,
       language: p.settings.language,
@@ -167,6 +178,66 @@ export async function screenplayGenerate(deps: HandlerDeps, ctx: JobContext) {
   return result;
 }
 
+/**
+ * The brief the screenplay is written from (docs/design/first-pass.md#the-brief-adapted-for-the-video-model): with
+ * `settings.brief.adapt`, the moments the video model renders badly in their filmable form, kept on the project
+ * (`brief.adapted`) beside the brief as written, and adapted again only when the brief changed. Any failure writes from
+ * the brief as it is.
+ */
+async function adaptBrief(
+  deps: HandlerDeps,
+  ctx: JobContext,
+  project: Project,
+  video: VideoModelFacts | undefined,
+): Promise<string> {
+  if (!project.settings.brief?.adapt || !video) return project.brief.prompt;
+  const kept = briefAdaptation(project);
+  if (kept) return kept.prompt;
+  ctx.progress(0.25, 1, 'adapting the brief for the video model');
+  try {
+    const out = await deps.llm.adaptBrief(
+      { prompt: project.brief.prompt, targetDurationSec: project.settings.targetDurationSec, video },
+      ctx.signal,
+    );
+    const prompt = out.moments.length && out.prompt.trim() ? out.prompt.trim() : project.brief.prompt;
+    deps.metrics.briefAdaptations.inc({ outcome: out.moments.length ? 'adapted' : 'unchanged' });
+    ctx.log.info(
+      { projectId: project.id, moments: out.moments.map((m) => m.asked) },
+      'brief adapted for the video model',
+    );
+    await commitAs(
+      deps,
+      ctx,
+      (tx) => {
+        const cur = tx.require<Project>(docPath.project(), 'project');
+        tx.set(docPath.project(), {
+          ...cur,
+          brief: {
+            ...cur.brief,
+            adapted: {
+              of: briefHash(project.brief.prompt),
+              prompt,
+              moments: out.moments.slice(0, 20),
+              model: deps.llm.text.model,
+              at: new Date().toISOString(),
+            },
+          },
+        });
+      },
+      `Adapt the brief for the video model (${out.moments.length} moment(s))`,
+    );
+    return prompt;
+  } catch (err) {
+    throwIfAborted(ctx.signal);
+    deps.metrics.briefAdaptations.inc({ outcome: 'error' });
+    ctx.log.warn(
+      { projectId: project.id, err: (err as Error).message },
+      'could not adapt the brief; writing from it as it is',
+    );
+    return project.brief.prompt;
+  }
+}
+
 export async function screenplayExtend(deps: HandlerDeps, ctx: JobContext) {
   const docs = await docsFor(deps, ctx);
   const sp = docs.screenplay;
@@ -182,7 +253,7 @@ export async function screenplayExtend(deps: HandlerDeps, ctx: JobContext) {
   const v2 =
     writing.version === 2
       ? {
-          brief: docs.project.brief.prompt,
+          brief: workingBrief(docs.project),
           ...(last
             ? {
                 lastScene: {

@@ -375,6 +375,19 @@ export const ReferenceCheckOutputSchema = z.object({
 });
 export type ReferenceCheckOutput = z.infer<typeof ReferenceCheckOutputSchema>;
 
+/** `brief.adapt` (docs/design/first-pass.md#the-brief-adapted-for-the-video-model). */
+export interface BriefAdaptInput {
+  prompt: string;
+  targetDurationSec: number;
+  video: VideoModelFacts;
+}
+
+export const BriefAdaptOutputSchema = z.object({
+  moments: lenientArray(z.object({ asked: str(400), why: str(400), filmed: str(600) }), 20),
+  prompt: str(20000),
+});
+export type BriefAdaptOutput = z.infer<typeof BriefAdaptOutputSchema>;
+
 export const LLM_TASKS = [
   'media.describe',
   'screenplay.generate',
@@ -402,6 +415,7 @@ export const LLM_TASKS = [
   'cast.review',
   'frame.reconcile',
   'reference.check',
+  'brief.adapt',
 ] as const;
 export type LlmTaskId = (typeof LLM_TASKS)[number];
 

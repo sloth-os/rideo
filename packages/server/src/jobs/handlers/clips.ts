@@ -29,6 +29,7 @@ import {
   voiceOf,
   voicesNotReady,
   wordsCapacity,
+  workingBrief,
 } from '@rideo/shared';
 import { assertCastReady, assertVoicesReady, clipStatusOf } from '../../domain/clips';
 import { AppError, notFound } from '../../errors';
@@ -79,7 +80,7 @@ export async function clipPlan(deps: HandlerDeps, ctx: JobContext) {
     .pop();
   const v2Inputs = v2
     ? {
-        brief: docs.project.brief.prompt,
+        brief: workingBrief(docs.project),
         // What the storyboard reviewer is told (docs/design/first-pass.md#one-rubric-for-the-maker-and-the-reviewer)
         video: videoFacts(limits, settings),
         castOnly: settings.consistency.castOnly === true,

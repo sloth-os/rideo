@@ -599,8 +599,9 @@ assembled it as unheard, so its `dialogue` and `sound` scores never reached the 
 **64. Briefs the video model cannot film** (S–M) — the riding brief asks for two riders side by side (four characters
 in a moment), a bouncing trot and a slide off a pony: the screenplay reviewer marks feasibility 5–6 whatever the
 writer does, and brief 5 when the writer leaves a moment out. A simpler brief passed 8 overall on its first round.
-*How:* check the brief against `VIDEO_MODEL_FACTS` before writing, and let the person accept a filmable form of each
-hard moment as part of the brief.
+The brief is now adapted before it is written, and the Story view shows each moment and its filmable form
+([the brief, adapted](design/first-pass.md#the-brief-adapted-for-the-video-model)). *Still:* let the person choose
+between the forms before writing, rather than turning the adaptation off.
 
 **65. Cast views that drift in small details** (M) — consistency 7.5–8.3 after the whole-figure anchor and three
 views drawn together: buckles, a coat open in one view, sole colours. *How:* a turnaround (the three views in one

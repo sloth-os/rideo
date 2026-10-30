@@ -130,6 +130,8 @@ export const ProjectSettingsPatchSchema = z
       })
       .partial(),
     autopilot: z.boolean(),
+    /** docs/design/first-pass.md#the-brief-adapted-for-the-video-model */
+    brief: z.object({ adapt: z.boolean() }).partial(),
     approvals: z.object({ allowAgents: z.boolean(), allowAgentOverrides: z.boolean() }).partial(),
   })
   .partial();

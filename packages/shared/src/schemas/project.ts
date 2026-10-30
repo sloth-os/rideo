@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { ProjectBrandSchema } from '../brand/schema';
+import { fnv1a32 } from '../util/hash';
 import { ProjectAccessSchema } from './accounts';
 import { DEFAULT_REVIEW_SETTINGS, ReviewSettingsSchema } from './ai-review';
 import { BlockingSettingsSchema } from './blocking';
@@ -161,6 +162,11 @@ export const ProjectSettingsSchema = z.object({
     .default({ maxGenerations: 2000, lookahead: 3, approveNewElements: false }),
   watermark: z.object({ enabled: z.boolean().default(true) }).default({ enabled: true }),
   disclosure: DisclosureSettingsSchema.default(DEFAULT_DISCLOSURE),
+  /**
+   * The brief adapted for the video model before it is written (docs/design/first-pass.md#the-brief-adapted-for-the-video-model):
+   * off in the schema, on for new projects.
+   */
+  brief: z.object({ adapt: z.boolean().default(false) }).default({ adapt: false }),
   autopilot: z.boolean().default(false),
   approvals: z
     .object({ allowAgents: z.boolean().default(true), allowAgentOverrides: z.boolean().default(false) })
@@ -179,6 +185,41 @@ export function withSettingsDefaults(settings: ProjectSettings): ProjectSettings
   return parsed.success ? parsed.data : settings;
 }
 
+/** A moment of the brief the video model renders badly, and how it is filmed instead. */
+export const BriefMomentSchema = z.object({
+  asked: z.string().max(400),
+  why: z.string().max(400),
+  filmed: z.string().max(600),
+});
+export type BriefMoment = z.infer<typeof BriefMomentSchema>;
+
+/** The brief adapted for the video model (docs/design/first-pass.md#the-brief-adapted-for-the-video-model). */
+export const AdaptedBriefSchema = z.object({
+  /** Hash of the brief's prompt it adapts (`briefHash`): a brief edited since is adapted again. */
+  of: z.string().max(40),
+  prompt: z.string().max(20000),
+  moments: z.array(BriefMomentSchema).max(20).default([]),
+  model: z.string().max(200).nullable().default(null),
+  at: IsoDateSchema,
+});
+export type AdaptedBrief = z.infer<typeof AdaptedBriefSchema>;
+
+/** Hash of a brief's prompt, which its adaptation is of. */
+export function briefHash(prompt: string): string {
+  return fnv1a32(prompt.trim()).toString(16);
+}
+
+/** The adaptation of the brief as it is now, or null (none, or the brief was edited since). */
+export function briefAdaptation(project: Pick<Project, 'brief'>): AdaptedBrief | null {
+  const a = project.brief.adapted;
+  return a && a.of === briefHash(project.brief.prompt) ? a : null;
+}
+
+/** The brief the writer, the planner and the reviewers work from: its current adaptation, else the brief. */
+export function workingBrief(project: Pick<Project, 'brief'>): string {
+  return briefAdaptation(project)?.prompt ?? project.brief.prompt;
+}
+
 export const ApprovalSchema = z.object({ at: IsoDateSchema, actor: ActorSchema, tag: z.string().optional() });
 export type Approval = z.infer<typeof ApprovalSchema>;
 
@@ -191,6 +232,8 @@ export const ProjectSchema = z.object({
   brief: z.object({
     prompt: z.string().max(20000).default(''),
     attachmentResourceIds: z.array(IdSchema).default([]),
+    /** The brief as the writer and the reviewers read it, when `settings.brief.adapt` adapted it (`briefAdaptation`). */
+    adapted: AdaptedBriefSchema.nullable().default(null),
   }),
   settings: ProjectSettingsSchema,
   workflow: z.object({

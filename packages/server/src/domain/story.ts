@@ -103,6 +103,8 @@ export class StoryService extends Service {
         const brief = {
           prompt: input.prompt ?? p.brief.prompt,
           attachmentResourceIds: input.attachmentResourceIds ?? p.brief.attachmentResourceIds,
+          // Kept: it applies only while it adapts the brief as it is (briefAdaptation)
+          adapted: p.brief.adapted ?? null,
         };
         if (brief.prompt.trim().length < 3)
           throw new AppError('gate_unmet', 'Write a short prompt describing the movie first');

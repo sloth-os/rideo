@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
+  briefAdaptation,
+  briefHash,
   CHARACTER_VIEWS,
   CLOSE_FRAMINGS,
   ClipReviewSchema,
@@ -26,6 +28,7 @@ import {
   stageVerdict,
   VIDEO_MODEL_FACTS,
   videoFacts,
+  workingBrief,
 } from '../src';
 import * as f from '../src/testing/fixtures';
 
@@ -295,5 +298,33 @@ describe('close framings drawn from the head and shoulders (docs/design/first-pa
       'Rosie (head and shoulders)',
     ]);
     expect(referenceLabels(selection, [rosie], [])).toEqual(['Rosie (full body view)']);
+  });
+});
+
+describe('the brief adapted for the video model (docs/design/first-pass.md#the-brief-adapted-for-the-video-model)', () => {
+  const project = (prompt: string, adaptedOf: string | null) =>
+    f.project({
+      brief: {
+        prompt,
+        attachmentResourceIds: [],
+        adapted: adaptedOf
+          ? {
+              of: adaptedOf,
+              prompt: 'They ride along the far fence.',
+              moments: [],
+              model: null,
+              at: '2026-10-30T00:00:00.000Z',
+            }
+          : null,
+      },
+    });
+
+  it('works from the adaptation while it adapts the brief as it is, else from the brief', () => {
+    const brief = 'Two riders side by side over a pole.';
+    expect(workingBrief(project(brief, briefHash(brief)))).toBe('They ride along the far fence.');
+    expect(briefAdaptation(project(`${brief} At sunset.`, briefHash(brief)))).toBeNull();
+    expect(workingBrief(project(`${brief} At sunset.`, briefHash(brief)))).toBe(`${brief} At sunset.`);
+    expect(workingBrief(project(brief, null))).toBe(brief);
+    expect(briefHash(` ${brief} `)).toBe(briefHash(brief));
   });
 });

@@ -72,3 +72,27 @@ test('the project settings show the review gates at 8 and save a new bar', async
     .poll(async () => (await api.call<any>('GET', `/projects/${pid}/state`)).docs.project.settings.review)
     .toMatchObject({ threshold: 8, sceneThreshold: 8, minDimension: 7.5 });
 });
+
+/** The brief adapted for the video model (docs/design/first-pass.md#the-brief-adapted-for-the-video-model), desktop and phone. */
+test('the Story view shows what of the brief the video model renders badly and how it is filmed', async ({
+  page,
+  request,
+}, testInfo) => {
+  test.setTimeout(240_000);
+  const api = new Api(request);
+  const pid = await api.storyProject(`Adapted brief (${testInfo.project.name})`, {
+    screenplay: true,
+    brief: 'Two friends learn to ride ponies; at the end they ride side by side over a pole.',
+    settings: { brief: { adapt: true } },
+  });
+  await api.waitIdle(pid);
+  await page.goto(`/p/${pid}/story`);
+  const adapted = page.getByTestId('brief-adapted');
+  await expect(adapted).toBeVisible();
+  await expect(adapted.getByTestId('brief-moment')).toContainText('riding side by side');
+  await expect(adapted.getByTestId('brief-moment')).toContainText('along the far fence');
+  // The project settings turn it off
+  await page.goto(`/p/${pid}/overview`);
+  await page.getByTestId('open-settings').click();
+  await expect(page.locator('input[name="briefAdapt"]')).toBeChecked();
+});
