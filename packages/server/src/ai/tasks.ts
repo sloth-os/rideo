@@ -329,7 +329,8 @@ Write the text the video model should get:
 - "description": the first frame as drawn: who is where (frame left, centre or right; near or far), which way each one faces, their pose, what each holds and in which hand, where the props and landmarks are, the light. Use the plan's words wherever the frame agrees with them; describe only what you see.
 - "action": the planned action, unchanged where the frame allows it; where it does not, the same story beat starting from what the frame shows (who moves, from where, to where), as one simple continuous motion.
 - "conflicts": each difference between the plan and the frame, short ("the gate is open, not closed"); empty when they agree.
-Return only JSON: {"description":"...","action":"...","conflicts":[]}`,
+- "redraw": true when the frame contradicts what the shot needs: who is in it, where each one stands and which way they face, what each holds, a person or prop missing or shown twice, or a framing a size off (a close-up drawn as a whole figure); false when only details differ (the clouds, a texture, a small object).
+Return only JSON: {"description":"...","action":"...","conflicts":[],"redraw":false}`,
 };
 
 /**

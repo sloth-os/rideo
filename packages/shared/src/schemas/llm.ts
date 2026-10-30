@@ -347,6 +347,8 @@ export const FrameReconcileOutputSchema = z.object({
   description: str(3000),
   action: str(2000),
   conflicts: lenientArray(str(400), 20),
+  /** The frame contradicts what the shot needs (who, where, facing, what is held, a duplicate, the framing). */
+  redraw: z.boolean().catch(false).default(false),
 });
 export type FrameReconcileOutput = z.infer<typeof FrameReconcileOutputSchema>;
 

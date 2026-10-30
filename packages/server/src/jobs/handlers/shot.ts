@@ -8,7 +8,6 @@ import {
   type Character,
   type Clip,
   type ConsistencyReport,
-  compactIdentity,
   compileKeyframeRequest,
   compileVideoRequest,
   docPath,
@@ -48,7 +47,13 @@ import type { JobContext } from '../queue';
 import { cameraView, withCameraView } from './blocking';
 import { commitAs, docsFor, gatewayOptions, type HandlerDeps } from './common';
 import { lipSyncPass, prepareDialogue, takeAudio, takeAudioWav } from './dialogue';
-import { generateKeyframe, prepareShotReferences } from './keyframe';
+import {
+  type FrameReading,
+  generateKeyframe,
+  prepareShotReferences,
+  reconcileShot,
+  stagingFor,
+} from './keyframe';
 import { type PreparedPerformance, preparePerformance, withPerformanceSound } from './performance';
 import { commitTake, finishTake } from './take-finish';
 
@@ -219,6 +224,8 @@ export async function shotGenerate(deps: HandlerDeps, ctx: JobContext) {
 
       let keyframeRef: MediaRef | null = null;
       let keyframeReport: ConsistencyReport | null = null;
+      // The keyframe's reading by the staging check, reused for the video prompt
+      let keyframeSeen: FrameReading | null = null;
       let imageModel: string | undefined;
       const taskIds: string[] = [];
       const resourceUri = async (id: string, image: boolean) => {
@@ -258,6 +265,8 @@ export async function shotGenerate(deps: HandlerDeps, ctx: JobContext) {
           step: 'keyframe',
           variation,
           quality: keyframeQuality,
+          // Drawn again while it contradicts its shot (docs/design/first-pass.md#frames-that-follow-their-shot)
+          staging: stagingFor(shotCtx, 'keyframe'),
           progress: (attempt) =>
             ctx.progress(
               0.05 + (0.3 * attempt) / maxAttempts,
@@ -268,6 +277,7 @@ export async function shotGenerate(deps: HandlerDeps, ctx: JobContext) {
         keyframeRef = kf.keyframe;
         keyframeReport = kf.report;
         imageModel = kf.imageModel;
+        keyframeSeen = kf.seen ?? null;
         taskIds.push(...kf.taskIds);
         deps.metrics.shotStepSeconds.observe({ step: 'keyframe' }, (Date.now() - keyframeStarted) / 1000);
         if (kf.report) deps.metrics.takeAttempts.observe({ stage: 'keyframe' }, kf.report.attempts);
@@ -374,13 +384,15 @@ export async function shotGenerate(deps: HandlerDeps, ctx: JobContext) {
       // describes a storyboard frame or a keyframe as drawn, so it never asks the model to morph it
       const frameSeen =
         v2 && keyframeRef && (firstFrame?.source === 'storyboard' || firstFrame?.source === 'keyframe')
-          ? await seeFirstFrame(deps, ctx, {
-              clipId,
-              shot,
-              characters,
-              keyframe: keyframeRef,
-              source: firstFrame.source,
-            })
+          ? keyframeSeen && keyframeSeen.keyframeHash === keyframeRef.hash
+            ? { description: keyframeSeen.description, action: keyframeSeen.action }
+            : await seeFirstFrame(deps, ctx, {
+                clipId,
+                shot,
+                characters,
+                keyframe: keyframeRef,
+                source: firstFrame.source,
+              })
           : null;
       const videoCtx: ShotContext = frameSeen ? { ...shotCtx, frameSeen } : shotCtx;
       // The motion reference, when the model accepts reference videos.
@@ -775,21 +787,14 @@ async function seeFirstFrame(
     return { description: kept.description, action: kept.action };
   try {
     const out = await deps.llm.reconcileFrame(
-      {
-        shot: {
-          description: shot.description,
-          action: shot.action,
-          endState: shot.endState ?? '',
-          framing: shot.camera.framing,
-          movement: shot.camera.movement,
-          durationSec: shot.durationSec,
-          cast: opts.characters.map((c) => ({ name: c.name, look: compactIdentity(c, shot) })),
-        },
-      },
+      { shot: reconcileShot(shot, opts.characters) },
       await deps.media.pngBuffer(ctx.job.projectId, keyframe, 1024),
       ctx.signal,
     );
-    deps.metrics.frameReconciles.inc({ source, outcome: out.conflicts.length ? 'adjusted' : 'agreed' });
+    deps.metrics.frameReconciles.inc({
+      source,
+      outcome: out.redraw ? 'redraw' : out.conflicts.length ? 'adjusted' : 'agreed',
+    });
     ctx.log.info(
       { projectId: ctx.job.projectId, shotId: shot.id, source, conflicts: out.conflicts },
       'first frame read for the video prompt',

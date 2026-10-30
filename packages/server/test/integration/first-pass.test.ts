@@ -159,3 +159,46 @@ describe('framings spelled out (docs/design/first-pass.md#framings-spelled-out)'
     expect(width).toBeGreaterThan(height);
   }, 300_000);
 });
+
+describe('frames that follow their shot (docs/design/first-pass.md#frames-that-follow-their-shot)', () => {
+  it('draws a frame again while it contradicts its shot, and once when it agrees', async () => {
+    const { projectId: pid, state } = await readyStoryProject(stack, {
+      storyboard: { scenes: 1 },
+      pilotDurationSec: 20,
+    });
+    const scene = [...state.docs.screenplay.scenes].sort((a: any, b: any) => a.index - b.index)[0];
+    const plan = await stack.api<Job>('POST', `/projects/${pid}/clips/plan`, { sceneId: scene.id });
+    expectSucceeded(await stack.waitJob(pid, plan.id));
+    let docs = (await stack.api<any>('GET', `/projects/${pid}/state`)).docs;
+    const clip = Object.values<Clip>(docs.clips)[0]!;
+    const [first, second] = [...clip.shots].sort((a, b) => a.index - b.index);
+    expect(second).toBeDefined();
+    await stack.api('PATCH', `/projects/${pid}/clips/${clip.id}/shots/${first!.id}`, {
+      description: `${first!.description} The gate is closed, drawn otherwise.`,
+    });
+    for (const shot of [first!, second!]) {
+      const board = await stack.api<Job>(
+        'POST',
+        `/projects/${pid}/clips/${clip.id}/shots/${shot.id}/board/generate`,
+      );
+      expectSucceeded(await stack.waitJob(pid, board.id));
+    }
+    docs = (await stack.api<any>('GET', `/projects/${pid}/state`)).docs;
+    const shots = [...(docs.clips[clip.id] as Clip).shots].sort((a, b) => a.index - b.index);
+    // Every attempt of the contradicting frame was read and drawn again; the reading of the one kept is its board's
+    const attempts = docs.project.settings.consistency.maxAttempts;
+    expect(shots[0]!.board!.gatewayTaskIds).toHaveLength(attempts);
+    expect(shots[0]!.board!.seen).toMatchObject({
+      keyframeHash: shots[0]!.board!.keyframe.hash,
+      conflicts: ['the gate is open, not closed'],
+    });
+    // The frame that agrees with its shot is drawn once, and its reading kept for the video
+    expect(shots[1]!.board!.gatewayTaskIds).toHaveLength(1);
+    expect(shots[1]!.board!.seen).toMatchObject({ conflicts: [] });
+    const metrics = await (await fetch(`${stack.url}/metrics`)).text();
+    const redraws = metrics
+      .split('\n')
+      .filter((l) => l.startsWith('rideo_frame_reconciles_total{') && l.includes('outcome="redraw"'));
+    expect(redraws.some((l) => l.includes('source="storyboard"'))).toBe(true);
+  }, 300_000);
+});

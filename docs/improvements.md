@@ -608,8 +608,9 @@ picture) split into the references, measured against views drawn one by one.
 
 **66. Frames that do not follow their shot** (M) — storyboard continuity 5–6 on every measured run: props in another
 place or state than the shot says, a duplicate prop, a character metres from where the last cut left them, morning
-lit as a sunset. *How:* a staging check of each frame against its text as it is drawn (who is where, what each holds,
-the light), and a scene's frames drawn as edits of its first frame.
+lit as a sunset. A staging check now draws a frame again while it contradicts its shot
+([frames that follow their shot](design/first-pass.md#frames-that-follow-their-shot)). *Still:* frames that agree with
+each other: a scene's frames drawn as edits of its first frame.
 
 **67. AI blocking that disagrees with the shot plan** (M) — blocking 3–5 on six measured storyboards; its camera views
 contradicted the shots' planned framing and screen positions, and the frames followed neither (5.6–6.9 with the desk

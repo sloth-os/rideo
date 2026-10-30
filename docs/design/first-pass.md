@@ -159,6 +159,23 @@ blocking a scene took about ten minutes of reasoning. New projects are created w
 ([the planner's rules](#one-rubric-for-the-maker-and-the-reviewer)). A person turns the desk on, or blocks a scene by
 hand, when a scene needs it. What would let the AI blocking back on is in [what is left](#what-is-left).
 
+## Frames that follow their shot
+
+The storyboards' weakest dimension was continuity (5 on every measured run), and most of what it found was a frame
+that did not draw its own shot: a second kite in the sky, a prop on the wrong rail or floating, a character on the
+other side of the frame, a close-up drawn whole. A frame passed its gate on identity alone, and those mistakes went to
+the review, and on to the video.
+
+With prompt version 3 a frame that passes the identity and quality checks is read against its shot as it is drawn
+(`frame.reconcile`, below) and is drawn again, within `consistency.maxAttempts`, while the reading says `redraw`: it
+contradicts what the shot needs (who is in it, where each stands and faces, what each holds, someone or something
+missing or shown twice, a framing a size off). Details (the clouds, a texture) are listed as conflicts without a
+redraw. The first frame that needs no redraw is kept, else the one with the fewest conflicts; its reading is kept on
+the board (`board.seen`) and the video pass uses it without reading the frame again. Storyboard frames and a take's
+own keyframes are checked; a person's own prompt is not (`rideo_frame_reconciles_total{outcome: redraw}` counts the
+frames drawn again). This is part of drawing a frame, like the identity check that also draws a frame again: the
+storyboard the review sees is the first one presented, and no review round is spent on it.
+
 ## The video reads its first frame
 
 A take starts from a picture, its approved storyboard frame or its keyframe, and its prompt restated the shot as
@@ -260,9 +277,9 @@ What still keeps a first pass under 8, with what to try next:
    three references; measure it against views drawn one by one.
 3. **Frames that do not follow their shot** (storyboard continuity 5–6): a prop drawn in another place or state than
    the shot says, a duplicate prop, a character a few metres from where the cut before left them, a morning scene lit
-   like a sunset. *Next:* check each frame against its shot's text as it is drawn (the vision model, like the identity
-   judge: who is where, what each holds, the light), and draw a frame again while it contradicts its text; and draw a
-   scene's frames from its first frame as an edit (the same place and props) rather than from text and references.
+   like a sunset. The staging check ([frames that follow their shot](#frames-that-follow-their-shot)) draws such a
+   frame again; its measurement is below. *Next:* frames that agree with each other, not only with their own text:
+   a scene's frames drawn as edits of its first frame (the same place and props).
 4. **Close framings drawn whole** (composition, fixed): every storyboard on prompt version 2 drew some close-ups and
    medium close-ups as whole figures (fp6: four of nine); version 3's spelled-out framing and head-and-shoulders
    references drew none of seven whole (fp7).

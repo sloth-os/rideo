@@ -415,8 +415,9 @@ export function multipartFile(body: Buffer, contentType: string, field = 'file')
  */
 function frameReconcile(input: { shot: { description: string; action: string } }) {
   const { description, action } = input.shot;
-  if (!/drawn otherwise/i.test(description)) return { description, action, conflicts: [] };
+  if (!/drawn otherwise/i.test(description)) return { description, action, conflicts: [], redraw: false };
   return {
+    redraw: true,
     // The sentence the frame contradicts gives way to what it shows
     description: `As drawn: ${description.replace(/[^.]*drawn otherwise[^.]*\.?/gi, '').trim()} The gate stands open.`,
     action: `${action} Through the open gate.`,

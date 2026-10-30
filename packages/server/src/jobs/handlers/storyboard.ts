@@ -26,7 +26,7 @@ import type { JobContext } from '../queue';
 import { cameraView, ensureBlocking, withCameraView } from './blocking';
 import { commitAs, docsFor, type HandlerDeps } from './common';
 import { speakLines } from './dialogue';
-import { generateKeyframe, prepareShotReferences } from './keyframe';
+import { generateKeyframe, prepareShotReferences, stagingFor } from './keyframe';
 
 /**
  * The scene reference of a storyboard frame (docs/design/storyboard.md#jobs): the clip's first shot's frame when it is
@@ -133,6 +133,8 @@ export async function shotBoard(deps: HandlerDeps, ctx: JobContext) {
         : {}),
       name,
       step: 'board',
+      // Drawn again while it contradicts its shot (docs/design/first-pass.md#frames-that-follow-their-shot)
+      staging: stagingFor(shotCtx, 'storyboard'),
       progress: (attempt) =>
         ctx.progress(0.1 + (0.6 * attempt) / maxAttempts, 1, `frame attempt ${attempt + 1}/${maxAttempts}`),
     });
@@ -170,7 +172,18 @@ export async function shotBoard(deps: HandlerDeps, ctx: JobContext) {
       approved: false,
       approvedAt: null,
       approvedBy: null,
-      seen: null,
+      // Its reading, which the video pass reuses (docs/design/first-pass.md#the-video-reads-its-first-frame)
+      seen:
+        kf.seen && kf.keyframe && kf.seen.keyframeHash === kf.keyframe.hash
+          ? {
+              keyframeHash: kf.seen.keyframeHash,
+              description: kf.seen.description,
+              action: kf.seen.action,
+              conflicts: kf.seen.conflicts,
+              model: kf.seen.model,
+              at: new Date().toISOString(),
+            }
+          : null,
     };
     await commitAs(
       deps,

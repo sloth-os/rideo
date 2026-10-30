@@ -7,10 +7,14 @@ import {
   type Character,
   type CharacterReference,
   type ConsistencyReport,
+  compactIdentity,
   compileKeyframeRequest,
   type Element,
+  type FrameReconcileInput,
+  type FrameReconcileOutput,
   HEAD_CROP_SHARE,
   type MediaRef,
+  promptVersionOf,
   referenceLabels,
   type Shot,
   type ShotContext,
@@ -109,6 +113,8 @@ export async function prepareShotReferences(
 }
 
 export interface KeyframeResult {
+  /** The chosen frame read against its shot, when the staging check ran. */
+  seen?: FrameReading;
   keyframe: MediaRef | null;
   report: ConsistencyReport | null;
   imageModel?: string;
@@ -140,6 +146,11 @@ export async function generateKeyframe(
     variation?: number;
     /** Quality checks: physics and who must not be in the frame. */
     quality?: { threshold: number; absent?: { name: string; look: string }[]; castOnly?: boolean };
+    /**
+     * The staging check (docs/design/first-pass.md#frames-that-follow-their-shot): a frame that passes is read against
+     * its shot (`frame.reconcile`), and drawn again while it contradicts what the shot needs.
+     */
+    staging?: { shot: FrameReconcileInput['shot']; source: 'storyboard' | 'keyframe' };
     progress: (attempt: number) => void;
   },
 ): Promise<KeyframeResult> {
@@ -147,6 +158,10 @@ export async function generateKeyframe(
   const projectId = ctx.job.projectId;
   const out: KeyframeResult = { keyframe: null, report: null, taskIds: [], prompt: '', seed: 0 };
   let best: Pick<KeyframeResult, 'keyframe' | 'report' | 'prompt' | 'seed'> | null = null;
+  // A passing frame read against its shot: the first that needs no redraw wins, else the one with the fewest conflicts
+  let staged:
+    | (Pick<KeyframeResult, 'keyframe' | 'report' | 'prompt' | 'seed'> & { seen: FrameReading })
+    | null = null;
   for (let attempt = 0; attempt < input.maxAttempts; attempt++) {
     throwIfAborted(ctx.signal);
     input.progress(attempt);
@@ -197,6 +212,22 @@ export async function generateKeyframe(
     });
     if (!best?.report || betterAttempt(out.report, best.report))
       best = { keyframe: out.keyframe, report: out.report, prompt: out.prompt, seed: out.seed };
+    if (attemptDone(out.report) && input.staging) {
+      const seen = await readFrame(deps, ctx, input.staging, out.keyframe);
+      if (!seen) break;
+      if (
+        !staged ||
+        (!seen.redraw && staged.seen.redraw) ||
+        seen.conflicts.length < staged.seen.conflicts.length
+      )
+        staged = { keyframe: out.keyframe, report: out.report, prompt: out.prompt, seed: out.seed, seen };
+      if (!seen.redraw) break;
+      ctx.log.info(
+        { projectId, attempt, conflicts: seen.conflicts },
+        'the frame contradicts its shot; drawing it again',
+      );
+      continue;
+    }
     if (attemptDone(out.report)) break;
     if (out.report.status === 'failed')
       ctx.log.info({ attempt, score: out.report.score }, 'keyframe failed the consistency gate');
@@ -206,5 +237,59 @@ export async function generateKeyframe(
         'keyframe failed the quality checks',
       );
   }
+  if (staged) return { ...out, ...staged };
   return best ? { ...out, ...best } : out;
+}
+
+/** The shot as `frame.reconcile` reads it beside its frame. */
+export function reconcileShot(shot: Shot, characters: Character[]): FrameReconcileInput['shot'] {
+  return {
+    description: shot.description,
+    action: shot.action,
+    endState: shot.endState ?? '',
+    framing: shot.camera.framing,
+    movement: shot.camera.movement,
+    durationSec: shot.durationSec,
+    cast: characters.map((c) => ({ name: c.name, look: compactIdentity(c, shot) })),
+  };
+}
+
+/**
+ * The staging check of prompt version 3 (docs/design/first-pass.md#frames-that-follow-their-shot), unless a person
+ * wrote the shot's prompt.
+ */
+export function stagingFor(
+  shotCtx: ShotContext,
+  source: 'storyboard' | 'keyframe',
+): { shot: FrameReconcileInput['shot']; source: 'storyboard' | 'keyframe' } | undefined {
+  if (promptVersionOf(shotCtx.settings) < 3 || shotCtx.shot.promptOverride?.trim()) return undefined;
+  return { shot: reconcileShot(shotCtx.shot, shotCtx.characters), source };
+}
+
+/** What a frame shows against its shot (`frame.reconcile`): null when the model cannot say. */
+export type FrameReading = FrameReconcileOutput & { keyframeHash: string; model: string };
+
+async function readFrame(
+  deps: HandlerDeps,
+  ctx: JobContext,
+  staging: NonNullable<Parameters<typeof generateKeyframe>[2]['staging']>,
+  keyframe: MediaRef,
+): Promise<FrameReading | null> {
+  try {
+    const out = await deps.llm.reconcileFrame(
+      { shot: staging.shot },
+      await deps.media.pngBuffer(ctx.job.projectId, keyframe, 1024),
+      ctx.signal,
+    );
+    deps.metrics.frameReconciles.inc({
+      source: staging.source,
+      outcome: out.redraw ? 'redraw' : out.conflicts.length ? 'adjusted' : 'agreed',
+    });
+    return { ...out, keyframeHash: keyframe.hash, model: deps.llm.vision.model };
+  } catch (err) {
+    throwIfAborted(ctx.signal);
+    deps.metrics.frameReconciles.inc({ source: staging.source, outcome: 'error' });
+    ctx.log.warn({ err: (err as Error).message }, 'could not read the frame against its shot');
+    return null;
+  }
 }
