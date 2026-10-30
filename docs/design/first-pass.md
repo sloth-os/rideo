@@ -140,8 +140,8 @@ full figure, two medium close-ups head to toe. Its references are whole figures 
 up", "wide shot: the characters whole, from head to toe, with the place around them" (`FRAMING_V3`). Version 2 keeps
 its words, so its frames stay current.
 
-The words were not enough: the next measured storyboard (fp5) still drew two close-ups as whole figures. The image
-model draws what its references show, so a close framing (`CLOSE_FRAMINGS`: close-up, extreme close-up, medium
+Words alone may not hold: the image model draws what its references show, and every measured storyboard with whole-
+figure references drew some close framings whole. So a close framing (`CLOSE_FRAMINGS`: close-up, extreme close-up, medium
 close-up) of version 3 sends each character's whole-figure reference cropped to its top (`HEAD_CROP_SHARE`, 42 %: the
 head and the shoulders of a standing figure), labelled "Rosie (head and shoulders)"; the identity judge keeps the whole
 figures. A crop of the same picture keeps the face and the outfit's top exactly as the cast was locked, where a
@@ -175,6 +175,15 @@ keep the plan, so the frame stays current. A storyboard frame is read once and k
 (`board.seen`, by the frame's hash); a keyframe is read for its generation. A person's own prompt (`promptOverride`)
 is never replaced, and a call that fails leaves the planned text (`rideo_frame_reconciles_total{source, outcome}`:
 `agreed`, `adjusted`, `error`). It is one vision call per frame, a fraction of the video it keeps from morphing.
+
+## Scenes count what they heard
+
+A scene watched before the edit is heard by the audio-visual model ([scenes before the
+edit](ai-review.md#scenes-before-the-edit)), and its review is meant to carry the `dialogue` and `sound` scores it
+heard. They were dropped: the scene was assembled as if nobody had listened, so every scene review of the riding
+demo, and of the first measured pilots, kept only the picture's eight scores (the summaries said "Heard: all five
+scripted lines are present…" beside `dialogue: null`). A heard scene now counts them, as an export's feedback does:
+in its overall score and against the gate's floor.
 
 ## Efficiency
 
@@ -218,16 +227,23 @@ cell is one run's first round; the scores of the same build and brief differ by 
 | fp2: the brief first | riding 6.9, 7.6 | – | – |
 | fp3: scenes of three, setups, no shots, multi-anchor, materials | riding 8.1, 7.1, 7.4 | riding 8.3 | riding 6.3 (desk on, blocking 3.4) |
 | fp4: slowest forms, costumes piece by piece, first frames read | riding 7.3; kite 8.3, 8.5 | riding 8.6; kite 8.7, 8.8 | riding 5.6; kite 6.8, 6.9 (desk on, blocking 3–4) |
-| fp5: prompt version 3, the desk off | riding 7.5; kite 7.6 | riding 8.6; kite **8.9, every dimension 8 or more** | riding 7.1; kite 7.3 (desk off) |
+| fp5: the desk off (the runs kept prompt version 2) | riding 7.5; kite 7.6 | riding 8.6; kite **8.9, every dimension 8 or more** | riding 7.1; kite 7.3 (desk off) |
+| fp6: the same, first frames read for the pilot's video | riding 7.3; kite 7.6 | riding 8.7; kite 8.6 | riding 6.5; kite 7.1 (desk off) |
+| fp7: prompt version 3 (framings spelled out, close framings from the head and shoulders), desk off | riding 7.6; kite 8.0 | riding 8.5; kite 8.4 | riding 7.0; kite 6.7 (no close framing drawn whole) |
 
-- **Screenplay.** A brief without built-in conflicts passes 8 overall on its first round (kite 8.3, 8.5; 7.6 once),
+- **Screenplay.** A brief without built-in conflicts passes 8 overall on its first round (kite 8.3, 8.5, 8.0; 7.6 twice),
   with every dimension at 8 or 9 except feasibility (7). The riding brief stays at 7.1–8.1: it asks for what the video
   model renders badly (two riders side by side are four characters, a bouncing trot, a slide off a pony), so the
   reviewer marks feasibility 5–6 whatever the writer does with it, and brief 5 when the writer leaves it out.
 - **Cast.** Up from 7.9 to 8.3–8.9: whole figures lifted clarity from 8.3 to about 9.4, and consistency rose from 5.2
   to 7.5–8.3. One run (kite, fp5) passed every dimension at 8.
-- **Storyboard.** Up from about 6.5 (five runs with the desk on) to 7.1–7.3 with the desk off and version 3:
-  composition, storytelling, feasibility and pacing reach 7–8; continuity between frames stays at 5–6.
+- **Video** (fp6, the pilot scene of each brief, every take made once): scene review 5.9 (riding) and 6.0 (kite),
+  against 5.8 for the riding demo's pilot; first takes watched whole 6.4 and 7.3 on average (the riding demo's 6.3).
+  The whole run to the pilot cost $12.74 (riding, 30 s of video) and $8.35 (kite, 20 s).
+- **Storyboard.** Up from about 6.5 (five runs with the desk on) to 6.5–7.3 with the desk off (six runs, mean 6.9):
+  coverage, storytelling, feasibility and pacing reach 7–8; continuity between frames stays at 5. With prompt version
+  2 every run drew some close framings whole (fp6: four of nine); with version 3 (fp7) none of seven was, and
+  composition's remaining issues were an eyeline and a tree drawn floating on a patch of grass in the sky.
 
 ## What is left
 
@@ -247,9 +263,17 @@ What still keeps a first pass under 8, with what to try next:
    like a sunset. *Next:* check each frame against its shot's text as it is drawn (the vision model, like the identity
    judge: who is where, what each holds, the light), and draw a frame again while it contradicts its text; and draw a
    scene's frames from its first frame as an edit (the same place and props) rather than from text and references.
-4. **Close framings drawn whole** (composition): fp5 still drew two close-ups as whole figures with the framing spelled
-   out; the head-and-shoulders crop of the references (fp6) is its fix.
+4. **Close framings drawn whole** (composition, fixed): every storyboard on prompt version 2 drew some close-ups and
+   medium close-ups as whole figures (fp6: four of nine); version 3's spelled-out framing and head-and-shoulders
+   references drew none of seven whole (fp7).
 5. **The AI blocking** (blocking 3–5, now off for new projects): its cameras must reproduce each shot's planned screen
    positions and facing before its camera views and lines go to the image model, and it has no riders
    (docs/improvements.md item 55).
-6. **The video** (scene continuity 4–6, temporal 5–8 on the riding demo): measured with fp6 below.
+6. **The video** (the pilot's scene review 5.9 and 6.0 on fp6, 5.8 on the riding demo; first takes watched whole 6.4
+   and 7.3 on average, half of them at 8 or more). The first pass of the words and the stills has not reached the
+   video yet: a frame's mistakes go into its take (a second kite in the sky, a kite's tail blowing against the wind,
+   a string running up into an empty sky), and the video model adds its own (ghost heads in a two-character walk,
+   a stumble with no weight). Reading the first frame (fp6) found those contradictions on most frames and kept the
+   video from morphing toward the text; it does not remove a mistake the frame already has. *Next:* the reading's
+   `conflicts` are the frame check of item 3: a frame whose reading contradicts its shot (a duplicate prop, the wrong
+   framing, someone on the wrong side) is drawn again before its video is paid for.

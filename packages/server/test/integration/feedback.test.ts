@@ -268,6 +268,32 @@ describe('listening feedback (an audio-visual model)', () => {
     await heard?.gw.close();
   });
 
+  it("counts a scene's dialogue and sound when its review before the edit heard it", async () => {
+    const { projectId: pid, state } = await readyStoryProject(heard, {
+      storyboard: { enabled: false },
+      pilotDurationSec: 20,
+      targetDurationSec: 20,
+      dialogue: { mode: 'off', level: 'B1' },
+      generation: { includeAudio: true },
+      review: { scenes: true, sceneFixes: 0 },
+    });
+    const plan = await heard.api<Job>('POST', `/projects/${pid}/clips/plan`, {
+      sceneId: state.docs.screenplay.scenes[0].id,
+    });
+    expectSucceeded(await heard.waitJob(pid, plan.id));
+    const planned = Object.values<Clip>(
+      (await heard.api<any>('GET', `/projects/${pid}/state`)).docs.clips,
+    )[0]!;
+    const gen = await heard.api<Job>('POST', `/projects/${pid}/clips/${planned.id}/generate`);
+    expectSucceeded(await heard.waitJob(pid, gen.id, 180_000));
+    await heard.waitIdle(pid);
+    const clip = (await heard.api<any>('GET', `/projects/${pid}/state`)).docs.clips[planned.id] as Clip;
+    // Heard by the audio-visual model: its dialogue and sound scores are the scene's (docs/design/ai-review.md#scenes-before-the-edit)
+    expect(clip.review).toMatchObject({ status: 'succeeded', heard: true });
+    expect(typeof clip.review!.scores.dialogue).toBe('number');
+    expect(typeof clip.review!.scores.sound).toBe('number');
+  }, 300_000);
+
   it('watches and hears each scene, finds the line nobody heard and recommends generating its shot again', async () => {
     const { projectId: pid, state } = await readyStoryProject(heard, {
       storyboard: { enabled: false },

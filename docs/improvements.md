@@ -592,22 +592,26 @@ shot planner get their reviewers' rubric, references are drawn from a whole figu
 default, and `scripts/first-pass.mjs` measures a build's first pass on real models
 ([measured](design/first-pass.md#measured)). What the measurements left open:
 
-**63. Briefs the video model cannot film** (S–M) — the riding brief asks for two riders side by side (four characters
+**63. Scene reviews dropped what they heard** (S, done) — the scene review before the edit heard each scene but
+assembled it as unheard, so its `dialogue` and `sound` scores never reached the scene's scores or its gate
+([scenes count what they heard](design/first-pass.md#scenes-count-what-they-heard)).
+
+**64. Briefs the video model cannot film** (S–M) — the riding brief asks for two riders side by side (four characters
 in a moment), a bouncing trot and a slide off a pony: the screenplay reviewer marks feasibility 5–6 whatever the
 writer does, and brief 5 when the writer leaves a moment out. A simpler brief passed 8 overall on its first round.
 *How:* check the brief against `VIDEO_MODEL_FACTS` before writing, and let the person accept a filmable form of each
 hard moment as part of the brief.
 
-**64. Cast views that drift in small details** (M) — consistency 7.5–8.3 after the whole-figure anchor and three
+**65. Cast views that drift in small details** (M) — consistency 7.5–8.3 after the whole-figure anchor and three
 views drawn together: buckles, a coat open in one view, sole colours. *How:* a turnaround (the three views in one
 picture) split into the references, measured against views drawn one by one.
 
-**65. Frames that do not follow their shot** (M) — storyboard continuity 5–6 on every measured run: props in another
+**66. Frames that do not follow their shot** (M) — storyboard continuity 5–6 on every measured run: props in another
 place or state than the shot says, a duplicate prop, a character metres from where the last cut left them, morning
 lit as a sunset. *How:* a staging check of each frame against its text as it is drawn (who is where, what each holds,
 the light), and a scene's frames drawn as edits of its first frame.
 
-**66. AI blocking that disagrees with the shot plan** (M) — blocking 3–5 on six measured storyboards; its camera views
+**67. AI blocking that disagrees with the shot plan** (M) — blocking 3–5 on six measured storyboards; its camera views
 contradicted the shots' planned framing and screen positions, and the frames followed neither (5.6–6.9 with the desk
 on, 7.1–7.3 off). The desk is off for new projects. *How:* solve each camera from the shot's planned screen positions
 and facing, check the projected layout against the plan before it reaches the image model, and seat riders (item 55).

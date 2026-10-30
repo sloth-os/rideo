@@ -228,6 +228,8 @@ async function watch(
     end: durationSec,
     spans,
     output,
+    // The dialogue and sound scores of a scene that was heard count, as an export's feedback counts them
+    listened: !!heardOut,
   };
   const parts = assembleFeedback({ scenes: [scene], film: null, signals, retrospective: [] });
   const scores = parts.scenes[0]?.scores ?? {};
