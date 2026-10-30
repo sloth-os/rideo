@@ -202,3 +202,40 @@ describe('frames that follow their shot (docs/design/first-pass.md#frames-that-f
     expect(redraws.some((l) => l.includes('source="storyboard"'))).toBe(true);
   }, 300_000);
 });
+
+describe('references that match their subject (docs/design/first-pass.md#references-that-match-their-subject)', () => {
+  it('draws a reference again while it does not match its subject, and once when it does', async () => {
+    const created = await stack.api<Project>('POST', '/projects', {
+      kind: 'story',
+      title: 'The Kite',
+      brief: { prompt: 'Two friends fly a kite on a windy hill.' },
+      settings: { targetDurationSec: 20, pilotDurationSec: 10, resolution: { width: 320, height: 180 } },
+    });
+    const pid = created.id;
+    const gen = await stack.api<Job>('POST', `/projects/${pid}/screenplay/generate`, {});
+    expectSucceeded(await stack.waitJob(pid, gen.id));
+    await stack.waitIdle(pid);
+    const docs = (await stack.api<any>('GET', `/projects/${pid}/state`)).docs;
+    const [wrong, right] = Object.values<Character>(docs.characters);
+    // The mock finds the first character's views do not match: each is drawn again, up to the attempts
+    await stack.api('PATCH', `/projects/${pid}/characters/${wrong!.id}`, {
+      identity: { ...wrong!.identity, face: `${wrong!.identity.face}, drawn wrong` },
+    });
+    for (const c of [wrong!, right!]) {
+      const j = await stack.api<Job>('POST', `/projects/${pid}/characters/${c.id}/references/generate`, {
+        views: ['full_body'],
+      });
+      expectSucceeded(await stack.waitJob(pid, j.id));
+    }
+    const jobs = await stack.api<Job[]>('GET', `/projects/${pid}/jobs`);
+    const tasksOf = (id: string) =>
+      jobs.find((j) => j.kind === 'character.refs' && j.params.characterId === id)!.gatewayTasks.length;
+    expect(tasksOf(wrong!.id)).toBe(created.settings.consistency.maxAttempts);
+    expect(tasksOf(right!.id)).toBe(1);
+    const after = (await stack.api<any>('GET', `/projects/${pid}/state`)).docs;
+    // One reference kept per view, whatever was drawn
+    expect(after.characters[wrong!.id].references).toHaveLength(1);
+    const metrics = await (await fetch(`${stack.url}/metrics`)).text();
+    expect(metrics).toMatch(/rideo_reference_checks_total\{[^}]*outcome="mismatched"[^}]*\} \d+/);
+  }, 300_000);
+});

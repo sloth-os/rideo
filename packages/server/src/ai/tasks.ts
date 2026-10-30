@@ -41,7 +41,12 @@ import {
   MediaDescribeOutputSchema,
   makerRubric,
   RECONCILE_FRAME_LABEL,
+  REFERENCE_CHECK_EARLIER_LABEL,
+  REFERENCE_CHECK_NEW_LABEL,
   REVIEW_RUBRICS,
+  type ReferenceCheckInput,
+  type ReferenceCheckOutput,
+  ReferenceCheckOutputSchema,
   rubricLines,
   SCENE_VIDEO_LABEL,
   SCENE_WATCH_LABEL,
@@ -323,6 +328,12 @@ You describe one frame of a film project so people can find it later by searchin
 - "kind" says what the frame is from: a generated take, footage, a still, or a reference image of a character or element.
 Return only JSON: {"caption":"..."}`,
 
+  'reference.check': `rideo-task: reference.check
+You check one reference image of a film's cast before it is kept: every frame of the film is drawn from it, so whatever is wrong in it is wrong in every shot. You get the subject (a character with its identity and outfit, or a place, a prop or a style with its description), the view that was drawn, the views of it drawn before ("Earlier view 1:" and on, when "earlier" is above 0) and the new view ("New view:").
+- "matches": true only when the new view shows the subject exactly as described, with nothing added (no extra objects, pockets, buckles, fillings, contents, other characters, animals, scenery or text) and nothing missing or in another colour, shape or state; a character as one whole figure from head to toe on a plain background, with the same face, build, proportions and outfit as the earlier views, every part in the same colour, shape and place (the same helmet, the same boots, closed where they are closed); a place empty of people and animals; a prop alone on its background, once.
+- "issues": each difference, short, in the new view ("a toy peeks out of the backpack", "the boots are open at the toe", "a goat stands on the fence").
+Report only what you see. Return only JSON: {"matches":true,"issues":[]}`,
+
   'frame.reconcile': `rideo-task: frame.reconcile
 You are a script supervisor checking the first frame of a shot before an AI video model animates it. You get the shot as planned ("shot": "description" is its first frame, "action" what moves, "endState" its last frame, the camera, who is in it and how they look) and the frame as drawn ("First frame:"). The video model starts from exactly this frame and reads a text: when the text says something the frame does not show (a gate closed that the frame shows open, someone on the left whom the frame shows on the right, a prop in the other paw, someone missing or extra), the model morphs the picture to match the text, which ruins the take.
 Write the text the video model should get:
@@ -351,7 +362,8 @@ const WRITER_FIRST_PASS = `- The brief comes first: every character, place, land
 - Every beat turns: a beat that only moves people from one place to another gives them a small want, a problem and a change.
 - Show feelings in what a camera sees (posture, a look, a step back), never as a thought or a label ("looks unsure"); dialogue never states the turn ("Now they trust us").
 - Each wardrobe description gives the colour of every part (a helmet's shell, its chin strap and buckle, a flower's petals and centre) and how it sits on the body (the helmet between the ears; a saddle on the middle of the back with one stirrup on each side), and an identity names every mark and the colour of every part a picture shows (hands or paws, feet or hooves and the hair just above them, muzzle, ears, tail), so every picture of them is the same. Put an accessory where every view shows it the same way, centred on the front (a flower on the front of a helmet), never on one side: pictures mirror a one-sided detail from shot to shot.
-- Describe places and props by what a picture shows clearly: shapes, materials, colours and where things stand; never traces or tiny details (hoofprints, scents, scratches).`;
+- Describe places and props by what a picture shows clearly: shapes, materials, colours and where things stand; never traces or tiny details (hoofprints, scents, scratches).
+- Before you answer, go through your screenplay moment by moment against "video.weaknesses" and the rules above: give every moment that touches one its safest form that keeps the brief (seen from far away or from behind, one slow motion, the contact out of sight, one attempt shown instead of several), so the reviewer finds no moment left in a hard form.`;
 
 /** The names a maker's rubric uses for its own inputs (docs/design/first-pass.md#one-rubric-for-the-maker-and-the-reviewer). */
 const WRITER_NAMES =
@@ -360,7 +372,8 @@ const WRITER_NAMES =
 /** What the shot planner must keep to so the frames drawn from its shots pass the storyboard review (docs/design/first-pass.md). */
 const PLANNER_FIRST_PASS = `- "video" says what the AI video model renders well and badly: at most three characters in a shot (a rider and the animal ridden count as two), one simple action per shot, nothing in "video.weaknesses".
 - "description" is the first frame, before the action starts: where each character in frame stands (frame left, centre or right; near or far), which way each one faces, and who holds which prop in which hand or where it rests. Keep these from shot to shot (the same side of frame, the same direction, the same hands) unless a shot's action changes them; the next shot then starts where that one ended ("endState").
-- A shot with lines lasts at least one second for every two words spoken, plus one second: a line of six words needs a shot of four seconds.`;
+- A shot with lines lasts at least one second for every two words spoken, plus one second: a line of six words needs a shot of four seconds.
+- Fix the scene's geography before the shots: where each landmark stands (the lake, the tree, the barn), where the sun is and which way the wind blows. Every shot's "description" says which way the camera looks and what is behind the characters, on which side of the frame, and which way the wind blows across the frame, all from that one geography: a reverse shot shows what was behind the first camera, and nothing changes side unless the camera turns.`;
 
 /**
  * Prompt version 2 of the writing tasks (docs/design/continuity.md): story structure, continuity, dialogue levels and
@@ -1199,6 +1212,27 @@ export class LlmTasks {
   }
 
   /** One frame described for search (docs/design/search.md#captions). */
+  /** A reference as it is drawn, against its subject and the earlier views (docs/design/first-pass.md). */
+  checkReference(
+    input: ReferenceCheckInput,
+    earlier: Buffer[],
+    drawn: Buffer,
+    signal?: AbortSignal,
+  ): Promise<ReferenceCheckOutput> {
+    return this.run('reference.check', ReferenceCheckOutputSchema, input, {
+      images: [
+        ...earlier.map((data, i) => ({
+          label: `${REFERENCE_CHECK_EARLIER_LABEL} ${i + 1}:`,
+          data,
+          mime: 'image/png',
+        })),
+        { label: REFERENCE_CHECK_NEW_LABEL, data: drawn, mime: 'image/png' },
+      ],
+      temperature: 0,
+      signal,
+    });
+  }
+
   /** The shot's text as its first frame shows it (docs/design/first-pass.md#the-video-reads-its-first-frame). */
   reconcileFrame(
     input: FrameReconcileInput,

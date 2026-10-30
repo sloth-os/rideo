@@ -352,6 +352,29 @@ export const FrameReconcileOutputSchema = z.object({
 });
 export type FrameReconcileOutput = z.infer<typeof FrameReconcileOutputSchema>;
 
+/**
+ * `reference.check` (docs/design/first-pass.md#references-that-match-their-subject): a reference as it is drawn, against
+ * its subject's description and the views drawn before it.
+ */
+export interface ReferenceCheckInput {
+  subject: {
+    kind: 'character' | 'location' | 'prop' | 'style';
+    name: string;
+    /** A character's identity and outfit, a place's or prop's description. */
+    description: string;
+  };
+  /** The view drawn (`full_body`, `establishing`…). */
+  view: string;
+  /** How many earlier views of the subject come before the new one. */
+  earlier: number;
+}
+
+export const ReferenceCheckOutputSchema = z.object({
+  matches: z.boolean().catch(true).default(true),
+  issues: lenientArray(str(400), 20),
+});
+export type ReferenceCheckOutput = z.infer<typeof ReferenceCheckOutputSchema>;
+
 export const LLM_TASKS = [
   'media.describe',
   'screenplay.generate',
@@ -378,6 +401,7 @@ export const LLM_TASKS = [
   'take.watch',
   'cast.review',
   'frame.reconcile',
+  'reference.check',
 ] as const;
 export type LlmTaskId = (typeof LLM_TASKS)[number];
 
@@ -565,6 +589,9 @@ export interface ThumbnailPickInput {
 
 /** Labels of the frames sent to the reframe and thumbnail tasks. */
 export const FOCUS_FRAME_LABEL = 'Frame';
+/** The labels of `reference.check`'s images: the earlier views, then the new one. */
+export const REFERENCE_CHECK_EARLIER_LABEL = 'Earlier view';
+export const REFERENCE_CHECK_NEW_LABEL = 'New view:';
 /** The first frame a take starts from, as `frame.reconcile` sees it (docs/design/first-pass.md#the-video-reads-its-first-frame). */
 export const RECONCILE_FRAME_LABEL = 'First frame:';
 

@@ -712,6 +712,8 @@ export function compileElementReferenceRequest(
     model?: string;
     /** What a redraw must fix (the cast review's instruction, docs/design/ai-review.md#how-a-review-runs). */
     direction?: string;
+    /** A view drawn again after its check (docs/design/first-pass.md#references-that-match-their-subject): another seed. */
+    attempt?: number;
   },
 ): GatewayImageRequest {
   const style = clean(ctx.screenplay?.style.visual);
@@ -738,7 +740,8 @@ export function compileElementReferenceRequest(
     ],
     parameters: {
       dimensions: referenceDimensions(ctx.settings),
-      seed: (e.seed + ELEMENT_VIEW_PRIORITY.indexOf(view)) % MAX_SEED,
+      seed:
+        (e.seed + ELEMENT_VIEW_PRIORITY.indexOf(view) + (ctx.attempt ?? 0) * ATTEMPT_SEED_STEP) % MAX_SEED,
       negative_prompt: `people, animals, characters, figures, ${REFERENCE_NEGATIVE}, text, logo, watermark, deformed`,
       output_count: 1,
     },
@@ -957,6 +960,9 @@ function anchorUris(ctx: { baseImageUri?: string; baseImageUris?: string[] }): s
 /** At most this many earlier views go with a new view: the anchor and the two drawn after it. */
 export const MAX_ANCHOR_IMAGES = 3;
 
+/** How far a reference drawn again moves its seed (a prime, so attempts never meet another view's seed). */
+const ATTEMPT_SEED_STEP = 7919;
+
 export function referenceDimensions(settings: Pick<ProjectSettings, 'resolution'>): {
   width: number;
   height: number;
@@ -979,6 +985,8 @@ export function compileReferenceRequest(
     model?: string;
     /** What a redraw must fix (the cast review's instruction, docs/design/ai-review.md#how-a-review-runs). */
     direction?: string;
+    /** A view drawn again after its check (docs/design/first-pass.md#references-that-match-their-subject): another seed. */
+    attempt?: number;
   },
 ): GatewayImageRequest {
   const style = clean(ctx.screenplay?.style.visual);
@@ -998,7 +1006,8 @@ export function compileReferenceRequest(
     input: [{ type: 'text', text }, ...anchors.map((uri) => ({ type: 'image' as const, uri }))],
     parameters: {
       dimensions: referenceDimensions(ctx.settings),
-      seed: (c.seed + REFERENCE_VIEW_PRIORITY.indexOf(view)) % MAX_SEED,
+      seed:
+        (c.seed + REFERENCE_VIEW_PRIORITY.indexOf(view) + (ctx.attempt ?? 0) * ATTEMPT_SEED_STEP) % MAX_SEED,
       negative_prompt: `${BASE_NEGATIVE}, ${REFERENCE_NEGATIVE}`,
       output_count: 1,
     },

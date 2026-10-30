@@ -46,6 +46,17 @@ describe('makers aim at what their reviewers score', () => {
     expect(prompt).toContain('a line of six words needs a shot of four seconds');
   });
 
+  it('asks the planner for one geography and the writer for a last pass over the weaknesses', () => {
+    expect(SYSTEM_PROMPTS_V2['clip.plan']).toContain("Fix the scene's geography before the shots");
+    expect(SYSTEM_PROMPTS_V2['clip.plan']).toContain('a reverse shot shows what was behind the first camera');
+    expect(SYSTEM_PROMPTS_V2['screenplay.generate']).toContain('go through your screenplay moment by moment');
+  });
+
+  it('checks a reference against its subject and the views before it', () => {
+    expect(SYSTEM_PROMPTS['reference.check']).toMatch(/^rideo-task: reference\.check/);
+    expect(SYSTEM_PROMPTS['reference.check']).toContain('nothing added');
+  });
+
   it('leaves version 1 prompts as they were', () => {
     expect(SYSTEM_PROMPTS['screenplay.generate']).not.toContain('reviews it on these dimensions');
     expect(SYSTEM_PROMPTS['clip.plan']).not.toContain('reviews it on these dimensions');

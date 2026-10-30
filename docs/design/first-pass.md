@@ -90,6 +90,13 @@ The writer also gets the rules the reviewer's dimensions imply and that it used 
   corner of the paddock), with its state.
 - **No shots.** The writer never writes shots or camera words ("a wide view shows"): the reviewer marks them down, and
   the shot planner frames the scene.
+- **A last pass.** Before it answers, the writer goes through its screenplay moment by moment against
+  `video.weaknesses` and gives every moment that touches one its safest form that keeps the brief.
+
+The shot planner fixes the scene's **geography** before its shots (where each landmark stands, where the sun is, which
+way the wind blows) and says in every shot which way the camera looks, what is behind the characters on which side,
+and which way the wind blows across the frame: the measured storyboards' frames each followed their own shot and
+still disagreed with each other (the wind blowing both ways, a tree on either side of the lake).
 - **Continuity.** Each written scene's `continuity` names what each character wears piece by piece (never "the riding
   outfit") and every prop the scene uses with its count, its state (full, empty, open) and who carries it in which
   hand or where it rests.
@@ -127,6 +134,17 @@ planner is told the same. The words a shot can hold (`wordsCapacity`, the writer
   helmet).
 - **Materials stay as described.** An element's prompt says the film's style is its light and rendering, and every
   material stays as described: the plush look turned the pole jump's wooden supports into fur.
+
+### References that match their subject
+
+Most of what the cast reviews still found was one reference adding or changing something: a toy dragon in a
+backpack, fillings the sandwich never had, a goat on a fence and a mouse on a pole in two props' pictures, a field and
+a kite around a character's whole figure, boots open at the toe, a helmet with vents in one view and a brim in the
+next. With prompt version 3 each view is read as it is drawn (`reference.check`, the vision model) against its
+subject (a character's identity and outfit, a place's or prop's description) and the views drawn before it, and drawn
+again with another seed, within `consistency.maxAttempts`, while it does not match: the first that matches is kept,
+else the one with the fewest issues (`rideo_reference_checks_total{kind, outcome}`). As with frames, it is part of
+drawing a reference: the cast the review sees is the first one presented.
 - **Places and props** are drawn once (`establishing` for a place, `detail` for a prop): the shots use one reference
   per place or prop, and a second view the shots never use could only disagree with the first. `angle` stays
   available on request.

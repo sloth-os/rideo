@@ -11,13 +11,18 @@ import {
   docPath,
   type Element,
   type ElementReferenceView,
+  type GatewayImageRequest,
+  identityFragment,
   identityFromLlm,
+  MAX_ANCHOR_IMAGES,
   type MediaRef,
   newId,
   nextUnwrittenBeats,
   type Project,
   type ProjectSettings,
   promptVersionOf,
+  type ReferenceCheckInput,
+  type ReferenceCheckOutput,
   type ReferenceView,
   type Resource,
   type Screenplay,
@@ -283,20 +288,27 @@ export async function characterRefs(deps: HandlerDeps, ctx: JobContext) {
         .filter((m) => m.hash !== anchor?.media.hash)
         .map((m) => deps.media.pngDataUri(projectId, m, 1024)),
     );
-    const req = compileReferenceRequest(c, view, {
-      screenplay: docs.screenplay,
-      settings: docs.project.settings,
-      baseImageUri,
-      baseImageUris,
-      model: docs.project.settings.models.image,
-      direction,
-    });
     ctx.progress(done, views.length, `${c.name}: ${view.replace('_', ' ')} view`);
-    const task = await deps.gateway.generateImage(req, gatewayOptions(ctx, 'image', `ref-${view}`));
-    const media = await deps.media.importUri(projectId, task.outputs![0]!.uri, {
-      kind: 'refs',
+    const media = await drawReference(deps, ctx, {
+      request: (attempt) =>
+        compileReferenceRequest(c, view, {
+          screenplay: docs.screenplay,
+          settings: docs.project.settings,
+          baseImageUri,
+          baseImageUris,
+          model: docs.project.settings.models.image,
+          direction,
+          attempt,
+        }),
+      step: `ref-${view}`,
       name: `${slugify(c.name)}-${view}`,
-      signal: ctx.signal,
+      check: {
+        subject: { kind: 'character', name: c.name, description: identityFragment(c) },
+        view,
+        earlier: 0,
+      },
+      earlier: [...(anchor ? [anchor.media] : []), ...drawn.filter((m) => m.hash !== anchor?.media.hash)],
+      settings: docs.project.settings,
     });
     drawn.push(media);
     await commitAs(
@@ -333,6 +345,73 @@ export async function characterRefs(deps: HandlerDeps, ctx: JobContext) {
   );
   await castFollowUp(deps, ctx);
   return { generated: done, ...(dismissed ? { dismissed } : {}) };
+}
+
+/**
+ * Draws one reference view (docs/design/first-pass.md#references-that-match-their-subject): with prompt version 3 it
+ * is checked against its subject and the views before it (`reference.check`) and drawn again, within
+ * `consistency.maxAttempts`, while it adds, drops or changes something; the first that matches is kept, else the one
+ * with the fewest issues. A check that cannot run keeps the view.
+ */
+async function drawReference(
+  deps: HandlerDeps,
+  ctx: JobContext,
+  opts: {
+    request: (attempt: number) => GatewayImageRequest;
+    /** The gateway idempotency step of the view. */
+    step: string;
+    name: string;
+    check: ReferenceCheckInput;
+    /** The anchor and the views drawn before, which the new view must agree with. */
+    earlier: MediaRef[];
+    settings: ProjectSettings;
+  },
+): Promise<MediaRef> {
+  const projectId = ctx.job.projectId;
+  const checked = promptVersionOf(opts.settings) >= 3 && opts.settings.consistency.maxAttempts > 1;
+  const attempts = checked ? opts.settings.consistency.maxAttempts : 1;
+  const earlier = checked
+    ? await Promise.all(
+        opts.earlier.slice(0, MAX_ANCHOR_IMAGES).map((m) => deps.media.pngBuffer(projectId, m, 512)),
+      )
+    : [];
+  let best: { media: MediaRef; issues: number } | null = null;
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    throwIfAborted(ctx.signal);
+    const task = await deps.gateway.generateImage(
+      opts.request(attempt),
+      gatewayOptions(ctx, 'image', opts.step, attempt),
+    );
+    const media = await deps.media.importUri(projectId, task.outputs![0]!.uri, {
+      kind: 'refs',
+      name: attempt ? `${opts.name}-a${attempt + 1}` : opts.name,
+      signal: ctx.signal,
+    });
+    if (!checked) return media;
+    const kind = opts.check.subject.kind === 'character' ? 'character' : 'element';
+    let out: ReferenceCheckOutput;
+    try {
+      out = await deps.llm.checkReference(
+        { ...opts.check, earlier: earlier.length },
+        earlier,
+        await deps.media.pngBuffer(projectId, media, 768),
+        ctx.signal,
+      );
+    } catch (err) {
+      throwIfAborted(ctx.signal);
+      deps.metrics.referenceChecks.inc({ kind, outcome: 'error' });
+      ctx.log.warn({ projectId, err: (err as Error).message }, 'could not check the reference; keeping it');
+      return media;
+    }
+    deps.metrics.referenceChecks.inc({ kind, outcome: out.matches ? 'matched' : 'mismatched' });
+    if (out.matches) return media;
+    ctx.log.info(
+      { projectId, subject: opts.check.subject.name, view: opts.check.view, attempt, issues: out.issues },
+      'the reference does not match its subject; drawing it again',
+    );
+    if (!best || out.issues.length < best.issues) best = { media, issues: out.issues.length };
+  }
+  return best!.media;
 }
 
 /**
@@ -399,19 +478,26 @@ export async function elementRefs(deps: HandlerDeps, ctx: JobContext) {
       throw new AppError('element_locked', `${e.name} was locked while references were generating`);
     const anchor = approvedElementReferences(e)[0] ?? e.references[0];
     const baseImageUri = anchor ? await deps.media.pngDataUri(projectId, anchor.media, 1024) : undefined;
-    const req = compileElementReferenceRequest(e, view, {
-      screenplay: docs.screenplay,
-      settings: docs.project.settings,
-      baseImageUri,
-      model: docs.project.settings.models.image,
-      direction,
-    });
     ctx.progress(done, views.length, `${e.name}: ${view} view`);
-    const task = await deps.gateway.generateImage(req, gatewayOptions(ctx, 'image', `element-ref-${view}`));
-    const media = await deps.media.importUri(projectId, task.outputs![0]!.uri, {
-      kind: 'refs',
+    const media = await drawReference(deps, ctx, {
+      request: (attempt) =>
+        compileElementReferenceRequest(e, view, {
+          screenplay: docs.screenplay,
+          settings: docs.project.settings,
+          baseImageUri,
+          model: docs.project.settings.models.image,
+          direction,
+          attempt,
+        }),
+      step: `element-ref-${view}`,
       name: `element-${slugify(e.name)}-${view}`,
-      signal: ctx.signal,
+      check: {
+        subject: { kind: e.kind, name: e.name, description: e.description || e.name },
+        view,
+        earlier: 0,
+      },
+      earlier: anchor ? [anchor.media] : [],
+      settings: docs.project.settings,
     });
     await commitAs(
       deps,

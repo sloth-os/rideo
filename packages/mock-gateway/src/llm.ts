@@ -263,6 +263,9 @@ export function answer(req: ChatRequest, opts: ChatOptions = {}): string {
     case 'frame.reconcile':
       out = frameReconcile(input);
       break;
+    case 'reference.check':
+      out = referenceCheck(input);
+      break;
     case 'feedback.scene':
       out = feedbackScene(input, imagesOf(req.parts).length, videoCount > 0);
       break;
@@ -423,4 +426,14 @@ function frameReconcile(input: { shot: { description: string; action: string } }
     action: `${action} Through the open gate.`,
     conflicts: ['the gate is open, not closed'],
   };
+}
+
+/**
+ * `reference.check` (docs/design/first-pass.md#references-that-match-their-subject): a reference matches its subject,
+ * unless the subject's description says "drawn wrong".
+ */
+function referenceCheck(input: { subject: { description: string } }) {
+  return /drawn wrong/i.test(input.subject.description)
+    ? { matches: false, issues: ['a toy peeks out of the backpack'] }
+    : { matches: true, issues: [] };
 }

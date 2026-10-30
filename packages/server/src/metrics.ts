@@ -266,6 +266,13 @@ export class Metrics {
       'First frames read before a video starts from them, by source (storyboard, keyframe) and outcome (agreed, adjusted, error)',
     ),
   );
+  /** References checked as they are drawn (docs/design/first-pass.md#references-that-match-their-subject). */
+  readonly referenceChecks = this.add(
+    new Counter(
+      'rideo_reference_checks_total',
+      'Cast references checked against their subject as they are drawn, by kind (character, element) and outcome (matched, mismatched, error)',
+    ),
+  );
   /** The 3D director's desk (docs/design/director-desk.md#observability). */
   readonly blockings = this.add(
     new Counter('rideo_blocking_total', 'Blockings saved, by source (ai, user) and outcome (clean, issues)'),

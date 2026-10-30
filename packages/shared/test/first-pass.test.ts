@@ -173,6 +173,18 @@ describe('references drawn from a whole figure (docs/design/first-pass.md#refere
     );
   });
 
+  it('draws a view again with another seed', () => {
+    const seed = (attempt?: number) =>
+      compileReferenceRequest(rosie, 'profile', { screenplay: null, settings, attempt }).parameters?.seed;
+    expect(seed(0)).toBe(seed());
+    expect(seed(1)).not.toBe(seed(0));
+    const lamp = f.element({ kind: 'location', name: 'Lamp room' });
+    const elementSeed = (attempt?: number) =>
+      compileElementReferenceRequest(lamp, 'establishing', { screenplay: null, settings, attempt }).parameters
+        ?.seed;
+    expect(elementSeed(2)).not.toBe(elementSeed(0));
+  });
+
   it("keeps a place's or a prop's materials under the film's look", () => {
     const jump = f.element({ kind: 'prop', name: 'Pole jump', description: 'two white wooden supports' });
     const req = compileElementReferenceRequest(jump, 'detail', {
