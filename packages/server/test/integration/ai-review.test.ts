@@ -1,7 +1,7 @@
 import { startMockGateway } from '@rideo/mock-gateway';
 import type { Job, StageReview, WorkflowEvaluation } from '@rideo/shared';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { expectSucceeded, readyStoryProject, type Stack, startStack } from '../helpers/stack';
+import { expectSucceeded, lockElements, readyStoryProject, type Stack, startStack } from '../helpers/stack';
 
 /** AI review of the screenplay and the storyboard (docs/design/ai-review.md) on the mock gateway. */
 let stack: Stack;
@@ -215,4 +215,63 @@ describe('AI review of the storyboard', () => {
       ok: true,
     });
   });
+});
+
+describe('AI review of the cast', () => {
+  const castJobs = async (pid: string) =>
+    (await stack.api<Job[]>('GET', `/projects/${pid}/jobs`))
+      .filter((j) => j.kind === 'cast.review')
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  const drawView = async (pid: string, characterId: string, view: string) => {
+    const j = await stack.api<Job>('POST', `/projects/${pid}/characters/${characterId}/references/generate`, {
+      views: [view],
+    });
+    return expectSucceeded(await stack.waitJob(pid, j.id));
+  };
+
+  it('reviews the cast again behind a review that read it before a reference was drawn, and not when it is current', async () => {
+    const pid = await writtenProject({ review: { cast: true } });
+    await stack.api('POST', `/projects/${pid}/workflow/approve`, { gate: 'screenplay_approved' });
+    await lockElements(stack, pid);
+    const chars = Object.values<any>((await stateOf(pid)).docs.characters);
+    // The last character's first view queues the review, which waits for its model (still answering)
+    let hold = stack.gw.holdChat('rideo-task: cast.review');
+    for (const c of chars) await drawView(pid, c.id, 'front');
+    await expect.poll(() => hold.held(), { timeout: 30_000 }).toBeGreaterThan(0);
+    const [first] = await castJobs(pid);
+    expect(first!.status).toBe('running');
+    // A person draws another view meanwhile: its follow-up is queued behind the running review, not joined to it
+    await drawView(pid, chars[0].id, 'profile');
+    let jobs = await castJobs(pid);
+    expect(jobs).toHaveLength(2);
+    expect(jobs[1]!.params).toEqual({ after: first!.id });
+    hold.release();
+    await stack.waitIdle(pid, 180_000);
+    jobs = await castJobs(pid);
+    expect(jobs.map((j) => j.status)).toEqual(['succeeded', 'succeeded']);
+    // The first review is of the cast without the profile view; the one behind it reviewed the cast as it is now
+    let review = (await stateOf(pid)).docs.aiReviews.cast as StageReview;
+    expect(review.jobId).toBe(jobs[1]!.id);
+    expect(jobs[1]!.result).toMatchObject({ passed: true });
+    expect(await requirement(pid, 'cast_locked', 'cast.reviewPassed')).toMatchObject({ ok: true });
+
+    // A change undone before the running review ends: the review behind it has nothing to review
+    hold = stack.gw.holdChat('rideo-task: cast.review');
+    const { job: again } = await stack.api<{ job: Job }>('POST', `/projects/${pid}/ai-reviews/cast/run`);
+    await expect.poll(() => hold.held(), { timeout: 30_000 }).toBeGreaterThan(0);
+    await drawView(pid, chars[0].id, 'three_quarter');
+    const drawn = (await stateOf(pid)).docs.characters[chars[0].id].references.find(
+      (r: any) => r.view === 'three_quarter',
+    );
+    await stack.api('DELETE', `/projects/${pid}/characters/${chars[0].id}/references/${drawn.id}`);
+    hold.release();
+    await stack.waitIdle(pid, 180_000);
+    jobs = await castJobs(pid);
+    expect(jobs).toHaveLength(4);
+    expect(jobs[3]!.params).toEqual({ after: again.id });
+    expect(jobs[3]!.result).toEqual({ skipped: 'passed' });
+    review = (await stateOf(pid)).docs.aiReviews.cast as StageReview;
+    expect(review.jobId).toBe(again.id);
+    expect(await requirement(pid, 'cast_locked', 'cast.reviewPassed')).toMatchObject({ ok: true });
+  }, 600_000);
 });

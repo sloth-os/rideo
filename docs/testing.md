@@ -242,8 +242,11 @@ only those names as extras, and reading verdicts that name a character instead o
   the export on autopilot: each gate approved by the system after its review (screenplay, cast, storyboard, cut;
   `resources_ready` at once), the cast approved and locked by its review, every clip blocked, its frames approved
   before its video, every take watched whole by the vision model, every scene watched as one video and passed, the
-  production scenes' storyboard reviews passed, and the export queued for a studio tab; a cast review that still fails
-  after its rounds keeps the gate for a person, who continues anyway. Takes watched whole: an attempt the mock sees
+  production scenes' storyboard reviews passed (the one written within the storyboard stage's scenes too: the stage
+  draws only the scenes written by then), and the export queued for a studio tab; a cast review that still fails
+  after its rounds keeps the gate for a person, who continues anyway; a reference drawn while the cast review waits for
+  its model (`holdChat`) queues a review behind it that reviews the cast as it is now, and one whose change was undone
+  ends without a model call. Takes watched whole: an attempt the mock sees
   morph (`motion glitch`) made again and kept failed with what was seen; the cut's takes from before the watch watched
   from their videos (`takes.watch`).
 - **Storage conformance** (`storage.test.ts`): one suite against `MemoryBackend`, the embedded WebDAV server

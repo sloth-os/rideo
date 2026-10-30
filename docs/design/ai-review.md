@@ -175,8 +175,12 @@ role, the film's style, every other character's look, and each of its references
 in use or with references (its description and references: the pilot gate locks the whole library before production).
 A review waits for reference jobs that are still drawing, and the last of them to finish queues it. The answers are merged (scores weighted equally, issues and recommendations in
 cast order). A recommendation to draw a character's or an element's references again (`regenerate_refs`, with an
-optional instruction added to the request) is a round's fix: the references are generated again (`character.refs`,
-`element.refs`), the old ones dismissed, and the cast reviewed again. On autopilot a pass approves every reference the
+optional instruction) is a round's fix: the references are generated again (`character.refs`, `element.refs`) from the
+ones they replace, the instruction added to every request as its direction (`params.direction`), and the cast
+reviewed again. The old references stay until the new ones are drawn (`params.replaces`, then dismissed): the new
+views keep the anchor the old ones had (the first approved reference, else the first), where deleting them first
+drew them from text alone. In the riding demo's first cast review (2026-10-29) that lost the pandas' look, which came
+from an uploaded style image, and every redraw got the same prompt and seed as before, the instructions dropped. On autopilot a pass approves every reference the
 review did not flag (and the first of each character and element when it flagged them all), locks the characters and
 the elements it reviewed, and approves `cast_locked`; voices that dialogue needs and nobody locked keep the gate open.
 
@@ -204,6 +208,13 @@ again, or continues anyway (`override`, with a note), which the gate accepts for
 `element.refs` of the cast in use queues the cast review, and `storyboard.generate` the storyboard review (each when
 its setting is on). Each runs on request at any time.
 
+A review queued this way while one of the same stage is already running (a reference drawn after the running review
+read the cast, as when references are drawn one after another) does not join it: the running review may have read
+the documents before the change. The new review is queued behind it (`params.after`, deduplicated per running job),
+waits for it, and then reviews only if the review it waited for is outdated; when that review is current (it saw the
+change, or the change was undone) it ends without a model call. A review not yet started takes the request, as it
+reads the documents when it starts, and a review asked for by a person while one runs is that running review.
+
 A screenplay review can be **scoped** (`sceneIds`): production reviews the scenes an extension wrote, with the rest
 of the screenplay as their context, and its revisions rewrite only those scenes. Its record replaces the screenplay's
 review (the screenplay gate is already approved by then) with the earlier rounds in its history.
@@ -212,7 +223,10 @@ review (the screenplay gate is already approved by then) with the earlier rounds
 
 With `settings.storyboard.production`, every production scene is storyboarded before its video, as the storyboard
 stage does for the first scenes: `batch.generate` runs `clip.storyboard` for a clip and waits for it before
-`clip.generate`.
+`clip.generate`. What decides is the clip's frames, not its place in the film: any clip whose frames are not all
+approved is storyboarded, one of the first `storyboard.scenes` included. The storyboard stage draws only the scenes
+written by then (the screenplay job writes the pilot's), so in the riding demo (2026-10-29) the third scene, written
+by production within the first three, was generated with no frames at all.
 
 `clip.storyboard` (lane `control`) blocks the scene ([director's desk](director-desk.md)), draws every frame that is
 missing, failed, stale or outdated (the first shot first, the others with it as their scene reference), and reviews

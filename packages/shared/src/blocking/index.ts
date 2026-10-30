@@ -10,6 +10,7 @@ import {
   type CameraAngle,
   type CameraPlacement,
   type CameraSpec,
+  type LandmarkShape,
   type SceneBlocking,
   SceneBlockingSchema,
 } from '../schemas/blocking';
@@ -349,6 +350,31 @@ function placement(p: Vec3, t: Vec3): CameraPlacement {
   };
 }
 
+/** Colours of AI landmarks by what their label names, the first match winning (docs/design/director-desk.md#the-document). */
+const LANDMARK_COLORS: [RegExp, string][] = [
+  [/water|sea|lake|pond|river|pool|stream/, '#3f7fc0'],
+  [/hay|straw|bale/, '#d8b54a'],
+  [/barn/, '#b5413a'],
+  [/fence|gate|rail|picket|post/, '#eceae4'],
+  [/tree|bush|hedge|forest|shrub/, '#4f7a3a'],
+  [/hill|grass|lawn|meadow|field|paddock|pasture/, '#7fae5a'],
+  [/lane|path|road|track|gravel|trail|drive/, '#cdb58c'],
+  [/sand|beach|dune/, '#d9c49a'],
+  [/rock|stone|boulder|cliff|wall/, '#8d9096'],
+  [/house|stable|shed|cottage|lodge|building|cabin|hut/, '#d8cbb0'],
+];
+
+/** A landmark's colour from its label, else from its shape: AI blocking names landmarks but gives no colours. */
+export function landmarkColor(label: string, shape: LandmarkShape): string {
+  const l = label.toLowerCase();
+  for (const [re, hex] of LANDMARK_COLORS) if (re.test(l)) return hex;
+  return shape === 'water' ? '#3f7fc0' : shape === 'cylinder' ? '#5e7f4a' : '#8a8f98';
+}
+
+/** Room kept beside each subject of a group (metres, for a 1.7 m figure) and the margin on the angle it needs. */
+const GROUP_PAD_M = 0.25;
+const GROUP_MARGIN = 1.1;
+
 /**
  * Places a shot's camera from its description, framing and lens (docs/design/director-desk.md#the-solver). With the
  * scene's line, a camera that would stand on the other side is turned back to the scene's side.
@@ -445,18 +471,20 @@ export function solveCamera(
     dir = line && linePts ? onSide(v3(0, 0, 1), target) : v3(0, 0, 1);
   }
 
-  // The distance: the framing's coverage, and wide enough for the group
+  // The distance: the framing's coverage, and every subject of a group inside the frame's width by angle (one nearer
+  // the camera than the group's centre covers a wider angle, docs/design/director-desk.md#the-solver)
   const right = norm(cross(mul(dir, -1), UP));
-  const spread = subjects.length
-    ? Math.max(...subjects.map((s) => dot(sub(s.feet, flat(target)), right))) -
-      Math.min(...subjects.map((s) => dot(sub(s.feet, flat(target)), right)))
-    : 0;
+  const groupFit =
+    subjects.length > 1
+      ? Math.max(
+          ...subjects.map((s) => {
+            const rel = sub(s.feet, flat(target));
+            return dot(rel, dir) + ((Math.abs(dot(rel, right)) + GROUP_PAD_M * scale) / tanH) * GROUP_MARGIN;
+          }),
+        )
+      : 0;
   const coverage = FRAMING_COVERAGE[framing] * scale;
-  const distance = Math.max(
-    coverage / 2 / tanV,
-    subjects.length > 1 ? (spread * 1.2 + 0.5 * scale) / 2 / tanH : 0,
-    0.3,
-  );
+  const distance = Math.max(coverage / 2 / tanV, groupFit, 0.3);
   const eyes = subjects.length ? Math.max(...subjects.map((s) => s.eyes.y)) : 1.5;
   const head = subjects.length ? Math.max(...subjects.map((s) => s.head.y)) : 1.7;
   const y =

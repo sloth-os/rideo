@@ -489,3 +489,94 @@ that jumped may open on the wrong picture, as the third run's did, so it gets a 
   and goes into the cut as its job asked, and it keeps what it was heard to say: a re-check used to drop the sound
   verdict, so a take whose line nobody heard passed once re-checked
   ([re-checking](design/character-consistency.md#re-checking-unverified-takes)).
+
+## The riding demo (October 29–30, 2026)
+
+A five-minute film of Sammy and Rosie learning to ride (project `prj_01m63xqksfnddtj9`), the first run of the
+autopilot whose every step is reviewed, on the image of 13b849c with real models: `qwen3.8-max` for text and vision,
+`qwen3.8-omni-flash` listening, Seedream frames and Wan 3.0 video. The vision model took whole takes as video (1,596
+video tokens for a 5 s take, 38 s), so every take was watched whole and every scene watched and heard as one video.
+What it taught:
+
+**51. A cast redraw lost the look it was asked to keep** (S, done) — the cast review (7.9, four critical issues on
+places and props) asked for 18 redraws with precise instructions ("one matte black chin strap with one small
+black side buckle in every view"). The redraw deleted every generated, unapproved reference first, so the pandas'
+new views were drawn from text alone, without the style image their look came from; the instructions never reached
+the request, and the same prompt and seed per view gave the same picture. A redraw now keeps the old references as its
+anchor until the new ones are drawn and sends the round's instructions as its direction
+([how a review runs](design/ai-review.md#how-a-review-runs)). On the demo the cast was redrawn by hand that way and
+passed at 8.3.
+
+**52. A review asked for while one ran was lost** (S, done) — the cast review's e2e failed in CI: a reference drawn
+while the review ran queued its follow-up, the queue answered with the running review, which had read the cast before
+it. A follow-up is now queued behind a running review and reviews only if that one is outdated
+([when](design/ai-review.md#how-a-review-runs)).
+
+**53. Camera views of an AI blocking** (S, done) — the storyboard review scored blocking 5 of 10: every landmark was
+the default grey (the hills a 70 × 12 × 6 m box walling off the sky), and the solver fitted a group by its spread at
+the group's centre, leaving the nearest of four subjects 40° off the axis of a 37° half-width. Landmarks now take their
+colour from their names, far scenery stays in the shot descriptions, and each subject of a group is fitted by angle
+([the solver](design/director-desk.md#the-solver)). The run itself went on without layout images.
+
+**54. A scene written after the storyboard stage went to video without frames** (S, done) — the batch skipped the
+production storyboard of the first `storyboard.scenes` scenes, as if the stage had drawn them; it draws only the
+scenes written by then, so scene 3 was rendered from keyframes of its own with no review. The clip's frames decide now
+([production storyboards](design/ai-review.md#production-storyboards)).
+
+**55. Riders and their mounts** (M) — the desk has no mounted relation: a panda riding a pony is two mannequins on two
+marks, and the blocking line ("Rosie left of frame, Clover right of frame") drew Rosie floating beside a riderless
+Clover, a critical issue the storyboard review found in three rounds. Blocking was turned off for scenes 7–12, after
+which every rider sat in the saddle. *How:* a mark's `mount` (another actor): the rider takes the mount's position and
+facing at saddle height, the pair is never pushed apart, the line says "Rosie rides Clover, left of frame", and the
+blocking prompt asks for it.
+
+**56. A frame that contradicts its shot makes the video morph** (S–M) — the pilot's shot 5 failed its whole-take watch
+at 3/10 on every attempt with a translucent second Sammy, and in shot 2 a gate dissolved as Rosie walked through it
+(critical in the scene review). Each frame showed something its text did not: an over-the-shoulder shot drawn over
+the other character's shoulder, a gate drawn open where the shot said closed. Rewriting the shots to what their frames
+show took shot 5 to 8/10 and cleared the scene's critical issues. *How:* before a frame is approved, the
+storyboard review compares it with its shot's text (framing, who is where, what moves); or the video prompt describes
+the approved frame (its caption) instead of restating the plan.
+
+**57. Storyboard reviews do not converge** (S–M) — the stage's review scored 6.9, 6.4, 6.3, then 6.6 and 6.4 on two more
+runs, and production scenes ended their three rounds at 6.0–6.9: each round redraws some frames and judges all of them
+afresh, so it finds new detail as fast as it fixes old (a helmet flower on the wrong side, a basket's fill). A person
+continued past a storyboard gate six times (the stage and five of the ten production scenes). *How:* keep a frame's verdict while the frame is unchanged and review only the
+redrawn ones after the first round; report a repeated minor issue once.
+
+**58. A person's scene review does not let the autopilot go on** (S) — only `clip.generate` approves a clip on
+autopilot; after a person fixed a scene by hand and its review passed, the clip waited for a person's approval too.
+*How:* `clip.review` approves its clip on autopilot when the clip gate holds.
+
+**59. A new prop reviews the whole cast again** (S) — the extension added "Two grooming brushes"; the batch's
+new-element review ran the whole cast review (4 characters and 9 elements, about 25 minutes a round) for one prop.
+*How:* review the new elements alone, with the cast as context.
+
+**60. Slow steps on a reasoning model** (S) — `scene.block` took 614 s for one scene (25,109 output tokens, nearly
+all reasoning), the cast review's 12 calls ran one after another at 1–3.5 minutes each. *How:* a reasoning setting
+for these tasks, and the cast review's calls in parallel within the `llm` lane.
+
+**61. Four characters in a frame** (S) — a frame of two riders on two ponies drew Sammy on a grey pony and Rosie on
+foot, likely too few references for each of four characters; the same moment with one pair drew the pony right.
+*How:* the planner keeps a shot to one rider and mount where the cast allows, as it already limits crowds.
+
+**62. A prop in another state than its references** (S) — the carrot basket's references show it full, so "no carrots
+left" was drawn full twice (critical continuity); the shots were drawn again without the basket. *How:* a prop's state
+in the shot text ("empty basket") outweighs its references, or the prop is left out of the references when its state
+differs.
+
+### Run figures
+
+- **Time:** brief to the approved cut in 14.8 hours: screenplay 30 min (two rounds), cast 95 min (a review, a hand
+  redraw, a second review), storyboard 2 h 20 min (five reviews), pilot 1 h 47 min (three shots made filmable by
+  hand), production 8 h 40 min (12 scenes, each storyboarded, generated, watched and heard), the cut review 17 s.
+  Export 58 min rendering in a studio tab, 6 finishing; feedback 20 min.
+- **Generation:** 80 shots, 315 s planned, 124 takes: 71 shots passed at the first attempt (mean 1.45 attempts, 17
+  takes failed a quality check). 733 s of video for 312 s of film; 240 s discarded.
+- **Reviews:** all 12 scenes passed their scene review (threshold 6), 8 with the autopilot's own fixes and 4 after a
+  person's (shots rewritten in scenes 1, 7 and 11, a second watch of scene 9); the cut review passed at 7.3 with
+  nothing open.
+- **Feedback:** 6.4 (the swimming demo's first export 6.2): sound 8.5, dialogue 8 (all 49 lines heard), storytelling 7,
+  character 7, realism 7, cinematography 7, editing 6, physics 6, temporal 5, continuity 4. 134 issues.
+- **Cost:** $244.37 ($46.97 a finished minute): Wan 3.0 $205.24 (180 generations, $67.20 discarded), `qwen3.8-max`
+  $22.91 (804 calls), Seedream $15.97 (355 images), the omni model $0.25.

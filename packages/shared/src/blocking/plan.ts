@@ -4,6 +4,7 @@ import type { SceneBlockOutput } from '../schemas/llm';
 import {
   type BlockingContext,
   defaultCameraSpec,
+  landmarkColor,
   lineOfAction,
   normalizeBlocking,
   solveCamera,
@@ -58,7 +59,7 @@ export function blockingFromPlan(
         depth: l.depth,
         height: l.height,
         rotationDeg: l.rotationDeg,
-        color: l.shape === 'water' ? '#3f7fc0' : l.shape === 'cylinder' ? '#5e7f4a' : '#8a8f98',
+        color: landmarkColor(l.label, l.shape),
         elementId: elementOf(l.label, ['location', 'prop']),
       })),
     },

@@ -240,13 +240,17 @@ blocked in a small 3D set (mannequins on marks, props, landmarks, the sun, a cam
 solver that keeps the 180° rule, edited on a desk with a director's view and a view through each camera; each frame is
 drawn from its camera view and blocking line. *Why:* the swimming demo's continuity across cuts scored 4 of 10, its
 props and shoreline swapping sides; previs desks lock camera and staging before AI paints them (the open-source 3D
-Director Desk, Morphic 3D Scene, Autodesk Flow Studio 3D Editor, PrevizWhiz).
+Director Desk, Morphic 3D Scene, Autodesk Flow Studio 3D Editor, PrevizWhiz). *Next:* riders seated on their mounts
+([improvements](improvements.md#the-riding-demo-october-2930-2026), item 55): the riding demo turned blocking off once
+its lines put a rider beside her pony.
 
 **24. AI review of every step** (M) — *done:* [design/ai-review.md](design/ai-review.md) — on autopilot no gate opens
 without a review that passed: the cast's references, every production scene's storyboard before its video, every
 take watched whole by the vision model (not three frames), every scene watched as one video and heard, and the cut
 reviewed at the take and the scene level before export. *Why:* frames sampled at 15/50/85 % missed morphs and
-walk-ins between them, and autopilot stopped at the cast for a person.
+walk-ins between them, and autopilot stopped at the cast for a person. *Next:* storyboard reviews that converge
+(item 57) and frames checked against their shots before approval (item 56): in the riding demo a person continued past
+a storyboard gate six times.
 
 ## Suggested sequencing
 

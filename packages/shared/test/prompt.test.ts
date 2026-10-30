@@ -100,4 +100,16 @@ describe('prompt compiler (R3)', () => {
     expect(req.input).toHaveLength(2);
     expect(req.parameters?.dimensions).toEqual({ width: 320, height: 320 });
   });
+
+  it("adds a redraw's direction to a reference sheet request, and nothing without one", () => {
+    const mira = f.character();
+    const ctx = { screenplay: f.screenplay(), settings };
+    const text = (direction?: string) =>
+      (compileReferenceRequest(mira, 'front', { ...ctx, direction }).input[0] as { text: string }).text;
+    expect(text('one matte black chin strap in every view')).toContain(
+      'Direction: one matte black chin strap in every view.',
+    );
+    expect(text()).not.toContain('Direction:');
+    expect(text('  ')).toBe(text());
+  });
 });

@@ -260,6 +260,8 @@ export async function characterRefs(deps: HandlerDeps, ctx: JobContext) {
     'profile',
     'full_body',
   ];
+  // A redraw the cast review asked for: what it must fix, and the references it replaces once its views are drawn
+  const { direction, replaces = [] } = ctx.job.params as { direction?: string; replaces?: string[] };
   const projectId = ctx.job.projectId;
   let done = 0;
   for (const view of views) {
@@ -276,6 +278,7 @@ export async function characterRefs(deps: HandlerDeps, ctx: JobContext) {
       settings: docs.project.settings,
       baseImageUri,
       model: docs.project.settings.models.image,
+      direction,
     });
     ctx.progress(done, views.length, `${c.name}: ${view.replace('_', ' ')} view`);
     const task = await deps.gateway.generateImage(req, gatewayOptions(ctx, 'image', `ref-${view}`));
@@ -310,8 +313,35 @@ export async function characterRefs(deps: HandlerDeps, ctx: JobContext) {
     done++;
   }
   ctx.progress(done, views.length, 'done');
+  const dismissed = await dismissReplaced(
+    ctx,
+    replaces,
+    async (id) => (await docsFor(deps, ctx)).characters[characterId]?.references.find((x) => x.id === id),
+    (id) => deps.services.story.deleteReference(ctx.actor, projectId, characterId, id),
+  );
   await castFollowUp(deps, ctx);
-  return { generated: done };
+  return { generated: done, ...(dismissed ? { dismissed } : {}) };
+}
+
+/**
+ * Dismisses the references a redraw replaced once its views are drawn (docs/design/ai-review.md#how-a-review-runs):
+ * those still generated and not approved since; a person who approved one meanwhile keeps it.
+ */
+async function dismissReplaced(
+  ctx: JobContext,
+  replaces: string[],
+  find: (id: string) => Promise<{ source: string; approved: boolean } | undefined>,
+  remove: (id: string) => Promise<unknown>,
+): Promise<number> {
+  let n = 0;
+  for (const id of replaces) {
+    throwIfAborted(ctx.signal);
+    const r = await find(id);
+    if (r?.source !== 'generated' || r.approved) continue;
+    await remove(id);
+    n++;
+  }
+  return n;
 }
 
 /**
@@ -319,6 +349,8 @@ export async function characterRefs(deps: HandlerDeps, ctx: JobContext) {
  * last reference job to finish: a review made while views are still being drawn would be outdated at once.
  */
 async function castFollowUp(deps: HandlerDeps, ctx: JobContext): Promise<void> {
+  // A cast review drawing references again (a round's fix) reviews them itself when they are drawn
+  if (ctx.job.parentId && deps.jobs.find(ctx.job.parentId)?.kind === 'cast.review') return;
   const docs = await docsFor(deps, ctx);
   if (docs.project.workflow.stage !== 'cast') return;
   if (activeReferenceJobs(deps, ctx).length) return;
@@ -343,6 +375,7 @@ export function activeReferenceJobs(deps: HandlerDeps, ctx: JobContext) {
 export async function elementRefs(deps: HandlerDeps, ctx: JobContext) {
   const { elementId } = ctx.job.params as { elementId: string };
   const views = (ctx.job.params.views as ElementReferenceView[] | undefined) ?? [];
+  const { direction, replaces = [] } = ctx.job.params as { direction?: string; replaces?: string[] };
   const projectId = ctx.job.projectId;
   let done = 0;
   for (const view of views) {
@@ -359,6 +392,7 @@ export async function elementRefs(deps: HandlerDeps, ctx: JobContext) {
       settings: docs.project.settings,
       baseImageUri,
       model: docs.project.settings.models.image,
+      direction,
     });
     ctx.progress(done, views.length, `${e.name}: ${view} view`);
     const task = await deps.gateway.generateImage(req, gatewayOptions(ctx, 'image', `element-ref-${view}`));
@@ -393,8 +427,14 @@ export async function elementRefs(deps: HandlerDeps, ctx: JobContext) {
     done++;
   }
   ctx.progress(done, views.length, 'done');
+  const dismissed = await dismissReplaced(
+    ctx,
+    replaces,
+    async (id) => (await docsFor(deps, ctx)).elements[elementId]?.references.find((x) => x.id === id),
+    (id) => deps.services.elements.deleteReference(ctx.actor, projectId, elementId, id),
+  );
   await castFollowUp(deps, ctx);
-  return { generated: done };
+  return { generated: done, ...(dismissed ? { dismissed } : {}) };
 }
 
 export async function characterDescribe(deps: HandlerDeps, ctx: JobContext) {

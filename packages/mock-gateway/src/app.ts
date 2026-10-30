@@ -75,6 +75,11 @@ export interface MockGatewayApp {
   management: MockManagement;
   /** The next `times` chat calls through the proxy answer `503 system cpu overloaded`, as an overloaded upstream does. */
   overloadChat(times: number): void;
+  /**
+   * Chat calls through the proxy that mention `marker` (a task's `rideo-task: <id>` line) wait until `release()`, as a
+   * model still answering does; `held()` counts the calls waiting now.
+   */
+  holdChat(marker: string): { held(): number; release(): void };
   /** The next `times` task creates answer `429`, as a provider at its concurrency limit does (no task is made). */
   busyCreates(times: number): void;
   /** The next `times` video generations jump inside the shot (a flash cut), like MOCK_JUMP_EVERY. */
@@ -102,6 +107,7 @@ export async function buildMockGateway(opts: MockGatewayOptions = {}): Promise<M
     proxyAccounts: {},
   };
   let overloads = 0;
+  const holds: { marker: string; waiting: number; released: Promise<void>; release(): void }[] = [];
   let busyLeft = 0;
   let jumpsLeft = 0;
   let refusalsLeft = 0;
@@ -470,9 +476,17 @@ export async function buildMockGateway(opts: MockGatewayOptions = {}): Promise<M
       const res = embeddings(body);
       return reply.code(res.status).send(res.body);
     }
+    const text = JSON.stringify(body);
+    // A model still answering (holdChat): the call waits until the test releases it
+    const hold = holds.find((h) => text.includes(h.marker));
+    if (hold) {
+      hold.waiting++;
+      await hold.released;
+      hold.waiting--;
+    }
     // An upstream turning calls away for load (newapi's words), passed through by the proxy: the next calls after
     // overloadChat(), or every call that mentions OVERLOAD_MARKER (e2e specs share the mock)
-    if (overloads > 0 || JSON.stringify(body).includes(OVERLOAD_MARKER)) {
+    if (overloads > 0 || text.includes(OVERLOAD_MARKER)) {
       if (overloads > 0) overloads--;
       counters.overloaded++;
       return reply.code(503).type('text/plain').send('system cpu overloaded');
@@ -496,6 +510,24 @@ export async function buildMockGateway(opts: MockGatewayOptions = {}): Promise<M
     overloadChat(times) {
       overloads = times;
     },
+    holdChat(marker) {
+      let open!: () => void;
+      const released = new Promise<void>((resolve) => {
+        open = resolve;
+      });
+      const hold = {
+        marker,
+        waiting: 0,
+        released,
+        release() {
+          const i = holds.indexOf(hold);
+          if (i >= 0) holds.splice(i, 1);
+          open();
+        },
+      };
+      holds.push(hold);
+      return { held: () => hold.waiting, release: () => hold.release() };
+    },
     busyCreates(times) {
       busyLeft = times;
     },
@@ -509,6 +541,8 @@ export async function buildMockGateway(opts: MockGatewayOptions = {}): Promise<M
       mufflesLeft = times;
     },
     async close() {
+      // Held calls answer, so closing never waits on a test that forgot to release them
+      for (const h of [...holds]) h.release();
       await app.close();
       if (ownsDir) await rm(dir, { recursive: true, force: true });
     },

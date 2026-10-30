@@ -308,4 +308,7 @@ paint that colour into a marker band. Mock keyframes and videos copy the marker 
 images they receive, as a real model copies identity. The mock judge decodes the PNG frames and checks the
 bands. `MOCK_FLAKY_EVERY=n` drops the bands from every n-th generation, so tests can prove that the gate
 retries and recovers. `overloadChat(n)` makes the next n chat calls through the proxy answer
-`503 system cpu overloaded`, as an overloaded upstream does, so tests can prove that LLM calls are made again. `metadata.mock_fail: "<code>"` fails a task with that code. `refuseOutputs(n)` fails the next n image or video tasks as a provider's moderation refusing its output does (`provider_error`, `OutputImageSensitiveContentDetected`).
+`503 system cpu overloaded`, as an overloaded upstream does, so tests can prove that LLM calls are made again.
+`holdChat(marker)` holds every chat call that mentions the marker (a task's `rideo-task: <id>` line) until its
+`release()`, as a model still answering does, and `held()` counts the calls it holds, so tests can change documents
+while a review is waiting for its model. `metadata.mock_fail: "<code>"` fails a task with that code. `refuseOutputs(n)` fails the next n image or video tasks as a provider's moderation refusing its output does (`provider_error`, `OutputImageSensitiveContentDetected`).

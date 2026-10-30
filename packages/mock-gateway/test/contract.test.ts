@@ -379,6 +379,29 @@ describe('proxy LLM formats', () => {
     expect(ScreenplayGenerateOutputSchema.parse(await chat('screenplay.generate', input)).title).toBeTruthy();
   });
 
+  it('holds the chat calls that mention a marker until they are released (docs/design/ai-gateway.md#mock-gateway)', async () => {
+    const hold = gw.holdChat('rideo-task: settings.test');
+    const ping = () =>
+      post('/proxy/api.openai.com/v1/chat/completions', {
+        model: 'gpt-test',
+        messages: [{ role: 'user', content: 'rideo-task: settings.test' }],
+      }).then(({ json }) => json.choices[0].message.content);
+    let answered = false;
+    const held = ping().then((out) => {
+      answered = true;
+      return out;
+    });
+    await expect.poll(() => hold.held()).toBe(1);
+    // Other tasks answer while it waits
+    expect(ScreenplayGenerateOutputSchema.parse(await chat('screenplay.generate', input)).title).toBeTruthy();
+    expect(answered).toBe(false);
+    hold.release();
+    expect(await held).toBe('OK');
+    expect(hold.held()).toBe(0);
+    // Released for good: the next call answers at once
+    expect(await ping()).toBe('OK');
+  });
+
   it('hears a take’s lines unless the speaker mumbles or the gateway muffles the check, and hears a scene', async () => {
     const video = {
       type: 'video_url',

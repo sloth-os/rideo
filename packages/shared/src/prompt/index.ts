@@ -657,12 +657,16 @@ export function compileElementReferenceRequest(
     settings: ProjectSettings;
     baseImageUri?: string;
     model?: string;
+    /** What a redraw must fix (the cast review's instruction, docs/design/ai-review.md#how-a-review-runs). */
+    direction?: string;
   },
 ): GatewayImageRequest {
   const style = clean(ctx.screenplay?.style.visual);
+  const direction = clean(ctx.direction);
   const text = [
     `Element reference image, ${e.kind}: ${ELEMENT_VIEW_PHRASE[e.kind][view] ?? 'reference'}; ${SINGLE_PICTURE}; no text.`,
     `${clean(e.name)}: ${clean(e.description) || clean(e.name)}.`,
+    direction ? `Direction: ${direction}.` : '',
     // Places and objects alone: a figure in a reference walks into every keyframe made from it
     e.kind === 'style' ? '' : 'Nobody in the picture, even if the description mentions someone.',
     style && e.kind !== 'style' ? `Visual style: ${style}.` : '',
@@ -898,12 +902,16 @@ export function compileReferenceRequest(
     settings: ProjectSettings;
     baseImageUri?: string;
     model?: string;
+    /** What a redraw must fix (the cast review's instruction, docs/design/ai-review.md#how-a-review-runs). */
+    direction?: string;
   },
 ): GatewayImageRequest {
   const style = clean(ctx.screenplay?.style.visual);
+  const direction = clean(ctx.direction);
   const text = [
     `Character reference image, ${VIEW_PHRASE[view]}; ${SINGLE_PICTURE}; neutral light-grey background, even soft studio lighting, sharp focus, no text.`,
     identityFragment(c),
+    direction ? `Direction: ${direction}.` : '',
     style ? `Visual style: ${style}.` : '',
     ctx.baseImageUri ? 'Keep exactly the same person as in the reference image.' : '',
   ]

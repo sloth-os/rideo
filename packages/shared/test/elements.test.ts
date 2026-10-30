@@ -188,6 +188,15 @@ describe('element conditioning (E3)', () => {
     });
     expect(angle.input).toHaveLength(2);
     expect(angle.parameters?.seed).not.toBe(req.parameters?.seed);
+    // A redraw's direction follows the description
+    const redraw = compileElementReferenceRequest(lamp, 'establishing', {
+      screenplay: null,
+      settings,
+      direction: 'the same brass lantern in both views',
+    });
+    expect((redraw.input[0] as { text: string }).text).toContain(
+      'Lamp room: circular brass lantern room. Direction: the same brass lantern in both views. Nobody in the picture',
+    );
   });
 });
 

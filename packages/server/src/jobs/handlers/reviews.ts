@@ -63,35 +63,44 @@ import { drawBoards } from './storyboard';
 
 const byIndex = <T extends { index: number }>(a: T, b: T) => a.index - b.index;
 
-/** A cast review's fix: the subject's unapproved generated references removed and drawn again, as a child job. */
+/** The longest direction a redraw adds to its image requests (the round's instructions for one subject). */
+const REDRAW_DIRECTION_MAX = 1500;
+
+/**
+ * A cast review's fix: the subject's references drawn again as a child job, from the ones they replace and with the
+ * round's instructions as its direction.
+ */
 async function redrawReferences(
-  deps: HandlerDeps,
   ctx: JobContext,
-  action: { characterId?: string; elementId?: string },
+  docs: ProjectDocs,
+  redraw: { characterId?: string; elementId?: string; instructions: string[] },
 ) {
-  const projectId = ctx.job.projectId;
-  const docs = await docsFor(deps, ctx);
-  if (action.characterId) {
-    const c = docs.characters[action.characterId];
+  // The old references stay as the anchor until the new ones are drawn, then are dismissed: deleting them first drew
+  // the new ones from text alone (docs/design/ai-review.md#how-a-review-runs)
+  const direction = redraw.instructions.join(' ').slice(0, REDRAW_DIRECTION_MAX).trim();
+  const extra = (refs: { id: string; source: string; approved: boolean }[]) => {
+    const replaces = refs.filter((r) => r.source === 'generated' && !r.approved).map((r) => r.id);
+    return { ...(direction ? { direction } : {}), ...(replaces.length ? { replaces } : {}) };
+  };
+  if (redraw.characterId) {
+    const c = docs.characters[redraw.characterId];
     if (!c || c.lock.locked) return null;
-    for (const r of c.references)
-      if (r.source === 'generated' && !r.approved)
-        await deps.services.story.deleteReference(ctx.actor, projectId, c.id, r.id);
     return ctx.spawn(
       'character.refs',
-      { characterId: c.id, views: ['front', 'three_quarter', 'profile', 'full_body'] },
+      {
+        characterId: c.id,
+        views: ['front', 'three_quarter', 'profile', 'full_body'],
+        ...extra(c.references),
+      },
       { dedupeKey: `refs:${c.id}` },
     );
   }
-  const e = action.elementId ? docs.elements[action.elementId] : undefined;
+  const e = redraw.elementId ? docs.elements[redraw.elementId] : undefined;
   if (!e || e.lock.locked) return null;
   const views = [...new Set(e.references.map((r) => r.view))];
-  for (const r of e.references)
-    if (r.source === 'generated' && !r.approved)
-      await deps.services.elements.deleteReference(ctx.actor, projectId, e.id, r.id);
   return ctx.spawn(
     'element.refs',
-    { elementId: e.id, ...(views.length ? { views } : {}) },
+    { elementId: e.id, ...(views.length ? { views } : {}), ...extra(e.references) },
     { dedupeKey: `element-refs:${e.id}` },
   );
 }
@@ -236,13 +245,24 @@ async function reviewCastRounds(deps: HandlerDeps, ctx: JobContext) {
       todo.map((r) => r.id),
       ctx.actor,
     );
-    const jobs = [];
+    // One redraw per character or element, with every instruction the round gave it
+    const redraws = new Map<string, { characterId?: string; elementId?: string; instructions: string[] }>();
     for (const r of todo)
       if (r.action?.kind === 'regenerate_refs') {
-        const job = await redrawReferences(deps, ctx, r.action);
-        if (job) jobs.push(job);
+        const { characterId, elementId, instruction } = r.action;
+        const key = characterId ?? elementId ?? '';
+        const redraw = redraws.get(key) ?? { characterId, elementId, instructions: [] };
+        if (instruction?.trim()) redraw.instructions.push(instruction.trim());
+        redraws.set(key, redraw);
         deps.metrics.aiReviewRecommendations.inc({ stage: 'cast', action: r.action.kind, outcome: 'auto' });
       }
+    const current = await docsFor(deps, ctx);
+    const jobs = [];
+    for (const redraw of redraws.values()) {
+      throwIfAborted(ctx.signal);
+      const job = await redrawReferences(ctx, current, redraw);
+      if (job) jobs.push(job);
+    }
     if (jobs.length) await ctx.waitFor(jobs.map((j) => j.id));
     history = [...history, historyEntry(review, todo.length)].slice(-20);
   }

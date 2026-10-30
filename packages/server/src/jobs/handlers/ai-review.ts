@@ -13,13 +13,16 @@ import {
   compactIdentity,
   docPath,
   type Element,
+  isTerminalJob,
   type ModelLimits,
   mergeSceneReviews,
   type ProjectDocs,
   type ProjectSettings,
   type ReviewStage,
+  type ReviewState,
   type ReviewTargets,
   reviewSettings,
+  reviewState,
   reviseScenes,
   type Scene,
   type Screenplay,
@@ -306,7 +309,19 @@ export async function asReview<T>(
   ctx: JobContext,
   stage: ReviewStage,
   work: () => Promise<T>,
-): Promise<T> {
+): Promise<T | { skipped: ReviewState }> {
+  // Queued behind a review that was running when the documents changed: it is waited for, and its stage reviewed
+  // again only if that review is outdated (docs/design/ai-review.md#how-a-review-runs)
+  const after = ctx.job.params.after as string | undefined;
+  if (after) {
+    const prior = deps.jobs.find(after);
+    if (prior && !isTerminalJob(prior)) await ctx.waitFor([after]);
+    const state = reviewState(await docsFor(deps, ctx), stage);
+    if (state === 'passed' || state === 'failed' || state === 'overridden' || state === 'off') {
+      ctx.log.info({ stage, after, state }, 'the review it waited for is current: nothing to review');
+      return { skipped: state };
+    }
+  }
   await writeReview(
     deps,
     ctx,

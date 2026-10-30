@@ -175,7 +175,9 @@ every check, it becomes the shot's take and goes into the cut, as its job asked.
 The `character.refs` job generates the views `front`, `three_quarter`, `profile` and `full_body` on a neutral
 background with even studio lighting, using the identity fragment and the character seed. Every view after
 the first includes the first image as an image input (image-to-image), so the face carries across views.
-Users approve, regenerate or upload references. `character_from_image` (vision) fills the identity fields
+Users approve, regenerate or upload references. A redraw asked for by the [cast review](ai-review.md#how-a-review-runs)
+carries a direction (`params.direction`, added to every request) and the references it replaces (`params.replaces`):
+they stay as its anchor until the new views are drawn, then are dismissed. `element.refs` takes the same parameters. `character_from_image` (vision) fills the identity fields
 from an uploaded photo.
 
 ## What the user sees

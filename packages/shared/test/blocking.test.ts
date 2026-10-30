@@ -19,6 +19,7 @@ import {
   figureLegend,
   figurePoints,
   heightFromIdentity,
+  landmarkColor,
   lineOfAction,
   mainPair,
   markFor,
@@ -32,6 +33,7 @@ import {
   SceneBlockOutputSchema,
   shotContextOf,
   shotLayout,
+  solveCamera,
 } from '../src';
 import * as f from '../src/testing/fixtures';
 import { fnv1a32 } from '../src/util/hash';
@@ -110,6 +112,34 @@ describe('the camera solver (docs/design/director-desk.md#the-solver)', () => {
     );
     expect(close.targetY).toBeCloseTo(1.2 * 0.92, 2);
     expect(inFrame(b, SHOTS[1]!.id, ROSIE)).toBe(true);
+  });
+
+  it('fits every subject of a group by angle, the one nearest the camera too', () => {
+    // The riding demo's gate scene: the pandas in front, their ponies behind, framed wide at 24 mm from the front
+    const BISCUIT = 'chr_0000000000cccccc';
+    const CLOVER = 'chr_0000000000dddddd';
+    const ids = [ROSIE, SAMMY, BISCUIT, CLOVER];
+    const b = SceneBlockingSchema.parse({
+      updatedAt: at,
+      source: 'ai',
+      set: { width: 30, depth: 24, ground: 'grass' },
+      actors: [
+        { id: 'a1', characterId: ROSIE, color: '#ff8a3d', x: -1.2, z: 2, facingDeg: 150, heightM: 0.95 },
+        { id: 'a2', characterId: SAMMY, color: '#3d8bff', x: -2.6, z: 2.4, facingDeg: 135, heightM: 1.1 },
+        { id: 'a3', characterId: BISCUIT, color: '#3dbf5a', x: 1.2, z: -1.8, facingDeg: 315, heightM: 1.2 },
+        { id: 'a4', characterId: CLOVER, color: '#a05cff', x: 2.6, z: -2.6, facingDeg: 315, heightM: 1.2 },
+      ],
+    });
+    const group = shot(0, ids, 'wide');
+    const camera = solveCamera(
+      b,
+      group,
+      { subjects: ids, angle: 'front', height: 'eye', move: 'none' },
+      ASPECT,
+    );
+    const placed = SceneBlockingSchema.parse({ ...b, shots: { [group.id]: { camera } } });
+    // Measured at the group's centre the spread left Sammy, the nearest, 40° off the axis of a 37° half-width
+    for (const id of ids) expect(inFrame(placed, group.id, id)).toBe(true);
   });
 
   it('keeps every camera on the side of the line the first two-shot sets', () => {
@@ -281,11 +311,25 @@ describe('the AI floor plan (blockingFromPlan)', () => {
       at,
     );
     expect(blocking.actors.map((a) => a.characterId)).toEqual([ROSIE, SAMMY]);
-    expect(blocking.set.landmarks[0]).toMatchObject({ label: 'the sea', shape: 'water' });
+    expect(blocking.set.landmarks[0]).toMatchObject({ label: 'the sea', shape: 'water', color: '#3f7fc0' });
     for (const s of shots) expect(blocking.shots[s.id]!.camera.z).toBeGreaterThan(0);
     expect(blockingIssues(blocking, shots, names, ASPECT).filter((i) => i.code === 'line_crossed')).toEqual(
       [],
     );
+  });
+});
+
+describe('landmark colours', () => {
+  it('colours AI landmarks by what their label names, else by their shape', () => {
+    expect(landmarkColor('green hills', 'box')).toBe('#7fae5a');
+    expect(landmarkColor('Red barn', 'box')).toBe('#b5413a');
+    expect(landmarkColor('left gate post', 'cylinder')).toBe('#eceae4');
+    expect(landmarkColor('gravel lane', 'box')).toBe('#cdb58c');
+    expect(landmarkColor('Hay corner', 'box')).toBe('#d8b54a');
+    expect(landmarkColor('the sea', 'water')).toBe('#3f7fc0');
+    expect(landmarkColor('an old oak tree', 'cylinder')).toBe('#4f7a3a');
+    expect(landmarkColor('a thing', 'cylinder')).toBe('#5e7f4a');
+    expect(landmarkColor('a thing', 'box')).toBe('#8a8f98');
   });
 });
 

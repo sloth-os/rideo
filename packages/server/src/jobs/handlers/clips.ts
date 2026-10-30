@@ -23,7 +23,6 @@ import {
   shotRangeFor,
   shotsWithoutTakes,
   sortedClips,
-  storyboardClips,
   TARGET_REACHED_RATIO,
   takeState,
   voiceOf,
@@ -468,14 +467,10 @@ export async function batchGenerate(deps: HandlerDeps, ctx: JobContext) {
       assertCastReady(next.shots, docs.characters, docs.elements);
       assertVoicesReady(deps, next.shots, docs.characters, docs.project.settings);
       // Production storyboards (docs/design/ai-review.md#production-storyboards): the scene is blocked, drawn, reviewed
-      // and its frames approved before any of its video is made
+      // and its frames approved before any of its video is made; one of the storyboard stage's scenes too when the
+      // stage did not draw it (written after it)
       const sb = docs.project.settings.storyboard;
-      if (
-        sb?.production &&
-        sb.enabled !== false &&
-        !storyboardClips(docs).some((c) => c.id === next.id) &&
-        !clipFramesApproved(next, docs)
-      ) {
+      if (sb?.production && sb.enabled !== false && !clipFramesApproved(next, docs)) {
         const state = clipBoardReviewState(next);
         if (state === 'failed') {
           stopReason = `the storyboard of scene ${next.index + 1} did not pass its review`;

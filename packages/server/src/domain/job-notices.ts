@@ -58,6 +58,8 @@ function stopped(job: Job): string {
 /** A finished top-level job's notice: the kinds above when they succeed, any job when it fails for good. */
 export function jobNotice(job: Job): { title: string; detail: string; link: string } | null {
   if (job.parentId) return null;
+  // A review queued behind one that turned out current reviewed nothing: that one has said its verdict
+  if (job.status === 'succeeded' && (job.result as { skipped?: string } | undefined)?.skipped) return null;
   const n = NOTICES[job.kind];
   if (job.status === 'succeeded' && n)
     return { title: reviewTitle(job, n.done), detail: stopped(job), link: `/p/${job.projectId}/${n.view}` };

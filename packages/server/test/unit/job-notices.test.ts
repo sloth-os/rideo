@@ -34,6 +34,21 @@ describe('job notices of the reviews of every step', () => {
     );
   });
 
+  it('says nothing for a review queued behind one that turned out current (it reviewed nothing)', () => {
+    expect(
+      jobNotice(
+        job({
+          kind: 'cast.review',
+          params: { after: 'job_0000000000bbbbbb' },
+          result: { skipped: 'passed' },
+        }),
+      ),
+    ).toBeNull();
+    expect(jobNotice(job({ kind: 'cast.review', result: { passed: true, score: 8 } }))?.title).toBe(
+      'Cast review passed (8)',
+    );
+  });
+
   it('says why a batch stopped for a person, and nothing when it reached its end', () => {
     const stopped = jobNotice(
       job({

@@ -53,12 +53,13 @@ describe('autopilot: every step reviewed and approved', () => {
       title: 'The Keeper',
       brief: { prompt: 'A lighthouse keeper receives letters from the future' },
       settings: {
-        // Two scenes: the pilot from the storyboard stage, the second made by production with its own storyboard
-        targetDurationSec: 60,
+        // The screenplay job writes the pilot's two scenes, which the storyboard stage draws; production writes the
+        // rest, the third within the stage's three scenes, and storyboards each before its video
+        targetDurationSec: 90,
         pilotDurationSec: 30,
         resolution: { width: 320, height: 180 },
         autopilot: true,
-        storyboard: { enabled: true, scenes: 1, production: true },
+        storyboard: { enabled: true, scenes: 3, production: true },
         // A person picks the voices TTS dialogue needs: the film speaks through the video model's own sound
         dialogue: { mode: 'off' },
       },
@@ -105,8 +106,9 @@ describe('autopilot: every step reviewed and approved', () => {
       if (clip.shots.length >= 2)
         expect(clip.review).toMatchObject({ watched: 'video', verdict: { passed: true } });
     }
-    // Production scenes were storyboarded and reviewed on their own
-    expect(clips.slice(1).every((c) => c.boardReview?.verdict?.passed)).toBe(true);
+    // Production scenes were storyboarded and reviewed on their own, the one written within the stage's scenes too
+    expect(clips.length).toBeGreaterThan(2);
+    for (const c of clips.slice(2)) expect(c.boardReview?.verdict?.passed, `clip ${c.index + 1}`).toBe(true);
     // The export started: an editor job for a studio tab
     const exports = Object.values<any>(docs.exports);
     expect(exports).toHaveLength(1);
@@ -148,6 +150,7 @@ describe('autopilot: every step reviewed and approved', () => {
       });
       expectSucceeded(await stack.waitJob(pid, j.id));
     }
+    const drawnFirst = (await stateOf(pid)).docs.characters[c.id].references[0];
     await lockElements(stack, pid);
     await stack.waitIdle(pid, 300_000);
     state = await stateOf(pid);
@@ -157,6 +160,24 @@ describe('autopilot: every step reviewed and approved', () => {
     expect(review.round).toBe(2);
     expect(review.history.at(-1)).toMatchObject({ passed: false, applied: 1 });
     expect(review.recommendations.some((r) => r.action?.kind === 'regenerate_refs')).toBe(true);
+    // Drawn again with the review's instruction, from the reference it replaced, which it then dismissed
+    const jobs = await stack.api<Job[]>('GET', `/projects/${pid}/jobs`);
+    const redraw = jobs.find(
+      (j) => j.kind === 'character.refs' && j.parentId && j.params.characterId === c.id,
+    )!;
+    expect(redraw.params).toMatchObject({
+      direction: 'the same face and outfit in every view',
+      replaces: [drawnFirst.id],
+    });
+    expect(redraw.result).toEqual({ generated: 4, dismissed: 1 });
+    for (const t of redraw.gatewayTasks) {
+      const request = stack.gw.store.requests.get(t.id) as any;
+      expect(request.input[0].text).toContain('Direction: the same face and outfit in every view.');
+      expect(request.input.some((p: any) => p.type === 'image')).toBe(true);
+    }
+    const now = state.docs.characters[c.id].references;
+    expect(now.map((r: any) => r.view)).toEqual(['front', 'three_quarter', 'profile', 'full_body']);
+    expect(now.some((r: any) => r.id === drawnFirst.id)).toBe(false);
     let ev = await workflowOf(pid);
     const req = () =>
       ev.stages.find((s) => s.id === 'cast')!.gate!.requirements.find((r) => r.id === 'cast.reviewPassed')!;

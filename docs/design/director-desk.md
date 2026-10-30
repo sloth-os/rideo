@@ -75,7 +75,12 @@ audience's side), so a camera at the front looks towards `-z` and sees `+x` on i
 front, 90° to the right (`+x`), 180° to the back. Each shot's marks override the opening marks for the characters in
 it (a character with no mark in a shot stands where the opening marks put them); `toX`/`toZ` is where they walk to
 during the shot. Each actor gets a colour of the desk palette in cast order (orange, blue, green, purple, yellow,
-pink, teal, red), which the prompt names (`orange figure = Rosie`).
+pink, teal, red), which the prompt names (`orange figure = Rosie`). AI landmarks get a colour from their label
+(`landmarkColor`: hills, grass and paddocks green, barns red, fences, gates and rails white, lanes, paths and gravel
+tan, hay and straw golden, trees and hedges dark green, water blue, rock and stone grey, houses and stables beige),
+else from their shape; the first AI blocking of the riding demo, all of it the default grey, rendered its hills and
+fences as grey walls. Far scenery (hills, mountains, a skyline) is not a landmark: the blocking prompt leaves it to
+the shot descriptions, as a box it walls the sky off every camera.
 
 Re-planning a scene keeps its set, actors and props; shots that no longer exist lose their marks and cameras, and new
 shots get solved cameras. A blocking whose shots do not match the clip's (a shot added, removed, re-cast) is
@@ -92,7 +97,7 @@ one, from the shot's framing).
 | Subjects | the spec's characters (the shot's cast when empty; a shot without characters frames the set's centre or its first prop) at their marks for the shot |
 | Coverage | the frame height at the subjects, by framing, for a 1.7 m figure (scaled by the tallest subject): extreme wide 10 m, wide 4.2, medium 1.25, medium close 0.85, close-up 0.45, extreme close-up 0.22, over the shoulder 1.1, POV 2.5, insert 0.35 |
 | Lens | the shot's `camera.lensMm`, else 24 mm (wide), 35 (medium), 50 (medium close), 85 (close-up and closer) |
-| Distance | `(coverage / 2) / tan(fovV / 2)` with a 36 mm wide sensor and the project's aspect ratio |
+| Distance | `(coverage / 2) / tan(fovV / 2)` with a 36 mm wide sensor and the project's aspect ratio; a group also needs every subject inside the frame's width by angle: for each, its depth towards the camera plus `(|sideways offset| + 0.25 m × scale) / tan(fovH / 2) × 1.1`. One nearer the camera than the group's centre covers a wider angle: in the riding demo's gate scene (four subjects, 24 mm) the spread measured at the centre's depth left the nearest panda 41° off the axis, outside the 37° half-width |
 | Target | the subjects' centre at the height the framing looks at: half the figure (wide), the chest (medium), the eyes (close-up); a prop for an insert |
 | Direction | around the subjects: `front` faces the subject's facing (a group: the side of the line between the two main characters that faces the set's front), three-quarters ±35°, profile ±90°, `back` 180°; `over_shoulder` stands 0.9 m behind the first subject's shoulder looking at the second; `pov` is the first subject's eyes looking where they face |
 | Height | `eye` (the subject's eyes; 1.5 m for wide shots), `low` 0.35 m, `high` the head plus 1.2 m, `overhead` the head plus 4 m |

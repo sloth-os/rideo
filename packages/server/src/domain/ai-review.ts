@@ -59,7 +59,17 @@ export class AiReviewService extends Service {
   }
 
   /** Queues the stage's review (one at a time; a running one is returned). */
-  async run(actor: Actor, projectId: string, stage: ReviewStage): Promise<{ job: Job }> {
+  /**
+   * Queues a stage's review. A review not yet started takes the request (it reads the documents when it starts); a
+   * running one is the answer to a person, while a follow-up (`after`) is queued behind it, as the running review may
+   * have read the documents before they changed (docs/design/ai-review.md#how-a-review-runs).
+   */
+  async run(
+    actor: Actor,
+    projectId: string,
+    stage: ReviewStage,
+    opts: { after?: boolean } = {},
+  ): Promise<{ job: Job }> {
     const docs = await this.deps.projects.docs(projectId);
     if (stage === 'screenplay' && !docs.screenplay?.scenes.length)
       throw invalid('write or import the screenplay first');
@@ -69,17 +79,19 @@ export class AiReviewService extends Service {
       );
     if (stage === 'cut' && !cutTakeItems(docs).length) throw invalid('assemble the cut first');
     const kind = JOB_OF[stage];
-    const active = this.deps.jobs
-      .list(projectId, { kind })
-      .find((j) => j.status === 'queued' || j.status === 'running');
-    if (active) return { job: active };
+    const jobs = this.deps.jobs.list(projectId, { kind });
+    const waiting = jobs.find((j) => j.status === 'queued');
+    if (waiting) return { job: waiting };
+    // The newest running review: a follow-up waits for it, then reviews only if it is outdated
+    const running = jobs.find((j) => j.status === 'running');
+    if (running && !opts.after) return { job: running };
     const job = await this.deps.jobs.enqueue({
       projectId,
       kind,
-      params: {},
+      params: running ? { after: running.id } : {},
       actor,
       branch: await this.branchOf(projectId),
-      dedupeKey: `ai-review:${stage}`,
+      dedupeKey: running ? `ai-review:${stage}:after:${running.id}` : `ai-review:${stage}`,
       priority: 3,
       maxAttempts: 2,
     });
@@ -94,7 +106,7 @@ export class AiReviewService extends Service {
     // A review of the documents as they are now is not made again
     const state = reviewState(docs, stage);
     if (state === 'passed' || state === 'overridden' || state === 'failed') return null;
-    return (await this.run(actor, projectId, stage)).job;
+    return (await this.run(actor, projectId, stage, { after: true })).job;
   }
 
   /**
