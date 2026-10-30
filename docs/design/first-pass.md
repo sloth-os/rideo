@@ -247,8 +247,9 @@ cell is one run's first round; the scores of the same build and brief differ by 
 | fp5: the desk off (the runs kept prompt version 2) | riding 7.5; kite 7.6 | riding 8.6; kite **8.9, every dimension 8 or more** | riding 7.1; kite 7.3 (desk off) |
 | fp6: the same, first frames read for the pilot's video | riding 7.3; kite 7.6 | riding 8.7; kite 8.6 | riding 6.5; kite 7.1 (desk off) |
 | fp7: prompt version 3 (framings spelled out, close framings from the head and shoulders), desk off | riding 7.6; kite 8.0 | riding 8.5; kite 8.4 | riding 7.0; kite 6.7 (no close framing drawn whole) |
+| fp8: the staging check (frames drawn again while they contradict their shot; 3 attempts) | riding 7.3; kite 8.1 | riding 8.6; kite 8.7 | riding 7.2 (7 of 16 frames drawn again); kite 7.2 (3 of 12) |
 
-- **Screenplay.** A brief without built-in conflicts passes 8 overall on its first round (kite 8.3, 8.5, 8.0; 7.6 twice),
+- **Screenplay.** A brief without built-in conflicts passes 8 overall on its first round (kite 8.3, 8.5, 8.0, 8.1; 7.6 twice),
   with every dimension at 8 or 9 except feasibility (7). The riding brief stays at 7.1–8.1: it asks for what the video
   model renders badly (two riders side by side are four characters, a bouncing trot, a slide off a pony), so the
   reviewer marks feasibility 5–6 whatever the writer does with it, and brief 5 when the writer leaves it out.
@@ -257,7 +258,7 @@ cell is one run's first round; the scores of the same build and brief differ by 
 - **Video** (fp6, the pilot scene of each brief, every take made once): scene review 5.9 (riding) and 6.0 (kite),
   against 5.8 for the riding demo's pilot; first takes watched whole 6.4 and 7.3 on average (the riding demo's 6.3).
   The whole run to the pilot cost $12.74 (riding, 30 s of video) and $8.35 (kite, 20 s).
-- **Storyboard.** Up from about 6.5 (five runs with the desk on) to 6.5–7.3 with the desk off (six runs, mean 6.9):
+- **Storyboard.** Up from about 6.5 (five runs with the desk on) to 6.5–7.3 with the desk off (eight runs, mean 7.0):
   coverage, storytelling, feasibility and pacing reach 7–8; continuity between frames stays at 5. With prompt version
   2 every run drew some close framings whole (fp6: four of nine); with version 3 (fp7) none of seven was, and
   composition's remaining issues were an eyeline and a tree drawn floating on a patch of grass in the sky.
@@ -278,8 +279,12 @@ What still keeps a first pass under 8, with what to try next:
 3. **Frames that do not follow their shot** (storyboard continuity 5–6): a prop drawn in another place or state than
    the shot says, a duplicate prop, a character a few metres from where the cut before left them, a morning scene lit
    like a sunset. The staging check ([frames that follow their shot](#frames-that-follow-their-shot)) draws such a
-   frame again; its measurement is below. *Next:* frames that agree with each other, not only with their own text:
-   a scene's frames drawn as edits of its first frame (the same place and props).
+   frame again: on fp8 it drew 3 of 12 frames again and left only details (clouds, a scarf end in the wind), yet
+   continuity stayed at 5.5. What the review still found is frames that disagree with each other, not with their own
+   text: the wind blowing one way in one frame and the other way in the next, the lone tree on the lake's side in a
+   reverse shot. *Next:* the scene's geography in every shot (which landmark lies in which direction, so a reverse
+   shot shows what is behind the first camera), from the desk's set once its cameras follow the plan (item 5), and
+   a scene's frames drawn as edits of its first frame.
 4. **Close framings drawn whole** (composition, fixed): every storyboard on prompt version 2 drew some close-ups and
    medium close-ups as whole figures (fp6: four of nine); version 3's spelled-out framing and head-and-shoulders
    references drew none of seven whole (fp7).
