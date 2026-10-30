@@ -5,11 +5,14 @@ import {
   attemptDone,
   betterAttempt,
   boardState,
+  type Character,
   type Clip,
   type ConsistencyReport,
+  compactIdentity,
   compileKeyframeRequest,
   compileVideoRequest,
   docPath,
+  headCropped,
   isAcceptable,
   type MediaRef,
   orderedShotCharacters,
@@ -167,6 +170,7 @@ export async function shotGenerate(deps: HandlerDeps, ctx: JobContext) {
         judgedElements,
         maxInputImages: imageLimits.limits?.max_input_images,
         dir,
+        headCrop: headCropped({ shot, settings }),
       });
       const { referenceUris, judgeRefs, elementJudgeRefs } = refs;
       // Version 2 adds the scene and the previous shot's end state (docs/design/continuity.md#prompts-version-2).
@@ -366,6 +370,19 @@ export async function shotGenerate(deps: HandlerDeps, ctx: JobContext) {
           { model: videoLimits.model },
           'the video model takes no last frame; the end frame is not used',
         );
+      // The video reads its first frame (docs/design/first-pass.md#the-video-reads-its-first-frame): its prompt
+      // describes a storyboard frame or a keyframe as drawn, so it never asks the model to morph it
+      const frameSeen =
+        v2 && keyframeRef && (firstFrame?.source === 'storyboard' || firstFrame?.source === 'keyframe')
+          ? await seeFirstFrame(deps, ctx, {
+              clipId,
+              shot,
+              characters,
+              keyframe: keyframeRef,
+              source: firstFrame.source,
+            })
+          : null;
+      const videoCtx: ShotContext = frameSeen ? { ...shotCtx, frameSeen } : shotCtx;
       // The motion reference, when the model accepts reference videos.
       const motionReference =
         shot.motionReference && videoLimits.limits?.supports_reference_video !== false
@@ -432,11 +449,11 @@ export async function shotGenerate(deps: HandlerDeps, ctx: JobContext) {
 
       let best: Candidate | null = null;
       const videoTaskIds: string[] = [];
-      let videoReq = compileVideoRequest(shotCtx, videoOpts(0));
+      let videoReq = compileVideoRequest(videoCtx, videoOpts(0));
       for (let attempt = 0; attempt < maxAttempts; attempt++) {
         throwIfAborted(ctx.signal);
         ctx.progress(0.35 + (0.45 * attempt) / maxAttempts, 1, `video attempt ${attempt + 1}/${maxAttempts}`);
-        videoReq = compileVideoRequest(shotCtx, videoOpts(attempt));
+        videoReq = compileVideoRequest(videoCtx, videoOpts(attempt));
         const videoStarted = Date.now();
         const task = await deps.gateway.generateVideo(
           videoReq,
@@ -481,7 +498,8 @@ export async function shotGenerate(deps: HandlerDeps, ctx: JobContext) {
                 ff: deps.ff,
                 video: raw,
                 clip: join(dir, `watch-${attempt}.mp4`),
-                shot,
+                // The shot as the video was asked to make it
+                shot: frameSeen ? { ...shot, ...frameSeen } : shot,
                 characters,
                 references: judgeRefs,
                 offscreen: shotCtx.offscreen ?? [],
@@ -731,5 +749,87 @@ export async function shotGenerate(deps: HandlerDeps, ctx: JobContext) {
       `Shot ${name} ${ctx.signal.aborted ? 'cancelled' : 'failed'}`,
     ).catch(() => undefined);
     throw err;
+  }
+}
+
+/**
+ * The shot's text as its first frame shows it (`frame.reconcile`, docs/design/first-pass.md#the-video-reads-its-first-frame):
+ * a storyboard frame's is made once and kept on the board; a keyframe's for this generation. Null when the model
+ * cannot say (the planned text is used, as before).
+ */
+async function seeFirstFrame(
+  deps: HandlerDeps,
+  ctx: JobContext,
+  opts: {
+    clipId: string;
+    shot: Shot;
+    characters: Character[];
+    keyframe: MediaRef;
+    source: 'storyboard' | 'keyframe';
+  },
+): Promise<{ description: string; action: string } | null> {
+  const { shot, keyframe, source } = opts;
+  if (shot.promptOverride?.trim()) return null;
+  const kept = source === 'storyboard' ? shot.board?.seen : null;
+  if (kept && kept.keyframeHash === keyframe.hash)
+    return { description: kept.description, action: kept.action };
+  try {
+    const out = await deps.llm.reconcileFrame(
+      {
+        shot: {
+          description: shot.description,
+          action: shot.action,
+          endState: shot.endState ?? '',
+          framing: shot.camera.framing,
+          movement: shot.camera.movement,
+          durationSec: shot.durationSec,
+          cast: opts.characters.map((c) => ({ name: c.name, look: compactIdentity(c, shot) })),
+        },
+      },
+      await deps.media.pngBuffer(ctx.job.projectId, keyframe, 1024),
+      ctx.signal,
+    );
+    deps.metrics.frameReconciles.inc({ source, outcome: out.conflicts.length ? 'adjusted' : 'agreed' });
+    ctx.log.info(
+      { projectId: ctx.job.projectId, shotId: shot.id, source, conflicts: out.conflicts },
+      'first frame read for the video prompt',
+    );
+    if (source === 'storyboard')
+      await commitAs(
+        deps,
+        ctx,
+        (tx) => {
+          const clip = tx.require<Clip>(docPath.clip(opts.clipId), `clip ${opts.clipId}`);
+          const shots = clip.shots.map((s) =>
+            s.id === shot.id && s.board && s.board.keyframe.hash === keyframe.hash
+              ? {
+                  ...s,
+                  board: {
+                    ...s.board,
+                    seen: {
+                      keyframeHash: keyframe.hash,
+                      description: out.description,
+                      action: out.action,
+                      conflicts: out.conflicts,
+                      model: deps.llm.vision.model,
+                      at: new Date().toISOString(),
+                    },
+                  },
+                }
+              : s,
+          );
+          tx.set(docPath.clip(opts.clipId), { ...clip, shots });
+        },
+        `Read the storyboard frame of ${shot.id} for its video`,
+      );
+    return { description: out.description, action: out.action };
+  } catch (err) {
+    throwIfAborted(ctx.signal);
+    deps.metrics.frameReconciles.inc({ source, outcome: 'error' });
+    ctx.log.warn(
+      { projectId: ctx.job.projectId, shotId: shot.id, err: (err as Error).message },
+      'could not read the first frame; the video prompt keeps the planned text',
+    );
+    return null;
   }
 }

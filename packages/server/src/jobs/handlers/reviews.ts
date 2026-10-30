@@ -5,6 +5,7 @@ import {
   autoApplicable,
   boardNeedsGeneration,
   boardState,
+  CHARACTER_VIEWS,
   type Character,
   type Clip,
   castElements,
@@ -33,12 +34,14 @@ import {
   sortedClips,
   stageVerdict,
   takePassesChecks,
+  videoFacts,
   watchesTakes,
   withWatch,
 } from '@rideo/shared';
 import { watchTake } from '../../consistency/watch';
 import { invalid, notFound } from '../../errors';
 import { throwIfAborted } from '../../util/abort';
+import { eachLimit } from '../../util/limit';
 import type { JobContext } from '../queue';
 import {
   applyStoryboardFixes,
@@ -47,7 +50,6 @@ import {
   historyEntry,
   markApplied,
   reviewSceneFrames,
-  videoFacts,
   withCarried,
   writeReview,
 } from './ai-review';
@@ -55,6 +57,9 @@ import { ensureBlocking } from './blocking';
 import { commitAs, docsFor, type HandlerDeps } from './common';
 import { activeReferenceJobs } from './story';
 import { drawBoards } from './storyboard';
+
+/** Cast review calls in flight at once (docs/design/first-pass.md#efficiency). */
+const CAST_REVIEW_CONCURRENCY = 3;
 
 /**
  * Reviews that gate every step of Idea → movie (docs/design/ai-review.md#autopilot-every-step-reviewed-and-approved):
@@ -89,7 +94,7 @@ async function redrawReferences(
       'character.refs',
       {
         characterId: c.id,
-        views: ['front', 'three_quarter', 'profile', 'full_body'],
+        views: CHARACTER_VIEWS,
         ...extra(c.references),
       },
       { dedupeKey: `refs:${c.id}` },
@@ -148,7 +153,6 @@ async function reviewCastRounds(deps: HandlerDeps, ctx: JobContext) {
       .filter((e) => e.references.length > 0)
       .sort((a, b) => a.name.localeCompare(b.name));
     const total = chars.length + elements.length;
-    const parts: { name: string; kind: 'character' | 'element'; out: StageReviewOutput }[] = [];
     const images = async (refs: { view: string; media: Character['references'][number]['media'] }[]) =>
       Promise.all(
         refs.slice(0, 6).map(async (r, i) => ({
@@ -156,53 +160,73 @@ async function reviewCastRounds(deps: HandlerDeps, ctx: JobContext) {
           data: await deps.media.pngBuffer(projectId, r.media, 512),
         })),
       );
-    for (const c of chars) {
-      throwIfAborted(ctx.signal);
-      ctx.progress(parts.length, total, `reviewing ${c.name} (round ${round})`);
-      const wardrobe = c.wardrobe.find((w) => w.default) ?? c.wardrobe[0];
-      const out = await deps.llm.reviewCast(
-        {
-          film,
-          subject: {
-            kind: 'character',
-            name: c.name,
-            role: c.role,
-            // The whole identity (face, hair, eyes, marks): what the references must show
-            identity: identityFragment(c),
-            wardrobe: wardrobe?.description ?? '',
-            references: c.references
-              .slice(0, 6)
-              .map((r, i) => ({ index: i + 1, view: r.view, approved: r.approved })),
-          },
-          others: chars.filter((o) => o.id !== c.id).map((o) => ({ name: o.name, look: compactIdentity(o) })),
+    // One call per character and per place or prop, a few at a time (docs/design/first-pass.md#efficiency): the riding
+    // demo's 13 calls one after another took about 25 minutes a round. The answers keep the cast's order.
+    const calls: { name: string; kind: 'character' | 'element'; run: () => Promise<StageReviewOutput> }[] = [
+      ...chars.map((c) => ({
+        name: c.name,
+        kind: 'character' as const,
+        run: async () => {
+          const wardrobe = c.wardrobe.find((w) => w.default) ?? c.wardrobe[0];
+          return deps.llm.reviewCast(
+            {
+              film,
+              subject: {
+                kind: 'character',
+                name: c.name,
+                role: c.role,
+                // The whole identity (face, hair, eyes, marks): what the references must show
+                identity: identityFragment(c),
+                wardrobe: wardrobe?.description ?? '',
+                references: c.references
+                  .slice(0, 6)
+                  .map((r, i) => ({ index: i + 1, view: r.view, approved: r.approved })),
+              },
+              others: chars
+                .filter((o) => o.id !== c.id)
+                .map((o) => ({ name: o.name, look: compactIdentity(o) })),
+            },
+            await images(c.references),
+            ctx.signal,
+          );
         },
-        await images(c.references),
-        ctx.signal,
-      );
-      parts.push({ name: c.name, kind: 'character', out });
-    }
-    for (const e of elements) {
-      throwIfAborted(ctx.signal);
-      ctx.progress(parts.length, total, `reviewing ${e.name} (round ${round})`);
-      const out = await deps.llm.reviewCast(
-        {
-          film,
-          subject: {
-            kind: 'element',
-            elementKind: e.kind,
-            name: e.name,
-            description: e.description,
-            references: e.references
-              .slice(0, 6)
-              .map((r, i) => ({ index: i + 1, view: r.view, approved: r.approved })),
-          },
-          others: [],
-        },
-        await images(e.references),
-        ctx.signal,
-      );
-      parts.push({ name: e.name, kind: 'element', out });
-    }
+      })),
+      ...elements.map((e) => ({
+        name: e.name,
+        kind: 'element' as const,
+        run: async () =>
+          deps.llm.reviewCast(
+            {
+              film,
+              subject: {
+                kind: 'element',
+                elementKind: e.kind,
+                name: e.name,
+                description: e.description,
+                references: e.references
+                  .slice(0, 6)
+                  .map((r, i) => ({ index: i + 1, view: r.view, approved: r.approved })),
+              },
+              others: [],
+            },
+            await images(e.references),
+            ctx.signal,
+          ),
+      })),
+    ];
+    const answers: (StageReviewOutput | undefined)[] = new Array(calls.length);
+    let reviewed = 0;
+    ctx.progress(0, total, `reviewing the cast (round ${round})`);
+    await eachLimit(
+      calls.map((call, i) => ({ call, i })),
+      CAST_REVIEW_CONCURRENCY,
+      async ({ call, i }) => {
+        throwIfAborted(ctx.signal);
+        answers[i] = await call.run();
+        ctx.progress(++reviewed, total, `reviewed ${call.name} (round ${round})`);
+      },
+    );
+    const parts = calls.map((call, i) => ({ name: call.name, kind: call.kind, out: answers[i]! }));
     const targets: ReviewTargets = {
       scenes: new Map(),
       characters: new Map(chars.map((c) => [c.name.toLowerCase(), c.id])),
@@ -219,10 +243,18 @@ async function reviewCastRounds(deps: HandlerDeps, ctx: JobContext) {
         subject,
         round,
         threshold: settings.threshold,
+        minDimension: settings.minDimension,
         history,
         error: undefined,
         ...withCarried(
-          assembleStageReview('cast', mergeSubjectReviews(parts), targets, settings.threshold, round),
+          assembleStageReview(
+            'cast',
+            mergeSubjectReviews(parts),
+            targets,
+            settings.threshold,
+            round,
+            settings.minDimension,
+          ),
           docs.aiReviews.cast,
           round,
         ),
@@ -362,6 +394,7 @@ export async function clipStoryboard(deps: HandlerDeps, ctx: JobContext) {
         targets,
         settings.threshold,
         round,
+        settings.minDimension,
       );
       const review = await writeBoardReview(
         deps,
@@ -374,6 +407,7 @@ export async function clipStoryboard(deps: HandlerDeps, ctx: JobContext) {
           subject: clipBoardSubject(clip),
           round,
           threshold: settings.threshold,
+          minDimension: settings.minDimension,
           history,
           error: undefined,
           ...withCarried(parts, docs.clips[clipId]!.boardReview ?? undefined, round),
@@ -609,7 +643,7 @@ export function assembleCutReview(docs: ProjectDocs) {
       });
       continue;
     }
-    const verdict = r.verdict ?? clipReviewVerdict(r, settings.sceneThreshold);
+    const verdict = r.verdict ?? clipReviewVerdict(r, settings.sceneThreshold, settings.minDimension);
     weights.push({
       w: dur,
       overall: r.overall ?? 0,
@@ -655,7 +689,7 @@ export function assembleCutReview(docs: ProjectDocs) {
     continuity: mean((x) => x.continuity),
     sound: mean((x) => x.sound),
   };
-  const verdict = stageVerdict('cut', scores, issues, settings.sceneThreshold);
+  const verdict = stageVerdict('cut', scores, issues, settings.sceneThreshold, settings.minDimension);
   const failedTakes = items.length - passing;
   return {
     scores,
@@ -729,6 +763,7 @@ async function reviewCutRounds(deps: HandlerDeps, ctx: JobContext) {
         subject: cutReviewSubject(docs),
         round,
         threshold: settings.sceneThreshold,
+        minDimension: settings.minDimension,
         history,
         error: undefined,
         ...withCarried(parts, docs.aiReviews.cut, round),

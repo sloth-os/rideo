@@ -5,9 +5,11 @@ import {
   attemptDone,
   betterAttempt,
   type Character,
+  type CharacterReference,
   type ConsistencyReport,
   compileKeyframeRequest,
   type Element,
+  HEAD_CROP_SHARE,
   type MediaRef,
   referenceLabels,
   type Shot,
@@ -16,6 +18,7 @@ import {
 } from '@rideo/shared';
 import { verifyFrames } from '../../consistency/gate';
 import type { ConsistencyJudge } from '../../consistency/judge';
+import { topCrop } from '../../media/frames';
 import { makeCastSheet } from '../../media/sheet';
 import { throwIfAborted } from '../../util/abort';
 import type { JobContext } from '../queue';
@@ -44,6 +47,11 @@ export async function prepareShotReferences(
     judgedElements: Element[];
     maxInputImages: number | undefined;
     dir: string;
+    /**
+     * A close framing of prompt version 3 (`headCropped`): whole-figure references go as their head and shoulders
+     * (docs/design/first-pass.md#framings-spelled-out); the judge keeps the whole figures.
+     */
+    headCrop?: boolean;
   },
 ): Promise<ShotReferences> {
   const projectId = ctx.job.projectId;
@@ -51,8 +59,17 @@ export async function prepareShotReferences(
   const selection = selectReferences(characters, shot, input.maxInputImages, 2, elements);
   const judgeRefs = new Map<string, Buffer[]>();
   const refPngs: Buffer[] = [];
+  const refPng = async (r: CharacterReference) => {
+    const png = await deps.media.pngBuffer(projectId, r.media, 1024);
+    if (!input.headCrop || r.view !== 'full_body') return png;
+    const whole = join(dir, `head-${r.id}-whole.png`);
+    await writeFile(whole, png);
+    return readFile(
+      await topCrop(deps.ff, whole, join(dir, `head-${r.id}.png`), HEAD_CROP_SHARE, ctx.signal),
+    );
+  };
   for (const pc of selection.perCharacter) {
-    for (const r of pc.refs) refPngs.push(await deps.media.pngBuffer(projectId, r.media, 1024));
+    for (const r of pc.refs) refPngs.push(await refPng(r));
     judgeRefs.set(
       pc.characterId,
       await Promise.all(pc.refs.slice(0, 2).map((r) => deps.media.pngBuffer(projectId, r.media, 512))),
@@ -85,7 +102,7 @@ export async function prepareShotReferences(
   }
   return {
     referenceUris,
-    referenceLabels: referenceLabels(selection, characters, elements),
+    referenceLabels: referenceLabels(selection, characters, elements, { headCrop: input.headCrop }),
     judgeRefs,
     elementJudgeRefs,
   };

@@ -149,7 +149,12 @@ export const NO_REVIEWS = {
   extensions: false,
 };
 
-export async function readyStoryProject(stack: Stack, settings: Record<string, unknown> = {}) {
+export async function readyStoryProject(
+  stack: Stack,
+  settings: Record<string, unknown> = {},
+  /** The reference views drawn for every character (a front view by default). */
+  opts: { views?: string[] } = {},
+) {
   const { review, blocking, storyboard, ...rest } = settings as {
     review?: object;
     blocking?: object;
@@ -176,7 +181,7 @@ export async function readyStoryProject(stack: Stack, settings: Record<string, u
   let state = await stack.api<any>('GET', `/projects/${p.id}/state`);
   for (const c of Object.values<any>(state.docs.characters)) {
     const j = await stack.api<Job>('POST', `/projects/${p.id}/characters/${c.id}/references/generate`, {
-      views: ['front'],
+      views: opts.views ?? ['front'],
     });
     expectSucceeded(await stack.waitJob(p.id, j.id));
   }

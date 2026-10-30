@@ -67,6 +67,7 @@ function setup(settings: Record<string, unknown> = {}) {
     approved: false,
     approvedAt: null,
     approvedBy: null,
+    seen: null,
     ...overrides,
   });
   return { docs, mira, board };

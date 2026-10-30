@@ -166,6 +166,45 @@ const FRAMING: Record<Shot['camera']['framing'], string> = {
   insert: 'insert shot',
 };
 
+/**
+ * Version 3: what each framing keeps in the picture (docs/design/first-pass.md#framings-spelled-out). A frame drawn
+ * from whole-figure references came out whole for a close-up when the prompt only said "close-up".
+ */
+const FRAMING_V3: Record<Shot['camera']['framing'], string> = {
+  extreme_wide: 'extreme wide shot: the whole place, the characters small in it',
+  wide: 'wide shot: the characters whole, from head to toe, with the place around them',
+  medium: 'medium shot: the characters framed from the waist up',
+  medium_close: 'medium close-up: the characters framed from the chest up',
+  close_up: 'close-up: the face and the top of the shoulders fill the frame',
+  extreme_close_up: 'extreme close-up: one detail fills the frame',
+  over_shoulder:
+    "over-the-shoulder shot: the near character's shoulder and back of the head in the foreground, the other character framed from the chest up",
+  pov: "point-of-view shot: what the character sees, from the character's eye height",
+  insert: 'insert shot: the object fills the frame',
+};
+
+/**
+ * Framings a version 3 keyframe draws from the characters' head and shoulders: their whole-figure reference is cropped
+ * to its top (`HEAD_CROP_SHARE`), since a whole figure drew a close-up whole (docs/design/first-pass.md#framings-spelled-out).
+ */
+export const CLOSE_FRAMINGS: readonly Shot['camera']['framing'][] = [
+  'close_up',
+  'extreme_close_up',
+  'medium_close',
+];
+/** The share of a whole-figure reference, from its top, that shows the head and the shoulders. */
+export const HEAD_CROP_SHARE = 0.42;
+
+export function headCropped(ctx: Pick<ShotContext, 'shot' | 'settings'>): boolean {
+  return promptVersionOf(ctx.settings) >= 3 && CLOSE_FRAMINGS.includes(ctx.shot.camera.framing);
+}
+
+/** The framing words of a prompt: spelled out in version 3 keyframes. */
+function framingOf(ctx: Pick<ShotContext, 'shot' | 'settings'>, mode: 'keyframe' | 'video'): string {
+  const framing = ctx.shot.camera.framing;
+  return mode === 'keyframe' && promptVersionOf(ctx.settings) >= 3 ? FRAMING_V3[framing] : FRAMING[framing];
+}
+
 const MOVEMENT: Record<Shot['camera']['movement'], string> = {
   static: 'static camera',
   pan: 'slow pan',
@@ -213,6 +252,11 @@ export interface ShotContext {
   } | null;
   /** The keyframe request carries the shot's camera view (a reference image before the scene reference). */
   blockingImage?: boolean;
+  /**
+   * Version 2, a video that starts from a frame: the shot's description and action as that frame shows them
+   * (`frame.reconcile`, docs/design/first-pass.md#the-video-reads-its-first-frame), in place of the planned ones.
+   */
+  frameSeen?: { description: string; action: string } | null;
 }
 
 /**
@@ -345,10 +389,14 @@ export function shotBodyV2(
   // A video names only who is in frame; a keyframe says who is out of frame instead (inFrameLine)
   const away = mode === 'video' ? (ctx.offscreen ?? []) : [];
   const text = (t: string) => withoutOffscreenNames(clean(t), away);
+  // A video that starts from a frame describes that frame as it is: a text that contradicts it makes the model morph
+  const seen = mode === 'video' && ctx.frameSeen && clean(ctx.frameSeen.description) ? ctx.frameSeen : null;
+  const description = seen ? seen.description : shot.description;
+  const action = seen && clean(seen.action) ? seen.action : shot.action;
   if (override) lines.push(`${clean(shot.promptOverride!)}.`);
   else {
-    lines.push(`${text(shot.description)}.`);
-    if (mode === 'video' && clean(shot.action)) lines.push(`Action: ${text(shot.action)}.`);
+    lines.push(`${text(description)}.`);
+    if (mode === 'video' && clean(action)) lines.push(`Action: ${text(action)}.`);
   }
   // Keyframes only: the video starts from that frame, and Wan played the line as a second shot
   const previous = clean(ctx.previousEndState ?? '');
@@ -362,7 +410,7 @@ export function shotBodyV2(
       ? STATIC_CAMERA_V2
       : MOVEMENT[shot.camera.movement];
   lines.push(
-    `Camera: ${FRAMING[shot.camera.framing]}${mode === 'video' ? `, ${motion}` : ''}${lens ? `; ${lens}` : ''}.`,
+    `Camera: ${framingOf(ctx, mode)}${mode === 'video' ? `, ${motion}` : ''}${lens ? `; ${lens}` : ''}.`,
   );
   // The blocking: where everyone stands in the frame (keyframes), who walks where (videos)
   if (mode === 'keyframe' && ctx.blocking?.line) lines.push(ctx.blocking.line);
@@ -553,10 +601,15 @@ export function referenceLabels(
   selection: Pick<ReferenceSelection, 'perCharacter' | 'needsSheet' | 'perElement' | 'elementSheet'>,
   characters: Pick<Character, 'id' | 'name'>[],
   elements: Pick<Element, 'id' | 'name' | 'kind'>[],
+  opts: { headCrop?: boolean } = {},
 ): string[] {
   const nameOf = (id: string) => characters.find((c) => c.id === id)?.name ?? 'a character';
   const charRefs = selection.perCharacter.flatMap((pc) =>
-    pc.refs.map((r) => `${nameOf(pc.characterId)} (${String(r.view).replace(/_/g, ' ')} view)`),
+    pc.refs.map((r) =>
+      opts.headCrop && r.view === 'full_body'
+        ? `${nameOf(pc.characterId)} (head and shoulders)`
+        : `${nameOf(pc.characterId)} (${String(r.view).replace(/_/g, ' ')} view)`,
+    ),
   );
   const labels =
     selection.needsSheet && charRefs.length > 1
@@ -669,7 +722,10 @@ export function compileElementReferenceRequest(
     direction ? `Direction: ${direction}.` : '',
     // Places and objects alone: a figure in a reference walks into every keyframe made from it
     e.kind === 'style' ? '' : 'Nobody in the picture, even if the description mentions someone.',
-    style && e.kind !== 'style' ? `Visual style: ${style}.` : '',
+    // The look is the light and the rendering: a plush style turned wooden supports into fur (docs/design/first-pass.md)
+    style && e.kind !== 'style'
+      ? `Visual style: ${style}; the style is the light and the rendering, and every material stays as described (wood looks like wood, metal like metal, hay like straw).`
+      : '',
     ctx.baseImageUri ? 'Keep exactly the same design as in the reference image.' : '',
   ]
     .filter(Boolean)
@@ -876,14 +932,30 @@ export function compileExtendRequest(
   return req;
 }
 
+/** What each view shows (docs/design/first-pass.md#references-drawn-from-a-whole-figure): the drawn ones are whole figures. */
 const VIEW_PHRASE: Record<ReferenceView, string> = {
   front: 'front view, facing the camera, head and shoulders',
-  three_quarter: 'three-quarter view, head and shoulders',
-  profile: 'side profile view',
-  full_body: 'full body, standing, head to toe',
+  three_quarter: 'three-quarter view, standing, the whole figure from head to toe in frame',
+  profile: 'side profile view, standing, the whole figure from head to toe in frame',
+  full_body: 'full body, standing, facing the camera, the whole figure from head to toe in frame',
   expression: 'expressive close-up portrait',
   custom: 'portrait',
 };
+
+/** A view drawn from the anchor keeps every detail of it, part by part, so the views agree with each other. */
+const sameCharacter = (images: number) =>
+  `${images > 1 ? 'The reference images show' : 'The reference image shows'} this same character: keep exactly the same face, hair, build and outfit, every part of the outfit in the same colour, shape and place, and the same look; only the view changes.`;
+
+/** The anchor first, then the views already drawn from it (docs/design/first-pass.md#references-drawn-from-a-whole-figure). */
+function anchorUris(ctx: { baseImageUri?: string; baseImageUris?: string[] }): string[] {
+  return [...new Set([...(ctx.baseImageUri ? [ctx.baseImageUri] : []), ...(ctx.baseImageUris ?? [])])].slice(
+    0,
+    MAX_ANCHOR_IMAGES,
+  );
+}
+
+/** At most this many earlier views go with a new view: the anchor and the two drawn after it. */
+export const MAX_ANCHOR_IMAGES = 3;
 
 export function referenceDimensions(settings: Pick<ProjectSettings, 'resolution'>): {
   width: number;
@@ -900,7 +972,10 @@ export function compileReferenceRequest(
   ctx: {
     screenplay: Pick<Screenplay, 'style'> | null;
     settings: ProjectSettings;
+    /** The anchor: the first approved reference, else the first. */
     baseImageUri?: string;
+    /** The views drawn from the anchor before this one, sent with it so every view agrees with all of them. */
+    baseImageUris?: string[];
     model?: string;
     /** What a redraw must fix (the cast review's instruction, docs/design/ai-review.md#how-a-review-runs). */
     direction?: string;
@@ -908,21 +983,19 @@ export function compileReferenceRequest(
 ): GatewayImageRequest {
   const style = clean(ctx.screenplay?.style.visual);
   const direction = clean(ctx.direction);
+  const anchors = anchorUris(ctx);
   const text = [
     `Character reference image, ${VIEW_PHRASE[view]}; ${SINGLE_PICTURE}; neutral light-grey background, even soft studio lighting, sharp focus, no text.`,
     identityFragment(c),
     direction ? `Direction: ${direction}.` : '',
     style ? `Visual style: ${style}.` : '',
-    ctx.baseImageUri ? 'Keep exactly the same person as in the reference image.' : '',
+    anchors.length ? sameCharacter(anchors.length) : '',
   ]
     .filter(Boolean)
     .join(' ');
   return {
     ...(ctx.model && ctx.model !== 'auto' ? { model: ctx.model } : {}),
-    input: [
-      { type: 'text', text },
-      ...(ctx.baseImageUri ? [{ type: 'image' as const, uri: ctx.baseImageUri }] : []),
-    ],
+    input: [{ type: 'text', text }, ...anchors.map((uri) => ({ type: 'image' as const, uri }))],
     parameters: {
       dimensions: referenceDimensions(ctx.settings),
       seed: (c.seed + REFERENCE_VIEW_PRIORITY.indexOf(view)) % MAX_SEED,

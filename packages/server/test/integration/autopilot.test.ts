@@ -60,14 +60,24 @@ describe('autopilot: every step reviewed and approved', () => {
         resolution: { width: 320, height: 180 },
         autopilot: true,
         storyboard: { enabled: true, scenes: 3, production: true },
+        // The director's desk is a person's choice for new projects (docs/design/first-pass.md#the-desk-on-request)
+        blocking: { enabled: true, layoutImage: true },
         // A person picks the voices TTS dialogue needs: the film speaks through the video model's own sound
         dialogue: { mode: 'off' },
       },
     });
     const pid = p.id;
-    // New projects review every step
+    // New projects review every step, and hold every score at 8 (docs/design/first-pass.md#the-gate-at-8)
     const settings = (await stateOf(pid)).docs.project.settings;
-    expect(settings.review).toMatchObject({ cast: true, cut: true, watchTakes: true, extensions: true });
+    expect(settings.review).toMatchObject({
+      cast: true,
+      cut: true,
+      watchTakes: true,
+      extensions: true,
+      threshold: 8,
+      sceneThreshold: 8,
+      minDimension: 8,
+    });
     expect(settings.blocking.enabled).toBe(true);
     await stack.api('POST', `/projects/${pid}/workflow/approve`, { gate: 'brief_submitted' });
     await waitStage(pid, 'export', 900_000);
@@ -169,14 +179,15 @@ describe('autopilot: every step reviewed and approved', () => {
       direction: 'the same face and outfit in every view',
       replaces: [drawnFirst.id],
     });
-    expect(redraw.result).toEqual({ generated: 4, dismissed: 1 });
+    // The views of a cast drawn from a whole figure (docs/design/first-pass.md#references-drawn-from-a-whole-figure)
+    expect(redraw.result).toEqual({ generated: 3, dismissed: 1 });
     for (const t of redraw.gatewayTasks) {
       const request = stack.gw.store.requests.get(t.id) as any;
       expect(request.input[0].text).toContain('Direction: the same face and outfit in every view.');
       expect(request.input.some((p: any) => p.type === 'image')).toBe(true);
     }
     const now = state.docs.characters[c.id].references;
-    expect(now.map((r: any) => r.view)).toEqual(['front', 'three_quarter', 'profile', 'full_body']);
+    expect(now.map((r: any) => r.view)).toEqual(['full_body', 'three_quarter', 'profile']);
     expect(now.some((r: any) => r.id === drawnFirst.id)).toBe(false);
     let ev = await workflowOf(pid);
     const req = () =>

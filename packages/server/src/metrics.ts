@@ -259,6 +259,13 @@ export class Metrics {
       [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
     ),
   );
+  /** First frames read for the video prompt (docs/design/first-pass.md#the-video-reads-its-first-frame). */
+  readonly frameReconciles = this.add(
+    new Counter(
+      'rideo_frame_reconciles_total',
+      'First frames read before a video starts from them, by source (storyboard, keyframe) and outcome (agreed, adjusted, error)',
+    ),
+  );
   /** The 3D director's desk (docs/design/director-desk.md#observability). */
   readonly blockings = this.add(
     new Counter('rideo_blocking_total', 'Blockings saved, by source (ai, user) and outcome (clean, issues)'),

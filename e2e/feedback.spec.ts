@@ -70,7 +70,7 @@ test('a story export is watched by itself: scores, issues, recommendations appli
   await expect(feedback.getByTestId('feedback-overall')).toHaveText(/\/10$/, { timeout: 120_000 });
   // Ready before its upload to storage; the card says so only while it lasts
   await expect(card.getByTestId('export-uploading')).toHaveCount(0, { timeout: 60_000 });
-  await expect(feedback.getByTestId('feedback-score-storytelling')).toContainText('7.0');
+  await expect(feedback.getByTestId('feedback-score-storytelling')).toContainText('8.0');
   // Without an audio-visual model the film is watched, not heard
   await expect(feedback.getByTestId('feedback-heard')).toHaveText(/^Watched by /);
   await feedback.getByTestId('show-feedback').click();

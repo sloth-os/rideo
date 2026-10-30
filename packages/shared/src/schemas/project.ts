@@ -67,7 +67,9 @@ export const StoryboardSettingsSchema = z.object({
 });
 export type StoryboardSettings = z.infer<typeof StoryboardSettingsSchema>;
 
-export const PromptVersionSchema = z.union([z.literal(1), z.literal(2)]);
+export const PromptVersionSchema = z.union([z.literal(1), z.literal(2), z.literal(3)]);
+/** The prompt version new projects are created with (docs/design/continuity.md#prompt-version). */
+export const LATEST_PROMPT_VERSION = 3 as const;
 export type PromptVersion = z.infer<typeof PromptVersionSchema>;
 
 export const ProjectSettingsSchema = z.object({
@@ -126,7 +128,10 @@ export const ProjectSettingsSchema = z.object({
       keyframes: z.boolean().default(true),
       /** Groups of shots in one request on multi-shot models (docs/design/multi-shot.md). */
       multiShot: z.enum(['auto', 'off']).default('auto'),
-      /** 1: prompts as before; 2: continuity-aware prompts (docs/design/continuity.md#prompt-version). */
+      /**
+       * 1: prompts as before; 2: continuity-aware prompts (docs/design/continuity.md#prompt-version); 3: and every frame's
+       * framing spelled out (docs/design/first-pass.md#framings-spelled-out).
+       */
       promptVersion: PromptVersionSchema.default(1),
       /** The provider's own prompt rewriting (`enhance_prompt`); null leaves the provider's default. */
       enhancePrompt: z.boolean().nullable().default(null),

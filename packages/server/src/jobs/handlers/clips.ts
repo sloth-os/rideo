@@ -25,6 +25,7 @@ import {
   sortedClips,
   TARGET_REACHED_RATIO,
   takeState,
+  videoFacts,
   voiceOf,
   voicesNotReady,
   wordsCapacity,
@@ -79,6 +80,9 @@ export async function clipPlan(deps: HandlerDeps, ctx: JobContext) {
   const v2Inputs = v2
     ? {
         brief: docs.project.brief.prompt,
+        // What the storyboard reviewer is told (docs/design/first-pass.md#one-rubric-for-the-maker-and-the-reviewer)
+        video: videoFacts(limits, settings),
+        castOnly: settings.consistency.castOnly === true,
         maxWordsPerShot: wordsCapacity(maxSec),
         previousShot: previousShot
           ? { description: previousShot.description, endState: previousShot.endState ?? '' }

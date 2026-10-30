@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 import {
   type Actor,
   approvedReferences,
+  CHARACTER_VIEWS,
   type Character,
   type CharacterInput,
   type CharacterUpdateInput,
@@ -534,7 +535,7 @@ export class StoryService extends Service {
     return this.deps.jobs.enqueue({
       projectId,
       kind: 'character.refs',
-      params: { characterId: id, views: views ?? ['front', 'three_quarter', 'profile', 'full_body'] },
+      params: { characterId: id, views: views ?? CHARACTER_VIEWS },
       actor,
       branch: await this.branchOf(projectId),
       dedupeKey: `refs:${id}`,

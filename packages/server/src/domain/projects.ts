@@ -9,8 +9,10 @@ import {
   docPath,
   docsFromEntries,
   evaluateWorkflow,
+  FIRST_PASS_BAR,
   initialStage,
   kindFromMime,
+  LATEST_PROMPT_VERSION,
   newId,
   type Project,
   ProjectAccessSchema,
@@ -83,14 +85,23 @@ export class ProjectService extends Service {
       },
       // New projects speak their dialogue when the server has a TTS provider (docs/design/dialogue.md).
       dialogue: { mode: c.tts ? 'tts' : 'off', lipSync: true },
-      // and use continuity-aware prompts (docs/design/continuity.md#prompt-version).
-      generation: { promptVersion: 2 },
-      // Every scene blocked on the director's desk (docs/design/director-desk.md), every production scene storyboarded,
-      // and every step reviewed: the cast, the extensions, every take watched whole, the cut before export
-      // (docs/design/ai-review.md#autopilot-every-step-reviewed-and-approved).
-      blocking: { enabled: true, layoutImage: true },
+      // and use continuity-aware prompts with every framing spelled out (docs/design/continuity.md#prompt-version).
+      generation: { promptVersion: LATEST_PROMPT_VERSION },
+      // Every production scene storyboarded, and every step reviewed: the cast, the extensions, every take watched
+      // whole, the cut before export (docs/design/ai-review.md#autopilot-every-step-reviewed-and-approved), every score
+      // of every review held at 8 (docs/design/first-pass.md#the-gate-at-8). The director's desk is a person's tool
+      // until its AI blocking follows the shot plan (docs/design/first-pass.md#the-desk-on-request).
+      blocking: { enabled: false, layoutImage: false },
       storyboard: { enabled: true, scenes: 3, production: true },
-      review: { cast: true, cut: true, watchTakes: true, extensions: true },
+      review: {
+        cast: true,
+        cut: true,
+        watchTakes: true,
+        extensions: true,
+        threshold: FIRST_PASS_BAR,
+        sceneThreshold: FIRST_PASS_BAR,
+        minDimension: FIRST_PASS_BAR,
+      },
     });
     const merged = mergeSettings(
       base as unknown as Record<string, unknown>,

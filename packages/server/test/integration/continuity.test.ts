@@ -179,10 +179,11 @@ describe('continuity-aware generation (prompt version 2)', () => {
     expect(busy.reduce((n, m) => n + Number(m[1]), 0)).toBeGreaterThanOrEqual(3);
   });
 
-  it('creates projects with version 2 prompts and quality checks, and plans with the brief, the level and lenses', async () => {
+  it('creates projects with the latest prompts and quality checks, and plans with the brief, the level and lenses', async () => {
     const { pid, clip, state } = await plannedClip();
     const settings = state.docs.project.settings;
-    expect(settings.generation.promptVersion).toBe(2);
+    // Version 2 and every framing spelled out (docs/design/first-pass.md#framings-spelled-out)
+    expect(settings.generation.promptVersion).toBe(3);
     expect(settings.consistency.qualityChecks).toBe(true);
     expect(state.docs.screenplay.scenes[0].continuity).toMatch(/night|day/);
     expect(state.docs.screenplay.outline[0].purpose).toBe('setup');

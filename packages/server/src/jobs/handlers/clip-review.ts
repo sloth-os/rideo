@@ -241,7 +241,11 @@ async function watch(
     scores,
     watched,
     heard: !!heardOut,
-    verdict: clipReviewVerdict({ overall, scores, issues }, docs.project.settings.review.sceneThreshold),
+    verdict: clipReviewVerdict(
+      { overall, scores, issues },
+      docs.project.settings.review.sceneThreshold,
+      docs.project.settings.review.minDimension,
+    ),
     summary: output.summary,
     issues,
     recommendations: parts.recommendations.slice(0, 40).map((r) => {

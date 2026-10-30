@@ -42,6 +42,8 @@ type Part =
 export interface ChatOptions {
   /** True when this sound check hears no speech (muffleSpeech). */
   muffled?: () => boolean;
+  /** Called with every structured task's input, so tests can see what a task was sent. */
+  onInput?: (task: string, input: unknown) => void;
 }
 
 /** A video data URI, typed (`data:video/mp4;base64,…`) or not (`data:;base64,…`, as Qwen-Omni documents it). */
@@ -211,6 +213,7 @@ export function answer(req: ChatRequest, opts: ChatOptions = {}): string {
     | { text: string }
     | undefined;
   const input = inputText ? JSON.parse(inputText.text.slice(INPUT_PREFIX.length)) : {};
+  if (task) opts.onInput?.(task, input);
   const imageCount = req.parts.filter((p) => p.kind === 'image').length;
   const videoCount = req.parts.filter((p) => p.kind === 'video').length;
   let out: unknown;
@@ -256,6 +259,9 @@ export function answer(req: ChatRequest, opts: ChatOptions = {}): string {
       break;
     case 'frame.caption':
       out = frameCaption(input, imagesOf(req.parts));
+      break;
+    case 'frame.reconcile':
+      out = frameReconcile(input);
       break;
     case 'feedback.scene':
       out = feedbackScene(input, imagesOf(req.parts).length, videoCount > 0);
@@ -401,4 +407,19 @@ export function multipartFile(body: Buffer, contentType: string, field = 'file')
     start = next;
   }
   return null;
+}
+
+/**
+ * `frame.reconcile` (docs/design/first-pass.md#the-video-reads-its-first-frame): the frame agrees with its shot,
+ * unless the shot says "drawn otherwise", whose frame shows the gate open.
+ */
+function frameReconcile(input: { shot: { description: string; action: string } }) {
+  const { description, action } = input.shot;
+  if (!/drawn otherwise/i.test(description)) return { description, action, conflicts: [] };
+  return {
+    // The sentence the frame contradicts gives way to what it shows
+    description: `As drawn: ${description.replace(/[^.]*drawn otherwise[^.]*\.?/gi, '').trim()} The gate stands open.`,
+    action: `${action} Through the open gate.`,
+    conflicts: ['the gate is open, not closed'],
+  };
 }

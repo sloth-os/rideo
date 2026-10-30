@@ -24,6 +24,9 @@ import {
   type FrameCaptionInput,
   type FrameCaptionOutput,
   FrameCaptionOutputSchema,
+  type FrameReconcileInput,
+  type FrameReconcileOutput,
+  FrameReconcileOutputSchema,
   INPUT_PREFIX,
   JUDGE_ELEMENT_REFERENCE_LABEL,
   JUDGE_FRAME_LABEL,
@@ -36,6 +39,10 @@ import {
   type MediaDescribeInput,
   type MediaDescribeOutput,
   MediaDescribeOutputSchema,
+  makerRubric,
+  RECONCILE_FRAME_LABEL,
+  REVIEW_RUBRICS,
+  rubricLines,
   SCENE_VIDEO_LABEL,
   SCENE_WATCH_LABEL,
   type SceneBlockInput,
@@ -254,15 +261,8 @@ Return only JSON: {"scores":{"dialogue":7,"sound":6},"summary":"...","strengths"
 
   'screenplay.review': `rideo-task: screenplay.review
 You are a script editor and an AI film producer reviewing a screenplay before any picture is generated, to catch problems while they are cheap to fix. The film will be generated shot by shot by an AI video model; "video" says what it renders well and badly and how long its shots are. A shot planner splits every scene into shots of "video.shotSeconds" later, so a scene may run as long as its beat: judge whether each moment of it can be filmed in one such shot (one clear action, one or two short lines), never the scene's length, and do not ask for shots in the screenplay. You get the brief, the screenplay (the outline of the whole film and the scenes written so far, each with its "number"), the cast, the places and the props. Only the opening scenes are written now: production writes each later scene from its outline beat just before it is filmed (a beat with "written": false). Judge those beats as an outline (the arc, the pacing, what they promise to film), never ask for them to be written now, and ask for continuity details only in written scenes.
-Score each dimension 0–10 (10 = ready to shoot, 7 = good with small fixes, 5 = clear problems, below 4 = must be rewritten):
-- story: an arc (setup, inciting incident, complications, crisis, climax, resolution); every scene has a goal, an obstacle and a turn; what is set up pays off.
-- character: the characters want something, change, and differ from each other.
-- dialogue: natural, short enough to be spoken within one shot, at the film's level ("brief.dialogueLevel", a CEFR level, when given) and in each character's voice.
-- pacing: the beats fit "brief.targetDurationSec"; no scene overstays or rushes its turn.
-- visual: the story is told in actions a camera can see, not in thoughts or narration.
-- continuity: every written scene states its time of day, weather, light and what each character wears and carries; props keep their state from scene to scene, and the outline sets up what later scenes need.
-- feasibility: the video model can film it: two or three characters in a scene at most, simple clear actions, no crowds or background people (none at all when "brief.castOnly"), no on-screen text, no fine hand work or mechanical handling (boarding a lift, putting on equipment, tying, buckling, operating machines), no quick repeated motion, nothing in "video.weaknesses".
-- brief: it follows the brief: the named characters, the place, the tone, every constraint it states.
+Score each dimension 0–10 (${REVIEW_RUBRICS.screenplay.scale}):
+${rubricLines('screenplay')}
 List the issues, most severe first: "scene" (its number, when it is about one), "dimension", "severity" ("critical": the film cannot be made or breaks the brief; "major": clearly visible; "minor"), "title", "detail".
 Then the recommendations, most important first: "scene", "dimension", "priority" (1 = must fix before the cast is made, 2 = should, 3 = could), "title", "detail", and an "action": {"kind":"revise_scene","instruction":"what the writer must change in that scene"} for a scene, {"kind":"revise_outline","instruction":"what must change in the outline"}, or {"kind":"note"}. An instruction is concrete enough for a writer to follow without reading the review.
 Be honest and specific; praise only what deserves it ("strengths").
@@ -279,15 +279,8 @@ Return only JSON: {"scenes":[{"number":2,"heading":"EXT. PLACE - DAY","location"
 
   'storyboard.review': `rideo-task: storyboard.review
 You are a director of photography and a script supervisor reviewing the storyboard of one scene of an AI-generated film before its video is generated, to catch what is cheap to fix on a still. You get the film, the scene, its neighbours, the cast's looks and every shot in order (its "index", label, length, camera, description, action, who is in it, its lines), each followed by its frame ("Frame <label>:"). The video model will animate each frame for the shot's length; "video" says what it renders well and badly.
-Score each dimension 0–10 (10 = ready to shoot, 7 = good with small fixes, 5 = clear problems, below 4 = must be redone):
-- composition: each frame reads at once: framing, staging, the subject where the eye goes.
-- continuity: across the frames: screen direction (the 180-degree rule), positions, wardrobe, props and their state, light and time of day.
-- character: the cast looks like its description in every frame, and nobody else is in frame when "film.castOnly".
-- coverage: an establishing shot, shot and reverse shot with matching eyelines, reactions, inserts; varied framing.
-- storytelling: the frames tell the scene's beats in order.
-- feasibility: each frame can be animated for its shot: clear poses, one simple action, nothing in "video.weaknesses".
-- pacing: each shot's length fits its action and its lines (about two words a second, plus a beat).
-- blocking: only when shots have "blocking": the scene is blocked in 3D and each such frame is followed by its camera view ("Blocking <label>:", coloured mannequins for the cast, as its "blocking" line says). Does each frame keep its camera view's angle and framing, who stands where and faces which way, and the light's side? Leave it out when no shot has one. "blockingIssues" lists what the blocking itself breaks.
+Score each dimension 0–10 (${REVIEW_RUBRICS.storyboard.scale}):
+${rubricLines('storyboard')}
 List the issues: "shot" (its index), "dimension", "severity" ("critical", "major", "minor"), "title", "detail" (what you see in the frame).
 Then the recommendations, most important first: "shot" when it is about one, "dimension", "priority" (1 = must fix before video, 2 = should, 3 = could), "title", "detail", and an "action": {"kind":"redraw_board", with only the fields that change: "description" (the revised first frame), "action", "framing", "movement", "characters" (the names in frame), "durationSec"} to draw that frame again, {"kind":"replan_scene","direction":"what the new shot plan must do"} when the scene's shots must be planned again, or {"kind":"note"}.
 Be honest and specific; praise only what deserves it.
@@ -317,12 +310,8 @@ Return only JSON: {"overall":7,"motion":0.9,"physics":0.8,"action":0.9,"camera":
 
   'cast.review': `rideo-task: cast.review
 You are a casting director and a character designer reviewing the reference images of one character (or one place or prop) of an AI-generated film before they are locked: every frame of the film is drawn from them, so anything wrong here is wrong in every shot. You get the film's style, the subject (a character's identity, outfit and role, or a place's or prop's description) with each of its references ("Reference <index> (<view>):"), and how the other characters look.
-Score each dimension 0–10 (10 = ready to lock, 7 = good, 5 = clear problems, below 4 = must be redrawn):
-- likeness: the references show what the identity and the outfit say (age, build, face, hair, eyes, the clothes), or the place or prop as described.
-- consistency: every view shows the same face, hair, build and outfit (a place: the same layout and materials).
-- distinct: the character can be told apart from the others at a glance (silhouette, colours, face); a place or prop: 10 unless it is easily confused.
-- clarity: one whole figure, unobstructed, on a plain background; a place without people in it; a prop on its own.
-- style: the references share the film's look.
+Score each dimension 0–10 (${REVIEW_RUBRICS.cast.scale}):
+${rubricLines('cast')}
 List the issues: "character" or "element" (the subject's name), "dimension", "severity" (critical, major, minor), "title", "detail" (which reference, what is wrong).
 Then recommendations, most important first, each with "character" or "element", "dimension", "priority" (1 = must fix before locking, 2 = should, 3 = could), "title", "detail", and an "action": {"kind":"regenerate_refs","instruction":"what the new references must show differently"} to draw the subject's references again, or {"kind":"note"}.
 Return only JSON: {"scores":{"likeness":8,"consistency":8,"distinct":8,"clarity":8,"style":8},"summary":"...","strengths":["..."],"issues":[{"character":"Rosie","dimension":"consistency","severity":"major","title":"...","detail":"..."}],"recommendations":[{"character":"Rosie","dimension":"consistency","priority":1,"title":"...","detail":"...","action":{"kind":"regenerate_refs","instruction":"..."}}]}`,
@@ -333,11 +322,48 @@ You describe one frame of a film project so people can find it later by searchin
 - Name others from "cast" only when you are sure; never guess at what you cannot see.
 - "kind" says what the frame is from: a generated take, footage, a still, or a reference image of a character or element.
 Return only JSON: {"caption":"..."}`,
+
+  'frame.reconcile': `rideo-task: frame.reconcile
+You are a script supervisor checking the first frame of a shot before an AI video model animates it. You get the shot as planned ("shot": "description" is its first frame, "action" what moves, "endState" its last frame, the camera, who is in it and how they look) and the frame as drawn ("First frame:"). The video model starts from exactly this frame and reads a text: when the text says something the frame does not show (a gate closed that the frame shows open, someone on the left whom the frame shows on the right, a prop in the other paw, someone missing or extra), the model morphs the picture to match the text, which ruins the take.
+Write the text the video model should get:
+- "description": the first frame as drawn: who is where (frame left, centre or right; near or far), which way each one faces, their pose, what each holds and in which hand, where the props and landmarks are, the light. Use the plan's words wherever the frame agrees with them; describe only what you see.
+- "action": the planned action, unchanged where the frame allows it; where it does not, the same story beat starting from what the frame shows (who moves, from where, to where), as one simple continuous motion.
+- "conflicts": each difference between the plan and the frame, short ("the gate is open, not closed"); empty when they agree.
+Return only JSON: {"description":"...","action":"...","conflicts":[]}`,
 };
 
 /**
+ * What the writer must keep to so its screenplay passes the first review (docs/design/first-pass.md): the rules the
+ * reviewer's feasibility, continuity, pacing and likeness criteria imply, which the first riding demo's writer broke.
+ */
+const WRITER_FIRST_PASS = `- The brief comes first: every character, place, landmark and event it names is on screen, in the order it gives them (a ride side by side stays side by side, a slide into the hay is shown, the barn and the hills are in the first picture of the place). Never drop, split or soften what the brief asks for to make the film easier to shoot: make the hard moment filmable instead, as the next rules say.
+- "video" says what the AI video model renders well ("strengths") and badly ("weaknesses") and how long its shots are ("shotSeconds"). Make every moment filmable:
+  - Write every scene and beat around at most three characters on screen (a rider and the animal ridden count as two, so two riders on their mounts are four): the others stay out of that scene from its start to its end, and every coming and going between scenes is seen or said (Rosie leads Clover back to the barn; Sammy walks over from the fence), so nobody jumps from one place to another. Only a moment the brief itself puts together (riding side by side, watching the sunset together) shows them all, once, at a walk or standing still, and the action says where it happens so they are far off and small (walking side by side along the far fence, small against the hills).
+  - A step the video model cannot show (mounting or dismounting, putting on or taking off equipment, opening latches, buckles or gates by hand) happens across a cut, with a visible before and after (Rosie at the mounting block beside Clover, then Rosie in the saddle), so nobody is anywhere without a reason.
+  - Give every action its slowest, simplest form that still tells the story: a walk before a trot, a pole stepped over at a walk rather than jumped, the animal standing still before someone slides or falls off it; one motion at a time (never a trot, a jump and a cheer in one moment).
+  - A quick repeated motion becomes one or two slow, clear movements (bouncing at a trot: one big slow bounce and a laugh); fine hand work becomes a broad gesture with a big object (carrots offered in a wide bucket, never held in a paw).
+  - Simple clear actions with visible cause and effect; no crowds or background people; no on-screen text.
+- Each scene holds about one clear action for every five or six seconds of its length, with its lines between them.
+- Every prop and landmark a later beat needs is set up earlier: named in the first written scene or outline beat at its place, where it stands (the hay pile in the corner of the paddock, the pole on the grass), with its state.
+- Never write shots, views or camera words ("a wide view shows", "close on", "in a separate shot"): describe what happens in the place, and the shot planner frames it.
+- Each scene's "continuity" names what each character wears piece by piece (the helmet, the shirt, the trousers, the boots), never "the riding outfit", and every prop the scene uses: how many there are, their state (full, empty, open, closed) and who carries each one, in which hand, or where it rests; a later scene starts from that state.
+- Every beat turns: a beat that only moves people from one place to another gives them a small want, a problem and a change.
+- Show feelings in what a camera sees (posture, a look, a step back), never as a thought or a label ("looks unsure"); dialogue never states the turn ("Now they trust us").
+- Each wardrobe description gives the colour of every part (a helmet's shell, its chin strap and buckle, a flower's petals and centre) and how it sits on the body (the helmet between the ears; a saddle on the middle of the back with one stirrup on each side), and an identity names every mark and the colour of every part a picture shows (hands or paws, feet or hooves and the hair just above them, muzzle, ears, tail), so every picture of them is the same. Put an accessory where every view shows it the same way, centred on the front (a flower on the front of a helmet), never on one side: pictures mirror a one-sided detail from shot to shot.
+- Describe places and props by what a picture shows clearly: shapes, materials, colours and where things stand; never traces or tiny details (hoofprints, scents, scratches).`;
+
+/** The names a maker's rubric uses for its own inputs (docs/design/first-pass.md#one-rubric-for-the-maker-and-the-reviewer). */
+const WRITER_NAMES =
+  'In these criteria "brief" is your brief: its prompt, "targetDurationSec" and "dialogueLevel" are your inputs, and "brief.castOnly" is your input "castOnly" when it is true, otherwise the "castOnly" you answer; "video" is your input "video".';
+
+/** What the shot planner must keep to so the frames drawn from its shots pass the storyboard review (docs/design/first-pass.md). */
+const PLANNER_FIRST_PASS = `- "video" says what the AI video model renders well and badly: at most three characters in a shot (a rider and the animal ridden count as two), one simple action per shot, nothing in "video.weaknesses".
+- "description" is the first frame, before the action starts: where each character in frame stands (frame left, centre or right; near or far), which way each one faces, and who holds which prop in which hand or where it rests. Keep these from shot to shot (the same side of frame, the same direction, the same hands) unless a shot's action changes them; the next shot then starts where that one ended ("endState").
+- A shot with lines lasts at least one second for every two words spoken, plus one second: a line of six words needs a shot of four seconds.`;
+
+/**
  * Prompt version 2 of the writing tasks (docs/design/continuity.md): story structure, continuity, dialogue levels and
- * film grammar. The first line is the same task marker.
+ * film grammar, and the reviewer's rubric (docs/design/first-pass.md). The first line is the same task marker.
  */
 export const SYSTEM_PROMPTS_V2: Partial<Record<LlmTaskId, string>> = {
   'screenplay.generate': `rideo-task: screenplay.generate
@@ -356,6 +382,8 @@ Rules:
 - "style": concrete visual language (film stock or render look, lens, palette, lighting, camera movement), with believable light and physically plausible motion within that look. It is the whole film's look: put a time of day or a scene's light (a sunset, a storm) in that scene's continuity, never in the style.
 - Use the attachment descriptions as inspiration for the look and the cast.
 - "castOnly": true only when the brief says nobody but its characters appears on screen (for example "only these two characters appear", "no other people or animals"); otherwise false.
+${WRITER_FIRST_PASS}
+${makerRubric('screenplay', { reviewer: 'a script editor', names: WRITER_NAMES })}
 Return only JSON: {"title":"...","logline":"...","synopsis":"...","genre":"...","tone":"...","style":{"visual":"...","palette":"...","camera":"...","lighting":"..."},"characters":[{"name":"...","role":"protagonist|antagonist|supporting|minor","summary":"...","identity":${IDENTITY_TEMPLATE},"wardrobe":[{"name":"...","description":"..."}],"personality":"...","voice":"..."}],"locations":[{"name":"...","description":"..."}],"props":[{"name":"...","description":"..."}],"outline":[{"title":"...","summary":"...","purpose":"setup","estDurationSec":90}],"scenes":[{"beatIndex":0,"heading":"EXT. PLACE - DAY","location":"location name","timeOfDay":"...","continuity":"...","summary":"...","action":"...","dialogue":[{"character":"Name","line":"...","parenthetical":"..."}],"characters":["Name"],"props":["prop name"],"estDurationSec":90}],"ended":true,"castOnly":false}`,
 
   'screenplay.extend': `rideo-task: screenplay.extend
@@ -367,6 +395,8 @@ Rules:
 - Each scene's "continuity": the state at its start: time of day, weather, where the light comes from, what each character wears and carries, where they are.
 - Each scene's beatIndex must equal the beat's index and estDurationSec should match the beat estimate.
 - Reuse the names in "locations" and "props" for places and objects the story already has; list only new places and objects (name + precise visual description) in the answer's "locations" and "props".
+${WRITER_FIRST_PASS}
+${makerRubric('screenplay', { reviewer: 'a script editor', only: ['story', 'character', 'dialogue', 'visual', 'continuity', 'feasibility', 'brief'], names: WRITER_NAMES })}
 Return only JSON: {"scenes":[{"beatIndex":0,"heading":"EXT. PLACE - DAY","location":"location name","timeOfDay":"...","continuity":"...","summary":"...","action":"...","dialogue":[{"character":"Name","line":"..."}],"characters":["Name"],"props":["prop name"],"estDurationSec":90}],"locations":[{"name":"...","description":"..."}],"props":[{"name":"...","description":"..."}]}`,
 
   'clip.plan': `rideo-task: clip.plan
@@ -385,6 +415,8 @@ Rules:
 - camera.framing: extreme_wide|wide|medium|medium_close|close_up|extreme_close_up|over_shoulder|pov|insert; camera.movement: static|pan|tilt|dolly_in|dolly_out|tracking|handheld|crane|zoom|orbit.
 - When "sequence" is given, the video model renders up to sequence.maxShots consecutive shots (sequence.maxDurationSec seconds together) as one video that starts from the first one's frame, so it knows only the characters that frame shows: open the scene with a shot that shows every character in it, and give no shot more than limits.maxDurationSec.
 - When "direction" is given (what a new plan must do), follow it.
+${PLANNER_FIRST_PASS}
+${makerRubric('storyboard', { reviewer: 'a director of photography and a script supervisor, looking at the frames drawn from your shots,', only: ['composition', 'continuity', 'coverage', 'storytelling', 'feasibility', 'pacing'], names: 'In these criteria "film.castOnly" is your input "castOnly" and "video" is your input "video".' })}
 Return only JSON: {"shots":[{"description":"...","action":"...","endState":"...","camera":{"framing":"wide","movement":"static"},"lensMm":24,"characters":["Name"],"props":["prop name"],"durationSec":5,"continuity":"cut","dialogue":[{"character":"Name","line":"..."}]}]}`,
 };
 
@@ -1166,6 +1198,19 @@ export class LlmTasks {
   }
 
   /** One frame described for search (docs/design/search.md#captions). */
+  /** The shot's text as its first frame shows it (docs/design/first-pass.md#the-video-reads-its-first-frame). */
+  reconcileFrame(
+    input: FrameReconcileInput,
+    frame: Buffer,
+    signal?: AbortSignal,
+  ): Promise<FrameReconcileOutput> {
+    return this.run('frame.reconcile', FrameReconcileOutputSchema, input, {
+      images: [{ label: RECONCILE_FRAME_LABEL, data: frame, mime: 'image/png' }],
+      temperature: 0,
+      signal,
+    });
+  }
+
   captionFrame(input: FrameCaptionInput, frame: Buffer, signal?: AbortSignal): Promise<FrameCaptionOutput> {
     return this.run('frame.caption', FrameCaptionOutputSchema, input, {
       images: [{ label: `${FOCUS_FRAME_LABEL} 0:`, data: frame, mime: 'image/png' }],

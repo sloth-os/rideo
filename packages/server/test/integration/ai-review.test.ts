@@ -118,7 +118,8 @@ describe('AI review of the screenplay', () => {
     const fix = review.recommendations.find((r) => r.action?.kind === 'revise_scene')!;
     expect(fix).toMatchObject({ priority: 1, status: 'open', action: { sceneId } });
     expect((await requirement(pid, 'screenplay_approved', 'screenplay.reviewPassed')).message).toMatch(
-      /^The screenplay review did not pass \(\d\.\d of 7\)$/,
+      // New projects pass at 8 (docs/design/first-pass.md#the-gate-at-8)
+      /^The screenplay review did not pass \(\d\.\d of 8\)$/,
     );
 
     // Continue anyway: the gate accepts the review for the screenplay as it is

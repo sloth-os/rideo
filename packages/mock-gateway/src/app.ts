@@ -68,6 +68,8 @@ export interface MockGatewayApp {
     /** Image and video tasks failed as a provider's moderation refusing its output (refuseOutputs). */
     refused: number;
     proxyCalls: Record<string, number>;
+    /** The input of the last call of each structured task (`screenplay.generate`, `clip.plan`…). */
+    lastInputs: Record<string, unknown>;
     /** The account and gateway key of the last call to each registered proxy. */
     proxyAccounts: Record<string, { account: string; key: string; headers: Record<string, string> }>;
   };
@@ -104,6 +106,7 @@ export async function buildMockGateway(opts: MockGatewayOptions = {}): Promise<M
     busy: 0,
     refused: 0,
     proxyCalls: {},
+    lastInputs: {},
     proxyAccounts: {},
   };
   let overloads = 0;
@@ -496,6 +499,9 @@ export async function buildMockGateway(opts: MockGatewayOptions = {}): Promise<M
         if (mufflesLeft <= 0) return false;
         mufflesLeft--;
         return true;
+      },
+      onInput: (task, input) => {
+        counters.lastInputs[task] = input;
       },
     });
     return reply.code(res.status).headers(res.headers).send(res.body);

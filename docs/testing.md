@@ -558,6 +558,17 @@ keyframe and per video: the cost stays bounded, and a strict verdict on a good p
 from being exercised. A run takes about 10–20 minutes and costs a few images, two short videos and a few dozen vision
 calls. Retries are off: a failure is reported, not paid for twice.
 
+### Measuring the first pass (`scripts/first-pass.mjs`)
+
+The real-model suite checks contracts; it does not grade what the models make. `scripts/first-pass.mjs` does, against
+a running studio on real models ([right the first time](design/first-pass.md#measuring-the-first-pass)): it creates a
+project from a brief with every automatic fix off (`review.maxRounds` 0, `review.sceneFixes` 0,
+`consistency.maxAttempts` 1), lets the autopilot make each step once, continues past every gate that does not pass as a
+person would, and records the first round of every review (the stage reviews, each production scene's storyboard,
+each scene watched before the edit, every first take watched whole) as JSON and a table against the bar of 8. It is
+not part of CI: a run through the storyboard costs a few dollars of images and model calls and takes about an hour,
+and `--until pilot` adds the pilot's video.
+
 ## CI (`.github/workflows/ci.yml`)
 
 | Job | Runs |

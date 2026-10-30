@@ -101,7 +101,7 @@ describe('feedback on an export', () => {
     expect(fb!.model).toBeTruthy();
     expect(fb!.overall).toBeGreaterThan(0);
     expect(fb!.scenes).toHaveLength(1);
-    expect(fb!.scenes[0]!.scores.storytelling).toBe(7);
+    expect(fb!.scenes[0]!.scores.storytelling).toBe(8);
     // The jump: measured on the export, inside the last shot, and seen by the scene review.
     const label = `C1·S${jumpy.index + 1}`;
     expect(fb!.signals.unexpectedCuts.length).toBeGreaterThan(0);

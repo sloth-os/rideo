@@ -133,7 +133,8 @@ describe('story → movie workflow (REST, mock gateway)', () => {
     await lockElements(stack, pid);
     state = await stack.api<any>('GET', `/projects/${pid}/state`);
     const location = state.docs.elements[firstScene.locationId];
-    expect(location.references.map((r: { view: string }) => r.view)).toEqual(['establishing', 'angle']);
+    // A place is drawn once (docs/design/first-pass.md#references-drawn-from-a-whole-figure)
+    expect(location.references.map((r: { view: string }) => r.view)).toEqual(['establishing']);
     expect(location.lock).toMatchObject({ locked: true, version: 1 });
     await rejects(
       stack.api('PATCH', `/projects/${pid}/elements/${location.id}`, { description: 'a different room' }),

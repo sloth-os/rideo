@@ -54,15 +54,16 @@ export function feedbackScene(
   strips: number,
   watched = false,
 ): FeedbackSceneOutput {
+  // A scene without problems passes the bar new projects gate every score at (docs/design/first-pass.md#the-gate-at-8)
   const scores: Scores = {
-    storytelling: 7,
-    continuity: 7.5,
+    storytelling: 8,
+    continuity: 8.5,
     character: 8,
     temporal: 8,
     physics: 8,
-    realism: 7,
-    cinematography: 7,
-    editing: 7,
+    realism: 8,
+    cinematography: 8,
+    editing: 8,
   };
   const issues: FeedbackSceneOutput['issues'] = [];
   const shotScore = new Map<number, number>();
@@ -167,7 +168,7 @@ export function feedbackListen(input: FeedbackSceneInput, watched: boolean): Fee
         transcript.push({ time: (shot.video?.from ?? 0) + 0.3 + k, speaker: d.character, text: d.line });
     }
   return {
-    scores: { dialogue: mumbled.length ? 4 : 8, sound: 7 },
+    scores: { dialogue: mumbled.length ? 4 : 8, sound: 8 },
     transcript,
     summary: `Scene ${input.scene.number} heard: ${transcript.length} line(s).`,
     strengths: ['Clear voices.'],

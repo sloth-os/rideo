@@ -31,8 +31,8 @@ element keeps its version (no stale takes).
 
 | Kind | Meaning | Reference views generated |
 |---|---|---|
-| `location` | a place: set, landscape, interior | `establishing` (wide), `angle` (the reverse angle), both empty |
-| `prop` | an object that must stay the same: a key, a car, a letter | `detail` (isolated on neutral ground), `angle` |
+| `location` | a place: set, landscape, interior | `establishing` (wide, empty); `angle` (the reverse angle) on request |
+| `prop` | an object that must stay the same: a key, a car, a letter | `detail` (isolated on neutral ground); `angle` on request |
 
 A reference is one picture, not a collage or a grid of panels, with nobody in it: no people, animals or characters,
 even when the element's description mentions them (`compileElementReferenceRequest`). References feed every keyframe

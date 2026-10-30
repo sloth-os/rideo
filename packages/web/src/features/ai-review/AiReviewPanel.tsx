@@ -1,4 +1,5 @@
 import {
+  DEFAULT_MIN_DIMENSION,
   REVIEW_DIMENSIONS,
   type ReviewStage,
   type ReviewState,
@@ -302,7 +303,13 @@ export function ReviewCard({
           {done && review.verdict ? (
             <span className="font-mono text-[13px] tabular-nums" data-testid="ai-review-score">
               {review.verdict.score.toFixed(1)} / 10
-              <span className="text-muted"> · passes at {review.threshold}</span>
+              <span className="text-muted">
+                {' '}
+                · passes at {review.threshold}
+                {(review.minDimension ?? DEFAULT_MIN_DIMENSION) > DEFAULT_MIN_DIMENSION
+                  ? `, every dimension ${review.minDimension}+`
+                  : ''}
+              </span>
             </span>
           ) : null}
         </div>

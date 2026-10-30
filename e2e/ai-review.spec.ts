@@ -18,7 +18,8 @@ test('the screenplay and the storyboard are reviewed, revised by their review an
   await page.goto(`/p/${pid}/story`);
   const panel = page.getByTestId('ai-review-screenplay');
   await expect(panel).toHaveAttribute('data-state', 'passed');
-  await expect(panel.getByTestId('ai-review-score')).toContainText('/ 10 · passes at 7');
+  // New projects hold every score at 8 (docs/design/first-pass.md#the-gate-at-8)
+  await expect(panel.getByTestId('ai-review-score')).toContainText('/ 10 · passes at 8, every dimension 8+');
   await expect(page.getByTestId('approve-screenplay')).toBeEnabled();
 
   // A crowd the video model cannot keep: the review is outdated and the gate waits
@@ -49,4 +50,25 @@ test('the screenplay and the storyboard are reviewed, revised by their review an
   await expect(board.getByTestId('ai-review-score-composition')).toContainText('8.0');
   await page.getByTestId('approve-all-boards').click();
   await expect(page.getByTestId('approve-storyboard')).toBeEnabled();
+});
+
+/** The review gates in the project settings (docs/design/first-pass.md#the-gate-at-8), desktop and phone. */
+test('the project settings show the review gates at 8 and save a new bar', async ({
+  page,
+  request,
+}, testInfo) => {
+  const api = new Api(request);
+  const pid = await api.storyProject(`Review gates (${testInfo.project.name})`);
+  await page.goto(`/p/${pid}/overview`);
+  await page.getByTestId('open-settings').click();
+  const gates = page.getByTestId('review-gates');
+  await expect(gates.getByTestId('review-threshold')).toHaveValue('8');
+  await expect(gates.getByTestId('review-scene-threshold')).toHaveValue('8');
+  const floor = gates.getByTestId('review-min-dimension');
+  await expect(floor).toHaveValue('8');
+  await floor.fill('7.5');
+  await page.getByTestId('settings-save').click();
+  await expect
+    .poll(async () => (await api.call<any>('GET', `/projects/${pid}/state`)).docs.project.settings.review)
+    .toMatchObject({ threshold: 8, sceneThreshold: 8, minDimension: 7.5 });
 });

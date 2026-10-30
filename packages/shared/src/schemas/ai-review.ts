@@ -47,6 +47,11 @@ export const ReviewSettingsSchema = z.object({
   sceneFixes: z.number().int().min(0).max(6).default(3),
   /** The lowest overall score (0–10) a scene's review passes with (docs/design/ai-review.md#the-clip-gate). */
   sceneThreshold: z.number().min(4).max(9.5).default(6),
+  /**
+   * The lowest score any one dimension of a review may have (docs/design/first-pass.md#the-gate-at-8): 4 in the
+   * schema, 8 for new projects.
+   */
+  minDimension: z.number().min(0).max(10).default(4),
   /** Watch every video attempt whole (docs/design/ai-review.md#takes-watched-whole); on for new projects. */
   watchTakes: z.boolean().default(false),
   /** Review the scenes each production extension writes before they are planned; on for new projects. */
@@ -143,6 +148,8 @@ export const StageReviewSchema = z.object({
   subject: z.string().max(40).default(''),
   round: z.number().int().min(0).default(0),
   threshold: z.number().min(0).max(10).default(7),
+  /** The lowest score a dimension could have to pass (`review.minDimension` when it was reviewed). */
+  minDimension: z.number().min(0).max(10).default(4),
   verdict: StageVerdictSchema.nullable().default(null),
   scores: z.record(z.string(), z.number().min(0).max(10).nullable()).default({}),
   summary: z.string().max(4000).default(''),

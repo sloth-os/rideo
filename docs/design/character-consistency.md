@@ -84,7 +84,8 @@ params: { duration_seconds: clamp(shot.durationSec, model min/max), dimensions, 
 ```
 
 Reference selection: per character, approved references matching the shot's wardrobe first, then by view
-priority `front > three_quarter > full_body > profile > expression > custom`. The model's
+priority `full_body > three_quarter > front > profile > expression > custom` (the whole outfit with the face first,
+[first pass](first-pass.md#references-drawn-from-a-whole-figure)). The model's
 `max_input_images` limit (from `GET /v1/models/limits`, cached for 5 minutes) is shared across the cast.
 When the cast needs more images than the model accepts, the server composes one labelled **cast sheet**
 (ffmpeg `xstack`) and sends that single image instead.
@@ -172,9 +173,12 @@ every check, it becomes the shot's take and goes into the cut, as its job asked.
 
 ## Reference sheets
 
-The `character.refs` job generates the views `front`, `three_quarter`, `profile` and `full_body` on a neutral
-background with even studio lighting, using the identity fragment and the character seed. Every view after
-the first includes the first image as an image input (image-to-image), so the face carries across views.
+The `character.refs` job generates the views `full_body`, `three_quarter` and `profile` (`CHARACTER_VIEWS`), each a
+whole figure from head to toe, on a neutral background with even studio lighting, using the identity fragment and the
+character seed. Every view after the first includes the first image as an image input (image-to-image) and keeps it
+part by part (the same face, hair, build and outfit, every part in the same colour, shape and place), so the face and
+the whole outfit carry across views ([first pass](first-pass.md#references-drawn-from-a-whole-figure)). `front` (head
+and shoulders) and `expression` are drawn on request.
 Users approve, regenerate or upload references. A redraw asked for by the [cast review](ai-review.md#how-a-review-runs)
 carries a direction (`params.direction`, added to every request) and the references it replaces (`params.replaces`):
 they stay as its anchor until the new views are drawn, then are dismissed. `element.refs` takes the same parameters. `character_from_image` (vision) fills the identity fields

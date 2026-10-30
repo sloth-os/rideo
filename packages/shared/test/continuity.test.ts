@@ -19,7 +19,9 @@ import {
   framedGroupJoins,
   heardShares,
   inFrameLine,
+  LINE_BEAT_SEC,
   LINE_HEARD_RATIO,
+  linesSeconds,
   NEGATIVE_PROMPT_MAX,
   negativePromptFor,
   ProjectSettingsSchema,
@@ -430,7 +432,12 @@ describe('dialogue that fits its shot (docs/design/continuity.md#shot-planning)'
   it('counts words and capacity', () => {
     expect(countWords("Let's go — slow down, Rosie!")).toBe(5);
     expect(countWords('...')).toBe(0);
-    expect(wordsCapacity(5)).toBe(Math.floor(5 * WORDS_PER_SECOND));
+    // Two words a second, keeping a beat of a second after them (docs/design/first-pass.md#lines-fit-their-shots)
+    expect(WORDS_PER_SECOND).toBe(2);
+    expect(LINE_BEAT_SEC).toBe(1);
+    expect(wordsCapacity(5)).toBe(8);
+    expect(linesSeconds([{ line: 'one two three four five six' }])).toBe(4);
+    expect(linesSeconds([{ line: '...' }])).toBe(0);
   });
 
   it('lengthens a shot within the model, then moves lines to continuous shots, never cutting a line', () => {
@@ -440,12 +447,12 @@ describe('dialogue that fits its shot (docs/design/continuity.md#shot-planning)'
       dialogue: lines.map((line) => ({ character: 'Mira', line })),
       description: 'd',
     });
-    // 10 words need 4.5 s: lengthened from 4 to 4.6 within a 10 s maximum.
+    // 10 words need 5 s and a beat: lengthened from 4 to 6 within a 10 s maximum.
     const [one] = fitDialogue([shot(['one two three four five six seven eight nine ten'])], {
       minSec: 2,
       maxSec: 10,
     });
-    expect(one!.durationSec).toBeCloseTo(4.6, 5);
+    expect(one!.durationSec).toBeCloseTo(6, 5);
     // Fixed 5 s shots: two 8-word lines go to two shots, the second continuous.
     const out = fitDialogue([shot(['a b c d e f g h', 'i j k l m n o p'], 5)], { minSec: 5, maxSec: 5 });
     expect(out).toHaveLength(2);
@@ -459,11 +466,12 @@ describe('dialogue that fits its shot (docs/design/continuity.md#shot-planning)'
   });
 
   it('turns a CEFR level into guidance and the longest line', () => {
-    expect(dialogueDirection('any', 5)).toEqual({ maxWordsPerLine: 11 });
+    expect(dialogueDirection('any', 5)).toEqual({ maxWordsPerLine: 8 });
     const b1 = dialogueDirection('B1', 5);
     expect(b1.dialogueLevel).toBe('B1');
     expect(b1.dialogueGuidance).toBe(DIALOGUE_LEVELS.B1.guidance);
-    expect(b1.maxWordsPerLine).toBe(11);
+    expect(b1.maxWordsPerLine).toBe(8);
+    expect(dialogueDirection('B1', 10).maxWordsPerLine).toBe(12);
     expect(dialogueDirection('A1', 10).maxWordsPerLine).toBe(6);
   });
 });

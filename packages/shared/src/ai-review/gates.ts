@@ -11,6 +11,7 @@ import { boardState } from '../storyboard';
 import { itemEnd } from '../timeline/ops';
 import { fnv1a32 } from '../util/hash';
 import { clipReviewState, clipReviewSubject } from './clip-review';
+import { belowFloor, DEFAULT_MIN_DIMENSION } from './rubric';
 
 /**
  * Reviews of every step (docs/design/ai-review.md#autopilot-every-step-reviewed-and-approved): what the cast and the
@@ -20,8 +21,8 @@ import { clipReviewState, clipReviewSubject } from './clip-review';
 
 const byIndex = <T extends { index: number }>(a: T, b: T) => a.index - b.index;
 const round1 = (n: number) => Math.round(n * 10) / 10;
-/** A scored dimension below this fails a scene's review whatever its overall score. */
-export const SCENE_MIN_DIMENSION = 4;
+/** A scored dimension below this fails a scene's review whatever its overall score (unless `review.minDimension`). */
+export const SCENE_MIN_DIMENSION = DEFAULT_MIN_DIMENSION;
 /** The planned action must be seen at least this much (0–1) in a take watched whole. */
 export const WATCH_MIN_ACTION = 0.4;
 
@@ -186,11 +187,12 @@ export function clipFramesApproved(clip: Clip, docs: Parameters<typeof boardStat
 
 /**
  * The verdict of a scene's review (docs/design/ai-review.md#the-clip-gate): the overall score reaches the threshold,
- * no critical issue, no scored dimension below 4.
+ * no critical issue, no scored dimension below the floor (4, or the project's `review.minDimension`).
  */
 export function clipReviewVerdict(
   review: Pick<ClipReview, 'overall' | 'scores' | 'issues'>,
   threshold: number,
+  minDimension = SCENE_MIN_DIMENSION,
 ): StageVerdict {
   const blocking: string[] = [];
   for (const i of review.issues)
@@ -198,7 +200,7 @@ export function clipReviewVerdict(
       blocking.push(`critical: ${i.shot ? `${i.shot} ` : ''}${i.title}`.slice(0, 300));
   for (const d of FEEDBACK_DIMENSIONS) {
     const v = review.scores[d.id];
-    if (typeof v === 'number' && v < SCENE_MIN_DIMENSION) blocking.push(`${d.id} ${v}/10`);
+    if (typeof v === 'number' && v < minDimension) blocking.push(belowFloor(d.id, v, minDimension));
   }
   const score = review.overall ?? 0;
   if (review.overall === null) blocking.push('no scores');
@@ -276,7 +278,10 @@ function takeClears(shot: Shot, docs: Pick<ProjectDocs, 'characters' | 'elements
  */
 export function clipGate(clip: Clip, docs: ProjectDocs): { ok: boolean; blocking: string[] } {
   const settings = docs.project.settings;
-  const review = { ...{ scenes: true, sceneThreshold: 6 }, ...(settings.review ?? {}) };
+  const review = {
+    ...{ scenes: true, sceneThreshold: 6, minDimension: SCENE_MIN_DIMENSION },
+    ...(settings.review ?? {}),
+  };
   const blocking: string[] = [];
   for (const shot of [...clip.shots].sort(byIndex)) {
     const why = takeClears(shot, docs, watchesTakes(settings));
@@ -287,7 +292,7 @@ export function clipGate(clip: Clip, docs: ProjectDocs): { ok: boolean; blocking
     const state = clipReviewState(clip);
     if (!r || state !== 'current') blocking.push(`the scene review is ${state}`);
     else {
-      const v = r.verdict ?? clipReviewVerdict(r, review.sceneThreshold);
+      const v = r.verdict ?? clipReviewVerdict(r, review.sceneThreshold, review.minDimension);
       if (!v.passed) blocking.push(`the scene review did not pass (${v.blocking.slice(0, 2).join('; ')})`);
     }
   }

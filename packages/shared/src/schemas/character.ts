@@ -35,10 +35,17 @@ export const ReferenceViewSchema = z.enum([
 ]);
 export type ReferenceView = z.infer<typeof ReferenceViewSchema>;
 
+/**
+ * The views drawn for a character, in order (docs/design/first-pass.md#references-drawn-from-a-whole-figure): the whole
+ * figure first, which carries the whole outfit and anchors the other views, then every other view whole too.
+ */
+export const CHARACTER_VIEWS: ReferenceView[] = ['full_body', 'three_quarter', 'profile'];
+
+/** Reference priority for keyframes: the whole outfit with the face first, then the turned view. */
 export const REFERENCE_VIEW_PRIORITY: ReferenceView[] = [
-  'front',
-  'three_quarter',
   'full_body',
+  'three_quarter',
+  'front',
   'profile',
   'expression',
   'custom',

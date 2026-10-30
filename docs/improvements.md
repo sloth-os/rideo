@@ -530,7 +530,8 @@ which every rider sat in the saddle. *How:* a mark's `mount` (another actor): th
 facing at saddle height, the pair is never pushed apart, the line says "Rosie rides Clover, left of frame", and the
 blocking prompt asks for it.
 
-**56. A frame that contradicts its shot makes the video morph** (S–M) — the pilot's shot 5 failed its whole-take watch
+**56. A frame that contradicts its shot makes the video morph** (S–M, done: the video reads its first frame,
+[first pass](design/first-pass.md#the-video-reads-its-first-frame)) — the pilot's shot 5 failed its whole-take watch
 at 3/10 on every attempt with a translucent second Sammy, and in shot 2 a gate dissolved as Rosie walked through it
 (critical in the scene review). Each frame showed something its text did not: an over-the-shoulder shot drawn over
 the other character's shoulder, a gate drawn open where the shot said closed. Rewriting the shots to what their frames
@@ -552,11 +553,13 @@ autopilot; after a person fixed a scene by hand and its review passed, the clip 
 new-element review ran the whole cast review (4 characters and 9 elements, about 25 minutes a round) for one prop.
 *How:* review the new elements alone, with the cast as context.
 
-**60. Slow steps on a reasoning model** (S) — `scene.block` took 614 s for one scene (25,109 output tokens, nearly
-all reasoning), the cast review's 12 calls ran one after another at 1–3.5 minutes each. *How:* a reasoning setting
-for these tasks, and the cast review's calls in parallel within the `llm` lane.
+**60. Slow steps on a reasoning model** (S, half done) — `scene.block` took 614 s for one scene (25,109 output tokens,
+nearly all reasoning), the cast review's 12 calls ran one after another at 1–3.5 minutes each. The cast review's
+calls and the storyboard review's scenes now run three at a time ([efficiency](design/first-pass.md#efficiency)).
+*Still:* a reasoning setting for `scene.block`.
 
-**61. Four characters in a frame** (S) — a frame of two riders on two ponies drew Sammy on a grey pony and Rosie on
+**61. Four characters in a frame** (S, done: the writer and the planner keep a moment to three characters,
+[first pass](design/first-pass.md#one-rubric-for-the-maker-and-the-reviewer)) — a frame of two riders on two ponies drew Sammy on a grey pony and Rosie on
 foot, likely too few references for each of four characters; the same moment with one pair drew the pony right.
 *How:* the planner keeps a shot to one rider and mount where the cast allows, as it already limits crowds.
 
@@ -580,3 +583,31 @@ differs.
   character 7, realism 7, cinematography 7, editing 6, physics 6, temporal 5, continuity 4. 134 issues.
 - **Cost:** $244.37 ($46.97 a finished minute): Wan 3.0 $205.24 (180 generations, $67.20 discarded), `qwen3.8-max`
   $22.91 (804 calls), Seedream $15.97 (355 images), the omni model $0.25.
+
+## Right the first time (October 30, 2026)
+
+Every score of every review at 8 on the first result, without revisions or regenerations
+([right the first time](design/first-pass.md)): the gates hold every score at 8 for new projects, the writer and the
+shot planner get their reviewers' rubric, references are drawn from a whole figure, the director's desk is off by
+default, and `scripts/first-pass.mjs` measures a build's first pass on real models
+([measured](design/first-pass.md#measured)). What the measurements left open:
+
+**63. Briefs the video model cannot film** (S–M) — the riding brief asks for two riders side by side (four characters
+in a moment), a bouncing trot and a slide off a pony: the screenplay reviewer marks feasibility 5–6 whatever the
+writer does, and brief 5 when the writer leaves a moment out. A simpler brief passed 8 overall on its first round.
+*How:* check the brief against `VIDEO_MODEL_FACTS` before writing, and let the person accept a filmable form of each
+hard moment as part of the brief.
+
+**64. Cast views that drift in small details** (M) — consistency 7.5–8.3 after the whole-figure anchor and three
+views drawn together: buckles, a coat open in one view, sole colours. *How:* a turnaround (the three views in one
+picture) split into the references, measured against views drawn one by one.
+
+**65. Frames that do not follow their shot** (M) — storyboard continuity 5–6 on every measured run: props in another
+place or state than the shot says, a duplicate prop, a character metres from where the last cut left them, morning
+lit as a sunset. *How:* a staging check of each frame against its text as it is drawn (who is where, what each holds,
+the light), and a scene's frames drawn as edits of its first frame.
+
+**66. AI blocking that disagrees with the shot plan** (M) — blocking 3–5 on six measured storyboards; its camera views
+contradicted the shots' planned framing and screen positions, and the frames followed neither (5.6–6.9 with the desk
+on, 7.1–7.3 off). The desk is off for new projects. *How:* solve each camera from the shot's planned screen positions
+and facing, check the projected layout against the plan before it reaches the image model, and seat riders (item 55).

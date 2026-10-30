@@ -116,6 +116,7 @@ export const ProjectSettingsPatchSchema = z
         cast: z.boolean(),
         cut: z.boolean(),
         sceneThreshold: z.number().min(4).max(9.5),
+        minDimension: z.number().min(0).max(10),
         watchTakes: z.boolean(),
         extensions: z.boolean(),
       })

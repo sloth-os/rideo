@@ -1,4 +1,4 @@
-import { ClipPlanOutputSchema, newId } from '@rideo/shared';
+import { ClipPlanOutputSchema, newId, VIDEO_MODEL_FACTS } from '@rideo/shared';
 import * as f from '@rideo/shared/testing';
 import { describe, expect, it, vi } from 'vitest';
 import {
@@ -21,7 +21,7 @@ import {
 } from '../../src/ai/tasks';
 import { AppError } from '../../src/errors';
 import type { ProxyClient } from '../../src/gateway/proxy-client';
-import { screenplayReviewInput, VIDEO_MODEL_FACTS } from '../../src/jobs/handlers/ai-review';
+import { screenplayReviewInput } from '../../src/jobs/handlers/ai-review';
 import { Metrics } from '../../src/metrics';
 
 class FakeProxy {

@@ -295,6 +295,17 @@ export const TakeSchema = z.object({
 export type Take = z.infer<typeof TakeSchema>;
 
 /** The storyboard frame of a shot (docs/design/storyboard.md#board-frames). */
+/** What the vision model saw in a first frame, reconciled with the shot's text (docs/design/first-pass.md). */
+export const FrameSeenSchema = z.object({
+  keyframeHash: z.string(),
+  description: z.string().max(3000),
+  action: z.string().max(2000),
+  conflicts: z.array(z.string().max(400)).max(20).default([]),
+  model: z.string().max(200).nullable().default(null),
+  at: IsoDateSchema,
+});
+export type FrameSeen = z.infer<typeof FrameSeenSchema>;
+
 export const ShotBoardSchema = z.object({
   keyframe: MediaRefSchema,
   createdAt: IsoDateSchema,
@@ -316,6 +327,11 @@ export const ShotBoardSchema = z.object({
   approved: z.boolean().default(false),
   approvedAt: IsoDateSchema.nullable().default(null),
   approvedBy: ActorSchema.nullable().default(null),
+  /**
+   * The shot's text as this frame shows it (`frame.reconcile`, docs/design/first-pass.md#the-video-reads-its-first-frame):
+   * what the video prompt says when a take starts from the frame. Made once per frame (`keyframeHash`).
+   */
+  seen: FrameSeenSchema.nullable().default(null),
 });
 export type ShotBoard = z.infer<typeof ShotBoardSchema>;
 

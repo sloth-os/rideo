@@ -9,8 +9,13 @@ import type { DialogueLevel } from '../schemas/project';
  * the quality checks of the gate. Pure, shared by the server, the studio and the tests.
  */
 
-/** How fast a line is spoken, in words per second (a calm, clear pace for every level). */
-export const WORDS_PER_SECOND = 2.2;
+/**
+ * How fast a line is spoken, in words per second (a calm, clear pace for every level): the storyboard reviewer's
+ * "about two words a second" (docs/design/first-pass.md#lines-fit-their-shots).
+ */
+export const WORDS_PER_SECOND = 2;
+/** The beat a shot keeps after its lines (the reviewer's "plus a beat"), in seconds. */
+export const LINE_BEAT_SEC = 1;
 /** A scene change at or above this score inside one shot is a jump: a stray cut, a pop or a morph. */
 export const TEMPORAL_JUMP_SCORE = 0.45;
 /** The `select` threshold of the measurement (lower, so the highest score is known even without a jump). */
@@ -66,9 +71,15 @@ export function countWords(text: string): number {
   return (text.match(/[\p{L}\p{N}][\p{L}\p{N}'’-]*/gu) ?? []).length;
 }
 
-/** How many words a shot of this length can speak. */
+/** How many words a shot of this length can speak, keeping its beat after them. */
 export function wordsCapacity(durationSec: number): number {
-  return Math.max(1, Math.floor(durationSec * WORDS_PER_SECOND));
+  return Math.max(1, Math.floor((durationSec - LINE_BEAT_SEC) * WORDS_PER_SECOND));
+}
+
+/** The seconds a shot needs for these lines: two words a second, plus a beat (none without words). */
+export function linesSeconds(lines: { line: string }[]): number {
+  const words = lines.reduce((sum, d) => sum + countWords(d.line), 0);
+  return words ? words / WORDS_PER_SECOND + LINE_BEAT_SEC : 0;
 }
 
 /** The dialogue inputs of the writing and planning tasks for a level and the video model's longest shot. */
@@ -90,16 +101,15 @@ interface FitShot {
 }
 
 /**
- * Dialogue fits its shot (docs/design/continuity.md#shot-planning): a shot whose lines need more time is lengthened
- * up to the model's maximum, and lines that still do not fit move to continuous shots inserted after it (same
+ * Dialogue fits its shot (docs/design/continuity.md#shot-planning): a shot whose lines need more time (two words a
+ * second plus a beat, docs/design/first-pass.md#lines-fit-their-shots) is lengthened up to the model's maximum, and lines that still do not fit move to continuous shots inserted after it (same
  * description and camera). Nothing is cut from a line: a single line longer than the longest shot keeps a shot of its
  * own at the maximum.
  */
 export function fitDialogue<T extends FitShot>(shots: T[], opts: { minSec: number; maxSec: number }): T[] {
   const min = Math.max(0.5, opts.minSec);
   const max = Math.max(min, opts.maxSec);
-  const need = (lines: FitShot['dialogue']) =>
-    lines.reduce((sum, d) => sum + countWords(d.line), 0) / WORDS_PER_SECOND;
+  const need = linesSeconds;
   const out: T[] = [];
   for (const shot of shots) {
     if (need(shot.dialogue) <= shot.durationSec) {

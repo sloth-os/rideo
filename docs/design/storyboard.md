@@ -85,7 +85,8 @@ In the shot pipeline (`shot.generate`), a shot whose board is **approved and cur
 board's keyframe is the first frame (`take.request.firstFrameSource: 'storyboard'`) and its report is the keyframe
 evidence. Continuous shots still start from the previous take's last frame when it is usable (R5), and from their
 board otherwise. A board whose dialogue mix is current (same lines, same voice locks) gives the take its TTS audio
-without speaking the lines again.
+without speaking the lines again. With prompt version 2 the video prompt describes the frame as drawn, read once by the
+vision model and kept on the board (`board.seen`, [the video reads its first frame](first-pass.md#the-video-reads-its-first-frame)).
 
 ## Animatic
 

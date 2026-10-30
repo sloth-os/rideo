@@ -13,7 +13,8 @@ test('locations and props from the screenplay are approved and locked, and scene
   const lamp = locations.locator('[data-entity^="element:"]').first();
   await expect(lamp).toContainText('in use');
   await lamp.getByTestId('generate-element-refs').click();
-  await expect(lamp.getByTestId('element-reference')).toHaveCount(2, { timeout: 60_000 });
+  // A place is drawn once (docs/design/first-pass.md#references-drawn-from-a-whole-figure)
+  await expect(lamp.getByTestId('element-reference')).toHaveCount(1, { timeout: 60_000 });
   await lamp.getByTestId('approve-all-element-references').click();
   await expect(lamp.getByTestId('lock-element')).toBeEnabled();
   await lamp.getByTestId('lock-element').click();

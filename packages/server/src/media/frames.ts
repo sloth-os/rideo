@@ -101,6 +101,18 @@ export async function sampleFrames(
 }
 
 /** Converts/downscales any image to PNG (judge and gateway inputs). */
+/** The top `share` of a still, whole width (the head and shoulders of a standing figure), as a PNG. */
+export async function topCrop(
+  ff: Ffmpeg,
+  input: string,
+  out: string,
+  share: number,
+  signal?: AbortSignal,
+): Promise<string> {
+  await ff.run(['-i', input, '-frames:v', '1', '-vf', `crop=iw:trunc(ih*${share}/2)*2:0:0`, out], { signal });
+  return out;
+}
+
 export async function toPng(
   ff: Ffmpeg,
   input: string,

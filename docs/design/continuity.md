@@ -13,7 +13,9 @@ wrong is caught by [feedback](feedback.md).
 Every rule below that changes a generation request is part of **prompt version 2**:
 `settings.generation.promptVersion` (`1` or `2`). Projects created before it keep version 1 (the schema default), so
 their prompts stay byte-identical (rule R3) and their storyboard frames stay current; new projects are created with
-version 2. The project settings switch it ("Continuity-aware prompts"); switching makes current storyboard frames
+the latest version, 3: version 2 with every keyframe's framing spelled out
+([framings spelled out](first-pass.md#framings-spelled-out)). The project settings switch it ("Continuity-aware
+prompts": the latest version, or 1); switching makes current storyboard frames
 *outdated* because their prompt changed ([storyboard](storyboard.md#board-frames)).
 
 | Part | Version 1 | Version 2 |

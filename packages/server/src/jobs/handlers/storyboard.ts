@@ -6,6 +6,7 @@ import {
   boardState,
   type Clip,
   docPath,
+  headCropped,
   type Job,
   type MediaRef,
   orderedShotCharacters,
@@ -94,6 +95,7 @@ export async function shotBoard(deps: HandlerDeps, ctx: JobContext) {
       judgedElements,
       maxInputImages: imageLimits.limits?.max_input_images,
       dir,
+      headCrop: headCropped({ shot, settings }),
     });
     // The scene's first frame as one more image, as for the video pass's keyframes (docs/design/storyboard.md#jobs)
     const sceneFrame = promptVersionOf(settings) >= 2 ? boardSceneReference(clip, shot, docs) : null;
@@ -168,6 +170,7 @@ export async function shotBoard(deps: HandlerDeps, ctx: JobContext) {
       approved: false,
       approvedAt: null,
       approvedBy: null,
+      seen: null,
     };
     await commitAs(
       deps,

@@ -326,6 +326,30 @@ export const ThumbnailPickOutputSchema = z.object({
 });
 export type ThumbnailPickOutput = z.infer<typeof ThumbnailPickOutputSchema>;
 
+/**
+ * `frame.reconcile` (docs/design/first-pass.md#the-video-reads-its-first-frame): the shot's text as its first frame
+ * shows it, so the video model's prompt never contradicts the picture it starts from.
+ */
+export interface FrameReconcileInput {
+  shot: {
+    description: string;
+    action: string;
+    endState: string;
+    framing: string;
+    movement: string;
+    durationSec: number;
+    /** Who is in it, with how they look. */
+    cast: { name: string; look: string }[];
+  };
+}
+
+export const FrameReconcileOutputSchema = z.object({
+  description: str(3000),
+  action: str(2000),
+  conflicts: lenientArray(str(400), 20),
+});
+export type FrameReconcileOutput = z.infer<typeof FrameReconcileOutputSchema>;
+
 export const LLM_TASKS = [
   'media.describe',
   'screenplay.generate',
@@ -351,6 +375,7 @@ export const LLM_TASKS = [
   'scene.block',
   'take.watch',
   'cast.review',
+  'frame.reconcile',
 ] as const;
 export type LlmTaskId = (typeof LLM_TASKS)[number];
 
@@ -369,7 +394,17 @@ export interface DialogueDirection {
   maxWordsPerLine?: number;
 }
 
-export interface ScreenplayGenerateInput extends DialogueDirection {
+/**
+ * What version 2 tells a writer or a planner about the video model and the cast, as their reviewers are told
+ * (docs/design/first-pass.md#one-rubric-for-the-maker-and-the-reviewer).
+ */
+export interface MakerFacts {
+  video?: VideoModelFacts;
+  /** Nobody but the cast may appear on screen. */
+  castOnly?: boolean;
+}
+
+export interface ScreenplayGenerateInput extends DialogueDirection, MakerFacts {
   prompt: string;
   targetDurationSec: number;
   pilotDurationSec: number;
@@ -378,7 +413,7 @@ export interface ScreenplayGenerateInput extends DialogueDirection {
   attachments: { kind: 'image' | 'video'; description: string }[];
 }
 
-export interface ScreenplayExtendInput extends DialogueDirection {
+export interface ScreenplayExtendInput extends DialogueDirection, MakerFacts {
   title: string;
   logline: string;
   synopsis: string;
@@ -402,7 +437,7 @@ export interface ScreenplayExtendInput extends DialogueDirection {
   upcomingBeats?: { index: number; title: string; summary: string; purpose?: string }[];
 }
 
-export interface ClipPlanInput extends DialogueDirection {
+export interface ClipPlanInput extends DialogueDirection, MakerFacts {
   scene: {
     heading: string;
     summary: string;
@@ -528,6 +563,8 @@ export interface ThumbnailPickInput {
 
 /** Labels of the frames sent to the reframe and thumbnail tasks. */
 export const FOCUS_FRAME_LABEL = 'Frame';
+/** The first frame a take starts from, as `frame.reconcile` sees it (docs/design/first-pass.md#the-video-reads-its-first-frame). */
+export const RECONCILE_FRAME_LABEL = 'First frame:';
 
 export const INPUT_PREFIX = 'INPUT:\n';
 export const JUDGE_SCENE_REFERENCE_LABEL = 'Scene reference frame';

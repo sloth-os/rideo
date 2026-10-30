@@ -14,11 +14,16 @@ import type { LlmStageAction, StageReviewOutput } from '../schemas/llm';
 import { storyboardClips } from '../storyboard';
 import { fnv1a32 } from '../util/hash';
 import { castReviewSubject, cutReviewSubject } from './gates';
+import { belowFloor, DEFAULT_MIN_DIMENSION } from './rubric';
 
-/** A dimension below this fails the review whatever the score (docs/design/ai-review.md#the-verdict). */
-export const REVIEW_MIN_DIMENSION = 4;
+/**
+ * A dimension below this fails the review whatever the score (docs/design/ai-review.md#the-verdict), unless the
+ * project sets its own floor (`review.minDimension`, docs/design/first-pass.md#the-gate-at-8).
+ */
+export const REVIEW_MIN_DIMENSION = DEFAULT_MIN_DIMENSION;
 
 const round1 = (n: number) => Math.round(n * 10) / 10;
+
 const byIndex = <T extends { index: number }>(a: T, b: T) => a.index - b.index;
 
 /** The verdict of a review, decided by rules rather than by the model (docs/design/ai-review.md#the-verdict). */
@@ -27,6 +32,7 @@ export function stageVerdict(
   scores: Record<string, number | null | undefined>,
   issues: Pick<StageIssue, 'severity' | 'title'>[],
   threshold: number,
+  minDimension = REVIEW_MIN_DIMENSION,
 ): StageVerdict {
   const dims = REVIEW_DIMENSIONS[stage] as readonly string[];
   const values = dims.map((d) => scores[d]).filter((v): v is number => typeof v === 'number');
@@ -35,7 +41,7 @@ export function stageVerdict(
   for (const i of issues) if (i.severity === 'critical') blocking.push(`critical: ${i.title}`.slice(0, 300));
   for (const d of dims) {
     const v = scores[d];
-    if (typeof v === 'number' && v < REVIEW_MIN_DIMENSION) blocking.push(`${d} ${v}/10`);
+    if (typeof v === 'number' && v < minDimension) blocking.push(belowFloor(d, v, minDimension));
   }
   if (!values.length) blocking.push('no scores');
   else if (score < threshold) blocking.push(`score ${score} of ${threshold}`);
@@ -252,6 +258,7 @@ export function assembleStageReview(
   targets: ReviewTargets,
   threshold: number,
   round = 1,
+  minDimension = REVIEW_MIN_DIMENSION,
 ): Pick<StageReview, 'scores' | 'summary' | 'strengths' | 'issues' | 'recommendations' | 'verdict'> {
   // Later rounds number their own, so the fixes of earlier rounds keep their ids beside them
   const id = (kind: 'i' | 'r', k: number) => (round > 1 ? `${kind}${round}.${k + 1}` : `${kind}${k + 1}`);
@@ -328,7 +335,7 @@ export function assembleStageReview(
     strengths: out.strengths,
     issues,
     recommendations,
-    verdict: stageVerdict(stage, scores, issues, threshold),
+    verdict: stageVerdict(stage, scores, issues, threshold, minDimension),
   };
 }
 
@@ -379,3 +386,5 @@ export function carriedFixes(
 
 export * from './clip-review';
 export * from './gates';
+export * from './rubric';
+export * from './video';

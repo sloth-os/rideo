@@ -52,12 +52,13 @@ settings.review = {
   cast: boolean;          // off in the schema, on for new projects: review the cast before it is locked
   storyboard: boolean;    // default true
   cut: boolean;           // off in the schema, on for new projects: review the cut before it is exported
-  threshold: number;      // 5–9.5, default 7: the lowest overall score that passes
+  threshold: number;      // 5–9.5, default 7 (8 for new projects): the lowest overall score that passes
   maxRounds: number;      // 0–3, default 2: automatic revisions before a person decides
   autoRevise: boolean;    // default true: apply the review's fixes and review again
   scenes: boolean;        // default true: watch each scene's takes before the edit
   sceneFixes: number;     // 0–6, default 3: priority 1 regenerations applied per scene (0: watch only)
-  sceneThreshold: number; // 4–9.5, default 6: the lowest overall score (0–10) a scene's review passes with
+  sceneThreshold: number; // 4–9.5, default 6 (8 for new projects): the lowest overall score (0–10) a scene's review passes with
+  minDimension: number;   // 0–10, default 4 (8 for new projects): the lowest score any one dimension may have
   watchTakes: boolean;    // off in the schema, on for new projects: watch every video attempt whole
   extensions: boolean;    // off in the schema, on for new projects: review the scenes production writes
 };
@@ -65,7 +66,7 @@ settings.storyboard.production: boolean;  // off in the schema, on for new proje
 ```
 
 The settings that are new since a project was made are off for it, so an older project's gates and jobs stay as they
-were; new projects are created with them on.
+were; new projects are created with them on, and with every bar at 8 ([right the first time](first-pass.md#the-gate-at-8)).
 
 ## The document
 
@@ -109,10 +110,10 @@ type StageAction =
 
 ### The verdict
 
-`stageVerdict(scores, issues, threshold)` (shared, deterministic) decides, not the model: the score is the mean of
-the dimensions the model scored, and the review **passes** when the score reaches the threshold, no issue is
-critical and no dimension is below 4. `blocking` names what failed ("critical: the chairlift boarding cannot be
-generated", "pacing 3/10", "score 6.4 of 7").
+`stageVerdict(scores, issues, threshold, minDimension)` (shared, deterministic) decides, not the model: the score is
+the mean of the dimensions the model scored, and the review **passes** when the score reaches the threshold, no issue
+is critical and no dimension is below `review.minDimension` (4 in the schema, 8 for new projects). `blocking` names
+what failed ("critical: the chairlift boarding cannot be generated", "pacing 3/10, below 8", "score 6.4 of 7").
 
 ## Dimensions
 
@@ -277,7 +278,7 @@ watch, as a re-check does. The cut review runs it for the takes of the cut.
   its report, its watch included;
 - with `settings.review.scenes` and two or more shots, the scene's review is current and its verdict passed
   (`clipReviewVerdict`: the overall score reaches `review.sceneThreshold`, no critical issue remains, and no scored
-  dimension is below 4).
+  dimension is below `review.minDimension`).
 
 Its frames need not be current any more: the batch approved them before the clip's video, and a scene review's fix that
 revises a shot outdates that shot's frame.

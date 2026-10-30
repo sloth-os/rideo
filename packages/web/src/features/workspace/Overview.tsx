@@ -4,6 +4,7 @@ import {
   type DialogueMode,
   formatDuration,
   isTerminalJob,
+  LATEST_PROMPT_VERSION,
   type ProjectSettings,
   withSettingsDefaults,
   workflowFor,
@@ -88,6 +89,30 @@ function SettingsDialog({
       setBusy(false);
     }
   };
+  // A review bar (docs/design/first-pass.md#the-gate-at-8): a score out of 10, in half points within its range
+  const reviewBar = (
+    label: string,
+    value: number,
+    min: number,
+    max: number,
+    onChange: (v: number) => void,
+    testid: string,
+  ) => (
+    <Field label={label}>
+      <Input
+        type="number"
+        step={0.5}
+        min={min}
+        max={max}
+        value={value}
+        onChange={(e) => {
+          const v = Number(e.target.value);
+          if (Number.isFinite(v)) onChange(Math.min(max, Math.max(min, Math.round(v * 2) / 2)));
+        }}
+        data-testid={testid}
+      />
+    </Field>
+  );
   const toggle = (label: string, checked: boolean, onChange: (v: boolean) => void, name: string) => (
     <label className="flex items-center justify-between gap-3 rounded-[var(--radius-control)] border border-border bg-surface-2 px-3 py-2 text-[13px]">
       {label}
@@ -191,8 +216,9 @@ function SettingsDialog({
           <div className="space-y-1">
             {toggle(
               'Continuity-aware prompts (scene line, voices, physics; prompt version 2)',
-              s.generation.promptVersion === 2,
-              (v) => setS({ ...s, generation: { ...s.generation, promptVersion: v ? 2 : 1 } }),
+              s.generation.promptVersion >= 2,
+              (v) =>
+                setS({ ...s, generation: { ...s.generation, promptVersion: v ? LATEST_PROMPT_VERSION : 1 } }),
               'promptVersion',
             )}
             {toggle(
@@ -261,6 +287,35 @@ function SettingsDialog({
                 data-testid="review-scene-fixes"
               />
             </Field>
+            <div className="pt-1" data-testid="review-gates">
+              <p className="mb-1 text-[12px] font-medium">Review gates</p>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                {reviewBar(
+                  'A step passes at (overall)',
+                  s.review.threshold,
+                  5,
+                  9.5,
+                  (threshold) => setS({ ...s, review: { ...s.review, threshold } }),
+                  'review-threshold',
+                )}
+                {reviewBar(
+                  'A scene passes at (overall)',
+                  s.review.sceneThreshold,
+                  4,
+                  9.5,
+                  (sceneThreshold) => setS({ ...s, review: { ...s.review, sceneThreshold } }),
+                  'review-scene-threshold',
+                )}
+                {reviewBar(
+                  'Every dimension at least',
+                  s.review.minDimension,
+                  0,
+                  10,
+                  (minDimension) => setS({ ...s, review: { ...s.review, minDimension } }),
+                  'review-min-dimension',
+                )}
+              </div>
+            </div>
             {toggle(
               'Watch each export and write feedback',
               s.feedback.auto,

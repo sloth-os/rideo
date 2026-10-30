@@ -152,7 +152,7 @@ The board's prompt hash includes the line and a signature of what the shot's cam
 shot's characters, the props, the shot's marks and camera), so moving a mannequin or the shot's camera makes its frame
 *outdated*: it is drawn again with the new blocking. Moving another shot's camera leaves it current.
 
-**The camera view** (`settings.blocking.layoutImage`, on by default): `renderShotBlocking` draws the shot's camera
+**The camera view** (`settings.blocking.layoutImage`): `renderShotBlocking` draws the shot's camera
 view (flat-shaded mannequins in their colours on the ground, the landmarks, the props and the sky, lit from the sun)
 at 1024 px wide. It goes to the image model after the cast's and the elements' references and before the scene
 reference (whose phrase says it is the last image) when the model's `max_input_images` leaves a slot, and the prompt
@@ -177,7 +177,9 @@ blocks every clip it draws whose blocking is `missing` before drawing, and compl
 `settings.blocking.enabled` is on. `shot.board` and the keyframe step of `shot.generate` read the blocking.
 
 `settings.blocking = { enabled: boolean, layoutImage: boolean }`: off in the schema, so projects from before the desk
-keep their prompts byte-identical (R3) and their frames current; new projects are created with it on.
+keep their prompts byte-identical (R3) and their frames current. New projects were created with it on until October
+30, 2026, and are created with it off since: the AI blocking's cameras disagreed with the shot plans, and the frames
+followed neither ([the desk on request](first-pass.md#the-desk-on-request)). A person turns it on for a project.
 
 ## The desk
 

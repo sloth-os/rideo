@@ -14,10 +14,8 @@ import {
   docPath,
   type Element,
   isTerminalJob,
-  type ModelLimits,
   mergeSceneReviews,
   type ProjectDocs,
-  type ProjectSettings,
   type ReviewStage,
   type ReviewState,
   type ReviewTargets,
@@ -34,50 +32,24 @@ import {
   StageReviewSchema,
   type StoryboardSceneReviewInput,
   screenplayReviewSubject,
-  shotRangeFor,
   storyboardClips,
   storyboardReviewSubject,
   type VideoModelFacts,
+  videoFacts,
   voicePhrase,
 } from '@rideo/shared';
 import { invalid } from '../../errors';
 import { throwIfAborted } from '../../util/abort';
+import { eachLimit } from '../../util/limit';
 import type { JobContext } from '../queue';
 import { cameraView, ensureBlocking } from './blocking';
 import { commitAs, docsFor, type HandlerDeps } from './common';
 import { drawBoards } from './storyboard';
 
-/** What the video model does well and badly, told to the reviewers (docs/design/ai-review.md#how-a-review-runs). */
-export const VIDEO_MODEL_FACTS = {
-  strengths: [
-    'one or two characters in a shot, three at most',
-    'clear, simple actions with visible cause and effect',
-    'natural light, weather and landscapes',
-    'medium shots and close-ups that hold one framing',
-    "lines spoken in the shot, in each character's voice",
-  ],
-  weaknesses: [
-    'crowds and background people',
-    'on-screen text, signs and labels',
-    'fine hand work: holding small objects, tying, buckling, operating machines',
-    'mechanical handling: boarding a lift, putting on equipment',
-    'quick repeated motion',
-    'a character who appears in a shot from nowhere',
-    'one take longer than ten seconds: it drifts and cuts itself (scenes are split into shorter shots)',
-    'inserts that must hold a tight framing: the camera widens',
-  ],
-};
-
-/** What the reviewer knows of the video model: the shots the planner will make for it, and what it renders badly. */
-export function videoFacts(
-  limits: ModelLimits | null,
-  settings: Pick<ProjectSettings, 'generation' | 'dialogue'>,
-): VideoModelFacts {
-  const { min, max } = shotRangeFor(settings, limits);
-  return { shotSeconds: { min, max }, ...VIDEO_MODEL_FACTS };
-}
-
 const byIndex = <T extends { index: number }>(a: T, b: T) => a.index - b.index;
+
+/** Storyboard scene reviews in flight at once (docs/design/first-pass.md#efficiency). */
+const SCENE_REVIEW_CONCURRENCY = 3;
 
 /** The screenplay as the reviewer and the reviser read it (scenes numbered from 1 in order). */
 export function screenplayReviewInput(docs: ProjectDocs, video: VideoModelFacts): ScreenplayReviewInput {
@@ -538,10 +510,11 @@ async function reviewScreenplayRounds(deps: HandlerDeps, ctx: JobContext) {
         subject,
         round,
         threshold: settings.threshold,
+        minDimension: settings.minDimension,
         history,
         error: undefined,
         ...withCarried(
-          assembleStageReview('screenplay', out, targets, settings.threshold, round),
+          assembleStageReview('screenplay', out, targets, settings.threshold, round, settings.minDimension),
           docs.aiReviews.screenplay,
           round,
         ),
@@ -699,30 +672,35 @@ async function reviewStoryboardRounds(deps: HandlerDeps, ctx: JobContext) {
     const ordered = [...(docs.screenplay?.scenes ?? [])].sort(byIndex);
     const numberOf = (sceneId: string) => ordered.findIndex((s) => s.id === sceneId) + 1;
     const subject = storyboardReviewSubject(docs);
-    const parts: { number: number; durationSec: number; out: StageReviewOutput }[] = [];
     const targets: ReviewTargets = { scenes: new Map(), clips: new Map() };
-    for (const [k, clip] of clips.entries()) {
-      throwIfAborted(ctx.signal);
-      ctx.progress(
-        k,
-        clips.length,
-        `reviewing the storyboard of scene ${k + 1}/${clips.length} (round ${round})`,
-      );
-      const scene = ordered.find((s) => s.id === clip.sceneId)!;
-      const number = numberOf(scene.id);
-      targets.scenes.set(number, scene.id);
-      const { out, durationSec, target } = await reviewSceneFrames(
-        deps,
-        ctx,
-        docs,
-        clip,
-        scene,
-        number,
-        video,
-      );
-      targets.clips!.set(number, target);
-      parts.push({ number, durationSec, out });
-    }
+    // One call per scene, the scenes at once (docs/design/first-pass.md#efficiency); the parts keep the scenes' order
+    const answers: ({ number: number; durationSec: number; out: StageReviewOutput } | undefined)[] =
+      new Array(clips.length);
+    let reviewed = 0;
+    ctx.progress(0, clips.length, `reviewing the storyboard of ${clips.length} scene(s) (round ${round})`);
+    await eachLimit(
+      clips.map((clip, k) => ({ clip, k })),
+      SCENE_REVIEW_CONCURRENCY,
+      async ({ clip, k }) => {
+        throwIfAborted(ctx.signal);
+        const scene = ordered.find((s) => s.id === clip.sceneId)!;
+        const number = numberOf(scene.id);
+        targets.scenes.set(number, scene.id);
+        const { out, durationSec, target } = await reviewSceneFrames(
+          deps,
+          ctx,
+          docs,
+          clip,
+          scene,
+          number,
+          video,
+        );
+        targets.clips!.set(number, target);
+        answers[k] = { number, durationSec, out };
+        ctx.progress(++reviewed, clips.length, `reviewed the storyboard of scene ${number} (round ${round})`);
+      },
+    );
+    const parts = answers.filter((a) => a !== undefined);
     const review = await writeReview(
       deps,
       ctx,
@@ -734,10 +712,18 @@ async function reviewStoryboardRounds(deps: HandlerDeps, ctx: JobContext) {
         subject,
         round,
         threshold: settings.threshold,
+        minDimension: settings.minDimension,
         history,
         error: undefined,
         ...withCarried(
-          assembleStageReview('storyboard', mergeSceneReviews(parts), targets, settings.threshold, round),
+          assembleStageReview(
+            'storyboard',
+            mergeSceneReviews(parts),
+            targets,
+            settings.threshold,
+            round,
+            settings.minDimension,
+          ),
           docs.aiReviews.storyboard,
           round,
         ),

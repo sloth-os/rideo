@@ -9,10 +9,14 @@ export type ElementKind = z.infer<typeof ElementKindSchema>;
 export const ElementReferenceViewSchema = z.enum(['establishing', 'angle', 'detail', 'custom']);
 export type ElementReferenceView = z.infer<typeof ElementReferenceViewSchema>;
 
-/** Views generated per kind, in order (the first approved one is the image input of the next). */
+/**
+ * Views generated per kind, in order (the first approved one is the image input of the next). One each: the shots use
+ * one reference per place or prop (`ELEMENT_VIEW_PRIORITY`), and a second view they never use could only disagree
+ * with the first (docs/design/first-pass.md#references-drawn-from-a-whole-figure); `angle` is drawn on request.
+ */
 export const ELEMENT_VIEWS: Record<ElementKind, ElementReferenceView[]> = {
-  location: ['establishing', 'angle'],
-  prop: ['detail', 'angle'],
+  location: ['establishing'],
+  prop: ['detail'],
   style: ['custom'],
 };
 

@@ -2,6 +2,7 @@ import {
   appendScenes,
   approvedElementReferences,
   approvedReferences,
+  CHARACTER_VIEWS,
   type Character,
   type Consent,
   compileElementReferenceRequest,
@@ -11,6 +12,7 @@ import {
   type Element,
   type ElementReferenceView,
   identityFromLlm,
+  type MediaRef,
   newId,
   nextUnwrittenBeats,
   type Project,
@@ -22,6 +24,7 @@ import {
   screenplayFromLlm,
   shotRangeFor,
   slugify,
+  videoFacts,
 } from '@rideo/shared';
 import type { LabelledImage } from '../../ai/tasks';
 import { AppError, notFound } from '../../errors';
@@ -32,7 +35,8 @@ import { commitAs, docsFor, gatewayOptions, type HandlerDeps } from './common';
 
 /**
  * Prompt version 2 of the writing tasks (docs/design/continuity.md#storytelling): the dialogue level and the longest
- * line a shot of the video model can speak.
+ * line a shot of the video model can speak; what the video model films well and badly, and whether only the cast may
+ * appear, as the screenplay's reviewer is told (docs/design/first-pass.md#one-rubric-for-the-maker-and-the-reviewer).
  */
 async function writingDirection(deps: HandlerDeps, settings: ProjectSettings) {
   if (promptVersionOf(settings) < 2) return { version: 1 as const, direction: {} };
@@ -41,7 +45,11 @@ async function writingDirection(deps: HandlerDeps, settings: ProjectSettings) {
   const maxShot = shotRangeFor(settings, limits).max;
   return {
     version: 2 as const,
-    direction: dialogueDirection(settings.dialogue?.level ?? 'any', maxShot),
+    direction: {
+      ...dialogueDirection(settings.dialogue?.level ?? 'any', maxShot),
+      video: videoFacts(limits, settings),
+      castOnly: settings.consistency.castOnly === true,
+    },
   };
 }
 
@@ -254,16 +262,13 @@ export async function screenplayExtend(deps: HandlerDeps, ctx: JobContext) {
 
 export async function characterRefs(deps: HandlerDeps, ctx: JobContext) {
   const { characterId } = ctx.job.params as { characterId: string };
-  const views = (ctx.job.params.views as ReferenceView[] | undefined) ?? [
-    'front',
-    'three_quarter',
-    'profile',
-    'full_body',
-  ];
+  const views = (ctx.job.params.views as ReferenceView[] | undefined) ?? CHARACTER_VIEWS;
   // A redraw the cast review asked for: what it must fix, and the references it replaces once its views are drawn
   const { direction, replaces = [] } = ctx.job.params as { direction?: string; replaces?: string[] };
   const projectId = ctx.job.projectId;
   let done = 0;
+  // The views this job drew, sent with each next view beside the anchor (docs/design/first-pass.md#references-drawn-from-a-whole-figure)
+  const drawn: MediaRef[] = [];
   for (const view of views) {
     throwIfAborted(ctx.signal);
     const docs = await docsFor(deps, ctx);
@@ -273,10 +278,16 @@ export async function characterRefs(deps: HandlerDeps, ctx: JobContext) {
       throw new AppError('character_locked', `${c.name} was locked while references were generating`);
     const anchor = approvedReferences(c)[0] ?? c.references[0];
     const baseImageUri = anchor ? await deps.media.pngDataUri(projectId, anchor.media, 1024) : undefined;
+    const baseImageUris = await Promise.all(
+      drawn
+        .filter((m) => m.hash !== anchor?.media.hash)
+        .map((m) => deps.media.pngDataUri(projectId, m, 1024)),
+    );
     const req = compileReferenceRequest(c, view, {
       screenplay: docs.screenplay,
       settings: docs.project.settings,
       baseImageUri,
+      baseImageUris,
       model: docs.project.settings.models.image,
       direction,
     });
@@ -287,6 +298,7 @@ export async function characterRefs(deps: HandlerDeps, ctx: JobContext) {
       name: `${slugify(c.name)}-${view}`,
       signal: ctx.signal,
     });
+    drawn.push(media);
     await commitAs(
       deps,
       ctx,
