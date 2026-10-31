@@ -96,7 +96,9 @@ The writer also gets the rules the reviewer's dimensions imply and that it used 
 The shot planner also plans for what the video model does with a frame: **one mover at a time** (in a shot with two
 or more characters one moves across the ground and the others stay where they stand: both pandas walking drew ghost
 heads), **props at rest** on the ground or in a hand (a bucket balanced on a fence rail floated), and **one clear
-motion** that starts at once and ends within the shot (a brush raised at the end of a dolly-out never was).
+motion** that starts at once and ends within the shot (a brush raised at the end of a dolly-out never was), with
+its first frame already in the motion (a walk drawn standing never started). The camera still moves where it tells the
+scene: fp10's pilot planned every shot locked off and its review called it "five static tableaux".
 
 The shot planner fixes the scene's **geography** before its shots (where each landmark stands, where the sun is, which
 way the wind blows) and says in every shot which way the camera looks, what is behind the characters on which side,
