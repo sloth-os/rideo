@@ -68,6 +68,7 @@ describe('makers aim at what their reviewers score', () => {
   it("reads a frame beside the scene's opening frame for the place and the look only", () => {
     const reconcile = SYSTEM_PROMPTS['frame.reconcile']!;
     expect(reconcile).toContain('Compare only the place and the look of things');
+    expect(reconcile).toContain('a landmark that moved, changed or is new to the place');
     expect(reconcile).toContain("a prop's state or place follow the shot, never the opening frame");
     // A landmark or the wind on the other side than the shot says is a reason to draw the frame again
     expect(reconcile).toContain('a landmark on the other side of the frame than the shot puts it');

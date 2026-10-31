@@ -276,7 +276,8 @@ stand, the look of every prop (shape, size, colour, material), the ground, the w
 (`SCENE_REFERENCE_PHRASE_V3`); who is in frame, where each one stands, what each holds and every prop's state and
 place follow the shot, never the opening frame, because the story moves on between them. And the staging check reads
 a frame beside that opening frame (`frame.reconcile` with `opening`), comparing only the place and the look of
-things: a landmark that moved or changed, a prop drawn with another shape, size, colour or material, another light is
+things: a landmark that moved, changed or is new to the place (fp18's closing wide added a fence post its opening
+wide does not have), a prop drawn with another shape, size, colour or material, another light is
 a conflict, and a frame drawn again is told what to correct, as for the frame's own shot.
 
 The first version (fp15) called the opening frame "the same moment" and kept every prop's state "unless this shot
