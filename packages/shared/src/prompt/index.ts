@@ -44,11 +44,12 @@ export const PHYSICS_LINE =
 export const SCENE_REFERENCE_PHRASE =
   'The last image is the scene reference: match its place, light, weather and colours, not its composition or people.';
 /**
- * Version 3: the scene's opening frame is the same place at the same moment (docs/design/first-pass.md#frames-that-agree-with-each-other):
- * its landmarks, props and light are kept, not only its colours.
+ * Version 3: the scene's opening frame is the same place earlier in the scene
+ * (docs/design/first-pass.md#frames-that-agree-with-each-other): its landmarks, the look of its props and its light are
+ * kept; who is there, where, holding what, and every prop's state follow the shot.
  */
 export const SCENE_REFERENCE_PHRASE_V3 =
-  "The last image is this scene's opening frame, the same place at the same moment: keep its landmarks where they stand, every prop with the same look, colour, material and state unless this shot changes it, the ground, the weather, the light and the time of day exactly as in it; this shot's framing, camera and who stands where follow the text above.";
+  "The last image is this scene's opening frame, the same place earlier in the scene: keep its landmarks where they stand, the look of every prop (its shape, size, colour and material), the ground, the weather, the light and the time of day as in it. Who is in frame, where each one stands, what each holds and every prop's state and place follow the text above, not this image.";
 /** The camera view of a blocked shot, sent as a reference image (docs/design/director-desk.md). */
 export const BLOCKING_IMAGE_PHRASE =
   'Keep the camera angle, the framing and where each figure stands and faces from the blocking; draw the real characters and place, never the mannequins.';

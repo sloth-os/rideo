@@ -267,12 +267,19 @@ The carrot bucket was galvanized metal, orange plastic and wicker in one scene; 
 the lake rose into a wall behind a close-up. The scene's opening frame went to every later frame of the scene as its
 last reference image, but its phrase asked only to "match its place, light, weather and colours, not its composition".
 
-With prompt version 3 its phrase says what it is, the same place at the same moment: keep its landmarks where they
-stand, every prop with the same look, colour, material and state unless the shot changes it, the ground, the weather
-and the light (`SCENE_REFERENCE_PHRASE_V3`); the framing, the camera and who stands where follow the shot. And the
-staging check reads a frame beside that opening frame (`frame.reconcile` with `opening`): a landmark that moved or
-changed, a prop with another look or state, another light is a conflict, and a frame drawn again is told what to
-correct, as for the frame's own shot.
+With prompt version 3 its phrase says what it is, the same place earlier in the scene: keep its landmarks where they
+stand, the look of every prop (shape, size, colour, material), the ground, the weather and the light
+(`SCENE_REFERENCE_PHRASE_V3`); who is in frame, where each one stands, what each holds and every prop's state and
+place follow the shot, never the opening frame, because the story moves on between them. And the staging check reads
+a frame beside that opening frame (`frame.reconcile` with `opening`), comparing only the place and the look of
+things: a landmark that moved or changed, a prop drawn with another shape, size, colour or material, another light is
+a conflict, and a frame drawn again is told what to correct, as for the frame's own shot.
+
+The first version (fp15) called the opening frame "the same moment" and kept every prop's state "unless this shot
+changes it": the image model and the check then held later shots to the opening frame's states and people (a single
+of Rosie flagged because "the opening frame shows Sammy"; a kite the plan had put down drawn overhead again because
+it was overhead in the opening frame), the frames drifted from their shots and the kite storyboard scored 6.6
+(continuity 4.5) against 7.6 the run before.
 
 ## The video reads its first frame
 

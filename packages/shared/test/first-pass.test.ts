@@ -368,7 +368,9 @@ describe('frames that agree with each other (docs/design/first-pass.md#frames-th
         'keyframe',
       );
     expect(at(3)).toContain(SCENE_REFERENCE_PHRASE_V3);
-    expect(at(3)).toContain('every prop with the same look, colour, material and state');
+    expect(at(3)).toContain('the look of every prop (its shape, size, colour and material)');
+    // The story moves on: who is there and every prop's state follow the shot, not the opening frame
+    expect(at(3)).toContain("every prop's state and place follow the text above, not this image");
     expect(at(2)).toContain(SCENE_REFERENCE_PHRASE);
     expect(at(2)).not.toContain(SCENE_REFERENCE_PHRASE_V3);
   });

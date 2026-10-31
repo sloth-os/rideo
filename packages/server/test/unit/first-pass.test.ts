@@ -59,6 +59,19 @@ describe('makers aim at what their reviewers score', () => {
     expect(SYSTEM_PROMPTS['reference.check']).toContain('nothing added');
   });
 
+  it("reads a frame beside the scene's opening frame for the place and the look only", () => {
+    const reconcile = SYSTEM_PROMPTS['frame.reconcile']!;
+    expect(reconcile).toContain('Compare only the place and the look of things');
+    expect(reconcile).toContain("a prop's state or place follow the shot, never the opening frame");
+  });
+
+  it('reads a screenplay draft for the video model without a rubric or a score', () => {
+    const check = SYSTEM_PROMPTS['screenplay.check']!;
+    expect(check).toMatch(/^rideo-task: screenplay\.check/);
+    expect(check).toContain('never drop a moment the brief asks for');
+    expect(check).not.toContain('Score');
+  });
+
   it('leaves version 1 prompts as they were', () => {
     expect(SYSTEM_PROMPTS['screenplay.generate']).not.toContain('reviews it on these dimensions');
     expect(SYSTEM_PROMPTS['clip.plan']).not.toContain('reviews it on these dimensions');
