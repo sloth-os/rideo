@@ -64,6 +64,8 @@ describe('makers aim at what their reviewers score', () => {
     );
     // A repeated event the brief asks for is shown more than once (fp17, fp20: "only one failed run")
     expect(SYSTEM_PROMPTS_V2['screenplay.generate']).toContain('A repeated event the brief asks for');
+    expect(SYSTEM_PROMPTS_V2['screenplay.generate']).toContain('goes wrong in a new way');
+    expect(SYSTEM_PROMPTS_V2['screenplay.generate']).toContain('Every object a scene uses is in "props"');
     // Actions keep to the wind they state (fp21: a tail trailing against it, a walker pushed back by a tailwind)
     expect(SYSTEM_PROMPTS_V2['screenplay.generate']).toContain(
       'Every action keeps to the forces the continuity states',
