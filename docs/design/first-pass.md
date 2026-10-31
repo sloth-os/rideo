@@ -211,6 +211,13 @@ subject (a character's identity and outfit, a place's or prop's description) and
 again with another seed, within `consistency.maxAttempts`, while it does not match: the first that matches is kept,
 else the one with the fewest issues (`rideo_reference_checks_total{kind, outcome}`). As with frames, it is part of
 drawing a reference: the cast the review sees is the first one presented.
+
+As with frames ([a redraw is an edit](#a-redraw-is-an-edit)), a view that does not match is corrected by an edit of
+itself: the view first, then up to two of the views drawn before it, and "Edit the first image: keep everything in it
+exactly as it is … and change only this: <fix>" (`compileReferenceEditRequest`, `REFERENCE_EDIT_PHRASE`). A new seed
+redrew the whole figure and brought new differences with each fix: the riding cast's consistency stayed at 7.6–8.1 on
+its ponies' blazes and the helmets' brims (fp16–fp20). The edit is checked like any view and the best view is kept
+(`rideo_reference_edits_total{kind}`).
 - **Places and props** are drawn once (`establishing` for a place, `detail` for a prop): the shots use one reference
   per place or prop, and a second view the shots never use could only disagree with the first. `angle` stays
   available on request.

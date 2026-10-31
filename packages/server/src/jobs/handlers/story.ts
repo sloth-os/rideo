@@ -8,6 +8,7 @@ import {
   type Character,
   type Consent,
   compileElementReferenceRequest,
+  compileReferenceEditRequest,
   compileReferenceRequest,
   dialogueDirection,
   docPath,
@@ -23,6 +24,7 @@ import {
   type Project,
   type ProjectSettings,
   promptVersionOf,
+  REFERENCE_EDIT_MAX_EARLIER,
   type ReferenceCheckInput,
   type ReferenceCheckOutput,
   type ReferenceView,
@@ -450,19 +452,32 @@ async function drawReference(
     : [];
   let best: { media: MediaRef; issues: number } | null = null;
   let correction: string | undefined;
+  // The view the last check found wrong, which the next attempt edits
+  // (docs/design/first-pass.md#references-that-match-their-subject)
+  let toEdit: { media: MediaRef; fix: string } | null = null;
+  const kind = opts.check.subject.kind === 'character' ? 'character' : 'element';
   for (let attempt = 0; attempt < attempts; attempt++) {
     throwIfAborted(ctx.signal);
-    const task = await deps.gateway.generateImage(
-      opts.request(attempt, correction),
-      gatewayOptions(ctx, 'image', opts.step, attempt),
-    );
+    const request = toEdit
+      ? compileReferenceEditRequest(opts.request(attempt), {
+          viewUri: await deps.media.dataUri(projectId, toEdit.media),
+          fix: toEdit.fix,
+          earlierUris: await Promise.all(
+            opts.earlier
+              .slice(0, REFERENCE_EDIT_MAX_EARLIER)
+              .map((m) => deps.media.pngDataUri(projectId, m, 1024)),
+          ),
+        })
+      : opts.request(attempt, correction);
+    if (toEdit) deps.metrics.referenceEdits.inc({ kind });
+    toEdit = null;
+    const task = await deps.gateway.generateImage(request, gatewayOptions(ctx, 'image', opts.step, attempt));
     const media = await deps.media.importUri(projectId, task.outputs![0]!.uri, {
       kind: 'refs',
       name: attempt ? `${opts.name}-a${attempt + 1}` : opts.name,
       signal: ctx.signal,
     });
     if (!checked) return media;
-    const kind = opts.check.subject.kind === 'character' ? 'character' : 'element';
     let out: ReferenceCheckOutput;
     try {
       out = await deps.llm.checkReference(
@@ -485,6 +500,7 @@ async function drawReference(
     );
     if (!best || out.issues.length < best.issues) best = { media, issues: out.issues.length };
     correction = out.fix.trim() || out.issues.join('; ') || undefined;
+    if (out.fix.trim()) toEdit = { media, fix: out.fix.trim() };
   }
   return best!.media;
 }
