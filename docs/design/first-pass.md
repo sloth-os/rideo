@@ -251,7 +251,9 @@ With prompt version 3 a frame that passes the identity and quality checks is rea
 (`frame.reconcile`, below) and is drawn again, within `consistency.maxAttempts`, while the reading says `redraw`: it
 contradicts what the shot needs (who is in it, where each stands and faces, what each holds, someone or something
 missing or shown twice, a framing a size off, a landmark on the other side of the frame than the shot puts it, the
-wind or the sun from the other side, the gesture the shot turns on missing or aimed elsewhere). Details (the clouds, a texture) are listed as conflicts without a redraw. The
+wind or the sun from the other side, the gesture the shot turns on missing or aimed elsewhere, a piece of an outfit
+missing, any letters or words: fp19's riding storyboard had a critical "PONY SCHOOL" sign and a Rosie without her
+trousers and boots in two frames). Details (the clouds, a texture) are listed as conflicts without a redraw. The
 sides came last: the planner writes into every shot what is behind the characters on which side and which way the
 wind blows, and the reviews still found a close-up with the lake on the wrong side and scarves and tails blowing
 against the scene's wind in nearly every storyboard (fp14, fp15). The first frame that needs no redraw is kept, else the one with the fewest conflicts; its reading is kept on
@@ -391,6 +393,7 @@ cell is one run's first round; the scores of the same build and brief differ by 
 | fp15: the opening frame kept as "the same moment" | riding 7.9; kite 7.4 | riding 8.9 (consistency 7.9); kite **9.0, every dimension 8 or more** | riding 6.9; kite 6.6 (continuity 5 and 4.5: later frames held to the opening frame's states and people) |
 | fp16: the screenplay read for the video model (removed since); the opening frame for the place only | riding 7.0; kite 6.8 | riding 8.7 (consistency 7.6); kite **8.9, every dimension 8 or more** | riding 6.5; kite 7.3; kite pilot scene 6.3 (temporal and physics 5: the kite launched a scene early), first takes 6.0 |
 | fp17: wrong-side landmarks and wind redrawn, nobody looks into the lens | riding 7.1; kite 7.4 | riding 8.9 (consistency 7.9); kite **9.0, every dimension 8 or more** | riding 6.7 (a frame lost to an empty image, fixed since); kite **7.4, one major issue** (storytelling and coverage 8, character 9) |
+| fp19: the take's camera said first, a gesture aimed elsewhere redrawn | riding 7.6; kite **8.4** (story, character, dialogue, visual and brief 9; continuity and feasibility 7) | riding 9.0 (consistency 7.9); kite **9.1, every dimension 8 or more** | riding 6.9 (a "PONY SCHOOL" sign, trousers lost); kite **7.9** (character 9, storytelling and pacing 8.5, coverage and feasibility 8; composition 7.5, continuity 5.5: the wind on fur and the kite's tail); kite pilot scene 6.8 (dialogue and sound 10; two takes still pulled back), first takes 6.3 |
 | fp18: a beat's pose in its first frame, the take told where it ends | kite 7.6 (brief 9) | kite **8.9, every dimension 8 or more** | kite **7.6** (composition, character, coverage, feasibility and pacing 8; continuity 7; storytelling 6: Rosie points uphill, not at the lake); kite pilot scene **7.3** (storytelling, character and physics 8; continuity 5, temporal 6), first takes 5.8 (the camera drifting) |
 
 - **Screenplay.** A brief without built-in conflicts passes 8 overall on its first round (kite 8.3, 8.5, 8.0, 8.1; 7.6 twice),
@@ -417,10 +420,10 @@ Every run since fp4, first round only (one build and brief move by up to a point
 
 | Stage | Kite brief | Riding brief | Runs with every dimension at 8 |
 |---|---|---|---|
-| Screenplay | 7.7 (6.8–8.5, 15 runs) | 7.3 (6.4–7.9, 13) | none: feasibility stays under 8 |
-| Cast | 8.8 (8.4–9.1, 15) | 8.7 (8.5–8.9, 11) | kite 9 of 15, riding 2 of 11 |
-| Storyboard | 7.2 (6.6–7.6, 14) | 6.8 (5.6–7.2, 9) | none (fp18: five of seven at 8) |
-| Pilot scene (video) | 6.6 (6.0–7.3, 4) | 5.9 (1) | none (fp18: five of ten at 8) |
+| Screenplay | 7.7 (6.8–8.5, 17 runs) | 7.3 (6.4–7.9, 14) | none: feasibility stays under 8 |
+| Cast | 8.8 (8.4–9.1, 16) | 8.8 (8.5–9.0, 12) | kite 10 of 16, riding 2 of 12 |
+| Storyboard | 7.2 (6.6–7.9, 15) | 6.8 (5.6–7.2, 10) | none (fp19: 7.9, five of seven at 8) |
+| Pilot scene (video) | 6.6 (6.0–7.3, 5) | 5.9 (1) | none (fp18: five of ten at 8) |
 
 What keeps each under 8, what was tried, and what to try next:
 
@@ -444,7 +447,8 @@ What keeps each under 8, what was tried, and what to try next:
 5. **The video** (scene 6.0–7.3, first takes 5.8–7.4): the video model adds its own failures (a kite that morphs and
    pops into the sky, a close-up drifting wide, a head turning to the camera). Tried: the first frame read before
    the take, nobody looks into the lens, the take told where it ends (fp18: 7.3, storytelling and physics 8), the
-   take's camera said first with what it must not do (after fp18). *Next:* a take whose watch finds its planned end
+   take's camera said first with what it must not do (fp19: two of six takes still pulled back, so the drift is the
+model's; a take watch that finds it could have the take made again). *Next:* a take whose watch finds its planned end
    state missed is made again before the scene review, and props the model handles badly (a kite in the wind) kept
    still or out of the moving part of a shot.
 6. **Close framings drawn whole** (fixed, fp7) and **the AI blocking** (off for new projects; its cameras must follow

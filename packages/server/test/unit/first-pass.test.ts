@@ -78,6 +78,8 @@ describe('makers aim at what their reviewers score', () => {
     expect(reconcile).toContain('a landmark on the other side of the frame than the shot puts it');
     expect(reconcile).toContain('blowing against the wind the shot gives');
     expect(reconcile).toContain('the gesture the shot turns on missing or aimed elsewhere');
+    expect(reconcile).toContain('a character missing a piece of their outfit');
+    expect(reconcile).toContain('any letters or words in the picture');
   });
 
   it('leaves version 1 prompts as they were', () => {
