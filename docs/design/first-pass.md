@@ -258,7 +258,7 @@ A redraw is told what to correct. A new seed alone drew the same mistake again: 
 whatever the shot says, so after three attempts the kept frame still showed it flying. The reading answers `fix`, what
 the next drawing must show, said positively ("the red kite lies flat on the grass at Sammy's feet, its yellow tail to
 frame right"), and the next attempt's prompt says `Make sure: …`. The reference check does the same for a view drawn
-again ("the backpack's top is closed").
+again ("the backpack's top is closed"). A long correction is cut at 1500 characters rather than lost.
 
 ## Frames that agree with each other
 

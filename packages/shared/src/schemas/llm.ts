@@ -359,7 +359,7 @@ export const FrameReconcileOutputSchema = z.object({
   /** The frame contradicts what the shot needs (who, where, facing, what is held, a duplicate, the framing). */
   redraw: z.boolean().catch(false).default(false),
   /** With `redraw`: what the next drawing must show, said positively, for the frame drawn again. */
-  fix: z.string().max(800).catch('').default(''),
+  fix: clipped(1500),
 });
 export type FrameReconcileOutput = z.infer<typeof FrameReconcileOutputSchema>;
 
@@ -384,7 +384,7 @@ export const ReferenceCheckOutputSchema = z.object({
   matches: z.boolean().catch(true).default(true),
   issues: lenientArray(str(400), 20),
   /** When it does not match: what the next drawing must show, said positively. */
-  fix: z.string().max(800).catch('').default(''),
+  fix: clipped(1500),
 });
 export type ReferenceCheckOutput = z.infer<typeof ReferenceCheckOutputSchema>;
 

@@ -13,6 +13,7 @@ import {
   DEFAULT_REVIEW_SETTINGS,
   ELEMENT_VIEWS,
   FIRST_PASS_BAR,
+  FrameReconcileOutputSchema,
   headCropped,
   MAX_ANCHOR_IMAGES,
   makerRubric,
@@ -20,6 +21,7 @@ import {
   REFERENCE_VIEW_PRIORITY,
   REVIEW_DIMENSIONS,
   REVIEW_RUBRICS,
+  ReferenceCheckOutputSchema,
   ReviewSettingsSchema,
   referenceLabels,
   rubricLines,
@@ -461,6 +463,15 @@ describe('the screenplay read for the video model (docs/design/first-pass.md#the
     expect(input.scenes[0]).toMatchObject({ index: 0, beatIndex: 0, characters: ['Rosie', 'Sammy'] });
     expect(input.video.weaknesses).toContain('quick repeated motion');
     expect(screenplayCheckInput({ scenes: draft.scenes }, { ...input, props: [] }).outline).toBeUndefined();
+  });
+});
+
+describe('a correction kept whole (docs/design/first-pass.md#frames-that-follow-their-shot)', () => {
+  it("keeps a check's long correction, cut at its limit rather than lost", () => {
+    const fix = "the red kite lies flat on the grass at Sammy's feet; ".repeat(20);
+    expect(fix.length).toBeGreaterThan(800);
+    expect(FrameReconcileOutputSchema.parse({ redraw: true, fix }).fix).toBe(fix);
+    expect(ReferenceCheckOutputSchema.parse({ matches: false, fix: fix.repeat(2) }).fix).toHaveLength(1500);
   });
 });
 
