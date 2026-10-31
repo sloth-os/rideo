@@ -37,8 +37,8 @@ action a camera can see, short dialogue.
 
 **Continuity state.** Every written scene carries `continuity`: the time of day, the weather, the light (where the
 sun is), what each character wears and carries, and where they are, at the start of the scene. The planner and the
-prompts read it, and the next extension continues from it. It holds up to `SCENE_CONTINUITY_MAX` (4000) characters,
-and a writer's longer text is cut there rather than lost: at 1000, a four-character riding scene that named every
+prompts read it, and the next extension continues from it. It holds up to `SCENE_CONTINUITY_MAX` (4000) characters
+from the writer's answer to the saved scene, and a writer's longer text is cut there rather than lost: at 1000, a four-character riding scene that named every
 piece of clothing and every prop's state ran over, the whole field was dropped, and its review found the scene with
 no continuity at all (fp14).
 

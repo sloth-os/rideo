@@ -15,7 +15,7 @@ import type {
   LlmShot,
   ScreenplayGenerateOutput,
 } from '../schemas/llm';
-import type { OutlineBeat, Scene, Screenplay } from '../schemas/screenplay';
+import { type OutlineBeat, SCENE_CONTINUITY_MAX, type Scene, type Screenplay } from '../schemas/screenplay';
 
 /** Case-insensitive name → character, also matching first names ("Mira" ↔ "Mira Vale"). */
 export function nameIndex(characters: Pick<Character, 'id' | 'name'>[]): (name: string) => string | null {
@@ -174,7 +174,7 @@ export function sceneFromLlm(
     locationId: s.location.trim() ? resolveElement('location', s.location) : null,
     elementIds,
     estDurationSec: Math.min(3600, Math.max(5, s.estDurationSec || 60)),
-    continuity: (s.continuity ?? '').trim().slice(0, 1000),
+    continuity: (s.continuity ?? '').trim().slice(0, SCENE_CONTINUITY_MAX),
   };
 }
 

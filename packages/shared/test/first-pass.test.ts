@@ -34,6 +34,7 @@ import {
   ScreenplayGenerateOutputSchema,
   type ShotContext,
   StageReviewSchema,
+  screenplayFromLlm,
   selectReferences,
   stageVerdict,
   VIDEO_MODEL_FACTS,
@@ -421,7 +422,7 @@ describe('nobody looks into the lens (docs/design/first-pass.md#nobody-looks-int
       );
       return {
         text: (req.input[0] as { text: string }).text,
-        negative: req.parameters.negative_prompt ?? '',
+        negative: req.parameters?.negative_prompt ?? '',
       };
     };
     const avoided = sequence('Sammy faces Rosie.');
@@ -462,5 +463,18 @@ describe("a scene's continuity (docs/design/continuity.md#storytelling)", () => 
     expect(scene(long).continuity).toBe(long);
     expect(scene('x'.repeat(SCENE_CONTINUITY_MAX + 50)).continuity).toHaveLength(SCENE_CONTINUITY_MAX);
     expect(SceneSchema.shape.continuity.safeParse(long).success).toBe(true);
+    // And kept whole when the screenplay is made from the writer's answer
+    const written = ScreenplayGenerateOutputSchema.parse({
+      title: 'The Riders',
+      characters: [{ name: 'Sammy' }],
+      outline: [{ title: 'Arrival', summary: 'They arrive.', estDurationSec: 20 }],
+      scenes: [{ beatIndex: 0, heading: 'EXT. PADDOCK - DAY', continuity: long }],
+    });
+    const { screenplay } = screenplayFromLlm(written, {
+      targetDurationSec: 20,
+      language: 'en',
+      existing: [],
+    });
+    expect(screenplay.scenes[0]!.continuity).toBe(long.trim());
   });
 });
