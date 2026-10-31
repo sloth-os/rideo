@@ -91,7 +91,11 @@ The writer also gets the rules the reviewer's dimensions imply and that it used 
 - **No shots.** The writer never writes shots or camera words ("a wide view shows"): the reviewer marks them down, and
   the shot planner frames the scene.
 - **A last pass.** Before it answers, the writer goes through its screenplay moment by moment against
-  `video.weaknesses` and gives every moment that touches one its safest form that keeps the brief.
+  `video.weaknesses` and gives every moment that touches one its safest form that keeps the brief. A repeated event
+  the brief asks for is never cut to one attempt: it is shown two or three times, each attempt its own slow moment.
+  The last pass first said "one attempt shown instead of several", and the kite brief's "the kite falls every time he
+  runs" became one failed run with a major brief issue on half the runs (fp17, fp20: "only one failed run does not
+  show 'every time'"); the runs that showed several scored brief 9.
 
 The shot planner also plans for what the video model does with a frame: **one mover at a time** (in a shot with two
 or more characters one moves across the ground and the others stay where they stand: both pandas walking drew ghost
