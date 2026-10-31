@@ -233,8 +233,11 @@ the review, and on to the video.
 With prompt version 3 a frame that passes the identity and quality checks is read against its shot as it is drawn
 (`frame.reconcile`, below) and is drawn again, within `consistency.maxAttempts`, while the reading says `redraw`: it
 contradicts what the shot needs (who is in it, where each stands and faces, what each holds, someone or something
-missing or shown twice, a framing a size off). Details (the clouds, a texture) are listed as conflicts without a
-redraw. The first frame that needs no redraw is kept, else the one with the fewest conflicts; its reading is kept on
+missing or shown twice, a framing a size off, a landmark on the other side of the frame than the shot puts it, the
+wind or the sun from the other side). Details (the clouds, a texture) are listed as conflicts without a redraw. The
+sides came last: the planner writes into every shot what is behind the characters on which side and which way the
+wind blows, and the reviews still found a close-up with the lake on the wrong side and scarves and tails blowing
+against the scene's wind in nearly every storyboard (fp14, fp15). The first frame that needs no redraw is kept, else the one with the fewest conflicts; its reading is kept on
 the board (`board.seen`) and the video pass uses it without reading the frame again. Storyboard frames and a take's
 own keyframes are checked; a person's own prompt is not (`rideo_frame_reconciles_total{outcome: redraw}` counts the
 frames drawn again). This is part of drawing a frame, like the identity check that also draws a frame again: the
