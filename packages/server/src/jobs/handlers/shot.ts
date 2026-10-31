@@ -266,7 +266,7 @@ export async function shotGenerate(deps: HandlerDeps, ctx: JobContext) {
           variation,
           quality: keyframeQuality,
           // Drawn again while it contradicts its shot (docs/design/first-pass.md#frames-that-follow-their-shot)
-          staging: stagingFor(shotCtx, 'keyframe'),
+          staging: stagingFor(shotCtx, 'keyframe', withScene ? sceneRefMedia : null),
           progress: (attempt) =>
             ctx.progress(
               0.05 + (0.3 * attempt) / maxAttempts,

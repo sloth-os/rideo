@@ -150,7 +150,7 @@ export async function generateKeyframe(
      * The staging check (docs/design/first-pass.md#frames-that-follow-their-shot): a frame that passes is read against
      * its shot (`frame.reconcile`), and drawn again while it contradicts what the shot needs.
      */
-    staging?: { shot: FrameReconcileInput['shot']; source: 'storyboard' | 'keyframe' };
+    staging?: { shot: FrameReconcileInput['shot']; source: 'storyboard' | 'keyframe'; opening?: MediaRef };
     progress: (attempt: number) => void;
   },
 ): Promise<KeyframeResult> {
@@ -268,9 +268,11 @@ export function reconcileShot(shot: Shot, characters: Character[]): FrameReconci
 export function stagingFor(
   shotCtx: ShotContext,
   source: 'storyboard' | 'keyframe',
-): { shot: FrameReconcileInput['shot']; source: 'storyboard' | 'keyframe' } | undefined {
+  /** The scene's opening frame, which this frame must agree with (docs/design/first-pass.md#frames-that-agree-with-each-other). */
+  opening?: MediaRef | null,
+): { shot: FrameReconcileInput['shot']; source: 'storyboard' | 'keyframe'; opening?: MediaRef } | undefined {
   if (promptVersionOf(shotCtx.settings) < 3 || shotCtx.shot.promptOverride?.trim()) return undefined;
-  return { shot: reconcileShot(shotCtx.shot, shotCtx.characters), source };
+  return { shot: reconcileShot(shotCtx.shot, shotCtx.characters), source, ...(opening ? { opening } : {}) };
 }
 
 /** What a frame shows against its shot (`frame.reconcile`): null when the model cannot say. */
@@ -283,10 +285,15 @@ async function readFrame(
   keyframe: MediaRef,
 ): Promise<FrameReading | null> {
   try {
+    const opening =
+      staging.opening && staging.opening.hash !== keyframe.hash
+        ? await deps.media.pngBuffer(ctx.job.projectId, staging.opening, 768)
+        : undefined;
     const out = await deps.llm.reconcileFrame(
-      { shot: staging.shot },
+      { shot: staging.shot, ...(opening ? { opening: true } : {}) },
       await deps.media.pngBuffer(ctx.job.projectId, keyframe, 1024),
       ctx.signal,
+      opening,
     );
     deps.metrics.frameReconciles.inc({
       source: staging.source,

@@ -331,6 +331,8 @@ export type ThumbnailPickOutput = z.infer<typeof ThumbnailPickOutputSchema>;
  * shows it, so the video model's prompt never contradicts the picture it starts from.
  */
 export interface FrameReconcileInput {
+  /** The scene's opening frame follows the frame ("Opening frame:"): the place, its props and light must agree with it. */
+  opening?: boolean;
   shot: {
     description: string;
     action: string;
@@ -612,6 +614,8 @@ export const REFERENCE_CHECK_EARLIER_LABEL = 'Earlier view';
 export const REFERENCE_CHECK_NEW_LABEL = 'New view:';
 /** The first frame a take starts from, as `frame.reconcile` sees it (docs/design/first-pass.md#the-video-reads-its-first-frame). */
 export const RECONCILE_FRAME_LABEL = 'First frame:';
+/** The scene's opening frame beside a frame read against its shot. */
+export const RECONCILE_OPENING_LABEL = 'Opening frame:';
 
 export const INPUT_PREFIX = 'INPUT:\n';
 export const JUDGE_SCENE_REFERENCE_LABEL = 'Scene reference frame';

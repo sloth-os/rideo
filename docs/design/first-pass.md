@@ -234,6 +234,20 @@ the next drawing must show, said positively ("the red kite lies flat on the gras
 frame right"), and the next attempt's prompt says `Make sure: …`. The reference check does the same for a view drawn
 again ("the backpack's top is closed").
 
+## Frames that agree with each other
+
+Each frame followed its own shot and the storyboards' continuity stayed at 5–6: the frames disagreed with each other.
+The carrot bucket was galvanized metal, orange plastic and wicker in one scene; the kite's tail was yellow, then red;
+the lake rose into a wall behind a close-up. The scene's opening frame went to every later frame of the scene as its
+last reference image, but its phrase asked only to "match its place, light, weather and colours, not its composition".
+
+With prompt version 3 its phrase says what it is, the same place at the same moment: keep its landmarks where they
+stand, every prop with the same look, colour, material and state unless the shot changes it, the ground, the weather
+and the light (`SCENE_REFERENCE_PHRASE_V3`); the framing, the camera and who stands where follow the shot. And the
+staging check reads a frame beside that opening frame (`frame.reconcile` with `opening`): a landmark that moved or
+changed, a prop with another look or state, another light is a conflict, and a frame drawn again is told what to
+correct, as for the frame's own shot.
+
 ## The video reads its first frame
 
 A take starts from a picture, its approved storyboard frame or its keyframe, and its prompt restated the shot as

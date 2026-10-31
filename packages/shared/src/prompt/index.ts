@@ -43,6 +43,12 @@ export const PHYSICS_LINE =
   'Physics: real weight, gravity and momentum; bodies, feet and equipment keep contact with the ground; objects keep their shape and number.';
 export const SCENE_REFERENCE_PHRASE =
   'The last image is the scene reference: match its place, light, weather and colours, not its composition or people.';
+/**
+ * Version 3: the scene's opening frame is the same place at the same moment (docs/design/first-pass.md#frames-that-agree-with-each-other):
+ * its landmarks, props and light are kept, not only its colours.
+ */
+export const SCENE_REFERENCE_PHRASE_V3 =
+  "The last image is this scene's opening frame, the same place at the same moment: keep its landmarks where they stand, every prop with the same look, colour, material and state unless this shot changes it, the ground, the weather, the light and the time of day exactly as in it; this shot's framing, camera and who stands where follow the text above.";
 /** The camera view of a blocked shot, sent as a reference image (docs/design/director-desk.md). */
 export const BLOCKING_IMAGE_PHRASE =
   'Keep the camera angle, the framing and where each figure stands and faces from the blocking; draw the real characters and place, never the mannequins.';
@@ -503,7 +509,8 @@ function compileShotPromptV2(
       lines.push(
         `Reference images, in order: ${ctx.referenceLabels.map((l, i) => `${i + 1} ${l}`).join('; ')}.`,
       );
-    if (ctx.sceneReference) lines.push(SCENE_REFERENCE_PHRASE);
+    if (ctx.sceneReference)
+      lines.push(promptVersionOf(settings) >= 3 ? SCENE_REFERENCE_PHRASE_V3 : SCENE_REFERENCE_PHRASE);
     if (ctx.blockingImage) lines.push(BLOCKING_IMAGE_PHRASE);
     lines.push(`Avoid: ${EXCLUSIONS_STILL}.`);
     return lines.join(' ');

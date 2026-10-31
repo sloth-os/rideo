@@ -22,6 +22,8 @@ import {
   ReviewSettingsSchema,
   referenceLabels,
   rubricLines,
+  SCENE_REFERENCE_PHRASE,
+  SCENE_REFERENCE_PHRASE_V3,
   type ShotContext,
   StageReviewSchema,
   selectReferences,
@@ -343,5 +345,25 @@ describe('a redraw told what to correct (docs/design/first-pass.md#frames-that-f
       correction: "the backpack's top is closed",
     });
     expect((ref.input[0] as { text: string }).text).toContain("Make sure: the backpack's top is closed.");
+  });
+});
+
+describe('frames that agree with each other (docs/design/first-pass.md#frames-that-agree-with-each-other)', () => {
+  it("tells a version 3 frame to keep the opening frame's landmarks, props and light", () => {
+    const at = (promptVersion: 2 | 3) =>
+      compileShotPrompt(
+        {
+          shot: f.shot(),
+          characters: [],
+          screenplay: null,
+          settings: ProjectSettingsSchema.parse({ generation: { promptVersion } }),
+          sceneReference: true,
+        },
+        'keyframe',
+      );
+    expect(at(3)).toContain(SCENE_REFERENCE_PHRASE_V3);
+    expect(at(3)).toContain('every prop with the same look, colour, material and state');
+    expect(at(2)).toContain(SCENE_REFERENCE_PHRASE);
+    expect(at(2)).not.toContain(SCENE_REFERENCE_PHRASE_V3);
   });
 });

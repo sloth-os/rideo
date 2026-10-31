@@ -199,8 +199,10 @@ describe('frames that follow their shot (docs/design/first-pass.md#frames-that-f
       keyframeHash: shots[0]!.board!.keyframe.hash,
       conflicts: ['the gate is open, not closed'],
     });
-    // The frame that agrees with its shot is drawn once, and its reading kept for the video
+    // The frame that agrees with its shot is drawn once, and its reading kept for the video; it was read beside the
+    // scene's opening frame, which it must agree with
     expect(shots[1]!.board!.gatewayTaskIds).toHaveLength(1);
+    expect(stack.gw.counters.lastInputs['frame.reconcile']).toMatchObject({ opening: true });
     expect(shots[1]!.board!.seen).toMatchObject({ conflicts: [] });
     const metrics = await (await fetch(`${stack.url}/metrics`)).text();
     const redraws = metrics

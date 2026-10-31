@@ -44,6 +44,7 @@ import {
   MediaDescribeOutputSchema,
   makerRubric,
   RECONCILE_FRAME_LABEL,
+  RECONCILE_OPENING_LABEL,
   REFERENCE_CHECK_EARLIER_LABEL,
   REFERENCE_CHECK_NEW_LABEL,
   REVIEW_RUBRICS,
@@ -351,6 +352,7 @@ Write the text the video model should get:
 - "description": the first frame as drawn: who is where (frame left, centre or right; near or far), which way each one faces, their pose, what each holds and in which hand, where the props and landmarks are, the light. Use the plan's words wherever the frame agrees with them; describe only what you see.
 - "action": the planned action, unchanged where the frame allows it; where it does not, the same story beat starting from what the frame shows (who moves, from where, to where), as one simple continuous motion.
 - "conflicts": each difference between the plan and the frame, short ("the gate is open, not closed"); empty when they agree.
+- When "opening" is true, the scene's opening frame follows ("Opening frame:"): this frame shows the same place at the same moment from its own camera. A landmark that moved or changed (a tree on the other side of the lake, a barn with another roof), a prop with another look, colour, material or state than there (a metal bucket that was wicker, a red tail that was yellow), or another light or time of day is a conflict too, and a reason to redraw.
 - "redraw": true when the frame contradicts what the shot needs: who is in it, where each one stands and which way they face, what each holds, a prop's state or place (a kite flying that should be held, a bucket on the ground that should be in a paw), a person or prop missing or shown twice, or a framing a size off (a close-up drawn as a whole figure); false when only details differ (the clouds, a texture, a small object).
 - "fix": when "redraw" is true, what the next drawing must show instead, said positively and concretely, one clause per conflict ("the red kite lies flat on the grass at Sammy's feet, its yellow tail on the grass to frame right; Rosie stands frame left"); otherwise "".
 Return only JSON: {"description":"...","action":"...","conflicts":[],"redraw":false,"fix":""}`,
@@ -1256,9 +1258,13 @@ export class LlmTasks {
     input: FrameReconcileInput,
     frame: Buffer,
     signal?: AbortSignal,
+    opening?: Buffer,
   ): Promise<FrameReconcileOutput> {
     return this.run('frame.reconcile', FrameReconcileOutputSchema, input, {
-      images: [{ label: RECONCILE_FRAME_LABEL, data: frame, mime: 'image/png' }],
+      images: [
+        { label: RECONCILE_FRAME_LABEL, data: frame, mime: 'image/png' },
+        ...(opening ? [{ label: RECONCILE_OPENING_LABEL, data: opening, mime: 'image/png' }] : []),
+      ],
       temperature: 0,
       signal,
     });

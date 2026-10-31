@@ -134,7 +134,7 @@ export async function shotBoard(deps: HandlerDeps, ctx: JobContext) {
       name,
       step: 'board',
       // Drawn again while it contradicts its shot (docs/design/first-pass.md#frames-that-follow-their-shot)
-      staging: stagingFor(shotCtx, 'storyboard'),
+      staging: stagingFor(shotCtx, 'storyboard', withScene ? sceneFrame : null),
       progress: (attempt) =>
         ctx.progress(0.1 + (0.6 * attempt) / maxAttempts, 1, `frame attempt ${attempt + 1}/${maxAttempts}`),
     });
