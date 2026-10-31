@@ -164,7 +164,7 @@ export const ProjectSettingsSchema = z.object({
   disclosure: DisclosureSettingsSchema.default(DEFAULT_DISCLOSURE),
   /**
    * The brief adapted for the video model before it is written (docs/design/first-pass.md#the-brief-adapted-for-the-video-model):
-   * off in the schema, on for new projects.
+   * off unless a person turns it on (measured: it helps a brief that asks for what the model renders badly, not others).
    */
   brief: z.object({ adapt: z.boolean().default(false) }).default({ adapt: false }),
   autopilot: z.boolean().default(false),

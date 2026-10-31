@@ -23,8 +23,9 @@ describe('the first pass', () => {
     });
     // New projects hold every score of every review at 8 (docs/design/first-pass.md#the-gate-at-8)
     expect(created.settings.review).toMatchObject({ threshold: 8, sceneThreshold: 8, minDimension: 8 });
-    // Every framing spelled out, and the director's desk on request (docs/design/first-pass.md)
+    // Every framing spelled out, the director's desk and the brief's adaptation on request (docs/design/first-pass.md)
     expect(created.settings.generation.promptVersion).toBe(3);
+    expect(created.settings.brief.adapt).toBe(false);
     expect(created.settings.blocking).toMatchObject({ enabled: false, layoutImage: false });
     const pid = created.id;
 
@@ -247,7 +248,12 @@ describe('the brief adapted for the video model (docs/design/first-pass.md#the-b
       kind: 'story',
       title: 'The Riders',
       brief: { prompt: brief },
-      settings: { targetDurationSec: 30, pilotDurationSec: 10, resolution: { width: 320, height: 180 } },
+      settings: {
+        targetDurationSec: 30,
+        pilotDurationSec: 10,
+        resolution: { width: 320, height: 180 },
+        brief: { adapt: true },
+      },
     });
     expect(created.settings.brief.adapt).toBe(true);
     const pid = created.id;

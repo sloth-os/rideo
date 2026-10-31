@@ -93,8 +93,6 @@ export class ProjectService extends Service {
       // until its AI blocking follows the shot plan (docs/design/first-pass.md#the-desk-on-request).
       blocking: { enabled: false, layoutImage: false },
       storyboard: { enabled: true, scenes: 3, production: true },
-      // The brief adapted for the video model before it is written (docs/design/first-pass.md#the-brief-adapted-for-the-video-model)
-      brief: { adapt: true },
       review: {
         cast: true,
         cut: true,

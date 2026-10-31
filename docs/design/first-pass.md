@@ -124,7 +124,7 @@ brief's kite caught in a tree and its shared sandwich, contact and food in paws.
 feasibility down for each (5–7 on every measured screenplay), and marks the brief down when the writer leaves one out.
 No draft can satisfy both, because the conflict is in the brief.
 
-So with `settings.brief.adapt` (on for new projects, off in the schema) `screenplay.generate` first reads the brief as a
+So with `settings.brief.adapt` (off unless a person turns it on) `screenplay.generate` first reads the brief as a
 producer would (`brief.adapt`, the text model, with `VIDEO_MODEL_FACTS`): it names each moment the video model renders
 badly, why, and the filmable form that keeps what it means for the story (far off and small, one slow motion, the
 contact out of sight, the before and after of a cut, one attempt shown), and rewrites the brief with those forms. The
@@ -132,8 +132,16 @@ project keeps it beside the brief as written (`brief.adapted`: the moments, the 
 adapts); the writer, the extensions, the shot planner and the screenplay reviewer work from it (`workingBrief`), so
 the reviewer judges the screenplay against the brief as adapted. A brief edited since is adapted again before the next
 screenplay; a call that fails writes from the brief as it is (`rideo_brief_adaptations_total{outcome}`). The Story view
-lists what was adapted ("Asked: riding side by side · four characters in one moment. Filmed as: they ride side by side
-along the far fence, small against the hills"), and the project settings turn it off.
+lists what was adapted ("Asked: riding side by side · four characters in one moment. Filmed as: …"), and the project
+settings turn it on or off.
+
+Measured (fp11, fp12): a first version wrote the forms in camera words ("from far behind", "cut to") and over-prescribed
+them; the reviewer then held the screenplay to those words (a critical brief issue: "the pole crossing is shown instead
+of implied") and the riding screenplay fell to 6.4. Written in story words, changing as few of the brief's words as it
+can, it lifted the riding screenplay's brief to 9 (7.8 and 7.4 overall, from about 7.3 without) and left feasibility at
+6: the adapted brief is still a riding story, and the reviewer marks riding, trotting and handling a brush risky
+whatever form they take. On the kite brief it scored 7.9 and 7.4, against about 8.0 without. So it stays off unless a
+person turns it on for a brief that asks for what the model renders badly.
 
 ## Lines fit their shots
 
