@@ -683,7 +683,8 @@ export interface SoundCheckInput {
   shot: { description: string; action: string; place: string; durationSec: number };
   /** The shot's lines, each with its speaker's voice; empty for a shot without lines. */
   lines: { character: string; voice: string; line: string }[];
-  cast: { name: string; voice: string }[];
+  /** Every character's voice, so a line in an off-frame character's voice is named; `inFrame`: in the shot. */
+  cast: { name: string; voice: string; inFrame: boolean }[];
   /** Takes may carry music (otherwise the film's score comes later). */
   music: boolean;
 }

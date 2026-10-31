@@ -347,14 +347,19 @@ export function soundVerdict(input: {
   };
 }
 
-/** A take's sound passes when every line is heard and it carries no music the film rejects. */
+/**
+ * A take's sound passes when every line is heard, none in another character's voice
+ * (docs/design/first-pass.md#a-line-in-the-wrong-voice-is-made-again), and it carries no music the film rejects.
+ */
 export function soundPasses(
   sound: Pick<SoundReport, 'lines' | 'music'>,
   rules: { musicAllowed: boolean; rejectMusic?: boolean },
 ): boolean {
   return (
-    sound.lines.every((l) => l.heard >= LINE_HEARD_RATIO) &&
-    !(sound.music && !rules.musicAllowed && rules.rejectMusic === true)
+    sound.lines.every(
+      (l) =>
+        l.heard >= LINE_HEARD_RATIO && (!l.speaker || l.speaker.toLowerCase() === l.character.toLowerCase()),
+    ) && !(sound.music && !rules.musicAllowed && rules.rejectMusic === true)
   );
 }
 

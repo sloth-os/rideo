@@ -613,6 +613,41 @@ describe('the sound check (docs/design/continuity.md#quality-checks-in-the-gate)
     expect(LINE_HEARD_RATIO).toBe(0.6);
   });
 
+  it('fails a take whose every line is heard but one in another character’s voice (docs/design/first-pass.md#a-line-in-the-wrong-voice-is-made-again)', () => {
+    const both = (speaker: string) =>
+      soundVerdict({
+        lines,
+        heard: heard({
+          speech: [
+            { text: 'Look at the mountain, Sammy!', speaker: 'Rosie', lipSync: 0.9 },
+            { text: 'It’s so big and white.', speaker, lipSync: 0.9 },
+          ],
+          score: 0.9,
+        }),
+        musicAllowed: false,
+        cast: ['Rosie', 'Sammy'],
+      });
+    expect(both('Sammy').passed).toBe(true);
+    const wrong = both('Rosie');
+    expect(wrong.passed).toBe(false);
+    expect(wrong.issues).toEqual(['Sammy’s line is spoken in Rosie’s voice']);
+    // A voice the listener cannot name holds nothing back
+    expect(
+      soundVerdict({
+        lines,
+        heard: heard({
+          speech: [
+            { text: 'Look at the mountain, Sammy!', speaker: null, lipSync: 0.9 },
+            { text: 'It’s so big and white.', speaker: null, lipSync: 0.9 },
+          ],
+          score: 0.9,
+        }),
+        musicAllowed: false,
+        cast: ['Rosie', 'Sammy'],
+      }).passed,
+    ).toBe(true);
+  });
+
   it('fails a take with music when the film rejects music, and only then', () => {
     const music = { lines: [], heard: heard({ music: true }), cast: [] };
     expect(soundVerdict({ ...music, musicAllowed: false }).passed).toBe(true);

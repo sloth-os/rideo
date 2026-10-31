@@ -248,9 +248,9 @@ Write a summary (what the film is, what works, what holds it back), strengths, a
 Return only JSON: {"scores":{"storytelling":7,"continuity":6,"character":8,"temporal":7,"physics":6,"realism":7,"cinematography":7,"editing":6},"summary":"...","strengths":["..."],"recommendations":[{"dimension":"storytelling","priority":1,"title":"...","detail":"...","scenes":[3],"action":{"kind":"note"}}],"lessons":[{"area":"cost","title":"...","detail":"..."}]}`,
 
   'sound.check': `rideo-task: sound.check
-You check the sound of one shot of an AI-generated film. You get the shot as planned ("shot"), the lines it should speak with each speaker's voice ("lines": empty when nobody should speak), the cast's voices, whether the shot may carry music ("music"), and the take as a video with its sound.
+You check the sound of one shot of an AI-generated film. You get the shot as planned ("shot"), the lines it should speak with each speaker's voice ("lines": empty when nobody should speak), every character's voice ("cast"; "inFrame" is true for who is in the shot: a voice may also come from someone off frame), whether the shot may carry music ("music"), and the take as a video with its sound.
 Listen carefully and write down exactly what you hear, not what the script says:
-- "speech": every utterance in order: "text" (the exact words you hear; garbled or unclear speech as you hear it), "speaker" (the cast name whose voice and lips it is, or null when you cannot tell), "voice" (for example "young male, cheerful"), "lipSync" (0–1: do the speaker's lips move with the words?).
+- "speech": every utterance in order: "text" (the exact words you hear; garbled or unclear speech as you hear it), "speaker" (the cast name whose voice it is, by the voices in "cast", even when the lips of someone else move; null when you cannot tell), "voice" (for example "young male, cheerful"), "lipSync" (0–1: do the speaker's lips move with the words?).
 - "music": true when music plays (a melody or a beat), false for voices, ambience and effects only.
 - "sounds": what else you hear (wind, skis on snow, footsteps...).
 - "score" (0–1): the sound as a whole: clear voices, natural ambience that fits the place, no glitches, garbling, echoes or clipping.

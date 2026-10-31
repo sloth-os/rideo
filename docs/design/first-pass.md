@@ -350,6 +350,14 @@ with action 0.45â€“0.5, while the takes without those issues scored camera 0.85â
 its watch with `camera` below 0.7 (`WATCH_MIN_CAMERA`) or `action` below 0.6 (`WATCH_MIN_ACTION`), and is made again
 within `consistency.maxAttempts` like any failed check; the best attempt is kept when none passes.
 
+### A line in the wrong voice is made again
+
+fp25's pilot passed a take of Sammy's close-up in which his line was spoken in Rosie's voice, and the scene review
+marked it critical (dialogue 5). The take's sound check knew only the voices of who was in frame, so it could not name
+Rosie's, and a line in another character's voice was advisory. The listener now gets every character's voice, marked
+`inFrame`, and a line heard in another character's voice fails the take, which is made again
+([quality checks](continuity.md#quality-checks-in-the-gate)).
+
 ### The take holds its camera
 
 The take watch's most frequent issue after fp16 was the camera: a static medium shot that pulls back, a dolly-in that

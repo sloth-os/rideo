@@ -115,7 +115,12 @@ export async function checkSound(input: {
           durationSec: input.shot.durationSec,
         },
         lines: lines.map((l) => ({ ...l, voice: voiceOf(l.character) })),
-        cast: cast.map((c) => ({ name: c.name, voice: voicePhrase(c) })),
+        // Every character's voice: a line may come out in the voice of someone off frame
+        cast: Object.values(input.characters).map((c) => ({
+          name: c.name,
+          voice: voicePhrase(c),
+          inFrame: cast.some((x) => x.id === c.id),
+        })),
         music: input.musicAllowed,
       },
       video,

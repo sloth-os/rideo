@@ -92,6 +92,17 @@ describe('continuity-aware generation (prompt version 2)', () => {
       sound: { lines: [{ heard: 1 }], music: false, unexpectedSpeech: false, score: 0.85 },
     });
     expect(first.consistency.quality?.sound?.transcript).toContain(spoken.dialogue[0]!.line);
+    // The listener knows every character's voice, in frame or not (docs/design/first-pass.md#a-line-in-the-wrong-voice-is-made-again)
+    const listened = stack.gw.counters.lastInputs['sound.check'] as {
+      cast: { name: string; inFrame: boolean }[];
+    };
+    const docs = (await stack.api<any>('GET', `/projects/${pid}/state`)).docs;
+    expect(listened.cast.map((c) => c.name).sort()).toEqual(
+      Object.values<{ name: string }>(docs.characters)
+        .map((c) => c.name)
+        .sort(),
+    );
+    expect(listened.cast.every((c) => typeof c.inFrame === 'boolean')).toBe(true);
     for (const s of generated.shots.filter((x) => !x.dialogue.length))
       expect(s.takes.find((t) => t.id === s.selectedTakeId)!.consistency.quality?.sound).toMatchObject({
         lines: [],
