@@ -341,6 +341,15 @@ reads as where this one motion arrives rather than as another shot (Wan played a
 shot as a second shot): "Action: Sammy turns toward the lone tree while the wind lifts the tail, ending with: Sammy faces
 the tree, the kite still held against his chest." A person's own prompt is left as it is.
 
+### A take that misses its camera or its end is made again
+
+The take watch scores the camera (0–1) and whether the planned action happens and reaches its end state, and the
+verdict used the action only below 0.4 and never the camera. Every take the measured scenes found pulling back or
+drifting had passed with camera 0.3–0.6 (fp16, fp18, fp19, fp23), and every take that "never reaches its end state"
+with action 0.45–0.5, while the takes without those issues scored camera 0.85–1 and action 0.7–1. So a take now fails
+its watch with `camera` below 0.7 (`WATCH_MIN_CAMERA`) or `action` below 0.6 (`WATCH_MIN_ACTION`), and is made again
+within `consistency.maxAttempts` like any failed check; the best attempt is kept when none passes.
+
 ### The take holds its camera
 
 The take watch's most frequent issue after fp16 was the camera: a static medium shot that pulls back, a dolly-in that

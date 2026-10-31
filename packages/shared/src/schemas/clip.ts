@@ -68,8 +68,9 @@ export const TakeWatchSchema = z.object({
   overall: z.number().min(0).max(10),
   motion: z.number().min(0).max(1),
   physics: z.number().min(0).max(1),
-  action: z.number().min(0).max(1),
-  camera: z.number().min(0).max(1),
+  /** Null when the watcher gave none (docs/design/ai-review.md#takes-watched-whole). */
+  action: z.number().min(0).max(1).nullable(),
+  camera: z.number().min(0).max(1).nullable(),
   identity: z.number().min(0).max(1),
   /** People seen who should not be there. */
   others: z.array(z.string().max(200)).max(10).default([]),

@@ -28,7 +28,7 @@ import * as f from '../src/testing/fixtures';
 const at = '2026-10-29T00:00:00.000Z';
 
 describe('takes watched whole (docs/design/ai-review.md#takes-watched-whole)', () => {
-  it('fails an attempt on a critical issue, low motion, physics or identity, or an action that does not happen', () => {
+  it('fails an attempt on a critical issue, low motion, physics or identity, an action that does not happen, or a camera that does not follow the plan', () => {
     const ok = TakeWatchOutputSchema.parse({
       overall: 8,
       motion: 0.9,
@@ -49,6 +49,15 @@ describe('takes watched whole (docs/design/ai-review.md#takes-watched-whole)', (
     ]);
     expect(watchVerdict({ ...ok, action: 0.2 }, 0.5).passed).toBe(false);
     expect(watchVerdict({ ...ok, identity: 0.3 }, 0.5).passed).toBe(false);
+    // Measured (docs/design/first-pass.md#a-take-that-misses-its-camera-or-its-end-is-made-again): a take that never
+    // reaches its end state scored action 0.45-0.5, a camera that pulls back 0.3-0.6
+    expect(watchVerdict({ ...ok, action: 0.5 }, 0.5).issues).toEqual([
+      'watched: the planned action does not happen (0.50)',
+    ]);
+    expect(watchVerdict({ ...ok, camera: 0.35 }, 0.5).issues).toEqual([
+      'watched: the camera does not do what the shot plans (0.35)',
+    ]);
+    expect(watchVerdict({ ...ok, action: 0.7, camera: 0.85 }, 0.5).passed).toBe(true);
     // Lenient: a model's strings and missing fields
     expect(TakeWatchOutputSchema.parse({ motion: '0.7' }).motion).toBe(0.7);
   });

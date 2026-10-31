@@ -1222,13 +1222,20 @@ export interface TakeWatchInput {
 }
 
 const unit = z.coerce.number().min(0).max(1).catch(0.5).default(0.5);
+/** A score the verdict holds a take to: null when the watcher gave none, so a missing score never fails a take. */
+const judged = z
+  .preprocess(
+    (v) => (v === null || v === undefined || v === '' ? null : v),
+    z.coerce.number().min(0).max(1).nullable(),
+  )
+  .catch(null);
 /** What the watcher answers about a whole take. */
 export const TakeWatchOutputSchema = z.object({
   overall: z.coerce.number().min(0).max(10).catch(5).default(5),
   motion: unit,
   physics: unit,
-  action: unit,
-  camera: unit,
+  action: judged,
+  camera: judged,
   identity: unit,
   others: lenientArray(z.string().min(1).max(200), 10),
   issues: lenientArray(

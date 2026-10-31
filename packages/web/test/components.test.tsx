@@ -60,6 +60,28 @@ describe('QualityBadge (docs/design/continuity.md#quality-checks-in-the-gate)', 
     expect(screen.getByTestId('quality-badge').textContent).toBe('wrong cast in frame');
     expect(screen.getByTestId('quality-badge').getAttribute('title')).toContain('Sammy is in the frame');
   });
+
+  it('shows a dash for a watch score the watcher did not give (docs/design/ai-review.md#takes-watched-whole)', () => {
+    const take = f.readyShot([f.character()]).takes[0]!;
+    const watch = {
+      model: 'v',
+      via: 'vision' as const,
+      overall: 7,
+      motion: 0.9,
+      physics: 0.85,
+      action: null,
+      camera: 0.35,
+      identity: 0.9,
+      others: [],
+      issues: [],
+      passed: false,
+    };
+    render(
+      <QualityBadge take={{ ...take, consistency: { ...take.consistency, quality: quality({ watch }) } }} />,
+    );
+    const title = screen.getByTestId('quality-badge').getAttribute('title') ?? '';
+    expect(title).toContain('action – · camera 0.35');
+  });
 });
 
 describe('ConsistencyBadge', () => {

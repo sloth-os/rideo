@@ -259,7 +259,9 @@ the listener (`take.watch`), so it adds no time to an attempt:
   overall score from 0 to 10, the people seen who should not be there, and issues with the time in the take, the
   severity and what is seen.
 - **Verdict** (`watchVerdict`, shared): the attempt fails when a critical issue is seen, `motion`, `physics` or
-  `identity` is below `consistency.qualityThreshold`, or `action` is below 0.4; it is retried like a quality failure
+  `identity` is below `consistency.qualityThreshold`, `action` is below 0.6 (`WATCH_MIN_ACTION`) or `camera` below
+  0.7 (`WATCH_MIN_CAMERA`); a score the watcher did not give is `null` and never fails a take (it showed as 0.5
+  before); it is retried like a quality failure
   and never fails a take that passed identity (the best candidate is kept with what failed). The watch is
   `report.quality.watch` and its failure is part of `quality.passed`.
 - **Who watches.** The vision model, given the video; a vision endpoint that refuses video (`400` naming the video

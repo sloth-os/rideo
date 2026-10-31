@@ -4,6 +4,9 @@ import { NO_ELEMENTS, useProject } from '../store/project';
 import { Badge } from './ui';
 
 /** The consistency state of a take (docs/design/character-consistency.md#what-the-user-sees). */
+/** A watch score, or a dash when the watcher gave none. */
+const score = (n: number | null) => (n === null ? '–' : n.toFixed(2));
+
 export function ConsistencyBadge({
   take,
   shot,
@@ -75,7 +78,7 @@ export function QualityBadge({ take }: { take: Take }) {
     q.sound?.lines.length ? `${q.sound.lines.length - unheard}/${q.sound.lines.length} lines heard` : null,
     q.sound?.transcript ? `heard: “${q.sound.transcript}”` : null,
     q.watch
-      ? `watched whole (${q.watch.via}): ${q.watch.overall}/10 · motion ${q.watch.motion.toFixed(2)} · action ${q.watch.action.toFixed(2)} · camera ${q.watch.camera.toFixed(2)} · identity ${q.watch.identity.toFixed(2)}`
+      ? `watched whole (${q.watch.via}): ${q.watch.overall}/10 · motion ${q.watch.motion.toFixed(2)} · action ${score(q.watch.action)} · camera ${score(q.watch.camera)} · identity ${q.watch.identity.toFixed(2)}`
       : null,
   ].filter(Boolean);
   return (
@@ -112,7 +115,7 @@ export function WatchBadge({ take }: { take: Take }) {
       tone={w.passed ? 'success' : 'danger'}
       title={[
         `watched whole by ${w.model || w.via}`,
-        `motion ${w.motion.toFixed(2)}, physics ${w.physics.toFixed(2)}, action ${w.action.toFixed(2)}, camera ${w.camera.toFixed(2)}, identity ${w.identity.toFixed(2)}`,
+        `motion ${w.motion.toFixed(2)}, physics ${w.physics.toFixed(2)}, action ${score(w.action)}, camera ${score(w.camera)}, identity ${w.identity.toFixed(2)}`,
         ...issues,
       ].join('; ')}
       testid="watch-badge"

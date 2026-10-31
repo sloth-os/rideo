@@ -23,8 +23,14 @@ const byIndex = <T extends { index: number }>(a: T, b: T) => a.index - b.index;
 const round1 = (n: number) => Math.round(n * 10) / 10;
 /** A scored dimension below this fails a scene's review whatever its overall score (unless `review.minDimension`). */
 export const SCENE_MIN_DIMENSION = DEFAULT_MIN_DIMENSION;
-/** The planned action must be seen at least this much (0–1) in a take watched whole. */
-export const WATCH_MIN_ACTION = 0.4;
+/**
+ * The planned action must be seen, and reach its end state, at least this much (0–1) in a take watched whole
+ * (docs/design/first-pass.md#a-take-that-misses-its-camera-or-its-end-is-made-again): measured takes that never
+ * reached their end scored 0.45-0.5, takes that did 0.7-1.
+ */
+export const WATCH_MIN_ACTION = 0.6;
+/** The camera must do what the shot plans at least this much (0–1): measured drifting takes 0.3-0.6, others 0.85-1. */
+export const WATCH_MIN_CAMERA = 0.7;
 
 /** The elements a written scene or a planned shot uses (as `elementsInUse`, without importing the workflow). */
 function elementIdsInUse(docs: Pick<ProjectDocs, 'screenplay' | 'clips'>): Set<string> {
@@ -223,8 +229,11 @@ export function watchVerdict(
     issues.push(`watched: motion ${out.motion.toFixed(2)} (morphing or flicker)`);
   if (out.physics < qualityThreshold) issues.push(`watched: physics ${out.physics.toFixed(2)}`);
   if (out.identity < qualityThreshold) issues.push(`watched: identity drifts (${out.identity.toFixed(2)})`);
-  if (out.action < WATCH_MIN_ACTION)
+  // A score the watcher did not give never fails a take
+  if (out.action !== null && out.action < WATCH_MIN_ACTION)
     issues.push(`watched: the planned action does not happen (${out.action.toFixed(2)})`);
+  if (out.camera !== null && out.camera < WATCH_MIN_CAMERA)
+    issues.push(`watched: the camera does not do what the shot plans (${out.camera.toFixed(2)})`);
   return { passed: issues.length === 0, issues };
 }
 
