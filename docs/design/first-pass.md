@@ -299,19 +299,22 @@ cell is one run's first round; the scores of the same build and brief differ by 
 | fp7: prompt version 3 (framings spelled out, close framings from the head and shoulders), desk off | riding 7.6; kite 8.0 | riding 8.5; kite 8.4 | riding 7.0; kite 6.7 (no close framing drawn whole) |
 | fp8: the staging check (frames drawn again while they contradict their shot; 3 attempts) | riding 7.3; kite 8.1 | riding 8.6; kite 8.7 | riding 7.2 (7 of 16 frames drawn again); kite 7.2 (3 of 12) |
 | fp9: references checked as drawn, one scene geography, the writer's last pass | riding 7.1; kite 8.0 | riding 8.7 (likeness 8.5); kite **8.9, every dimension 8 or more** | riding 6.9 (continuity 6); kite 7.0 (character 9) |
+| fp10: one mover at a time, props at rest, forces and food in the screenplay | kite 7.5 | kite **8.9, every dimension 8 or more** | kite 7.3 (composition and coverage 8) |
+| fp11, fp12: the brief adapted (camera words, then story words) | riding 6.4, then 7.8 and 7.4; kite 7.9, then 7.4 | kite **9.1, every dimension 8 or more** | – |
 
 - **Screenplay.** A brief without built-in conflicts passes 8 overall on its first round (kite 8.3, 8.5, 8.0, 8.1; 7.6 twice),
   with every dimension at 8 or 9 except feasibility (7). The riding brief stays at 7.1–8.1: it asks for what the video
   model renders badly (two riders side by side are four characters, a bouncing trot, a slide off a pony), so the
   reviewer marks feasibility 5–6 whatever the writer does with it, and brief 5 when the writer leaves it out.
-- **Cast.** Up from 7.9 to 8.3–8.9: whole figures lifted clarity from 8.3 to about 9.4, and consistency rose from 5.2
-  to 7.5–8.3. The reference check (fp9) lifted likeness from 7.5–7.9 to 8.2–8.5: the kite's cast passed every
-  dimension at 8 (as fp5's had); the riding cast's consistency stayed at 7.5 (the ponies' tack and stirrups). It is
+- **Cast.** Up from 7.9 to 8.3–9.1: whole figures lifted clarity from 8.3 to about 9.4, and consistency rose from 5.2
+  to 7.5–8.6. With the reference check (fp9–fp11) every kite cast passed every dimension at 8 (8.9, 8.9, 9.1); the
+  riding cast's consistency stayed at 7.5 (the ponies' tack and stirrups). It is
   strict and costs images: 44 of its 65 checks found a difference (a cuff trim, a boot's tread, a fleece lining), so
   most views were drawn two or three times and the best was kept.
-- **Video** (fp6, the pilot scene of each brief, every take made once): scene review 5.9 (riding) and 6.0 (kite),
-  against 5.8 for the riding demo's pilot; first takes watched whole 6.4 and 7.3 on average (the riding demo's 6.3).
-  The whole run to the pilot cost $12.74 (riding, 30 s of video) and $8.35 (kite, 20 s).
+- **Video** (the pilot scene, every take made once): 5.8 for the riding demo's pilot; 5.9 (riding) and 6.0 (kite) on
+  fp6; **6.8** on fp10's kite pilot (temporal 7, character 8, dialogue 10, sound 8 now that a heard scene counts them;
+  continuity 5, physics, realism, cinematography and editing 6). First takes watched whole: 6.3 on the riding demo,
+  6.4 and 7.3 on fp6, 7.4 on fp10 (3 of 5 at 8). A run to the pilot cost $8–13.
 - **Storyboard.** Up from about 6.5 (five runs with the desk on) to 6.5–7.3 with the desk off (eight runs, mean 7.0):
   coverage, storytelling, feasibility and pacing reach 7–8; continuity between frames stays at 5. With prompt version
   2 every run drew some close framings whole (fp6: four of nine); with version 3 (fp7) none of seven was, and
@@ -343,8 +346,8 @@ What still keeps a first pass under 8, with what to try next:
 5. **The AI blocking** (blocking 3–5, now off for new projects): its cameras must reproduce each shot's planned screen
    positions and facing before its camera views and lines go to the image model, and it has no riders
    (docs/improvements.md item 55).
-6. **The video** (the pilot's scene review 5.9 and 6.0 on fp6, 5.8 on the riding demo; first takes watched whole 6.4
-   and 7.3 on average, half of them at 8 or more). The first pass of the words and the stills has not reached the
+6. **The video** (the pilot's scene review 5.8 on the riding demo, 5.9 and 6.0 on fp6, 6.8 on fp10; first takes
+   watched whole 6.3 → 7.4). The first pass of the words and the stills has not reached the
    video yet: a frame's mistakes go into its take (a second kite in the sky, a kite's tail blowing against the wind,
    a string running up into an empty sky), and the video model adds its own (ghost heads in a two-character walk,
    a stumble with no weight). Reading the first frame (fp6) found those contradictions on most frames and kept the
