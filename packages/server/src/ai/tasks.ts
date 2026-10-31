@@ -342,7 +342,8 @@ Return only JSON: {"moments":[{"asked":"what the brief asks","why":"why the vide
 You check one reference image of a film's cast before it is kept: every frame of the film is drawn from it, so whatever is wrong in it is wrong in every shot. You get the subject (a character with its identity and outfit, or a place, a prop or a style with its description), the view that was drawn, the views of it drawn before ("Earlier view 1:" and on, when "earlier" is above 0) and the new view ("New view:").
 - "matches": true only when the new view shows the subject exactly as described, with nothing added (no extra objects, pockets, buckles, fillings, contents, other characters, animals, scenery or text) and nothing missing or in another colour, shape or state; a character as one whole figure from head to toe on a plain background, with the same face, build, proportions and outfit as the earlier views, every part in the same colour, shape and place (the same helmet, the same boots, closed where they are closed); a place empty of people and animals; a prop alone on its background, once.
 - "issues": each difference, short, in the new view ("a toy peeks out of the backpack", "the boots are open at the toe", "a goat stands on the fence").
-Report only what you see. Return only JSON: {"matches":true,"issues":[]}`,
+- "fix": when it does not match, what the next drawing must show instead, said positively and concretely ("the backpack's top is closed; the boots are closed black boots; the fence has nothing on it"); otherwise "".
+Report only what you see. Return only JSON: {"matches":true,"issues":[],"fix":""}`,
 
   'frame.reconcile': `rideo-task: frame.reconcile
 You are a script supervisor checking the first frame of a shot before an AI video model animates it. You get the shot as planned ("shot": "description" is its first frame, "action" what moves, "endState" its last frame, the camera, who is in it and how they look) and the frame as drawn ("First frame:"). The video model starts from exactly this frame and reads a text: when the text says something the frame does not show (a gate closed that the frame shows open, someone on the left whom the frame shows on the right, a prop in the other paw, someone missing or extra), the model morphs the picture to match the text, which ruins the take.
@@ -350,8 +351,9 @@ Write the text the video model should get:
 - "description": the first frame as drawn: who is where (frame left, centre or right; near or far), which way each one faces, their pose, what each holds and in which hand, where the props and landmarks are, the light. Use the plan's words wherever the frame agrees with them; describe only what you see.
 - "action": the planned action, unchanged where the frame allows it; where it does not, the same story beat starting from what the frame shows (who moves, from where, to where), as one simple continuous motion.
 - "conflicts": each difference between the plan and the frame, short ("the gate is open, not closed"); empty when they agree.
-- "redraw": true when the frame contradicts what the shot needs: who is in it, where each one stands and which way they face, what each holds, a person or prop missing or shown twice, or a framing a size off (a close-up drawn as a whole figure); false when only details differ (the clouds, a texture, a small object).
-Return only JSON: {"description":"...","action":"...","conflicts":[],"redraw":false}`,
+- "redraw": true when the frame contradicts what the shot needs: who is in it, where each one stands and which way they face, what each holds, a prop's state or place (a kite flying that should be held, a bucket on the ground that should be in a paw), a person or prop missing or shown twice, or a framing a size off (a close-up drawn as a whole figure); false when only details differ (the clouds, a texture, a small object).
+- "fix": when "redraw" is true, what the next drawing must show instead, said positively and concretely, one clause per conflict ("the red kite lies flat on the grass at Sammy's feet, its yellow tail on the grass to frame right; Rosie stands frame left"); otherwise "".
+Return only JSON: {"description":"...","action":"...","conflicts":[],"redraw":false,"fix":""}`,
 };
 
 /**

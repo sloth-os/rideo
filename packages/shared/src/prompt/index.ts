@@ -257,6 +257,11 @@ export interface ShotContext {
    * (`frame.reconcile`, docs/design/first-pass.md#the-video-reads-its-first-frame), in place of the planned ones.
    */
   frameSeen?: { description: string; action: string } | null;
+  /**
+   * A keyframe drawn again after its staging check (docs/design/first-pass.md#frames-that-follow-their-shot): what the
+   * last attempt got wrong, said as what the picture must show.
+   */
+  correction?: string | null;
 }
 
 /**
@@ -493,6 +498,7 @@ function compileShotPromptV2(
   if (inFrame) lines.push(inFrame);
   lines.push(...elementLines(ctx.elements ?? []));
   if (mode === 'keyframe') {
+    if (clean(ctx.correction ?? '')) lines.push(`Make sure: ${clean(ctx.correction!)}.`);
     if (ctx.referenceLabels?.length)
       lines.push(
         `Reference images, in order: ${ctx.referenceLabels.map((l, i) => `${i + 1} ${l}`).join('; ')}.`,
@@ -714,10 +720,13 @@ export function compileElementReferenceRequest(
     direction?: string;
     /** A view drawn again after its check (docs/design/first-pass.md#references-that-match-their-subject): another seed. */
     attempt?: number;
+    /** What the check found wrong in the last attempt, said as what the picture must show. */
+    correction?: string;
   },
 ): GatewayImageRequest {
   const style = clean(ctx.screenplay?.style.visual);
   const direction = clean(ctx.direction);
+  const correction = clean(ctx.correction);
   const text = [
     `Element reference image, ${e.kind}: ${ELEMENT_VIEW_PHRASE[e.kind][view] ?? 'reference'}; ${SINGLE_PICTURE}; no text.`,
     `${clean(e.name)}: ${clean(e.description) || clean(e.name)}.`,
@@ -729,6 +738,7 @@ export function compileElementReferenceRequest(
       ? `Visual style: ${style}; the style is the light and the rendering, and every material stays as described (wood looks like wood, metal like metal, hay like straw).`
       : '',
     ctx.baseImageUri ? 'Keep exactly the same design as in the reference image.' : '',
+    correction ? `Make sure: ${correction}.` : '',
   ]
     .filter(Boolean)
     .join(' ');
@@ -987,10 +997,13 @@ export function compileReferenceRequest(
     direction?: string;
     /** A view drawn again after its check (docs/design/first-pass.md#references-that-match-their-subject): another seed. */
     attempt?: number;
+    /** What the check found wrong in the last attempt, said as what the picture must show. */
+    correction?: string;
   },
 ): GatewayImageRequest {
   const style = clean(ctx.screenplay?.style.visual);
   const direction = clean(ctx.direction);
+  const correction = clean(ctx.correction);
   const anchors = anchorUris(ctx);
   const text = [
     `Character reference image, ${VIEW_PHRASE[view]}; ${SINGLE_PICTURE}; neutral light-grey background, even soft studio lighting, sharp focus, no text.`,
@@ -998,6 +1011,7 @@ export function compileReferenceRequest(
     direction ? `Direction: ${direction}.` : '',
     style ? `Visual style: ${style}.` : '',
     anchors.length ? sameCharacter(anchors.length) : '',
+    correction ? `Make sure: ${correction}.` : '',
   ]
     .filter(Boolean)
     .join(' ');

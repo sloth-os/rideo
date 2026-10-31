@@ -189,6 +189,12 @@ describe('frames that follow their shot (docs/design/first-pass.md#frames-that-f
     // Every attempt of the contradicting frame was read and drawn again; the reading of the one kept is its board's
     const attempts = docs.project.settings.consistency.maxAttempts;
     expect(shots[0]!.board!.gatewayTaskIds).toHaveLength(attempts);
+    // A frame drawn again is told what the reading found wrong
+    const prompts = shots[0]!.board!.gatewayTaskIds.map(
+      (id) => (stack.gw.store.requests.get(id) as { input: { text?: string }[] }).input[0]!.text!,
+    );
+    expect(prompts[0]).not.toContain('Make sure:');
+    expect(prompts[1]).toContain('Make sure: the gate stands closed behind them.');
     expect(shots[0]!.board!.seen).toMatchObject({
       keyframeHash: shots[0]!.board!.keyframe.hash,
       conflicts: ['the gate is open, not closed'],
@@ -233,6 +239,13 @@ describe('references that match their subject (docs/design/first-pass.md#referen
       jobs.find((j) => j.kind === 'character.refs' && j.params.characterId === id)!.gatewayTasks.length;
     expect(tasksOf(wrong!.id)).toBe(created.settings.consistency.maxAttempts);
     expect(tasksOf(right!.id)).toBe(1);
+    // A view drawn again is told what the check found wrong
+    const drawn = jobs.find((j) => j.kind === 'character.refs' && j.params.characterId === wrong!.id)!;
+    const texts = drawn.gatewayTasks.map(
+      (t) => (stack.gw.store.requests.get(t.id) as { input: { text?: string }[] }).input[0]!.text!,
+    );
+    expect(texts[0]).not.toContain('Make sure:');
+    expect(texts[1]).toContain("Make sure: the backpack's top is closed.");
     const after = (await stack.api<any>('GET', `/projects/${pid}/state`)).docs;
     // One reference kept per view, whatever was drawn
     expect(after.characters[wrong!.id].references).toHaveLength(1);

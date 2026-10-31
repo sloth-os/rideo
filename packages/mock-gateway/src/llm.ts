@@ -424,6 +424,7 @@ function frameReconcile(input: { shot: { description: string; action: string } }
   if (!/drawn otherwise/i.test(description)) return { description, action, conflicts: [], redraw: false };
   return {
     redraw: true,
+    fix: 'the gate stands closed behind them',
     // The sentence the frame contradicts gives way to what it shows
     description: `As drawn: ${description.replace(/[^.]*drawn otherwise[^.]*\.?/gi, '').trim()} The gate stands open.`,
     action: `${action} Through the open gate.`,
@@ -437,8 +438,8 @@ function frameReconcile(input: { shot: { description: string; action: string } }
  */
 function referenceCheck(input: { subject: { description: string } }) {
   return /drawn wrong/i.test(input.subject.description)
-    ? { matches: false, issues: ['a toy peeks out of the backpack'] }
-    : { matches: true, issues: [] };
+    ? { matches: false, issues: ['a toy peeks out of the backpack'], fix: "the backpack's top is closed" }
+    : { matches: true, issues: [], fix: '' };
 }
 
 /**

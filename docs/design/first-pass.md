@@ -226,6 +226,12 @@ own keyframes are checked; a person's own prompt is not (`rideo_frame_reconciles
 frames drawn again). This is part of drawing a frame, like the identity check that also draws a frame again: the
 storyboard the review sees is the first one presented, and no review round is spent on it.
 
+A redraw is told what to correct. A new seed alone drew the same mistake again: the image model draws a kite flying
+whatever the shot says, so after three attempts the kept frame still showed it flying. The reading answers `fix`, what
+the next drawing must show, said positively ("the red kite lies flat on the grass at Sammy's feet, its yellow tail to
+frame right"), and the next attempt's prompt says `Make sure: …`. The reference check does the same for a view drawn
+again ("the backpack's top is closed").
+
 ## The video reads its first frame
 
 A take starts from a picture, its approved storyboard frame or its keyframe, and its prompt restated the shot as

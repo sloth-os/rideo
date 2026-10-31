@@ -328,3 +328,20 @@ describe('the brief adapted for the video model (docs/design/first-pass.md#the-b
     expect(briefHash(` ${brief} `)).toBe(briefHash(brief));
   });
 });
+
+describe('a redraw told what to correct (docs/design/first-pass.md#frames-that-follow-their-shot)', () => {
+  it('tells a keyframe drawn again, and a reference drawn again, what the last attempt got wrong', () => {
+    const settings = ProjectSettingsSchema.parse({ generation: { promptVersion: 3 } });
+    const ctx: ShotContext = { shot: f.shot(), characters: [], screenplay: null, settings };
+    const fix = 'the red kite lies flat on the grass';
+    expect(compileShotPrompt({ ...ctx, correction: fix }, 'keyframe')).toContain(`Make sure: ${fix}.`);
+    expect(compileShotPrompt({ ...ctx, correction: fix }, 'video')).not.toContain('Make sure:');
+    expect(compileShotPrompt(ctx, 'keyframe')).not.toContain('Make sure:');
+    const ref = compileReferenceRequest(f.character({ name: 'Rosie' }), 'profile', {
+      screenplay: null,
+      settings,
+      correction: "the backpack's top is closed",
+    });
+    expect((ref.input[0] as { text: string }).text).toContain("Make sure: the backpack's top is closed.");
+  });
+});

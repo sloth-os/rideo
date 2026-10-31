@@ -162,11 +162,17 @@ export async function generateKeyframe(
   let staged:
     | (Pick<KeyframeResult, 'keyframe' | 'report' | 'prompt' | 'seed'> & { seen: FrameReading })
     | null = null;
+  // What the last reading found wrong, for the next attempt to show instead
+  let correction: string | null = null;
   for (let attempt = 0; attempt < input.maxAttempts; attempt++) {
     throwIfAborted(ctx.signal);
     input.progress(attempt);
     const req = compileKeyframeRequest(
-      { ...shotCtx, referenceLabels: refs.referenceLabels.slice(0, refs.referenceUris.length) },
+      {
+        ...shotCtx,
+        referenceLabels: refs.referenceLabels.slice(0, refs.referenceUris.length),
+        correction,
+      },
       {
         referenceUris: refs.referenceUris,
         attempt,
@@ -222,6 +228,7 @@ export async function generateKeyframe(
       )
         staged = { keyframe: out.keyframe, report: out.report, prompt: out.prompt, seed: out.seed, seen };
       if (!seen.redraw) break;
+      correction = seen.fix.trim() || seen.conflicts.join('; ') || null;
       ctx.log.info(
         { projectId, attempt, conflicts: seen.conflicts },
         'the frame contradicts its shot; drawing it again',

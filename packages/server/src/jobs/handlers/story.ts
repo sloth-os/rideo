@@ -361,7 +361,7 @@ export async function characterRefs(deps: HandlerDeps, ctx: JobContext) {
     );
     ctx.progress(done, views.length, `${c.name}: ${view.replace('_', ' ')} view`);
     const media = await drawReference(deps, ctx, {
-      request: (attempt) =>
+      request: (attempt, correction) =>
         compileReferenceRequest(c, view, {
           screenplay: docs.screenplay,
           settings: docs.project.settings,
@@ -370,6 +370,7 @@ export async function characterRefs(deps: HandlerDeps, ctx: JobContext) {
           model: docs.project.settings.models.image,
           direction,
           attempt,
+          correction,
         }),
       step: `ref-${view}`,
       name: `${slugify(c.name)}-${view}`,
@@ -428,7 +429,8 @@ async function drawReference(
   deps: HandlerDeps,
   ctx: JobContext,
   opts: {
-    request: (attempt: number) => GatewayImageRequest;
+    /** The request of an attempt; after a failed check, with what it found wrong to correct. */
+    request: (attempt: number, correction?: string) => GatewayImageRequest;
     /** The gateway idempotency step of the view. */
     step: string;
     name: string;
@@ -447,10 +449,11 @@ async function drawReference(
       )
     : [];
   let best: { media: MediaRef; issues: number } | null = null;
+  let correction: string | undefined;
   for (let attempt = 0; attempt < attempts; attempt++) {
     throwIfAborted(ctx.signal);
     const task = await deps.gateway.generateImage(
-      opts.request(attempt),
+      opts.request(attempt, correction),
       gatewayOptions(ctx, 'image', opts.step, attempt),
     );
     const media = await deps.media.importUri(projectId, task.outputs![0]!.uri, {
@@ -481,6 +484,7 @@ async function drawReference(
       'the reference does not match its subject; drawing it again',
     );
     if (!best || out.issues.length < best.issues) best = { media, issues: out.issues.length };
+    correction = out.fix.trim() || out.issues.join('; ') || undefined;
   }
   return best!.media;
 }
@@ -551,7 +555,7 @@ export async function elementRefs(deps: HandlerDeps, ctx: JobContext) {
     const baseImageUri = anchor ? await deps.media.pngDataUri(projectId, anchor.media, 1024) : undefined;
     ctx.progress(done, views.length, `${e.name}: ${view} view`);
     const media = await drawReference(deps, ctx, {
-      request: (attempt) =>
+      request: (attempt, correction) =>
         compileElementReferenceRequest(e, view, {
           screenplay: docs.screenplay,
           settings: docs.project.settings,
@@ -559,6 +563,7 @@ export async function elementRefs(deps: HandlerDeps, ctx: JobContext) {
           model: docs.project.settings.models.image,
           direction,
           attempt,
+          correction,
         }),
       step: `element-ref-${view}`,
       name: `element-${slugify(e.name)}-${view}`,
