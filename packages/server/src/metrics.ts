@@ -273,13 +273,6 @@ export class Metrics {
       'Briefs read for the video model before they are written, by outcome (adapted, unchanged, error)',
     ),
   );
-  /** Screenplay drafts read for the video model (docs/design/first-pass.md#the-screenplay-read-for-the-video-model). */
-  readonly screenplayChecks = this.add(
-    new Counter(
-      'rideo_screenplay_checks_total',
-      'Screenplay drafts read for the video model before they are saved, by task (generate, extend) and outcome (edited, unchanged, error)',
-    ),
-  );
   /** References checked as they are drawn (docs/design/first-pass.md#references-that-match-their-subject). */
   readonly referenceChecks = this.add(
     new Counter(

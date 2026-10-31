@@ -401,41 +401,6 @@ export const BriefAdaptOutputSchema = z.object({
 });
 export type BriefAdaptOutput = z.infer<typeof BriefAdaptOutputSchema>;
 
-/** `screenplay.check` (docs/design/first-pass.md#the-screenplay-read-for-the-video-model). */
-export interface ScreenplayCheckInput {
-  /** The brief the film is written from (`workingBrief`). */
-  brief: string;
-  castOnly: boolean;
-  video: VideoModelFacts;
-  /** The outline's beats; absent when only the scenes an extension wrote are read. */
-  outline?: { index: number; title: string; summary: string }[];
-  scenes: {
-    /** The scene's place in the draft, which an edit names. */
-    index: number;
-    beatIndex?: number;
-    heading: string;
-    characters: string[];
-    props: string[];
-    continuity: string;
-    summary: string;
-    action: string;
-    dialogue: { character: string; line: string }[];
-  }[];
-  props: { name: string; description: string }[];
-}
-
-/** One text the check rewrote: an outline beat's summary, or a scene's summary, action or continuity, in full. */
-export const ScreenplayEditSchema = z.object({
-  target: z.enum(['outline', 'scene']),
-  index: z.coerce.number().int().nonnegative(),
-  field: z.enum(['summary', 'action', 'continuity']),
-  text: z.string().min(1).max(20000),
-  why: str(600),
-});
-export type ScreenplayEdit = z.infer<typeof ScreenplayEditSchema>;
-
-export const ScreenplayCheckOutputSchema = z.object({ edits: lenientArray(ScreenplayEditSchema, 40) });
-export type ScreenplayCheckOutput = z.infer<typeof ScreenplayCheckOutputSchema>;
 
 export const LLM_TASKS = [
   'media.describe',
@@ -465,7 +430,6 @@ export const LLM_TASKS = [
   'frame.reconcile',
   'reference.check',
   'brief.adapt',
-  'screenplay.check',
 ] as const;
 export type LlmTaskId = (typeof LLM_TASKS)[number];
 

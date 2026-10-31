@@ -11,7 +11,6 @@ import {
   JudgeOutputSchema,
   SceneBlockOutputSchema,
   ScorePlanOutputSchema,
-  ScreenplayCheckOutputSchema,
   ScreenplayGenerateOutputSchema,
   ScreenplayReviseOutputSchema,
   SfxPlanOutputSchema,
@@ -329,27 +328,6 @@ describe('proxy LLM formats', () => {
     );
     expect(castOnly.castOnly).toBe(true);
     expect(openai.scenes.length).toBeGreaterThan(0);
-    // The screenplay read for the video model (docs/design/first-pass.md#the-screenplay-read-for-the-video-model)
-    const check = {
-      brief: input.prompt,
-      castOnly: false,
-      video: { strengths: [], weaknesses: [] },
-      scenes: [],
-    };
-    expect(ScreenplayCheckOutputSchema.parse(await chat('screenplay.check', check)).edits).toEqual([]);
-    const bouncing = ScreenplayCheckOutputSchema.parse(
-      await chat('screenplay.check', {
-        ...check,
-        brief: 'Two pandas trot, bouncing up and down.',
-        outline: [{ index: 0, title: 'The trot', summary: 'They trot.' }],
-        scenes: [{ index: 0, heading: 'EXT. PADDOCK - DAY', action: 'They trot.', dialogue: [] }],
-      }),
-    );
-    expect(bouncing.edits.map((e) => [e.target, e.index, e.field])).toEqual([
-      ['outline', 0, 'summary'],
-      ['scene', 0, 'action'],
-      ['scene', 1, 'action'],
-    ]);
     const gem = await post(
       '/proxy/generativelanguage.googleapis.com/v1beta/models/gemini-x:generateContent',
       {

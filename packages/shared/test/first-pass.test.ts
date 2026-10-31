@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import {
-  applyScreenplayEdits,
   briefAdaptation,
   briefHash,
   CHARACTER_VIEWS,
@@ -29,11 +28,9 @@ import {
   SCENE_REFERENCE_PHRASE,
   SCENE_REFERENCE_PHRASE_V3,
   SceneSchema,
-  ScreenplayCheckOutputSchema,
   ScreenplayGenerateOutputSchema,
   type ShotContext,
   StageReviewSchema,
-  screenplayCheckInput,
   selectReferences,
   stageVerdict,
   VIDEO_MODEL_FACTS,
@@ -375,94 +372,6 @@ describe('frames that agree with each other (docs/design/first-pass.md#frames-th
     expect(at(3)).toContain("every prop's state and place follow the text above, not this image");
     expect(at(2)).toContain(SCENE_REFERENCE_PHRASE);
     expect(at(2)).not.toContain(SCENE_REFERENCE_PHRASE_V3);
-  });
-});
-
-describe('the screenplay read for the video model (docs/design/first-pass.md#the-screenplay-read-for-the-video-model)', () => {
-  const draft = ScreenplayGenerateOutputSchema.parse({
-    title: 'The Riders',
-    characters: [{ name: 'Rosie' }, { name: 'Sammy' }],
-    outline: [
-      { title: 'Arrival', summary: 'They arrive.', estDurationSec: 20, purpose: 'setup' },
-      {
-        title: 'The trot',
-        summary: 'They trot, bouncing up and down.',
-        estDurationSec: 20,
-        purpose: 'climax',
-      },
-    ],
-    scenes: [
-      {
-        beatIndex: 0,
-        heading: 'EXT. PADDOCK - DAY',
-        action: 'Rosie opens her backpack and takes out a carrot.',
-        continuity: 'Morning; the backpack is closed on her back.',
-        characters: ['Rosie', 'Sammy'],
-        dialogue: [{ character: 'Rosie', line: 'Look!' }],
-      },
-    ],
-  });
-
-  it('applies what the check rewrote and drops what does not fit the draft', () => {
-    const edits = ScreenplayCheckOutputSchema.parse({
-      edits: [
-        {
-          target: 'outline',
-          index: 1,
-          field: 'summary',
-          text: 'They trot: one big, slow bump and a laugh.',
-          why: 'a bounce',
-        },
-        {
-          target: 'scene',
-          index: 0,
-          field: 'action',
-          text: 'A carrot already lies in the wide bucket.',
-          why: 'hand work',
-        },
-        // Dropped: a scene the draft has not, a field an outline beat has not, no change
-        { target: 'scene', index: 3, field: 'action', text: 'Someone else.', why: '' },
-        { target: 'outline', index: 0, field: 'action', text: 'They arrive slowly.', why: '' },
-        {
-          target: 'scene',
-          index: 0,
-          field: 'continuity',
-          text: 'Morning; the backpack is closed on her back.',
-          why: '',
-        },
-        // Not an edit at all: no text
-        { target: 'scene', index: 0, field: 'summary', text: '', why: '' },
-      ],
-    }).edits;
-    expect(edits).toHaveLength(5);
-    const { draft: checked, applied } = applyScreenplayEdits(draft, edits);
-    expect(applied.map((e) => [e.target, e.index, e.field])).toEqual([
-      ['outline', 1, 'summary'],
-      ['scene', 0, 'action'],
-    ]);
-    expect(checked.outline[1]).toMatchObject({
-      summary: 'They trot: one big, slow bump and a laugh.',
-      purpose: 'climax',
-    });
-    expect(checked.scenes[0]).toMatchObject({
-      action: 'A carrot already lies in the wide bucket.',
-      dialogue: [{ character: 'Rosie', line: 'Look!' }],
-    });
-    // The draft as written is left alone
-    expect(draft.scenes[0]!.action).toBe('Rosie opens her backpack and takes out a carrot.');
-  });
-
-  it('reads the beats and the scenes with their place in the draft', () => {
-    const input = screenplayCheckInput(draft, {
-      brief: 'Two pandas learn to ride.',
-      castOnly: true,
-      video: { shotSeconds: { min: 2, max: 10 }, ...VIDEO_MODEL_FACTS },
-      props: [{ name: 'bucket', description: 'a wide blue bucket' }],
-    });
-    expect(input.outline!.map((b) => b.index)).toEqual([0, 1]);
-    expect(input.scenes[0]).toMatchObject({ index: 0, beatIndex: 0, characters: ['Rosie', 'Sammy'] });
-    expect(input.video.weaknesses).toContain('quick repeated motion');
-    expect(screenplayCheckInput({ scenes: draft.scenes }, { ...input, props: [] }).outline).toBeUndefined();
   });
 });
 
