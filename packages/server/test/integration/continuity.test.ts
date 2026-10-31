@@ -1,5 +1,5 @@
 import { startMockGateway } from '@rideo/mock-gateway';
-import type { Clip, Job } from '@rideo/shared';
+import { type Clip, type Job, SCENE_REFERENCE_PHRASE_V3 } from '@rideo/shared';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { expectSucceeded, readyStoryProject, type Stack, startStack } from '../helpers/stack';
 
@@ -219,7 +219,7 @@ describe('continuity-aware generation (prompt version 2)', () => {
     for (const s of keyframes) {
       const t = s.takes.find((x) => x.id === s.selectedTakeId)!;
       const image = requestOf(t.gatewayTaskIds[0]!);
-      expect(image.input[0].text).toContain('The last image is the scene reference');
+      expect(image.input[0].text).toContain(SCENE_REFERENCE_PHRASE_V3);
       // The previous shot's end state conditions the keyframe, never the video that starts from it
       expect(image.input[0].text).toContain('Continues from the previous shot:');
       expect(requestOf(t.gatewayTaskIds.at(-1)!).input[0].text).not.toContain(

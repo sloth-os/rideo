@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { Clip, Job, Timeline } from '@rideo/shared';
+import { type Clip, type Job, SCENE_REFERENCE_PHRASE_V3, type Timeline } from '@rideo/shared';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { PdfDocument, pdfTextLines } from '../../src/media/pdf';
 import { startEditorWorker } from '../helpers/editor-worker';
@@ -28,7 +28,8 @@ async function rejects(p: Promise<unknown>, code: string): Promise<ApiError> {
 
 const state = (pid: string) => stack.api<any>('GET', `/projects/${pid}/state`);
 const requestOf = (taskId: string) => stack.gw.store.requests.get(taskId) as any;
-const SCENE_REFERENCE = 'The last image is the scene reference';
+// New projects write prompt version 3: the opening frame is the same place at the same moment
+const SCENE_REFERENCE = SCENE_REFERENCE_PHRASE_V3;
 const clipsOf = async (pid: string) =>
   Object.values<Clip>((await state(pid)).docs.clips).sort((a, b) => a.index - b.index);
 
