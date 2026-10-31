@@ -30,7 +30,7 @@ import {
 } from './project';
 import { ResourceKindSchema, ResourceRoleSchema } from './resource';
 import { AnnotationSchema, CommentTargetSchema, ReviewTargetSchema } from './review';
-import { DialogueLineSchema, StyleBibleSchema } from './screenplay';
+import { DialogueLineSchema, SCENE_CONTINUITY_MAX, StyleBibleSchema } from './screenplay';
 import { TimelineOpSchema } from './timeline';
 
 /** Deep-partial settings patch (every nested object optional); merged over current settings. */
@@ -171,7 +171,7 @@ export const SceneInputSchema = z.object({
   estDurationSec: z.number().positive().max(3600).optional(),
   beatId: IdSchema.nullable().optional(),
   /** The state at the scene's start (docs/design/continuity.md#storytelling). */
-  continuity: z.string().max(1000).optional(),
+  continuity: z.string().max(SCENE_CONTINUITY_MAX).optional(),
 });
 export type SceneInput = z.infer<typeof SceneInputSchema>;
 

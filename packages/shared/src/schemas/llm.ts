@@ -6,6 +6,7 @@ import {
   HEARD_DIMENSION_IDS,
   RetrospectiveAreaSchema,
 } from './feedback';
+import { SCENE_CONTINUITY_MAX } from './screenplay';
 
 /**
  * Structured LLM task outputs (docs/design/ai-gateway.md#structured-tasks). Lenient by design: real models
@@ -13,6 +14,12 @@ import {
  * these into documents; the mock gateway validates its fixtures against the same schemas.
  */
 const str = (max = 4000) => z.string().max(max).catch('').default('');
+/** A text cut at `max` rather than lost when the model writes more. */
+const clipped = (max: number) =>
+  z
+    .string()
+    .catch('')
+    .transform((s) => s.slice(0, max));
 const num = (fallback: number) => z.coerce.number().catch(fallback).default(fallback);
 
 export const LlmIdentitySchema = z.object({
@@ -68,7 +75,7 @@ export const LlmSceneSchema = z.object({
   props: z.array(z.string().max(120)).catch([]).default([]),
   estDurationSec: num(60),
   /** Prompt version 2: the state at the scene's start (docs/design/continuity.md#storytelling). */
-  continuity: str(1000),
+  continuity: clipped(SCENE_CONTINUITY_MAX),
 });
 export type LlmScene = z.infer<typeof LlmSceneSchema>;
 
@@ -393,6 +400,7 @@ export const BriefAdaptOutputSchema = z.object({
   prompt: str(20000),
 });
 export type BriefAdaptOutput = z.infer<typeof BriefAdaptOutputSchema>;
+
 
 export const LLM_TASKS = [
   'media.describe',

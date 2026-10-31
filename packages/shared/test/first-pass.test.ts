@@ -22,8 +22,11 @@ import {
   ReviewSettingsSchema,
   referenceLabels,
   rubricLines,
+  SCENE_CONTINUITY_MAX,
   SCENE_REFERENCE_PHRASE,
   SCENE_REFERENCE_PHRASE_V3,
+  SceneSchema,
+  ScreenplayGenerateOutputSchema,
   type ShotContext,
   StageReviewSchema,
   selectReferences,
@@ -365,5 +368,22 @@ describe('frames that agree with each other (docs/design/first-pass.md#frames-th
     expect(at(3)).toContain('every prop with the same look, colour, material and state');
     expect(at(2)).toContain(SCENE_REFERENCE_PHRASE);
     expect(at(2)).not.toContain(SCENE_REFERENCE_PHRASE_V3);
+  });
+});
+
+describe("a scene's continuity (docs/design/continuity.md#storytelling)", () => {
+  it("keeps a writer's long continuity, cut at its limit rather than lost", () => {
+    const long = 'Sammy wears a blue helmet. '.repeat(60);
+    expect(long.length).toBeGreaterThan(1000);
+    const scene = (continuity: string) =>
+      ScreenplayGenerateOutputSchema.parse({
+        title: 'The Riders',
+        characters: [{ name: 'Sammy' }],
+        outline: [{ title: 'Arrival', summary: 'They arrive.', estDurationSec: 20 }],
+        scenes: [{ heading: 'EXT. PADDOCK - DAY', continuity }],
+      }).scenes[0]!;
+    expect(scene(long).continuity).toBe(long);
+    expect(scene('x'.repeat(SCENE_CONTINUITY_MAX + 50)).continuity).toHaveLength(SCENE_CONTINUITY_MAX);
+    expect(SceneSchema.shape.continuity.safeParse(long).success).toBe(true);
   });
 });

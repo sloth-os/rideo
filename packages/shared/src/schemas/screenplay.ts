@@ -29,6 +29,12 @@ export const DialogueLineSchema = z.object({
 });
 export type DialogueLine = z.infer<typeof DialogueLineSchema>;
 
+/**
+ * How long a scene's continuity may be (docs/design/continuity.md#storytelling): every piece of every character's
+ * clothes and every prop's count, state and holder, for up to four characters.
+ */
+export const SCENE_CONTINUITY_MAX = 4000;
+
 export const SceneSchema = z.object({
   id: IdSchema,
   index: z.number().int().nonnegative(),
@@ -49,7 +55,7 @@ export const SceneSchema = z.object({
    * The state at the scene's start: time of day, weather, light, what everyone wears and carries, where they are
    * (docs/design/continuity.md#storytelling).
    */
-  continuity: z.string().max(1000).default(''),
+  continuity: z.string().max(SCENE_CONTINUITY_MAX).default(''),
 });
 export type Scene = z.infer<typeof SceneSchema>;
 
