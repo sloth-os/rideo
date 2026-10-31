@@ -420,7 +420,10 @@ export function shotBodyV2(
   if (override) lines.push(`${clean(shot.promptOverride!)}.`);
   else {
     lines.push(`${text(description)}.`);
-    if (mode === 'video' && clean(action)) lines.push(`Action: ${text(action)}.`);
+    // Version 3: the take knows where it ends, in the action's own sentence (docs/design/first-pass.md#the-take-knows-where-it-ends)
+    const ends = promptVersionOf(ctx.settings) >= 3 ? clean(shot.endState ?? '') : '';
+    if (mode === 'video' && clean(action))
+      lines.push(`Action: ${text(action)}${ends ? `, ending with: ${text(ends)}` : ''}.`);
   }
   // Keyframes only: the video starts from that frame, and Wan played the line as a second shot
   const previous = clean(ctx.previousEndState ?? '');

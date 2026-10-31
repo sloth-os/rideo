@@ -440,6 +440,28 @@ describe('nobody looks into the lens (docs/design/first-pass.md#nobody-looks-int
   });
 });
 
+describe('the take knows where it ends (docs/design/first-pass.md#the-take-knows-where-it-ends)', () => {
+  const ctxAt = (promptVersion: 2 | 3): ShotContext => ({
+    shot: f.shot({
+      description: 'Sammy stands frame right holding the red kite against his chest.',
+      action: 'Sammy turns toward the lone tree while the wind lifts the yellow tail.',
+      endState: 'Sammy faces the tree, the kite still held against his chest.',
+    }),
+    characters: [],
+    screenplay: null,
+    settings: ProjectSettingsSchema.parse({ generation: { promptVersion } }),
+  });
+
+  it("ends a version 3 take's action with the shot's end state, in the same sentence", () => {
+    expect(compileShotPrompt(ctxAt(3), 'video')).toContain(
+      'Action: Sammy turns toward the lone tree while the wind lifts the yellow tail, ending with: Sammy faces the tree, the kite still held against his chest.',
+    );
+    // A frame is the start of the shot; version 2 takes stay as they were
+    expect(compileShotPrompt(ctxAt(3), 'keyframe')).not.toContain('ending with');
+    expect(compileShotPrompt(ctxAt(2), 'video')).not.toContain('ending with');
+  });
+});
+
 describe('a correction kept whole (docs/design/first-pass.md#frames-that-follow-their-shot)', () => {
   it("keeps a check's long correction, cut at its limit rather than lost", () => {
     const fix = "the red kite lies flat on the grass at Sammy's feet; ".repeat(20);

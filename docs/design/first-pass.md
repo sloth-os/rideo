@@ -299,6 +299,16 @@ keep the plan, so the frame stays current. A storyboard frame is read once and k
 is never replaced, and a call that fails leaves the planned text (`rideo_frame_reconciles_total{source, outcome}`:
 `agreed`, `adjusted`, `error`). It is one vision call per frame, a fraction of the video it keeps from morphing.
 
+### The take knows where it ends
+
+A video prompt said where a shot starts and what moves, never where it ends. In fp16's pilot the last shot's action
+was "the wind lifts the yellow tail and white string toward the tree" and the video model launched the kite a scene
+early (critical: "Kite launches a scene early"; its end state had the kite still held against Sammy's chest). With
+prompt version 3 the action line of a take ends with the shot's planned end state, in the same sentence so that it
+reads as where this one motion arrives rather than as another shot (Wan played a separate sentence about the previous
+shot as a second shot): "Action: Sammy turns toward the lone tree while the wind lifts the tail, ending with: Sammy faces
+the tree, the kite still held against his chest." A person's own prompt is left as it is.
+
 ## Scenes count what they heard
 
 A scene watched before the edit is heard by the audio-visual model ([scenes before the
