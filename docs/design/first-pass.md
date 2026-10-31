@@ -92,7 +92,8 @@ The writer also gets the rules the reviewer's dimensions imply and that it used 
   the shot planner frames the scene.
 - **A last pass.** Before it answers, the writer goes through its screenplay moment by moment against
   `video.weaknesses` and gives every moment that touches one its safest form that keeps the brief. A repeated event
-  the brief asks for is never cut to one attempt: it is shown two or three times, each attempt its own slow moment.
+  the brief asks for is never cut to one attempt: it is shown two or three times within one or two beats, each attempt
+  short and going wrong in a new way (fp22: three like attempts over a minute "repeat the same failure too often").
   The last pass first said "one attempt shown instead of several", and the kite brief's "the kite falls every time he
   runs" became one failed run with a major brief issue on half the runs (fp17, fp20: "only one failed run does not
   show 'every time'"); the runs that showed several scored brief 9.
@@ -120,6 +121,8 @@ still disagreed with each other (the wind blowing both ways, a tree on either si
   the next beat says who moved it and where it is now, and anything that could drift off (a flying kite, a loose pony)
   is held by someone named or tied in every beat: fp17's and fp18's reviews marked continuity down for a sandwich
   that went from the closed backpack to the grass and a kite flying over the picnic with nobody holding it.
+- **Every object a prop.** Every object a scene uses is in its props with its look (fp22 used a kite's handle and
+  string the props never listed, a major continuity issue).
 - **Forces obeyed.** Every action keeps to the forces the continuity states: what the wind moves streams the way it
   blows, whoever walks into it is slowed and whoever walks with it is pushed on, and a lesson about a force shows its
   cause. Stating the wind was not enough: both fp21 kite screenplays had a major continuity issue for actions against
