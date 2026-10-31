@@ -54,6 +54,10 @@ describe('makers aim at what their reviewers score', () => {
     expect(SYSTEM_PROMPTS_V2['clip.plan']).toContain(
       'its "description" already shows that pose, clear in a still picture',
     );
+    expect(SYSTEM_PROMPTS_V2['clip.plan']).toContain('The shot before it ends with that pose begun');
+    expect(SYSTEM_PROMPTS_V2['clip.plan']).toContain(
+      'a shot in which someone walks somewhere lasts at least four seconds',
+    );
     expect(SYSTEM_PROMPTS_V2['screenplay.generate']).toContain('go through your screenplay moment by moment');
     expect(SYSTEM_PROMPTS_V2['screenplay.generate']).toContain(
       'A prop that changes place or state between beats',

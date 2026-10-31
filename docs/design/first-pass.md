@@ -101,7 +101,9 @@ its first frame already in the motion (a walk drawn standing never started). A s
 (a point, a turn toward the tree, a kite held up) starts on that pose, readable in a still (the arm already out and
 pointing), and its action holds or finishes it: the storyboard review reads the frames as the scene, and fp16's frames
 started Rosie "mid-turn" before the point her line needs ("Rosie's point at the bent grass is not in the frame",
-storytelling 7). The camera still moves where it tells the scene: fp10's pilot planned every shot locked off and its
+storytelling 7). The shot before ends with the pose begun, so the cut does not jump (fp19: an arm down at the end of
+one take and out at the start of the next read as a jump across the cut), and a shot in which someone walks somewhere
+lasts at least four seconds (fp19's three-second wide never got its walk). The camera still moves where it tells the scene: fp10's pilot planned every shot locked off and its
 review called it "five static tableaux".
 
 The shot planner fixes the scene's **geography** before its shots (where each landmark stands, where the sun is, which
@@ -349,7 +351,9 @@ first pass also asks for less, and waits less:
 ## Measuring the first pass
 
 `scripts/first-pass.mjs` measures a build on real models. It creates a project from a brief with every automatic
-fix off (`review.maxRounds` 0, `review.sceneFixes` 0, `consistency.maxAttempts` 1), lets the autopilot run, and
+fix off (`review.maxRounds` 0, `review.sceneFixes` 0; `consistency.maxAttempts` 1 unless `--settings` says otherwise:
+every run since fp8 passed 3, the default of new projects, so the checks that draw a frame or a view again could),
+lets the autopilot run, and
 continues past every gate that does not pass (*continue anyway*, as a person would), so that each step is made once
 and reviewed once. It records each review's first round: the overall score, every dimension, and the issues, and
 prints them against the gate:
