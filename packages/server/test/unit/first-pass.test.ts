@@ -69,6 +69,7 @@ describe('makers aim at what their reviewers score', () => {
     // A landmark or the wind on the other side than the shot says is a reason to draw the frame again
     expect(reconcile).toContain('a landmark on the other side of the frame than the shot puts it');
     expect(reconcile).toContain('blowing against the wind the shot gives');
+    expect(reconcile).toContain('the gesture the shot turns on missing or aimed elsewhere');
   });
 
   it('leaves version 1 prompts as they were', () => {
