@@ -10,7 +10,6 @@ import {
   compileFrameEditRequest,
   compileKeyframeRequest,
   compileMultiShotRequest,
-  compileReferenceEditRequest,
   compileReferenceRequest,
   compileShotPrompt,
   DEFAULT_REVIEW_SETTINGS,
@@ -25,8 +24,6 @@ import {
   makerRubric,
   negativePromptFor,
   ProjectSettingsSchema,
-  REFERENCE_EDIT_MAX_EARLIER,
-  REFERENCE_EDIT_PHRASE,
   REFERENCE_VIEW_PRIORITY,
   REVIEW_DIMENSIONS,
   REVIEW_RUBRICS,
@@ -574,32 +571,6 @@ describe('a redraw is an edit (docs/design/first-pass.md#a-redraw-is-an-edit)', 
     expect(
       compileKeyframeRequest(ctx, { referenceUris: [], attempt: 0 }).parameters?.negative_prompt,
     ).not.toContain('camera pulling back');
-  });
-});
-
-describe('a reference corrected by an edit (docs/design/first-pass.md#references-that-match-their-subject)', () => {
-  it("keeps the view request's model, size and seed, and sends the view first, then earlier views", () => {
-    const settings = ProjectSettingsSchema.parse({ generation: { promptVersion: 3 } });
-    const base = compileReferenceRequest(f.character({ name: 'Rosie' }), 'profile', {
-      screenplay: null,
-      settings,
-      baseImageUri: 'data:anchor',
-      model: 'seedream',
-    });
-    const req = compileReferenceEditRequest(base, {
-      viewUri: 'data:image/jpeg;base64,VIEW',
-      fix: 'the helmet is a smooth dome with no brim; both ears come out above it',
-      earlierUris: ['data:one', 'data:two', 'data:three'],
-    });
-    expect(req.model).toBe(base.model);
-    expect(req.parameters).toEqual(base.parameters);
-    const [text, view, ...earlier] = req.input as { type: string; text?: string; uri?: string }[];
-    expect(text!.text).toContain(
-      `${REFERENCE_EDIT_PHRASE} the helmet is a smooth dome with no brim; both ears come out above it.`,
-    );
-    expect(text!.text).toContain('earlier views of the same subject');
-    expect(view).toEqual({ type: 'image', uri: 'data:image/jpeg;base64,VIEW' });
-    expect(earlier).toHaveLength(REFERENCE_EDIT_MAX_EARLIER);
   });
 });
 

@@ -212,12 +212,11 @@ again with another seed, within `consistency.maxAttempts`, while it does not mat
 else the one with the fewest issues (`rideo_reference_checks_total{kind, outcome}`). As with frames, it is part of
 drawing a reference: the cast the review sees is the first one presented.
 
-As with frames ([a redraw is an edit](#a-redraw-is-an-edit)), a view that does not match is corrected by an edit of
-itself: the view first, then up to two of the views drawn before it, and "Edit the first image: keep everything in it
-exactly as it is … and change only this: <fix>" (`compileReferenceEditRequest`, `REFERENCE_EDIT_PHRASE`). A new seed
-redrew the whole figure and brought new differences with each fix: the riding cast's consistency stayed at 7.6–8.1 on
-its ponies' blazes and the helmets' brims (fp16–fp20). The edit is checked like any view and the best view is kept
-(`rideo_reference_edits_total{kind}`).
+Correcting a view by an edit of itself, as frames are ([a redraw is an edit](#a-redraw-is-an-edit)), was tried and
+removed: sent with the views drawn before it and told to keep the subject "the same as in them", the edit pulled a
+profile toward their angle ("Reference 3 is not a profile view"), and the riding cast fell to 8.5 (consistency 7.5) on
+fp24, against 9.0 with every dimension at 8 on fp23, built the same but drawing each corrected view anew. An edit of
+the view alone, without the earlier views, is untested.
 - **Places and props** are drawn once (`establishing` for a place, `detail` for a prop): the shots use one reference
   per place or prop, and a second view the shots never use could only disagree with the first. `angle` stays
   available on request.

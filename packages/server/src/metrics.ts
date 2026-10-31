@@ -280,13 +280,6 @@ export class Metrics {
       'Briefs read for the video model before they are written, by outcome (adapted, unchanged, error)',
     ),
   );
-  /** References corrected by an edit of the view (docs/design/first-pass.md#references-that-match-their-subject). */
-  readonly referenceEdits = this.add(
-    new Counter(
-      'rideo_reference_edits_total',
-      'Cast references corrected by an edit of the view instead of drawn again, by kind (character, element)',
-    ),
-  );
   /** References checked as they are drawn (docs/design/first-pass.md#references-that-match-their-subject). */
   readonly referenceChecks = this.add(
     new Counter(

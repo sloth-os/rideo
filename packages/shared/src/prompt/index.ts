@@ -861,36 +861,6 @@ export function compileKeyframeRequest(
  */
 export const FRAME_EDIT_PHRASE =
   'Edit the first image: keep everything in it exactly as it is (the characters and how they look, the place, the light, the framing and the style) and change only this:';
-/** Version 3: a reference view corrected by an edit of itself (docs/design/first-pass.md#references-that-match-their-subject). */
-export const REFERENCE_EDIT_PHRASE =
-  'Edit the first image: keep everything in it exactly as it is (the subject, its pose, the view, the plain background and the style) and change only this:';
-/** The earlier views of the subject sent with a view to edit, after it. */
-export const REFERENCE_EDIT_MAX_EARLIER = 2;
-
-/** A reference request turned into an edit of the view it drew: the same model, size and seed, and only the fix. */
-export function compileReferenceEditRequest(
-  base: GatewayImageRequest,
-  opts: { viewUri: string; fix: string; earlierUris: string[] },
-): GatewayImageRequest {
-  const earlier = opts.earlierUris.slice(0, REFERENCE_EDIT_MAX_EARLIER);
-  const text = [
-    `${REFERENCE_EDIT_PHRASE} ${clean(opts.fix)}.`,
-    earlier.length
-      ? 'The next images are earlier views of the same subject: keep it the same as in them.'
-      : '',
-  ]
-    .filter(Boolean)
-    .join(' ');
-  return {
-    ...base,
-    input: [
-      { type: 'text', text },
-      { type: 'image', uri: opts.viewUri },
-      ...earlier.map((uri) => ({ type: 'image' as const, uri })),
-    ],
-  };
-}
-
 /** The cast's references sent with a frame to edit, after the frame. */
 export const FRAME_EDIT_MAX_REFERENCES = 3;
 

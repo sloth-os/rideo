@@ -95,7 +95,6 @@ cost), as does a take replaced by a regeneration: the cost of quality, which the
 | `rideo_ai_review_recommendations_total` | counter | `stage`, `action`, `outcome` (`applied`, `dismissed`, `auto`, `stale`) | review recommendations |
 | `rideo_take_watches_total` | counter | `model` (`vision`, `omni`), `result` (`passed`, `failed`, `error`) | takes [watched whole](ai-review.md#takes-watched-whole) |
 | `rideo_brief_adaptations_total` | counter | `outcome` (`adapted`, `unchanged`, `error`) | briefs read for the video model before they are written ([first pass](first-pass.md#the-brief-adapted-for-the-video-model)) |
-| `rideo_reference_edits_total` | counter | `kind` (`character`, `element`) | cast references corrected by an edit of the view instead of drawn again ([first pass](first-pass.md#references-that-match-their-subject)) |
 | `rideo_reference_checks_total` | counter | `kind` (`character`, `element`), `outcome` (`matched`, `mismatched`, `error`) | cast references checked as they are drawn ([first pass](first-pass.md#references-that-match-their-subject)) |
 | `rideo_frame_edits_total` | counter | `source` (`storyboard`, `keyframe`) | frames corrected by an edit of the frame instead of drawn again ([first pass](first-pass.md#a-redraw-is-an-edit)) |
 | `rideo_frame_reconciles_total` | counter | `source` (`storyboard`, `keyframe`), `outcome` (`agreed`, `adjusted`, `redraw`, `error`) | first frames read before a video starts from them ([first pass](first-pass.md#the-video-reads-its-first-frame)) |

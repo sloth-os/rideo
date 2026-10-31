@@ -6,7 +6,6 @@ import {
   FRAME_EDIT_PHRASE,
   type Job,
   type Project,
-  REFERENCE_EDIT_PHRASE,
 } from '@rideo/shared';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { expectSucceeded, readyStoryProject, type Stack, startStack } from '../helpers/stack';
@@ -255,19 +254,13 @@ describe('references that match their subject (docs/design/first-pass.md#referen
       jobs.find((j) => j.kind === 'character.refs' && j.params.characterId === id)!.gatewayTasks.length;
     expect(tasksOf(wrong!.id)).toBe(created.settings.consistency.maxAttempts);
     expect(tasksOf(right!.id)).toBe(1);
-    // A view the check found wrong is edited: the view first, then only what to change
+    // A view drawn again is told what the check found wrong
     const drawn = jobs.find((j) => j.kind === 'character.refs' && j.params.characterId === wrong!.id)!;
-    const requests = drawn.gatewayTasks.map(
-      (t) => stack.gw.store.requests.get(t.id) as { input: { type: string; text?: string; uri?: string }[] },
+    const texts = drawn.gatewayTasks.map(
+      (t) => (stack.gw.store.requests.get(t.id) as { input: { text?: string }[] }).input[0]!.text!,
     );
-    expect(requests[0]!.input[0]!.text).not.toContain(REFERENCE_EDIT_PHRASE);
-    expect(requests[1]!.input[0]!.text).toContain(`${REFERENCE_EDIT_PHRASE} the backpack's top is closed.`);
-    expect(requests[1]!.input[1]).toMatchObject({
-      type: 'image',
-      uri: expect.stringMatching(/^data:image\//),
-    });
-    const edits = await (await fetch(`${stack.url}/metrics`)).text();
-    expect(edits).toMatch(/rideo_reference_edits_total\{kind="character"\} [1-9]/);
+    expect(texts[0]).not.toContain('Make sure:');
+    expect(texts[1]).toContain("Make sure: the backpack's top is closed.");
     const after = (await stack.api<any>('GET', `/projects/${pid}/state`)).docs;
     // One reference kept per view, whatever was drawn
     expect(after.characters[wrong!.id].references).toHaveLength(1);
