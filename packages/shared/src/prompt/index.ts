@@ -239,6 +239,44 @@ const MOVEMENT: Record<Shot['camera']['movement'], string> = {
 
 /** Version 2: a camera that must not move, in Wan 3.0's guide's words. */
 export const STATIC_CAMERA_V2 = 'fixed shot, camera static, position unchanged';
+/**
+ * Version 3: what a take's camera must not do, said with its movement at the start of the prompt
+ * (docs/design/first-pass.md#the-take-holds-its-camera).
+ */
+export const CAMERA_HOLDS: Partial<Record<Shot['camera']['movement'], { says: string; avoid?: string }>> = {
+  static: {
+    says: 'it holds its framing from the first frame to the last, no zoom, no pull back, no drift',
+    avoid: 'zoom out, camera pulling back',
+  },
+  dolly_in: { says: 'it only moves closer, never pulls back', avoid: 'zoom out, camera pulling back' },
+  dolly_out: { says: 'it only moves back, never pushes in', avoid: 'zoom in, camera pushing in' },
+  tracking: { says: 'it keeps the same distance and framing as it moves' },
+  pan: { says: 'it turns slowly where it stands, no zoom' },
+  tilt: { says: 'it turns slowly where it stands, no zoom' },
+};
+
+/** Version 3: whether a take says its camera first, and what it holds (none for a move of the camera library). */
+function cameraHold(ctx: Pick<ShotContext, 'shot' | 'settings'>) {
+  if (promptVersionOf(ctx.settings) < 3 || cameraMove(ctx.shot.camera.move)) return null;
+  return CAMERA_HOLDS[ctx.shot.camera.movement] ?? null;
+}
+
+/** A shot's camera line: framing, the movement for a take (with what it holds, version 3) and the lens. */
+function cameraLine(
+  ctx: Pick<ShotContext, 'shot' | 'settings'>,
+  mode: 'keyframe' | 'video',
+  hold?: { says: string } | null,
+): string {
+  const { shot } = ctx;
+  const move = cameraMove(shot.camera.move);
+  const lens = lensFragment(shot.camera);
+  const motion = move
+    ? move.phrase
+    : shot.camera.movement === 'static'
+      ? STATIC_CAMERA_V2
+      : MOVEMENT[shot.camera.movement];
+  return `Camera: ${framingOf(ctx, mode)}${mode === 'video' ? `, ${motion}${hold ? `: ${hold.says}` : ''}` : ''}${lens ? `; ${lens}` : ''}.`;
+}
 
 export interface ShotContext {
   shot: Shot;
@@ -405,7 +443,8 @@ export function withoutOffscreenNames(text: string, offscreen: string[]): string
 export function shotBodyV2(
   ctx: ShotContext,
   mode: 'keyframe' | 'video',
-  opts: { motionReference?: boolean } = {},
+  /** `cameraSaid`: the take already said its camera at the start of the prompt (version 3). */
+  opts: { motionReference?: boolean; cameraSaid?: boolean } = {},
 ): string[] {
   const { shot } = ctx;
   const lines: string[] = [];
@@ -429,16 +468,7 @@ export function shotBodyV2(
   const previous = clean(ctx.previousEndState ?? '');
   if (mode === 'keyframe' && previous && shot.continuity !== 'continuous')
     lines.push(`Continues from the previous shot: ${previous}.`);
-  const move = cameraMove(shot.camera.move);
-  const lens = lensFragment(shot.camera);
-  const motion = move
-    ? move.phrase
-    : shot.camera.movement === 'static'
-      ? STATIC_CAMERA_V2
-      : MOVEMENT[shot.camera.movement];
-  lines.push(
-    `Camera: ${framingOf(ctx, mode)}${mode === 'video' ? `, ${motion}` : ''}${lens ? `; ${lens}` : ''}.`,
-  );
+  if (!opts.cameraSaid) lines.push(cameraLine(ctx, mode));
   // The blocking: where everyone stands in the frame (keyframes), who walks where (videos)
   if (mode === 'keyframe' && ctx.blocking?.line) lines.push(ctx.blocking.line);
   if (mode === 'video' && ctx.blocking?.moves) lines.push(ctx.blocking.moves);
@@ -500,6 +530,9 @@ function compileShotPromptV2(
   // A video prompt describes this one shot: its structure first, as Wan reads the structure from the prompt, and
   // nothing a model could play as another shot (docs/design/continuity.md#what-the-video-model-reads)
   const lines: string[] = video ? [ONE_SHOT_LINE] : [];
+  // Version 3: the take's camera first, with what it holds (docs/design/first-pass.md#the-take-holds-its-camera)
+  const hold = video && !clean(shot.promptOverride ?? '') ? cameraHold(ctx) : null;
+  if (hold) lines.push(cameraLine(ctx, 'video', hold));
   lines.push(
     styleHeader(ctx.screenplay, settings, video ? 'motion' : 'still', {
       camera: !video,
@@ -508,7 +541,7 @@ function compileShotPromptV2(
   );
   const sceneText = sceneLine(ctx.scene, location, { placeOnly: video && !!ctx.offscreen?.length });
   if (sceneText) lines.push(sceneText);
-  lines.push(...shotBodyV2(ctx, mode, opts));
+  lines.push(...shotBodyV2(ctx, mode, { ...opts, cameraSaid: !!hold }));
   if (ctx.characters.length) {
     lines.push(
       mode === 'keyframe'
@@ -541,12 +574,17 @@ function compileShotPromptV2(
 }
 
 /** The negative prompt of a shot: version 2 adds motion artefacts and keeps to 500 characters. */
-export function negativePromptFor(ctx: Pick<ShotContext, 'shot' | 'settings'>): string {
+export function negativePromptFor(
+  ctx: Pick<ShotContext, 'shot' | 'settings'>,
+  /** `camera: false`: a sequence, whose segments each have their own camera. */
+  opts: { camera?: boolean } = {},
+): string {
   if (promptVersionOf(ctx.settings) < 2)
     return [BASE_NEGATIVE, clean(ctx.shot.negativePrompt ?? '')].filter(Boolean).join(', ');
   const text = [
     BASE_NEGATIVE_V2,
     avoidsTheLens(ctx) ? LOOKING_INTO_CAMERA.replace(/^anyone /, '') : '',
+    opts.camera === false ? '' : (cameraHold(ctx)?.avoid ?? ''),
     clean(ctx.shot.negativePrompt ?? ''),
   ]
     .filter(Boolean)

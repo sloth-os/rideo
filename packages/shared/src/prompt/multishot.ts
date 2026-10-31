@@ -240,7 +240,7 @@ export function compileMultiShotRequest(
         ? {}
         : {
             negative_prompt: v2
-              ? negativePromptFor(first)
+              ? negativePromptFor(first, { camera: false })
                   .replace(/,\s*jump cut/, '')
                   .replace(lens ? /(?!)/ : /,\s*looking into the camera/, '')
               : BASE_NEGATIVE,

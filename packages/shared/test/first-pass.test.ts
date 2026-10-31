@@ -462,6 +462,80 @@ describe('the take knows where it ends (docs/design/first-pass.md#the-take-knows
   });
 });
 
+describe('the take holds its camera (docs/design/first-pass.md#the-take-holds-its-camera)', () => {
+  const take = (
+    promptVersion: 2 | 3,
+    camera: Partial<{
+      framing: 'medium' | 'close_up';
+      movement: 'static' | 'dolly_in' | 'tracking';
+      move: 'push_in';
+    }>,
+  ) => {
+    const base = f.shot();
+    const ctx: ShotContext = {
+      shot: f.shot({ camera: { ...base.camera, ...camera } }),
+      characters: [],
+      screenplay: null,
+      settings: ProjectSettingsSchema.parse({ generation: { promptVersion } }),
+    };
+    return {
+      text: compileShotPrompt(ctx, 'video'),
+      negative: negativePromptFor(ctx),
+      still: compileShotPrompt(ctx, 'keyframe'),
+    };
+  };
+
+  it("says a version 3 take's camera first, with what it must not do, once", () => {
+    const fixed = take(3, { framing: 'medium', movement: 'static' });
+    expect(fixed.text).toMatch(
+      /^One continuous shot, no cuts\. Camera: [^.]*fixed shot, camera static, position unchanged: it holds its framing from the first frame to the last, no zoom, no pull back, no drift[;.]/,
+    );
+    expect(fixed.text.match(/Camera: /g)).toHaveLength(1);
+    expect(fixed.negative).toContain('zoom out, camera pulling back');
+    const closer = take(3, { framing: 'close_up', movement: 'dolly_in' });
+    expect(closer.text).toContain('it only moves closer, never pulls back');
+    expect(closer.negative).toContain('camera pulling back');
+    expect(take(3, { movement: 'tracking' }).text).toContain(
+      'it keeps the same distance and framing as it moves',
+    );
+    // A frame has no camera movement
+    expect(fixed.still).not.toContain('no pull back');
+  });
+
+  it('leaves version 2 takes and moves of the camera library as they were', () => {
+    const v2 = take(2, { movement: 'static' });
+    expect(v2.text).not.toContain('no pull back');
+    expect(v2.text).not.toMatch(/^One continuous shot, no cuts\. Camera:/);
+    expect(v2.negative).not.toContain('camera pulling back');
+    const library = take(3, { movement: 'static', move: 'push_in' });
+    expect(library.text).toContain('slow push-in toward the subject');
+    expect(library.text).not.toContain('no pull back');
+  });
+
+  it('keeps the camera guards with each segment of a sequence, out of its shared negative prompt', () => {
+    const settings = ProjectSettingsSchema.parse({ generation: { promptVersion: 3 } });
+    const base = f.shot();
+    const req = compileMultiShotRequest(
+      [
+        {
+          shot: f.shot({ camera: { ...base.camera, movement: 'static' } }),
+          characters: [],
+          screenplay: null,
+          settings,
+        },
+        {
+          shot: f.shot({ camera: { ...base.camera, movement: 'dolly_in' } }),
+          characters: [],
+          screenplay: null,
+          settings,
+        },
+      ],
+      { referenceUris: [], attempt: 0 },
+    );
+    expect(req.parameters?.negative_prompt ?? '').not.toContain('camera pulling back');
+  });
+});
+
 describe('a correction kept whole (docs/design/first-pass.md#frames-that-follow-their-shot)', () => {
   it("keeps a check's long correction, cut at its limit rather than lost", () => {
     const fix = "the red kite lies flat on the grass at Sammy's feet; ".repeat(20);

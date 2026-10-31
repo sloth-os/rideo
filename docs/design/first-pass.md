@@ -309,6 +309,18 @@ reads as where this one motion arrives rather than as another shot (Wan played a
 shot as a second shot): "Action: Sammy turns toward the lone tree while the wind lifts the tail, ending with: Sammy faces
 the tree, the kite still held against his chest." A person's own prompt is left as it is.
 
+### The take holds its camera
+
+The take watch's most frequent issue after fp16 was the camera: a static medium shot that pulls back, a dolly-in that
+pulls out, a close-up that drifts to a medium full shot (four of fp16's and fp18's ten takes), although a static shot
+already asks the model for a fixed camera (`camera_motion: fixed`). The camera was said after the style, the place and
+the first frame, some 800 characters into the prompt. With prompt version 3 a take's camera comes first, right after
+"One continuous shot, no cuts.", with what it must not do (`CAMERA_HOLDS`): a static shot "holds its framing from the
+first frame to the last, no zoom, no pull back, no drift", a dolly-in "only moves closer, never pulls back", a tracking
+shot "keeps the same distance and framing as it moves"; and the negative prompt names the drift ("zoom out, camera
+pulling back" for a static shot or a dolly-in). A multi-shot request keeps each segment's camera with its segment, and
+a move from the camera library keeps its own words.
+
 ## Scenes count what they heard
 
 A scene watched before the edit is heard by the audio-visual model ([scenes before the
