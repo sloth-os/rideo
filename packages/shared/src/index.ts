@@ -57,6 +57,7 @@ export * from './screenplay/import';
 export * from './screenplay/markdown';
 export * from './search';
 export * from './settings';
+export * from './story/check';
 export * from './story/normalize';
 export * from './storyboard';
 export * from './theme';

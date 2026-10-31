@@ -290,3 +290,66 @@ describe('the brief adapted for the video model (docs/design/first-pass.md#the-b
     expect(metrics).toMatch(/rideo_brief_adaptations_total\{outcome="adapted"\} \d+/);
   }, 300_000);
 });
+
+describe('the screenplay read for the video model (docs/design/first-pass.md#the-screenplay-read-for-the-video-model)', () => {
+  const settings = { targetDurationSec: 60, pilotDurationSec: 10, resolution: { width: 320, height: 180 } };
+  const brief = 'Two friends learn to trot ponies, bouncing up and down; nobody else appears.';
+
+  it('rewrites a hard moment before the screenplay is saved and reviewed, and reads the scenes an extension writes', async () => {
+    const created = await stack.api<Project>('POST', '/projects', {
+      kind: 'story',
+      title: 'The Trot',
+      brief: { prompt: brief },
+      settings,
+    });
+    const pid = created.id;
+    const gen = await stack.api<Job>('POST', `/projects/${pid}/screenplay/generate`, {});
+    expectSucceeded(await stack.waitJob(pid, gen.id));
+    await stack.waitIdle(pid);
+    const read = stack.gw.counters.lastInputs['screenplay.check'] as Record<string, any>;
+    expect(read.brief).toBe(brief);
+    expect(read.video.weaknesses).toContain('quick repeated motion');
+    expect(read.outline.length).toBeGreaterThan(1);
+    let sp = (await stack.api<any>('GET', `/projects/${pid}/state`)).docs.screenplay;
+    expect(sp.outline[0].summary).toMatch(/One slow bounce, then a laugh\.$/);
+    expect(sp.scenes[0].action).toMatch(/They bounce once, slowly, and laugh\.$/);
+    // The reviewer reads the screenplay as it was saved; the edit of a scene the draft has not was dropped
+    expect(JSON.stringify(stack.gw.counters.lastInputs['screenplay.review'])).toContain(
+      'They bounce once, slowly, and laugh.',
+    );
+    expect(JSON.stringify(sp)).not.toContain('A scene nobody wrote.');
+    const log = await stack.api<{ message: string }[]>('GET', `/projects/${pid}/history?limit=50`);
+    expect(log.map((c) => c.message).find((m) => m.startsWith('Generate screenplay'))).toMatch(
+      /; 2 moment\(s\) made filmable$/,
+    );
+
+    // The scenes an extension writes are read too, without an outline
+    const before = sp.scenes.length;
+    const ext = await stack.api<Job>('POST', `/projects/${pid}/screenplay/extend`, { beats: 1 });
+    expectSucceeded(await stack.waitJob(pid, ext.id));
+    sp = (await stack.api<any>('GET', `/projects/${pid}/state`)).docs.screenplay;
+    expect(sp.scenes).toHaveLength(before + 1);
+    expect(sp.scenes.at(-1).action).toMatch(/They bounce once, slowly, and laugh\.$/);
+    expect((stack.gw.counters.lastInputs['screenplay.check'] as Record<string, any>).outline).toBeUndefined();
+    const metrics = await (await fetch(`${stack.url}/metrics`)).text();
+    expect(metrics).toMatch(/rideo_screenplay_checks_total\{outcome="edited",task="generate"\} \d+/);
+    expect(metrics).toMatch(/rideo_screenplay_checks_total\{outcome="edited",task="extend"\} \d+/);
+  }, 300_000);
+
+  it('saves the screenplay of an earlier prompt version as written', async () => {
+    const created = await stack.api<Project>('POST', '/projects', {
+      kind: 'story',
+      title: 'The Trot, version 2',
+      brief: { prompt: brief },
+      settings: { ...settings, generation: { promptVersion: 2 } },
+    });
+    const pid = created.id;
+    const last = stack.gw.counters.lastInputs['screenplay.check'];
+    const gen = await stack.api<Job>('POST', `/projects/${pid}/screenplay/generate`, {});
+    expectSucceeded(await stack.waitJob(pid, gen.id));
+    await stack.waitIdle(pid);
+    expect(stack.gw.counters.lastInputs['screenplay.check']).toBe(last);
+    const sp = (await stack.api<any>('GET', `/projects/${pid}/state`)).docs.screenplay;
+    expect(sp.scenes[0].action).not.toContain('They bounce once');
+  }, 300_000);
+});

@@ -5,6 +5,7 @@ import {
   JUDGE_REFERENCE_LABEL,
   JUDGE_SCENE_REFERENCE_LABEL,
   type LlmTaskId,
+  type ScreenplayCheckInput,
   TAKE_AUDIO_LABEL,
   TASK_MARKER_PATTERN,
   VOICE_REFERENCE_LABEL,
@@ -269,6 +270,9 @@ export function answer(req: ChatRequest, opts: ChatOptions = {}): string {
     case 'brief.adapt':
       out = briefAdapt(input);
       break;
+    case 'screenplay.check':
+      out = screenplayCheck(input);
+      break;
     case 'feedback.scene':
       out = feedbackScene(input, imagesOf(req.parts).length, videoCount > 0);
       break;
@@ -446,6 +450,44 @@ function referenceCheck(input: { subject: { description: string } }) {
  * `brief.adapt` (docs/design/first-pass.md#the-brief-adapted-for-the-video-model): two riders "side by side" are four
  * characters in one moment, filmed far off; any other brief is left as it is.
  */
+/**
+ * `screenplay.check`: a brief with a bouncing trot gets its first beat and scene in a slower form, plus an edit of a
+ * scene the draft does not have, which the server drops.
+ */
+function screenplayCheck(input: ScreenplayCheckInput) {
+  if (!/bouncing/i.test(input.brief)) return { edits: [] };
+  const why = 'bouncing is a quick repeated motion';
+  const beat = input.outline?.[0];
+  const scene = input.scenes[0];
+  return {
+    edits: [
+      ...(beat
+        ? [
+            {
+              target: 'outline',
+              index: 0,
+              field: 'summary',
+              text: `${beat.summary} One slow bounce, then a laugh.`,
+              why,
+            },
+          ]
+        : []),
+      ...(scene
+        ? [
+            {
+              target: 'scene',
+              index: 0,
+              field: 'action',
+              text: `${scene.action} They bounce once, slowly, and laugh.`,
+              why,
+            },
+          ]
+        : []),
+      { target: 'scene', index: input.scenes.length, field: 'action', text: 'A scene nobody wrote.', why },
+    ],
+  };
+}
+
 function briefAdapt(input: { prompt: string }) {
   if (!/side by side/i.test(input.prompt)) return { moments: [], prompt: input.prompt };
   return {

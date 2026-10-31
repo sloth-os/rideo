@@ -96,3 +96,22 @@ test('the Story view shows what of the brief the video model renders badly and h
   await page.getByTestId('open-settings').click();
   await expect(page.locator('input[name="briefAdapt"]')).toBeChecked();
 });
+
+/** The screenplay read for the video model (docs/design/first-pass.md#the-screenplay-read-for-the-video-model), desktop and phone. */
+test('the Story view shows the screenplay with its hard moments made filmable before anyone reads it', async ({
+  page,
+  request,
+}, testInfo) => {
+  test.setTimeout(240_000);
+  const api = new Api(request);
+  const pid = await api.storyProject(`Checked screenplay (${testInfo.project.name})`, {
+    screenplay: true,
+    brief: 'Two friends learn to trot ponies, bouncing up and down; nobody else appears.',
+  });
+  await api.waitIdle(pid);
+  await page.goto(`/p/${pid}/story`);
+  await expect(page.getByText(/One slow bounce, then a laugh\./).first()).toBeVisible();
+  await expect(page.getByTestId('scenes').getByPlaceholder('Action').first()).toHaveValue(
+    /They bounce once, slowly, and laugh\.$/,
+  );
+});

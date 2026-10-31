@@ -145,6 +145,32 @@ can, it lifted the riding screenplay's brief to 9 (7.8 and 7.4 overall, from abo
 whatever form they take. On the kite brief it scored 7.9 and 7.4, against about 8.0 without. So it stays off unless a
 person turns it on for a brief that asks for what the model renders badly.
 
+## The screenplay read for the video model
+
+The writer's own last pass (the last rule of its prompt) did not lift feasibility: every measured screenplay still
+left moments in a form its rules name as hard, and the reviewer marked feasibility 6–7 for them (fp14, fp15: a kite
+held while it rises, a backpack opened to reach a sandwich, the kite caught by its tail in a branch, a trot around the
+whole paddock, riders putting their feet in the stirrups). One model call that plans a whole film's arc, its cast and
+its lines does not also go through every moment of it.
+
+So with prompt version 3 the draft has a second reader before it is saved: `screenplay.check` (the text model, with
+`VIDEO_MODEL_FACTS`) goes through the outline and the written scenes moment by moment, as a script supervisor would,
+and rewrites in place each beat's summary or each scene's action or continuity that leaves a moment in a hard form:
+
+- the result already there rather than the handling (the backpack already open on the grass, the sandwich on its
+  cloth; the rider already in the saddle);
+- one slow motion instead of a repeated one, and one attempt instead of several;
+- the contact still (the kite resting on a low branch, not catching and tangling);
+- a crowd split so that at most three are together (a rider and the animal ridden count as two);
+- a prop's state, place and holder said where a later moment needs them.
+
+It writes in story words, keeps every moment the brief asks for, and leaves every other word, name and line the
+writer's. `applyScreenplayEdits` applies its edits (one to a beat or a scene that does not exist, or with no text, is
+dropped), and the screenplay is saved once, with the number of moments in its history message. It reads the scenes
+`screenplay.extend` writes too. It is part of writing, as the staging check is part of drawing: it does not score,
+it uses no review rubric and never sees a review, and the reviewer reads the screenplay as it is first presented. A
+call that fails saves the draft as written (`rideo_screenplay_checks_total{task, outcome}`).
+
 ## Lines fit their shots
 
 `WORDS_PER_SECOND` is 2 and every shot with lines keeps `LINE_BEAT_SEC` (1 s) after them: a line of six words needs
@@ -323,6 +349,7 @@ cell is one run's first round; the scores of the same build and brief differ by 
 | fp9: references checked as drawn, one scene geography, the writer's last pass | riding 7.1; kite 8.0 | riding 8.7 (likeness 8.5); kite **8.9, every dimension 8 or more** | riding 6.9 (continuity 6); kite 7.0 (character 9) |
 | fp10: one mover at a time, props at rest, forces and food in the screenplay | kite 7.5 | kite **8.9, every dimension 8 or more** | kite 7.3 (composition and coverage 8) |
 | fp11, fp12: the brief adapted (camera words, then story words) | riding 6.4, then 7.8 and 7.4; kite 7.9, then 7.4 | kite **9.1, every dimension 8 or more** | – |
+| fp14: redraws told what to correct; a moving shot starts in its motion | riding 6.8; kite 7.5 | riding **8.9, every dimension 8 or more** (consistency 8.1); kite 8.6 (likeness 7.1) | kite **7.6** (feasibility and pacing 8, character 8.5; continuity 6) |
 
 - **Screenplay.** A brief without built-in conflicts passes 8 overall on its first round (kite 8.3, 8.5, 8.0, 8.1; 7.6 twice),
   with every dimension at 8 or 9 except feasibility (7). The riding brief stays at 7.1–8.1: it asks for what the video

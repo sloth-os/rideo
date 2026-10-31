@@ -1,11 +1,13 @@
 import {
   appendScenes,
+  applyScreenplayEdits,
   approvedElementReferences,
   approvedReferences,
   briefAdaptation,
   briefHash,
   CHARACTER_VIEWS,
   type Character,
+  type CheckableDraft,
   type Consent,
   compileElementReferenceRequest,
   compileReferenceRequest,
@@ -28,6 +30,8 @@ import {
   type ReferenceView,
   type Resource,
   type Screenplay,
+  type ScreenplayEdit,
+  screenplayCheckInput,
   screenplayFromLlm,
   shotRangeFor,
   slugify,
@@ -120,7 +124,7 @@ export async function screenplayGenerate(deps: HandlerDeps, ctx: JobContext) {
     'video' in writing.direction ? writing.direction.video : undefined,
   );
   ctx.progress(0.3, 1, 'writing the screenplay');
-  const out = await deps.llm.generateScreenplay(
+  const draft = await deps.llm.generateScreenplay(
     {
       prompt,
       targetDurationSec: p.settings.targetDurationSec,
@@ -134,6 +138,11 @@ export async function screenplayGenerate(deps: HandlerDeps, ctx: JobContext) {
     writing.version,
   );
   throwIfAborted(ctx.signal);
+  const { draft: out, applied } = await checkScreenplay(deps, ctx, p, draft, {
+    task: 'generate',
+    video: 'video' in writing.direction ? writing.direction.video : undefined,
+    props: draft.props,
+  });
   ctx.progress(0.9, 1, 'saving');
   const { result } = await commitAs(
     deps,
@@ -166,16 +175,73 @@ export async function screenplayGenerate(deps: HandlerDeps, ctx: JobContext) {
         characters: characters.length,
         elements: elements.length,
         castOnly,
+        checked: applied.length,
       };
     },
     (r) =>
-      `Generate screenplay “${r.title}” (${r.beats} beats, ${r.scenes} scenes, ${r.characters} characters, ${r.elements} locations and props)${r.castOnly ? '; only the cast may appear' : ''}`,
+      `Generate screenplay “${r.title}” (${r.beats} beats, ${r.scenes} scenes, ${r.characters} characters, ${r.elements} locations and props)${r.castOnly ? '; only the cast may appear' : ''}${r.checked ? `; ${r.checked} moment(s) made filmable` : ''}`,
   );
   // The screenplay is reviewed before the cast is made (docs/design/ai-review.md#how-a-review-runs)
   await deps.services.aiReviews
     .followUp(ctx.actor, projectId, 'screenplay')
     .catch((err) => ctx.log.warn({ err: (err as Error).message }, 'could not queue the screenplay review'));
   return result;
+}
+
+/**
+ * A screenplay draft read for the video model before it is saved
+ * (docs/design/first-pass.md#the-screenplay-read-for-the-video-model): with prompt version 3, `screenplay.check`
+ * rewrites in place each beat or scene that leaves a moment in a form the video model renders badly. Any failure keeps
+ * the draft as written.
+ */
+async function checkScreenplay<D extends CheckableDraft>(
+  deps: HandlerDeps,
+  ctx: JobContext,
+  project: Project,
+  draft: D,
+  opts: {
+    task: 'generate' | 'extend';
+    video: VideoModelFacts | undefined;
+    props: { name: string; description: string }[];
+  },
+): Promise<{ draft: D; applied: ScreenplayEdit[] }> {
+  if (promptVersionOf(project.settings) < 3 || !opts.video || !draft.scenes.length)
+    return { draft, applied: [] };
+  ctx.progress(0.8, 1, 'reading the screenplay for the video model');
+  try {
+    const out = await deps.llm.checkScreenplay(
+      screenplayCheckInput(draft, {
+        brief: workingBrief(project),
+        castOnly: project.settings.consistency.castOnly === true,
+        video: opts.video,
+        props: opts.props,
+      }),
+      ctx.signal,
+    );
+    const checked = applyScreenplayEdits(draft, out.edits);
+    deps.metrics.screenplayChecks.inc({
+      task: opts.task,
+      outcome: checked.applied.length ? 'edited' : 'unchanged',
+    });
+    ctx.log.info(
+      {
+        projectId: project.id,
+        task: opts.task,
+        edits: checked.applied.map((e) => `${e.target} ${e.index} ${e.field}: ${e.why}`),
+        dropped: out.edits.length - checked.applied.length,
+      },
+      'screenplay read for the video model',
+    );
+    return checked;
+  } catch (err) {
+    throwIfAborted(ctx.signal);
+    deps.metrics.screenplayChecks.inc({ task: opts.task, outcome: 'error' });
+    ctx.log.warn(
+      { projectId: project.id, task: opts.task, err: (err as Error).message },
+      'could not read the screenplay for the video model; saving it as written',
+    );
+    return { draft, applied: [] };
+  }
 }
 
 /**
@@ -275,7 +341,7 @@ export async function screenplayExtend(deps: HandlerDeps, ctx: JobContext) {
           ...writing.direction,
         }
       : {};
-  const out = await deps.llm.extendScreenplay(
+  const extended = await deps.llm.extendScreenplay(
     {
       title: sp.title,
       logline: sp.logline,
@@ -303,6 +369,13 @@ export async function screenplayExtend(deps: HandlerDeps, ctx: JobContext) {
     ctx.signal,
     writing.version,
   );
+  throwIfAborted(ctx.signal);
+  const known = Object.values(docs.elements).filter((e) => e.kind === 'prop');
+  const { draft: out } = await checkScreenplay(deps, ctx, docs.project, extended, {
+    task: 'extend',
+    video: 'video' in writing.direction ? writing.direction.video : undefined,
+    props: [...known.map((e) => ({ name: e.name, description: e.description })), ...extended.props],
+  });
   const wanted = new Set(beats.map((b) => b.index));
   const scenes = out.scenes
     .filter((s, i) => wanted.has(s.beatIndex ?? beats[i]?.index ?? -1))

@@ -60,6 +60,9 @@ import {
   type ScorePlanInput,
   type ScorePlanOutput,
   ScorePlanOutputSchema,
+  type ScreenplayCheckInput,
+  type ScreenplayCheckOutput,
+  ScreenplayCheckOutputSchema,
   type ScreenplayExtendInput,
   type ScreenplayExtendOutput,
   ScreenplayExtendOutputSchema,
@@ -338,6 +341,23 @@ Find the moments the brief asks for that the video model renders badly: what is 
 For each, give its gentlest form that keeps what the moment means for the story, said in story words as an event a viewer sees, never in camera words (no "shot", "cut", "frame", "far away", "from behind", "close-up", "out of sight"): a jump becomes a step over, a fall a slow slide that is already over, a bounce one big bump and a laugh, food set down whole between them, two riders side by side become two riders one pace apart.
 Then rewrite the brief changing only the words of those moments, as few as you can; every other word, name, place, look, constraint and line stays exactly as it is.
 Return only JSON: {"moments":[{"asked":"what the brief asks","why":"why the video model renders it badly","filmed":"its gentlest form, in story words"}],"prompt":"the brief, adapted"}. When nothing is hard, "moments" is empty and "prompt" is the brief unchanged.`,
+
+  'screenplay.check': `rideo-task: screenplay.check
+You are the script supervisor of a film that an AI video model generates shot by shot, reading the writer's draft before anyone else sees it. "video" says what the model renders well ("strengths") and badly ("weaknesses"); "brief" is what the film must be; when "castOnly" is true nobody but the cast may appear. You get the outline's beats ("outline": "index", "title", "summary"; absent when only new scenes are read), the written scenes ("scenes": "index", who is in it, its props, its "continuity" (the state at its start), "summary", "action" and lines) and the props with their looks.
+Go through every beat and every scene moment by moment, and find each moment the draft leaves in a form the video model renders badly or a viewer cannot follow:
+- more than three characters together in one moment (a rider and the animal ridden count as two), or someone who appears or leaves without being seen or said to come or go;
+- what "video.weaknesses" names: fine hand work (opening a bag or a box, unwrapping, tying, a string held in the fingers), mechanical handling (getting on or off an animal, putting on equipment, feet into stirrups), a quick or repeated motion (bouncing, pacing back and forth, running again and again), several attempts at the same thing;
+- a fall, a jump, a throw or a catch, something caught, tangled, freed or snatched by contact;
+- food or a small object handled, bitten, broken or passed from one to another;
+- a prop a later moment needs whose state, place or holder is not said, or that changes without being seen to change; a prop or detail no moment needs (one more thing to keep the same).
+For each, rewrite the whole text it is in (an outline beat's "summary", or a scene's "summary", "action" or "continuity") so that the moment takes its safest form that keeps what it means for the story and every moment the brief asks for:
+- the result already there rather than the handling (the backpack already open on the grass and the sandwich already on its cloth between them; the rider already in the saddle, feet in the stirrups);
+- one slow motion instead of a repeated one (one big, slow bump and a laugh), one attempt instead of several;
+- contact that is still (the kite resting on one low branch), a fall that is a slow slide already ending in the soft hay;
+- at most three together: the others wait where the text says (the ponies at the fence) or are seen one after the other;
+- every prop's state, place and holder said where a later moment needs it.
+Write in story words, as events a viewer sees, never in camera words ("shot", "cut", "frame", "close-up", "off-screen", "from far away"). Change only what a moment needs: keep every other sentence, every name and every line as written, and never drop a moment the brief asks for.
+Return only JSON: {"edits":[{"target":"scene","index":0,"field":"action","text":"the whole new text of that field","why":"the moment and what made it hard"}]}. "target" is "outline" (field "summary") or "scene" (field "summary", "action" or "continuity"); "edits" is empty when every moment is already in a safe form.`,
 
   'reference.check': `rideo-task: reference.check
 You check one reference image of a film's cast before it is kept: every frame of the film is drawn from it, so whatever is wrong in it is wrong in every shot. You get the subject (a character with its identity and outfit, or a place, a prop or a style with its description), the view that was drawn, the views of it drawn before ("Earlier view 1:" and on, when "earlier" is above 0) and the new view ("New view:").
@@ -1228,6 +1248,11 @@ export class LlmTasks {
 
   /** One frame described for search (docs/design/search.md#captions). */
   /** The brief adapted for the video model (docs/design/first-pass.md#the-brief-adapted-for-the-video-model). */
+  /** The screenplay read for the video model before it is saved (docs/design/first-pass.md#the-screenplay-read-for-the-video-model). */
+  checkScreenplay(input: ScreenplayCheckInput, signal?: AbortSignal): Promise<ScreenplayCheckOutput> {
+    return this.run('screenplay.check', ScreenplayCheckOutputSchema, input, { temperature: 0.2, signal });
+  }
+
   adaptBrief(input: BriefAdaptInput, signal?: AbortSignal): Promise<BriefAdaptOutput> {
     return this.run('brief.adapt', BriefAdaptOutputSchema, input, { temperature: 0.3, signal });
   }
