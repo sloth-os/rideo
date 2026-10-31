@@ -97,8 +97,12 @@ The shot planner also plans for what the video model does with a frame: **one mo
 or more characters one moves across the ground and the others stay where they stand: both pandas walking drew ghost
 heads), **props at rest** on the ground or in a hand (a bucket balanced on a fence rail floated), and **one clear
 motion** that starts at once and ends within the shot (a brush raised at the end of a dolly-out never was), with
-its first frame already in the motion (a walk drawn standing never started). The camera still moves where it tells the
-scene: fp10's pilot planned every shot locked off and its review called it "five static tableaux".
+its first frame already in the motion (a walk drawn standing never started). A shot whose beat is a gesture or a pose
+(a point, a turn toward the tree, a kite held up) starts on that pose, readable in a still (the arm already out and
+pointing), and its action holds or finishes it: the storyboard review reads the frames as the scene, and fp16's frames
+started Rosie "mid-turn" before the point her line needs ("Rosie's point at the bent grass is not in the frame",
+storytelling 7). The camera still moves where it tells the scene: fp10's pilot planned every shot locked off and its
+review called it "five static tableaux".
 
 The shot planner fixes the scene's **geography** before its shots (where each landmark stands, where the sun is, which
 way the wind blows) and says in every shot which way the camera looks, what is behind the characters on which side,

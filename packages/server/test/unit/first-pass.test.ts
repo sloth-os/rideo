@@ -51,6 +51,7 @@ describe('makers aim at what their reviewers score', () => {
     expect(SYSTEM_PROMPTS_V2['clip.plan']).toContain('a reverse shot shows what was behind the first camera');
     expect(SYSTEM_PROMPTS_V2['clip.plan']).toContain('The video model moves one thing well at a time');
     expect(SYSTEM_PROMPTS_V2['clip.plan']).toContain('never plays as a row of locked-off pictures');
+    expect(SYSTEM_PROMPTS_V2['clip.plan']).toContain('its "description" already shows that pose, clear in a still picture');
     expect(SYSTEM_PROMPTS_V2['screenplay.generate']).toContain('go through your screenplay moment by moment');
   });
 
