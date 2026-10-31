@@ -39,6 +39,18 @@ export const EXCLUSIONS_STILL =
   'extra or missing limbs, deformed hands or paws, duplicated characters, on-screen text, logos, watermark';
 export const EXCLUSIONS_MOTION =
   'morphing faces or bodies, extra or missing limbs, floating objects, sliding feet, flicker, sudden cuts, on-screen text';
+/**
+ * Version 3: what a frame and a take avoid unless the shot asks for it
+ * (docs/design/first-pass.md#nobody-looks-into-the-lens).
+ */
+export const LOOKING_INTO_CAMERA = 'anyone looking into the camera';
+const ASKS_FOR_THE_LENS = /\b(?:into|at|toward|towards)\s+the\s+(?:camera|lens|viewer)\b|\bat us\b/i;
+/** Whether a version 3 shot's frame and take avoid a look into the lens: unless its text asks for one. */
+export function avoidsTheLens(ctx: Pick<ShotContext, 'shot' | 'settings'>): boolean {
+  if (promptVersionOf(ctx.settings) < 3) return false;
+  const { description, action, endState } = ctx.shot;
+  return !ASKS_FOR_THE_LENS.test([description, action, endState ?? ''].join(' '));
+}
 export const PHYSICS_LINE =
   'Physics: real weight, gravity and momentum; bodies, feet and equipment keep contact with the ground; objects keep their shape and number.';
 export const SCENE_REFERENCE_PHRASE =
@@ -513,7 +525,7 @@ function compileShotPromptV2(
     if (ctx.sceneReference)
       lines.push(promptVersionOf(settings) >= 3 ? SCENE_REFERENCE_PHRASE_V3 : SCENE_REFERENCE_PHRASE);
     if (ctx.blockingImage) lines.push(BLOCKING_IMAGE_PHRASE);
-    lines.push(`Avoid: ${EXCLUSIONS_STILL}.`);
+    lines.push(`Avoid: ${EXCLUSIONS_STILL}${avoidsTheLens(ctx) ? `, ${LOOKING_INTO_CAMERA}` : ''}.`);
     return lines.join(' ');
   }
   const dialogue = dialogueBlockV2(ctx);
@@ -521,7 +533,7 @@ function compileShotPromptV2(
   const sound = soundBlockV2(settings, { lines: shot.dialogue.some((d) => clean(d.line)) });
   if (sound) lines.push(sound);
   lines.push(PHYSICS_LINE);
-  lines.push(`Avoid: ${EXCLUSIONS_MOTION}.`);
+  lines.push(`Avoid: ${EXCLUSIONS_MOTION}${avoidsTheLens(ctx) ? `, ${LOOKING_INTO_CAMERA}` : ''}.`);
   return lines.join(' ');
 }
 
@@ -529,7 +541,13 @@ function compileShotPromptV2(
 export function negativePromptFor(ctx: Pick<ShotContext, 'shot' | 'settings'>): string {
   if (promptVersionOf(ctx.settings) < 2)
     return [BASE_NEGATIVE, clean(ctx.shot.negativePrompt ?? '')].filter(Boolean).join(', ');
-  const text = [BASE_NEGATIVE_V2, clean(ctx.shot.negativePrompt ?? '')].filter(Boolean).join(', ');
+  const text = [
+    BASE_NEGATIVE_V2,
+    avoidsTheLens(ctx) ? LOOKING_INTO_CAMERA.replace(/^anyone /, '') : '',
+    clean(ctx.shot.negativePrompt ?? ''),
+  ]
+    .filter(Boolean)
+    .join(', ');
   if (text.length <= NEGATIVE_PROMPT_MAX) return text;
   const cut = text.slice(0, NEGATIVE_PROMPT_MAX);
   return cut.slice(0, Math.max(cut.lastIndexOf(','), BASE_NEGATIVE.length)).trim();

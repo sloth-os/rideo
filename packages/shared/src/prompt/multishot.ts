@@ -2,6 +2,7 @@ import type { Shot } from '../schemas/clip';
 import type { GatewayVideoRequest, ModelLimits } from '../schemas/gateway';
 import type { ProjectSettings } from '../schemas/project';
 import {
+  avoidsTheLens,
   BASE_NEGATIVE,
   clampDuration,
   compileShotPrompt,
@@ -10,6 +11,7 @@ import {
   enhancePromptParam,
   identityFragment,
   inFrameLine,
+  LOOKING_INTO_CAMERA,
   negativePromptFor,
   PHYSICS_LINE,
   plannedShotRange,
@@ -206,12 +208,14 @@ export function compileMultiShotRequest(
       `Characters (keep identities exactly as described and as in the reference images): ${characters.map((c) => identityFragment(c)).join(' ')}`,
     );
   lines.push(...elementLines(elements));
+  // Version 3: nobody looks into the lens unless a shot asks to (docs/design/first-pass.md#nobody-looks-into-the-lens)
+  const lens = ctxs.every((c) => avoidsTheLens(c));
   if (v2) {
     const sound = soundBlockV2(first.settings, {
       lines: ctxs.some((c) => c.shot.dialogue.some((d) => d.line.trim())),
     });
     if (sound) lines.push(sound);
-    lines.push(PHYSICS_LINE, `Avoid: ${EXCLUSIONS_MULTI}.`);
+    lines.push(PHYSICS_LINE, `Avoid: ${EXCLUSIONS_MULTI}${lens ? `, ${LOOKING_INTO_CAMERA}` : ''}.`);
   }
   const total = ctxs.reduce((n, c) => n + c.shot.durationSec, 0);
   const framed = !!opts.firstFrameUri && opts.limits?.supports_first_frame !== false;
@@ -234,7 +238,13 @@ export function compileMultiShotRequest(
       seed: shotSeed(first.shot, first.characters, opts.attempt),
       ...(opts.limits?.supports_negative_prompt === false
         ? {}
-        : { negative_prompt: v2 ? negativePromptFor(first).replace(/,\s*jump cut/, '') : BASE_NEGATIVE }),
+        : {
+            negative_prompt: v2
+              ? negativePromptFor(first)
+                  .replace(/,\s*jump cut/, '')
+                  .replace(lens ? /(?!)/ : /,\s*looking into the camera/, '')
+              : BASE_NEGATIVE,
+          }),
       include_audio: opts.includeAudio === true,
       camera_motion: 'auto',
       ...enhancePromptParam(first.settings),

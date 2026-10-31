@@ -211,6 +211,14 @@ head and the shoulders of a standing figure), labelled "Rosie (head and shoulder
 figures. A crop of the same picture keeps the face and the outfit's top exactly as the cast was locked, where a
 separate portrait view would be one more picture to keep consistent.
 
+### Nobody looks into the lens
+
+Image and video models turn a face to the viewer: fp10's takes had "Sammy turns to face camera, breaking blocking"
+(major) and a head turning to the camera mid-take, and fp15's storyboard a close-up "facing the lens instead of
+off-screen right" (major) and a reverse "playing to camera" while every shot said where its characters look. Prompt
+version 3 adds "anyone looking into the camera" to what a frame and a take avoid (`LOOKING_INTO_CAMERA`, in the prompt's
+`Avoid:` line and the video's negative prompt), unless the shot itself asks for a look into the lens.
+
 ## The desk on request
 
 The [director's desk](director-desk.md) blocks every scene in 3D and gives the image model each shot's camera view and

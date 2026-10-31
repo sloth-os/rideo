@@ -401,7 +401,6 @@ export const BriefAdaptOutputSchema = z.object({
 });
 export type BriefAdaptOutput = z.infer<typeof BriefAdaptOutputSchema>;
 
-
 export const LLM_TASKS = [
   'media.describe',
   'screenplay.generate',

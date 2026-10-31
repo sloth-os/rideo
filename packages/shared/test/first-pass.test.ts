@@ -7,6 +7,7 @@ import {
   ClipReviewSchema,
   clipReviewVerdict,
   compileElementReferenceRequest,
+  compileMultiShotRequest,
   compileReferenceRequest,
   compileShotPrompt,
   DEFAULT_REVIEW_SETTINGS,
@@ -14,8 +15,10 @@ import {
   FIRST_PASS_BAR,
   FrameReconcileOutputSchema,
   headCropped,
+  LOOKING_INTO_CAMERA,
   MAX_ANCHOR_IMAGES,
   makerRubric,
+  negativePromptFor,
   ProjectSettingsSchema,
   REFERENCE_VIEW_PRIORITY,
   REVIEW_DIMENSIONS,
@@ -372,6 +375,67 @@ describe('frames that agree with each other (docs/design/first-pass.md#frames-th
     expect(at(3)).toContain("every prop's state and place follow the text above, not this image");
     expect(at(2)).toContain(SCENE_REFERENCE_PHRASE);
     expect(at(2)).not.toContain(SCENE_REFERENCE_PHRASE_V3);
+  });
+});
+
+describe('nobody looks into the lens (docs/design/first-pass.md#nobody-looks-into-the-lens)', () => {
+  const at = (promptVersion: 2 | 3, description = 'Rosie stands frame right, facing off-screen left.') => {
+    const ctx: ShotContext = {
+      shot: f.shot({ description }),
+      characters: [],
+      screenplay: null,
+      settings: ProjectSettingsSchema.parse({ generation: { promptVersion } }),
+    };
+    return {
+      keyframe: compileShotPrompt(ctx, 'keyframe'),
+      video: compileShotPrompt(ctx, 'video'),
+      negative: negativePromptFor(ctx),
+    };
+  };
+
+  it('keeps faces off the lens in a version 3 frame and take', () => {
+    const v3 = at(3);
+    expect(v3.keyframe).toMatch(new RegExp(`Avoid: [^.]*, ${LOOKING_INTO_CAMERA}\\.`));
+    expect(v3.video).toMatch(new RegExp(`Avoid: [^.]*, ${LOOKING_INTO_CAMERA}\\.`));
+    expect(v3.negative).toContain('looking into the camera');
+    expect(v3.negative.length).toBeLessThanOrEqual(500);
+    // Version 2 prompts stay as they were
+    const v2 = at(2);
+    for (const p of [v2.keyframe, v2.video, v2.negative]) expect(p).not.toContain('looking into the camera');
+  });
+
+  it('keeps faces off the lens in a sequence, unless one of its shots asks for a look into it', () => {
+    const settings = ProjectSettingsSchema.parse({ generation: { promptVersion: 3 } });
+    const sequence = (second: string) => {
+      const req = compileMultiShotRequest(
+        [
+          {
+            shot: f.shot({ description: 'Rosie faces off-screen left.' }),
+            characters: [],
+            screenplay: null,
+            settings,
+          },
+          { shot: f.shot({ description: second }), characters: [], screenplay: null, settings },
+        ],
+        { referenceUris: [], attempt: 0 },
+      );
+      return {
+        text: (req.input[0] as { text: string }).text,
+        negative: req.parameters.negative_prompt ?? '',
+      };
+    };
+    const avoided = sequence('Sammy faces Rosie.');
+    expect(avoided.text).toContain(`, ${LOOKING_INTO_CAMERA}.`);
+    expect(avoided.negative).toContain('looking into the camera');
+    const asked = sequence('Sammy looks into the camera.');
+    expect(asked.text).not.toContain('looking into the camera');
+    expect(asked.negative).not.toContain('looking into the camera');
+  });
+
+  it('lets a shot that asks for a look into the lens have it', () => {
+    const asked = at(3, 'Rosie turns and looks straight into the camera with a wink.');
+    for (const p of [asked.keyframe, asked.video, asked.negative])
+      expect(p).not.toContain('looking into the camera');
   });
 });
 
