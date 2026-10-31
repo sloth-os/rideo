@@ -212,7 +212,7 @@ again with another seed, within `consistency.maxAttempts`, while it does not mat
 else the one with the fewest issues (`rideo_reference_checks_total{kind, outcome}`). As with frames, it is part of
 drawing a reference: the cast the review sees is the first one presented.
 
-Correcting a view by an edit of itself, as frames are ([a redraw is an edit](#a-redraw-is-an-edit)), was tried and
+Correcting a view by an edit of itself (as for frames, [also removed](#frames-that-follow-their-shot)) was tried and
 removed: sent with the views drawn before it and told to keep the subject "the same as in them", the edit pulled a
 profile toward their angle ("Reference 3 is not a profile view"), and the riding cast fell to 8.5 (consistency 7.5) on
 fp24, against 9.0 with every dimension at 8 on fp23, built the same but drawing each corrected view anew. An edit of
@@ -285,19 +285,12 @@ the next drawing must show, said positively ("the red kite lies flat on the gras
 frame right"), and the next attempt's prompt says `Make sure: …`. The reference check does the same for a view drawn
 again ("the backpack's top is closed"). A long correction is cut at 1500 characters rather than lost.
 
-### A redraw is an edit
-
-The check catches what the review later marks: in fp20's kite storyboard, five of the review's six major issues were
-already in the kept frames' readings ("Rosie faces frame left, not frame right", "the string runs up out of the top of
-the frame", "her face is frontal to the camera"). But a new seed with "Make sure: …" fixed about one frame in five, and
-half the frames (9 of 18) used their three attempts and kept a contradiction. An image model follows "change only this"
-in a picture far better than it follows a sentence in a new one. So with prompt version 3, once a reading asks for a
-redraw and says what to fix, the next attempt edits that frame (`compileFrameEditRequest`): the frame first, then up to
-three of the cast's references, and "Edit the first image: keep everything in it exactly as it is … and change only
-this: <fix>" (`FRAME_EDIT_PHRASE`). The edited frame passes the identity and quality checks and is read against its shot
-like any other attempt, and the attempt kept is still the first that needs no redraw, else the one with the fewest
-conflicts, so an edit that makes a frame worse is never kept over a better one. An edit that fails the identity check
-is followed by a drawing from scratch (`rideo_frame_edits_total{source}` counts the edits).
+Correcting a frame by an edit of itself instead of drawing it again was tried and removed. The check catches what the
+review later marks (in fp20's kite storyboard five of the review's six major issues were in the kept frames'
+readings), and a new seed fixes about one frame in five, so an edit ("keep everything in it exactly as it is and change
+only this") looked likely to converge. Measured on fp23 and fp24, it did not: continuity stayed at 4–5.5 (the kite
+storyboard 7.1 and the riding ones 6.7 and 6.9, against 7.2 and 6.8 on average without edits), and the kite
+storyboard's character fell to 6 (8–9 on every run before).
 
 ## Frames that agree with each other
 
@@ -424,7 +417,7 @@ cell is one run's first round; the scores of the same build and brief differ by 
 | fp15: the opening frame kept as "the same moment" | riding 7.9; kite 7.4 | riding 8.9 (consistency 7.9); kite **9.0, every dimension 8 or more** | riding 6.9; kite 6.6 (continuity 5 and 4.5: later frames held to the opening frame's states and people) |
 | fp16: the screenplay read for the video model (removed since); the opening frame for the place only | riding 7.0; kite 6.8 | riding 8.7 (consistency 7.6); kite **8.9, every dimension 8 or more** | riding 6.5; kite 7.3; kite pilot scene 6.3 (temporal and physics 5: the kite launched a scene early), first takes 6.0 |
 | fp17: wrong-side landmarks and wind redrawn, nobody looks into the lens | riding 7.1; kite 7.4 | riding 8.9 (consistency 7.9); kite **9.0, every dimension 8 or more** | riding 6.7 (a frame lost to an empty image, fixed since); kite **7.4, one major issue** (storytelling and coverage 8, character 9) |
-| fp23, fp24: a redraw is an edit (frames; reference views on fp24 only, removed since) | riding 7.4, 7.3; kite 7.8 | riding 9.0, **every dimension 8 or more** (fp23), 8.5 with view edits (fp24); kite **9.1, every dimension 8 or more** | kite 7.1 (composition, coverage, storytelling and pacing 8; continuity 5, character 6); riding 6.7 and 6.9 (continuity 4 and 5.5); kite pilot scene 6.6, first takes 6.2. Frame edits measured neutral on continuity (kite mean 7.2, riding 6.8 without them) and may cost character: to be decided |
+| fp23, fp24: a redraw is an edit (frames; reference views on fp24 only, removed since) | riding 7.4, 7.3; kite 7.8 | riding 9.0, **every dimension 8 or more** (fp23), 8.5 with view edits (fp24); kite **9.1, every dimension 8 or more** | kite 7.1 (composition, coverage, storytelling and pacing 8; continuity 5, character 6); riding 6.7 and 6.9 (continuity 4 and 5.5); kite pilot scene 6.6, first takes 6.2. Frame edits measured neutral on continuity (kite mean 7.2, riding 6.8 without them) and cost character: removed |
 | fp21, fp22: a repeated brief event never cut to one; actions keep to the stated wind (screenplays only) | riding 7.1; kite 7.6, 7.4 (brief 8, feasibility 8 once), then 7.9 (continuity 8, brief 9) and 7.5 | – | – |
 | fp20: prop transitions, landmarks new to the place, no pose jump at the cut, four-second walks | riding 7.8 (brief 9); kite 7.5 | riding 8.9 (consistency 7.9); kite **8.9, every dimension 8 or more** | riding 7.3 (storytelling 8, pacing 8.5, composition 8; continuity 4.5); kite 7.2 over three scenes (continuity 5.3: the kite flying or its string in the sky before it is lifted; five of the six majors were in the kept frames' readings); kite pilot scene 6.3 (continuity 4, character 5), first takes 7.2 (2 of 5 at 8) |
 | fp19: the take's camera said first, a gesture aimed elsewhere redrawn | riding 7.6; kite **8.4** (story, character, dialogue, visual and brief 9; continuity and feasibility 7) | riding 9.0 (consistency 7.9); kite **9.1, every dimension 8 or more** | riding 6.9 (a "PONY SCHOOL" sign, trousers lost); kite **7.9** (character 9, storytelling and pacing 8.5, coverage and feasibility 8; composition 7.5, continuity 5.5: the wind on fur and the kite's tail); kite pilot scene 6.8 (dialogue and sound 10; two takes still pulled back), first takes 6.3 |

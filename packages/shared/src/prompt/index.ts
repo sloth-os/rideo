@@ -855,57 +855,6 @@ export function compileKeyframeRequest(
   };
 }
 
-/**
- * Version 3: a frame corrected by an edit of itself (docs/design/first-pass.md#a-redraw-is-an-edit): the image model
- * follows "change only this" in a picture far better than a sentence in a new drawing.
- */
-export const FRAME_EDIT_PHRASE =
-  'Edit the first image: keep everything in it exactly as it is (the characters and how they look, the place, the light, the framing and the style) and change only this:';
-/** The cast's references sent with a frame to edit, after the frame. */
-export const FRAME_EDIT_MAX_REFERENCES = 3;
-
-export function compileFrameEditRequest(
-  ctx: ShotContext,
-  opts: {
-    /** The frame the reading asked to correct. */
-    frameUri: string;
-    /** What the reading found wrong, said as what the picture must show. */
-    fix: string;
-    referenceUris: string[];
-    referenceLabels?: string[];
-    attempt: number;
-    model?: string;
-    variation?: number;
-  },
-): GatewayImageRequest {
-  const { shot, settings } = ctx;
-  const refs = opts.referenceUris.slice(0, FRAME_EDIT_MAX_REFERENCES);
-  const labels = (opts.referenceLabels ?? []).slice(0, refs.length);
-  const text = [
-    `${FRAME_EDIT_PHRASE} ${clean(opts.fix)}.`,
-    labels.length
-      ? `The next images show how they look: ${labels.map((l, i) => `${i + 2} ${l}`).join('; ')}.`
-      : '',
-    `Avoid: ${EXCLUSIONS_STILL}${avoidsTheLens(ctx) ? `, ${LOOKING_INTO_CAMERA}` : ''}.`,
-  ]
-    .filter(Boolean)
-    .join(' ');
-  return {
-    ...(opts.model && opts.model !== 'auto' ? { model: opts.model } : {}),
-    input: [
-      { type: 'text', text },
-      { type: 'image', uri: opts.frameUri },
-      ...refs.map((uri) => ({ type: 'image' as const, uri })),
-    ],
-    parameters: {
-      dimensions: { width: settings.resolution.width, height: settings.resolution.height },
-      seed: shotSeed(shot, ctx.characters, opts.attempt, opts.variation),
-      negative_prompt: negativePromptFor(ctx, { camera: false }),
-      output_count: 1,
-    },
-  };
-}
-
 export function compileVideoRequest(
   ctx: ShotContext,
   opts: {
