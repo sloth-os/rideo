@@ -120,6 +120,10 @@ still disagreed with each other (the wind blowing both ways, a tree on either si
   the next beat says who moved it and where it is now, and anything that could drift off (a flying kite, a loose pony)
   is held by someone named or tied in every beat: fp17's and fp18's reviews marked continuity down for a sandwich
   that went from the closed backpack to the grass and a kite flying over the picnic with nobody holding it.
+- **Forces obeyed.** Every action keeps to the forces the continuity states: what the wind moves streams the way it
+  blows, whoever walks into it is slowed and whoever walks with it is pushed on, and a lesson about a force shows its
+  cause. Stating the wind was not enough: both fp21 kite screenplays had a major continuity issue for actions against
+  their own wind (a tail trailing behind Sammy as he walked downwind, a walker pushed back by a tailwind).
 - **Pacing.** Every beat turns: a beat that only moves people from one place to another gets a small want and a
   change.
 - **Outfits and bodies.** Every part of an outfit says its colour and how it sits on the body (the helmet between the
