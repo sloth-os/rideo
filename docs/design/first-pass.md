@@ -443,14 +443,14 @@ cell is one run's first round; the scores of the same build and brief differ by 
 
 ## What is left
 
-Every run since fp4, first round only (one build and brief move by up to a point between runs):
+Every run from fp4 to fp24, first round only (one build and brief move by up to a point between runs):
 
 | Stage | Kite brief | Riding brief | Runs with every dimension at 8 |
 |---|---|---|---|
-| Screenplay | 7.7 (6.8–8.5, 17 runs) | 7.3 (6.4–7.9, 14) | none: feasibility stays under 8 |
-| Cast | 8.8 (8.4–9.1, 16) | 8.8 (8.5–9.0, 12) | kite 10 of 16, riding 2 of 12 |
-| Storyboard | 7.2 (6.6–7.9, 15) | 6.8 (5.6–7.2, 10) | none (fp19: 7.9, five of seven at 8) |
-| Pilot scene (video) | 6.6 (6.0–7.3, 5) | 5.9 (1) | none (fp18: five of ten at 8) |
+| Screenplay | 7.7 (6.8–8.5, 23 runs) | 7.3 (6.4–7.9, 18) | none: feasibility stays under 8 (8 once, fp21) |
+| Cast | 8.9 (8.4–9.1, 18) | 8.8 (8.5–9.0, 15) | kite 12 of 18, riding 3 of 15 |
+| Storyboard | 7.2 (6.6–7.9, 17) | 6.8 (5.6–7.3, 14) | none (fp19: 7.9, five of seven at 8) |
+| Pilot scene (video) | 6.6 (6.0–7.3, 7) | 5.9 (1) | none (fp18: 7.3, five of ten at 8) |
 
 What keeps each under 8, what was tried, and what to try next:
 
