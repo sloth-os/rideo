@@ -55,6 +55,7 @@ describe('makers aim at what their reviewers score', () => {
       'its "description" already shows that pose, clear in a still picture',
     );
     expect(SYSTEM_PROMPTS_V2['screenplay.generate']).toContain('go through your screenplay moment by moment');
+    expect(SYSTEM_PROMPTS_V2['screenplay.generate']).toContain('A prop that changes place or state between beats');
   });
 
   it('checks a reference against its subject and the views before it', () => {
