@@ -8,6 +8,7 @@ import {
   type CharacterReference,
   type ConsistencyReport,
   compactIdentity,
+  compileFrameEditRequest,
   compileKeyframeRequest,
   type Element,
   type FrameReconcileInput,
@@ -164,22 +165,35 @@ export async function generateKeyframe(
     | null = null;
   // What the last reading found wrong, for the next attempt to show instead
   let correction: string | null = null;
+  // Version 3: the frame the last reading asked to correct, which the next attempt edits
+  // (docs/design/first-pass.md#a-redraw-is-an-edit); an edit that fails its checks is followed by a drawing
+  let toEdit: { frame: MediaRef; fix: string } | null = null;
   for (let attempt = 0; attempt < input.maxAttempts; attempt++) {
     throwIfAborted(ctx.signal);
     input.progress(attempt);
-    const req = compileKeyframeRequest(
-      {
-        ...shotCtx,
-        referenceLabels: refs.referenceLabels.slice(0, refs.referenceUris.length),
-        correction,
-      },
-      {
-        referenceUris: refs.referenceUris,
-        attempt,
-        model: shotCtx.settings.models.image,
-        variation: input.variation,
-      },
-    );
+    const editing = toEdit;
+    toEdit = null;
+    const labels = refs.referenceLabels.slice(0, refs.referenceUris.length);
+    const req = editing
+      ? compileFrameEditRequest(shotCtx, {
+          frameUri: await deps.media.dataUri(projectId, editing.frame),
+          fix: editing.fix,
+          referenceUris: refs.referenceUris,
+          referenceLabels: labels,
+          attempt,
+          model: shotCtx.settings.models.image,
+          variation: input.variation,
+        })
+      : compileKeyframeRequest(
+          { ...shotCtx, referenceLabels: labels, correction },
+          {
+            referenceUris: refs.referenceUris,
+            attempt,
+            model: shotCtx.settings.models.image,
+            variation: input.variation,
+          },
+        );
+    if (editing && input.staging) deps.metrics.frameEdits.inc({ source: input.staging.source });
     out.prompt = (req.input[0] as { text: string }).text;
     out.seed = req.parameters?.seed ?? 0;
     const task = await deps.gateway.generateImage(req, gatewayOptions(ctx, 'image', input.step, attempt));
@@ -229,6 +243,8 @@ export async function generateKeyframe(
         staged = { keyframe: out.keyframe, report: out.report, prompt: out.prompt, seed: out.seed, seen };
       if (!seen.redraw) break;
       correction = seen.fix.trim() || seen.conflicts.join('; ') || null;
+      if (seen.fix.trim() && promptVersionOf(shotCtx.settings) >= 3)
+        toEdit = { frame: out.keyframe, fix: seen.fix.trim() };
       ctx.log.info(
         { projectId, attempt, conflicts: seen.conflicts },
         'the frame contradicts its shot; drawing it again',

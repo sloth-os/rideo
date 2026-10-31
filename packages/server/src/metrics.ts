@@ -266,6 +266,13 @@ export class Metrics {
       'First frames read before a video starts from them, by source (storyboard, keyframe) and outcome (agreed, adjusted, error)',
     ),
   );
+  /** Frames corrected by an edit of themselves (docs/design/first-pass.md#a-redraw-is-an-edit). */
+  readonly frameEdits = this.add(
+    new Counter(
+      'rideo_frame_edits_total',
+      'Frames corrected by an edit of the frame instead of drawn again, by source (storyboard, keyframe)',
+    ),
+  );
   /** Briefs adapted for the video model (docs/design/first-pass.md#the-brief-adapted-for-the-video-model). */
   readonly briefAdaptations = this.add(
     new Counter(

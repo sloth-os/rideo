@@ -7,12 +7,16 @@ import {
   ClipReviewSchema,
   clipReviewVerdict,
   compileElementReferenceRequest,
+  compileFrameEditRequest,
+  compileKeyframeRequest,
   compileMultiShotRequest,
   compileReferenceRequest,
   compileShotPrompt,
   DEFAULT_REVIEW_SETTINGS,
   ELEMENT_VIEWS,
   FIRST_PASS_BAR,
+  FRAME_EDIT_MAX_REFERENCES,
+  FRAME_EDIT_PHRASE,
   FrameReconcileOutputSchema,
   headCropped,
   LOOKING_INTO_CAMERA,
@@ -533,6 +537,40 @@ describe('the take holds its camera (docs/design/first-pass.md#the-take-holds-it
       { referenceUris: [], attempt: 0 },
     );
     expect(req.parameters?.negative_prompt ?? '').not.toContain('camera pulling back');
+  });
+});
+
+describe('a redraw is an edit (docs/design/first-pass.md#a-redraw-is-an-edit)', () => {
+  it('sends the frame first, a few of the cast references, and only what to change', () => {
+    const ctx: ShotContext = {
+      shot: f.shot({ camera: { ...f.shot().camera, movement: 'static' } }),
+      characters: [],
+      screenplay: null,
+      settings: ProjectSettingsSchema.parse({ generation: { promptVersion: 3 } }),
+    };
+    const req = compileFrameEditRequest(ctx, {
+      frameUri: 'data:image/jpeg;base64,FRAME',
+      fix: 'Rosie faces frame right; the string hangs from the kite to the handle',
+      referenceUris: ['data:a', 'data:b', 'data:c', 'data:d', 'data:e'],
+      referenceLabels: ['Rosie (whole figure)', 'Rosie (three quarter)', 'Sammy (whole figure)', 'x', 'y'],
+      attempt: 1,
+    });
+    const [text, frame, ...refs] = req.input as { type: string; text?: string; uri?: string }[];
+    expect(text!.text).toMatch(
+      new RegExp(
+        `^${FRAME_EDIT_PHRASE.replace(/[()]/g, '\\$&')} Rosie faces frame right; the string hangs from the kite to the handle\\.`,
+      ),
+    );
+    expect(text!.text).toContain(
+      'The next images show how they look: 2 Rosie (whole figure); 3 Rosie (three quarter); 4 Sammy (whole figure).',
+    );
+    expect(frame).toEqual({ type: 'image', uri: 'data:image/jpeg;base64,FRAME' });
+    expect(refs).toHaveLength(FRAME_EDIT_MAX_REFERENCES);
+    // A still has no camera movement to hold, edited or drawn
+    expect(req.parameters?.negative_prompt).not.toContain('camera pulling back');
+    expect(
+      compileKeyframeRequest(ctx, { referenceUris: [], attempt: 0 }).parameters?.negative_prompt,
+    ).not.toContain('camera pulling back');
   });
 });
 

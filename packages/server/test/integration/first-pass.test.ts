@@ -1,4 +1,12 @@
-import type { Character, Clip, Element, Job, Project } from '@rideo/shared';
+import {
+  type Character,
+  type Clip,
+  type Element,
+  FRAME_EDIT_MAX_REFERENCES,
+  FRAME_EDIT_PHRASE,
+  type Job,
+  type Project,
+} from '@rideo/shared';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { expectSucceeded, readyStoryProject, type Stack, startStack } from '../helpers/stack';
 
@@ -189,12 +197,16 @@ describe('frames that follow their shot (docs/design/first-pass.md#frames-that-f
     // Every attempt of the contradicting frame was read and drawn again; the reading of the one kept is its board's
     const attempts = docs.project.settings.consistency.maxAttempts;
     expect(shots[0]!.board!.gatewayTaskIds).toHaveLength(attempts);
-    // A frame drawn again is told what the reading found wrong
-    const prompts = shots[0]!.board!.gatewayTaskIds.map(
-      (id) => (stack.gw.store.requests.get(id) as { input: { text?: string }[] }).input[0]!.text!,
+    // A frame the reading asks to correct is edited: the frame first, then what to change (version 3)
+    const requests = shots[0]!.board!.gatewayTaskIds.map(
+      (id) => stack.gw.store.requests.get(id) as { input: { type: string; text?: string; uri?: string }[] },
     );
-    expect(prompts[0]).not.toContain('Make sure:');
-    expect(prompts[1]).toContain('Make sure: the gate stands closed behind them.');
+    expect(requests[0]!.input[0]!.text).not.toContain(FRAME_EDIT_PHRASE);
+    for (const edit of requests.slice(1)) {
+      expect(edit.input[0]!.text).toContain(`${FRAME_EDIT_PHRASE} the gate stands closed behind them.`);
+      expect(edit.input[1]).toMatchObject({ type: 'image', uri: expect.stringMatching(/^data:image\//) });
+      expect(edit.input.length).toBeLessThanOrEqual(2 + FRAME_EDIT_MAX_REFERENCES);
+    }
     expect(shots[0]!.board!.seen).toMatchObject({
       keyframeHash: shots[0]!.board!.keyframe.hash,
       conflicts: ['the gate is open, not closed'],
@@ -209,6 +221,7 @@ describe('frames that follow their shot (docs/design/first-pass.md#frames-that-f
       .split('\n')
       .filter((l) => l.startsWith('rideo_frame_reconciles_total{') && l.includes('outcome="redraw"'));
     expect(redraws.some((l) => l.includes('source="storyboard"'))).toBe(true);
+    expect(metrics).toMatch(/rideo_frame_edits_total\{source="storyboard"\} [1-9]/);
   }, 300_000);
 });
 

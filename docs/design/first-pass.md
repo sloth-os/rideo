@@ -279,6 +279,20 @@ the next drawing must show, said positively ("the red kite lies flat on the gras
 frame right"), and the next attempt's prompt says `Make sure: …`. The reference check does the same for a view drawn
 again ("the backpack's top is closed"). A long correction is cut at 1500 characters rather than lost.
 
+### A redraw is an edit
+
+The check catches what the review later marks: in fp20's kite storyboard, five of the review's six major issues were
+already in the kept frames' readings ("Rosie faces frame left, not frame right", "the string runs up out of the top of
+the frame", "her face is frontal to the camera"). But a new seed with "Make sure: …" fixed about one frame in five, and
+half the frames (9 of 18) used their three attempts and kept a contradiction. An image model follows "change only this"
+in a picture far better than it follows a sentence in a new one. So with prompt version 3, once a reading asks for a
+redraw and says what to fix, the next attempt edits that frame (`compileFrameEditRequest`): the frame first, then up to
+three of the cast's references, and "Edit the first image: keep everything in it exactly as it is … and change only
+this: <fix>" (`FRAME_EDIT_PHRASE`). The edited frame passes the identity and quality checks and is read against its shot
+like any other attempt, and the attempt kept is still the first that needs no redraw, else the one with the fewest
+conflicts, so an edit that makes a frame worse is never kept over a better one. An edit that fails the identity check
+is followed by a drawing from scratch (`rideo_frame_edits_total{source}` counts the edits).
+
 ## Frames that agree with each other
 
 Each frame followed its own shot and the storyboards' continuity stayed at 5–6: the frames disagreed with each other.
