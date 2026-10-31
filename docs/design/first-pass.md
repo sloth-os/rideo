@@ -369,7 +369,9 @@ cell is one run's first round; the scores of the same build and brief differ by 
 | fp11, fp12: the brief adapted (camera words, then story words) | riding 6.4, then 7.8 and 7.4; kite 7.9, then 7.4 | kite **9.1, every dimension 8 or more** | – |
 | fp14: redraws told what to correct; a moving shot starts in its motion | riding 6.8 (two scenes saved with no continuity: over 1000 characters); kite 7.5 | riding **8.9, every dimension 8 or more** (consistency 8.1); kite 8.6 (likeness 7.1) | riding 7.1; kite **7.6** (feasibility and pacing 8, character 8.5; continuity 6) |
 | fp15: the opening frame kept as "the same moment" | riding 7.9; kite 7.4 | riding 8.9 (consistency 7.9); kite **9.0, every dimension 8 or more** | riding 6.9; kite 6.6 (continuity 5 and 4.5: later frames held to the opening frame's states and people) |
-| fp16: the screenplay read for the video model (removed since) | riding 7.0; kite 6.8 | – | – |
+| fp16: the screenplay read for the video model (removed since); the opening frame for the place only | riding 7.0; kite 6.8 | riding 8.7 (consistency 7.6); kite **8.9, every dimension 8 or more** | riding 6.5; kite 7.3; kite pilot scene 6.3 (temporal and physics 5: the kite launched a scene early), first takes 6.0 |
+| fp17: wrong-side landmarks and wind redrawn, nobody looks into the lens | riding 7.1; kite 7.4 | riding 8.9 (consistency 7.9); kite **9.0, every dimension 8 or more** | riding 6.7 (a frame lost to an empty image, fixed since); kite **7.4, one major issue** (storytelling and coverage 8, character 9) |
+| fp18: a beat's pose in its first frame, the take told where it ends | kite 7.6 (brief 9) | kite 8.9 (likeness and consistency 8.1) | running when this was written |
 
 - **Screenplay.** A brief without built-in conflicts passes 8 overall on its first round (kite 8.3, 8.5, 8.0, 8.1; 7.6 twice),
   with every dimension at 8 or 9 except feasibility (7). The riding brief stays at 7.1–8.1: it asks for what the video
@@ -391,35 +393,38 @@ cell is one run's first round; the scores of the same build and brief differ by 
 
 ## What is left
 
-What still keeps a first pass under 8, with what to try next:
+Every run since fp4, first round only (one build and brief move by up to a point between runs):
 
-1. **A brief that asks for what the video model cannot film** (screenplay feasibility 5–7). The reviewer is right
-   about the model, and the writer cannot satisfy both the brief and the model: the brief is now adapted before it
-   is written ([the brief, adapted](#the-brief-adapted-for-the-video-model)); its measurement is below.
-2. **Small details that drift between views** (cast consistency 7.5–8.3): a backpack's buckles, a coat open in one view
-   and closed in another, sole colours. *Next:* draw a character's views in one picture (a turnaround of three figures
-   side by side on one background, which an image model keeps consistent within one image) and split it into the
-   three references; measure it against views drawn one by one.
-3. **Frames that do not follow their shot** (storyboard continuity 5–6): a prop drawn in another place or state than
-   the shot says, a duplicate prop, a character a few metres from where the cut before left them, a morning scene lit
-   like a sunset. The staging check ([frames that follow their shot](#frames-that-follow-their-shot)) draws such a
-   frame again: on fp8 it drew 3 of 12 frames again and left only details (clouds, a scarf end in the wind), yet
-   continuity stayed at 5.5. What the review still found is frames that disagree with each other, not with their own
-   text: the wind blowing one way in one frame and the other way in the next, the lone tree on the lake's side in a
-   reverse shot. *Next:* the scene's geography in every shot (which landmark lies in which direction, so a reverse
-   shot shows what is behind the first camera), from the desk's set once its cameras follow the plan (item 5), and
-   a scene's frames drawn as edits of its first frame.
-4. **Close framings drawn whole** (composition, fixed): every storyboard on prompt version 2 drew some close-ups and
-   medium close-ups as whole figures (fp6: four of nine); version 3's spelled-out framing and head-and-shoulders
-   references drew none of seven whole (fp7).
-5. **The AI blocking** (blocking 3–5, now off for new projects): its cameras must reproduce each shot's planned screen
-   positions and facing before its camera views and lines go to the image model, and it has no riders
-   (docs/improvements.md item 55).
-6. **The video** (the pilot's scene review 5.8 on the riding demo, 5.9 and 6.0 on fp6, 6.8 on fp10; first takes
-   watched whole 6.3 → 7.4). The first pass of the words and the stills has not reached the
-   video yet: a frame's mistakes go into its take (a second kite in the sky, a kite's tail blowing against the wind,
-   a string running up into an empty sky), and the video model adds its own (ghost heads in a two-character walk,
-   a stumble with no weight). Reading the first frame (fp6) found those contradictions on most frames and kept the
-   video from morphing toward the text; it does not remove a mistake the frame already has. *Next:* the reading's
-   `conflicts` are the frame check of item 3: a frame whose reading contradicts its shot (a duplicate prop, the wrong
-   framing, someone on the wrong side) is drawn again before its video is paid for.
+| Stage | Kite brief | Riding brief | Runs with every dimension at 8 |
+|---|---|---|---|
+| Screenplay | 7.7 (6.8–8.5, 15 runs) | 7.3 (6.4–7.9, 13) | none: feasibility stays under 8 |
+| Cast | 8.8 (8.4–9.1, 14) | 8.7 (8.5–8.9, 11) | kite 8 of 14, riding 2 of 11 |
+| Storyboard | 7.1 (6.6–7.6, 13) | 6.8 (5.6–7.2, 9) | none |
+| Pilot scene (video) | 6.4 (6.0–6.8, 3) | 5.9 (1) | none |
+
+What keeps each under 8, what was tried, and what to try next:
+
+1. **A brief that asks for what the video model cannot film** (screenplay feasibility 5–7 on every run). The reviewer
+   judges the event itself (a fall, a run again and again, four characters together, food handled), and a screenplay
+   that keeps the brief keeps the event. Tried: the brief adapted before writing (neutral, off unless a person turns
+   it on) and a second reader rewriting hard moments (it took story out; removed). *Next:* a person's decision,
+   because it changes what the review measures: judge a moment the brief demands by its filmable form; or plan such
+   moments at the shot level and let the storyboard and video reviews, which see what is filmed, judge them.
+2. **Views that drift** (riding cast consistency 7.6–8.1): a pony's blaze and build, a helmet that grows a brim in
+   profile, an ear drawn through a helmet, paws that change colour. *Next:* a turnaround sheet (the three views in one
+   picture, which an image model keeps consistent) split into the three references.
+3. **Frames that disagree with each other** (storyboard continuity 4.5–6 on every run). The plans' text agrees with
+   itself (fp14–fp17, read shot by shot); the drawings break it: a prop in a paw that the shot leaves on the grass,
+   the lake on the other side in a close-up, a scarf hanging still in a gale. Tried: the staging check with
+   corrections, the opening frame for the place only (as "the same moment" it cost a point, fp15), landmark sides and
+   the wind as reasons to redraw (fp17: one major issue left on the kite storyboard). *Next:* draw a frame as an edit
+   of the previous frame of the same camera setup, and measure it against frames drawn from references.
+4. **Stills that tell the beat** (storytelling 6–8): a frame is the start of its shot, so a beat inside the take was
+   missing from the storyboard; the planner now starts a shot on its beat's pose (fp18, being measured).
+5. **The video** (scene 6.0–6.8, first takes 6.0–7.4): the video model adds its own failures (a kite that morphs and
+   pops into the sky, a close-up drifting wide, a head turning to the camera). Tried: the first frame read before
+   the take, nobody looks into the lens, the take told where it ends (fp18). *Next:* a take whose watch finds its
+   planned end state missed is made again before the scene review, and props the model handles badly (a kite in the
+   wind) kept still or out of the moving part of a shot.
+6. **Close framings drawn whole** (fixed, fp7) and **the AI blocking** (off for new projects; its cameras must follow
+   the plan and it has no riders, docs/improvements.md item 55).
