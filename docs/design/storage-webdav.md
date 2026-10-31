@@ -180,6 +180,12 @@ The server's ffmpeg (generation and watermarking) needs local files. `MediaStore
 LRU bounded by `RIDEO_CACHE_MAX_BYTES` (default 5 GiB). It is only a cache: deleting it loses nothing, except an
 upload still waiting (below).
 
+Images converted for the models (`MediaStore.filePng`: a reference, a frame, the scene's opening frame as a PNG at a
+size) are cached beside them as `derived-<key>.png`. Every file lands in the cache whole, by a rename from the
+staging directory, and an empty file is never a hit: a storyboard draws its frames at once from the same references,
+and a conversion written in place was read half-written by another job, which sent the image model an empty image
+(`mm-gateway 422`, a frame missing from the fp17 riding storyboard).
+
 **An export ready before its upload.** Finishing used to upload the export to WebDAV before the export was ready:
 about 6 minutes for the panda demo's 419 MB on OpenList. Now the export is ready once its file is in the cache: the
 studio serves media from the cache first, so the export plays, downloads and gets its feedback at once, while the

@@ -527,13 +527,17 @@ export class MediaStore {
   async filePng(local: string, maxSide = 1024): Promise<Buffer> {
     const key = `${sha256(`${local}:${maxSide}`).slice(0, 24)}.png`;
     const cached = join(this.cacheDir, `derived-${key}`);
+    // A conversion lands whole, by a rename: jobs drawing at once read the same references, and one read another's
+    // half-written file as an empty image (docs/design/storage-webdav.md#local-cache-and-staging)
     const hit = await readFile(cached).catch(() => null);
-    if (hit) return hit;
+    if (hit?.length) return hit;
     const tmp = this.tmp('png');
     try {
       await toPng(this.deps.ff, local, tmp, maxSide);
       const buf = await readFile(tmp);
-      await writeFile(cached, buf);
+      if (!buf.length)
+        throw new AppError('media_error', `${extname(local) || 'the image'} converted to an empty PNG`);
+      await rename(tmp, cached);
       await this.touchCache(`derived-${key}`, buf.length);
       return buf;
     } finally {
