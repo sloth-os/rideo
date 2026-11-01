@@ -1,13 +1,13 @@
 import {
   compileSheetRequest,
   type MediaRef,
+  SHEET_MAX_PANELS,
   type ShotContext,
-  sheetGroups,
   sheetLayout,
   shotContextOf,
 } from '@rideo/shared';
 import { assertCastReady } from '../../domain/clips';
-import { notFound } from '../../errors';
+import { invalid, notFound } from '../../errors';
 import { cutSheet } from '../../media/sheet';
 import { throwIfAborted } from '../../util/abort';
 import type { JobContext } from '../queue';
@@ -29,9 +29,9 @@ export interface SheetPanel {
 }
 
 /**
- * `clip.sheet` (docs/design/storyboard.md#scene-sheets): these shots of a scene drawn together as the panels of one
- * image, a sheet of up to six, and cut apart at the gutters; later sheets take the first panel as their scene
- * reference. Returns each shot's panel.
+ * `clip.sheet` (docs/design/storyboard.md#scene-sheets): a scene's shots, up to `SHEET_MAX_PANELS`, drawn together as
+ * the panels of one image and cut apart at the gutters; each panel read against its shot, and the sheet drawn again
+ * whole, told what each failed panel must show, while one fails. Returns each shot's panel of the best sheet.
  */
 export async function clipSheet(
   deps: HandlerDeps,
@@ -42,128 +42,115 @@ export async function clipSheet(
   const docs = await docsFor(deps, ctx);
   const clip = docs.clips[clipId];
   if (!clip) throw notFound(`clip ${clipId}`);
-  const shots = clip.shots.filter((s) => shotIds.includes(s.id));
+  const shots = clip.shots.filter((s) => shotIds.includes(s.id)).sort((a, b) => a.index - b.index);
+  if (shots.length < 2 || shots.length > SHEET_MAX_PANELS)
+    throw invalid(`a scene sheet draws 2 to ${SHEET_MAX_PANELS} shots, not ${shots.length}`);
   assertCastReady(shots, docs.characters, docs.elements);
   const settings = docs.project.settings;
-  const groups = sheetGroups(shots);
-  const panels: Record<string, SheetPanel> = {};
   try {
     return await deps.media.withTmpDir(async (dir) => {
       const imageLimits = await deps.gateway.limitsFor('image', settings.models.image);
-      // The first sheet's first panel: the scene reference of the sheets after it
-      let opening: MediaRef | null = null;
-      for (const [g, group] of groups.entries()) {
+      const ctxs: ShotContext[] = shots.map((shot) => shotContextOf(shot, docs, clip));
+      const characters = [...new Map(ctxs.flatMap((c) => c.characters).map((c) => [c.id, c])).values()];
+      const elements = [...new Map(ctxs.flatMap((c) => c.elements ?? []).map((e) => [e.id, e])).values()];
+      // The cast and the elements of all its shots, as one shot's would be chosen
+      const refs = await prepareShotReferences(deps, ctx, {
+        shot: {
+          ...shots[0]!,
+          characterIds: characters.map((c) => c.id),
+          elementIds: elements.map((e) => e.id),
+        },
+        characters,
+        elements,
+        judgedElements: [],
+        maxInputImages: imageLimits.limits?.max_input_images,
+        dir,
+      });
+      const layout = sheetLayout(shots.length, settings.resolution, settings.storyboard.sheetPixels);
+      let best: { drawn: SheetPanel[]; redraws: number; conflicts: number } | null = null;
+      let correction: string | null = null;
+      const attempts = Math.max(1, settings.consistency.maxAttempts);
+      for (let attempt = 0; attempt < attempts; attempt++) {
         throwIfAborted(ctx.signal);
-        ctx.progress(g, groups.length, `drawing sheet ${g + 1}/${groups.length} of scene ${clip.index + 1}`);
-        const ctxs: ShotContext[] = group.map((shot) => shotContextOf(shot, docs, clip));
-        const characters = [...new Map(ctxs.flatMap((c) => c.characters).map((c) => [c.id, c])).values()];
-        const elements = [...new Map(ctxs.flatMap((c) => c.elements ?? []).map((e) => [e.id, e])).values()];
-        // The cast and the elements of all its shots, as one shot's would be chosen
-        const refs = await prepareShotReferences(deps, ctx, {
-          shot: {
-            ...group[0]!,
-            characterIds: characters.map((c) => c.id),
-            elementIds: elements.map((e) => e.id),
-          },
-          characters,
-          elements,
-          judgedElements: [],
-          maxInputImages: imageLimits.limits?.max_input_images,
-          dir,
+        ctx.progress(
+          attempt,
+          attempts,
+          `drawing the sheet of scene ${clip.index + 1} (attempt ${attempt + 1})`,
+        );
+        const req = compileSheetRequest(ctxs, layout, {
+          referenceUris: refs.referenceUris,
+          referenceLabels: refs.referenceLabels.slice(0, refs.referenceUris.length),
+          correction,
+          attempt,
+          model: settings.models.image,
         });
-        const sceneReference = opening ? await deps.media.pngDataUri(projectId, opening, 1024) : null;
-        const layout = sheetLayout(group.length, settings.resolution, settings.storyboard.sheetPixels);
-        // The sheet drawn again whole while a panel contradicts its shot, told what each such panel must show; the
-        // sheet with the fewest panels to redraw is kept (docs/design/storyboard.md#scene-sheets)
-        let best: { drawn: SheetPanel[]; redraws: number; conflicts: number } | null = null;
-        let correction: string | null = null;
-        const attempts = Math.max(1, settings.consistency.maxAttempts);
-        for (let attempt = 0; attempt < attempts; attempt++) {
-          throwIfAborted(ctx.signal);
-          const req = compileSheetRequest(ctxs, layout, {
-            referenceUris: [...refs.referenceUris, ...(sceneReference ? [sceneReference] : [])],
-            referenceLabels: refs.referenceLabels.slice(0, refs.referenceUris.length),
-            sceneReference: !!sceneReference,
-            correction,
-            attempt,
-            model: settings.models.image,
-          });
-          const task = await deps.gateway.generateImage(
-            req,
-            gatewayOptions(ctx, 'image', `sheet${g + 1}`, attempt),
-          );
-          const sheet = await deps.media.importUri(projectId, task.outputs![0]!.uri, {
-            kind: 'keyframes',
-            name: `sheet-c${clip.index + 1}-${g + 1}-a${attempt + 1}`,
-            signal: ctx.signal,
-          });
-          const cut = await cutSheet(
-            deps.ff,
-            await deps.media.localPath(projectId, sheet),
-            layout,
-            settings.resolution,
-            dir,
-            ctx.signal,
-          );
-          deps.metrics.storyboardSheets.inc({ outcome: cut.gutters ? 'gutters' : 'cells' });
-          const drawn: SheetPanel[] = [];
-          for (const [k, shot] of group.entries())
-            drawn.push({
-              keyframe: await deps.media.putFile(projectId, cut.files[k]!, {
-                kind: 'keyframes',
-                name: `board-c${clip.index + 1}-s${shot.index + 1}-panel`,
-              }),
-              sheet,
-              panel: k + 1,
-              panels: group.length,
-              prompt: (req.input[0] as { text: string }).text,
-              seed: req.parameters?.seed ?? 0,
-              imageModel: task.model,
-              taskId: task.id,
-            });
-          // Each panel read against its shot, the sheet's (or the scene's) first panel as its opening frame
-          const readings = await Promise.all(
-            drawn.map((panel, k) => {
-              const staging = stagingFor(ctxs[k]!, 'storyboard', k > 0 ? drawn[0]!.keyframe : opening);
-              return staging ? readFrame(deps, ctx, staging, panel.keyframe) : Promise.resolve(null);
+        const task = await deps.gateway.generateImage(req, gatewayOptions(ctx, 'image', 'sheet', attempt));
+        const sheet = await deps.media.importUri(projectId, task.outputs![0]!.uri, {
+          kind: 'keyframes',
+          name: `sheet-c${clip.index + 1}-a${attempt + 1}`,
+          signal: ctx.signal,
+        });
+        const cut = await cutSheet(
+          deps.ff,
+          await deps.media.localPath(projectId, sheet),
+          layout,
+          settings.resolution,
+          dir,
+          ctx.signal,
+        );
+        deps.metrics.storyboardSheets.inc({ outcome: cut.gutters ? 'gutters' : 'cells' });
+        const drawn: SheetPanel[] = [];
+        for (const [k, shot] of shots.entries())
+          drawn.push({
+            keyframe: await deps.media.putFile(projectId, cut.files[k]!, {
+              kind: 'keyframes',
+              name: `board-c${clip.index + 1}-s${shot.index + 1}-panel`,
             }),
-          );
-          readings.forEach((seen, k) => {
-            drawn[k]!.seen = seen;
+            sheet,
+            panel: k + 1,
+            panels: shots.length,
+            prompt: (req.input[0] as { text: string }).text,
+            seed: req.parameters?.seed ?? 0,
+            imageModel: task.model,
+            taskId: task.id,
           });
-          const redraws = readings.filter((r) => r?.redraw).length;
-          const conflicts = readings.reduce((n, r) => n + (r?.conflicts.length ?? 0), 0);
-          ctx.log.info(
-            {
-              clipId,
-              sheet: g + 1,
-              attempt,
-              panels: group.length,
-              layout: `${layout.columns}x${layout.rows}`,
-              gutters: cut.gutters,
-              redraws,
-              conflicts,
-            },
-            'cut a scene sheet into its panels',
-          );
-          if (!best || redraws < best.redraws || (redraws === best.redraws && conflicts < best.conflicts))
-            best = { drawn, redraws, conflicts };
-          if (!redraws) break;
-          correction = readings
-            .map((r, k) =>
-              r?.redraw
-                ? `in panel ${k + 1}, ${r.fix.trim() || r.conflicts.join('; ') || 'it follows its shot'}`
-                : '',
-            )
-            .filter(Boolean)
-            .join('; ');
-        }
-        for (const [k, shot] of group.entries()) {
-          panels[shot.id] = best!.drawn[k]!;
-          opening ??= best!.drawn[k]!.keyframe;
-        }
+        // Each panel read against its shot, the sheet's first panel as the others' opening frame
+        const readings = await Promise.all(
+          drawn.map((panel, k) => {
+            const staging = stagingFor(ctxs[k]!, 'storyboard', k > 0 ? drawn[0]!.keyframe : null);
+            return staging ? readFrame(deps, ctx, staging, panel.keyframe) : Promise.resolve(null);
+          }),
+        );
+        readings.forEach((seen, k) => {
+          drawn[k]!.seen = seen;
+        });
+        const redraws = readings.filter((r) => r?.redraw).length;
+        const conflicts = readings.reduce((n, r) => n + (r?.conflicts.length ?? 0), 0);
+        ctx.log.info(
+          {
+            clipId,
+            attempt,
+            panels: shots.length,
+            layout: `${layout.columns}x${layout.rows}`,
+            gutters: cut.gutters,
+            redraws,
+            conflicts,
+          },
+          'cut a scene sheet into its panels',
+        );
+        if (!best || redraws < best.redraws || (redraws === best.redraws && conflicts < best.conflicts))
+          best = { drawn, redraws, conflicts };
+        if (!redraws) break;
+        correction = readings
+          .map((r, k) =>
+            r?.redraw
+              ? `in panel ${k + 1}, ${r.fix.trim() || r.conflicts.join('; ') || 'it follows its shot'}`
+              : '',
+          )
+          .filter(Boolean)
+          .join('; ');
       }
-      return { panels };
+      return { panels: Object.fromEntries(shots.map((shot, k) => [shot.id, best!.drawn[k]!])) };
     });
   } catch (err) {
     if (!ctx.signal.aborted) deps.metrics.storyboardSheets.inc({ outcome: 'failed' });

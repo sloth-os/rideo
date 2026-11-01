@@ -6,6 +6,7 @@ import {
   boardState,
   type Clip,
   docPath,
+  drawnOnSheet,
   headCropped,
   type Job,
   type MediaRef,
@@ -82,9 +83,7 @@ async function drawSheets(
     entry.shotIds.push(shot.id);
     byClip.set(clip.id, entry);
   }
-  const whole = [...byClip.values()].filter(
-    ({ clip, shotIds }) => shotIds.length >= 2 && clip.shots.every((s) => shotIds.includes(s.id)),
-  );
+  const whole = [...byClip.values()].filter(({ clip, shotIds }) => drawnOnSheet(clip, shotIds));
   const jobs: Job[] = [];
   for (const { clip, shotIds } of whole)
     jobs.push(await ctx.spawn('clip.sheet', { clipId: clip.id, shotIds }, { dedupeKey: `sheet:${clip.id}` }));

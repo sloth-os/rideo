@@ -196,7 +196,7 @@ function dims(params: Record<string, unknown> | undefined, fallback: { width: nu
   return { width, height };
 }
 
-const NUMBER_WORDS = ['no', 'one', 'two', 'three', 'four', 'five', 'six'];
+const NUMBER_WORDS = ['no', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight'];
 
 /**
  * A storyboard sheet's grid (docs/design/storyboard.md#scene-sheets): "A storyboard sheet of six panels in two columns

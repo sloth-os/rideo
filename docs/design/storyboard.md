@@ -87,15 +87,17 @@ Frames drawn one at a time do not see each other, and with `settings.storyboard.
 one image instead: a storyboard sheet whose panels are its shots in order. Seedream 5.0 Pro has no group mode, so one
 canvas is the only way its frames can see each other ([why](first-pass.md#a-scene-drawn-on-one-sheet)).
 
-- **When.** `drawBoards` sends a clip to `clip.sheet` when every one of its shots needs a frame and there are at least
-  two; a scene with some frames kept (a review's fixes, an edited shot) has its other frames drawn one at a time, with
-  the scene reference, as before.
-- **Layout** (`sheetLayout`, shared). Up to `SHEET_MAX_PANELS` (6) shots a sheet, in order; a longer scene takes
-  several sheets, each later one with the first sheet's first panel as its scene reference. The grid is the one whose
-  canvas is nearest square, an empty cell counting as much as a canvas a third wider than square: two or three 16:9
-  frames in one column, four in 2×2, five or six in two columns of three rows. The canvas is as large as the image model
-  draws (`settings.storyboard.sheetPixels`, 4,600,000 by default: Seedream 5.0 Pro refuses more than 4,624,220
-  pixels), so six panels are about 1,150×650 pixels each. A cell no shot fills shows the place alone.
+- **When.** `drawBoards` sends a clip to `clip.sheet` when every one of its shots needs a frame, there are at least two
+  and at most `SHEET_MAX_PANELS` (8): a scene is drawn on one sheet or not at all, since two sheets of one scene
+  disagree with each other as frames drawn alone do (fp27's riding scenes, split four and four: Sammy's helmet changed
+  between them). A scene with some frames kept (a review's fixes, an edited shot) or with more shots has its frames
+  drawn one at a time, with the scene reference, as before.
+- **Layout** (`sheetLayout`, shared). The shots in order, in the grid whose canvas is nearest square, an empty cell
+  counting as much as a canvas a third wider than square: two or three 16:9 frames in one column, four in 2×2, five
+  or six in two columns of three rows, seven or eight in two columns of four. The canvas is as large as the image
+  model draws (`settings.storyboard.sheetPixels`, 4,600,000 by default: Seedream 5.0 Pro refuses more than 4,624,220
+  pixels), so six panels are about 1,050×590 pixels each and eight about 1,000×560. A cell no shot fills shows the
+  place alone.
 - **Prompt** (`compileSheetRequest`, shared). `A storyboard sheet of N panels in C columns and R rows …` (the
   `SHEET_PROMPT_PREFIX` the mock gateway reads), the style once, the scene line once (without the props none of its
   shots show), then `Panel k (<framing>): <the shot's keyframe description> <who is in frame>.` for each panel, the

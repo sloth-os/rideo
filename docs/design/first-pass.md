@@ -372,7 +372,9 @@ each scene reviewed as the mean of three judge answers:
 
 The scene whose panels survived their checks gained 1.3 points; the scene whose panels were nearly all drawn again
 alone gained nothing, as those frames no longer saw each other. So a sheet with a failed panel is now drawn again
-whole, told what that panel must show, and the best sheet's panels are kept. Riding's first sheet drew ponies into the
+whole, told what that panel must show, and the best sheet's panels are kept (fp29: kite 7.6 and 7.7, every panel
+kept; riding 6.5 and 6.9, its scenes of seven and eight shots split over two sheets that disagreed, Sammy's helmet
+changing between them). So a scene is now drawn on one sheet of up to eight panels, or alone. Riding's first sheet drew ponies into the
 establishing panel, which shows the yard before they are found: the other panels of the same canvas show them. The
 sheet stays a setting, off in the schema, until a full run of both briefs compares it with frames drawn alone.
 

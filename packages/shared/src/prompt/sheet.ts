@@ -1,4 +1,3 @@
-import type { Shot } from '../schemas/clip';
 import type { GatewayImageRequest } from '../schemas/gateway';
 import {
   avoidsTheLens,
@@ -8,9 +7,6 @@ import {
   inFrameLine,
   LOOKING_INTO_CAMERA,
   negativePromptFor,
-  promptVersionOf,
-  SCENE_REFERENCE_PHRASE,
-  SCENE_REFERENCE_PHRASE_V3,
   type ShotContext,
   sceneLine,
   shotBodyV2,
@@ -23,14 +19,26 @@ import {
  * because frames drawn one at a time do not see each other (docs/design/first-pass.md#a-scene-drawn-on-one-sheet).
  */
 
-/** The most shots one sheet draws. */
-export const SHEET_MAX_PANELS = 6;
+/** The most shots one sheet draws: a scene of more is drawn alone, as two sheets of it disagree. */
+export const SHEET_MAX_PANELS = 8;
 /** Seedream 5.0 Pro refuses a canvas of more than 4,624,220 pixels (measured on 2026-11-01). */
 export const DEFAULT_SHEET_PIXELS = 4_600_000;
 /** How a sheet's prompt starts (the mock gateway draws a grid for it). */
 export const SHEET_PROMPT_PREFIX = 'A storyboard sheet of';
 /** What fills a cell no shot fills; the cell is cut away. */
 const EMPTY_CELL = 'the same place, with no one in it';
+
+/**
+ * Whether these frames of a scene are drawn on one sheet (docs/design/storyboard.md#scene-sheets): the whole scene, two
+ * shots or more and no more than a sheet holds, since two sheets of one scene disagree as frames drawn alone do.
+ */
+export function drawnOnSheet(clip: { shots: { id: string }[] }, shotIds: string[]): boolean {
+  return (
+    shotIds.length >= 2 &&
+    shotIds.length <= SHEET_MAX_PANELS &&
+    clip.shots.every((s) => shotIds.includes(s.id))
+  );
+}
 
 export interface SheetLayout {
   columns: number;
@@ -67,24 +75,7 @@ export function sheetLayout(
   return { columns, rows, panels: n, width, height };
 }
 
-/**
- * A scene's shots in sheets, in order: as few sheets as `SHEET_MAX_PANELS` allows, of sizes as even as can be (seven
- * shots are a sheet of four and one of three, never six and one).
- */
-export function sheetGroups<T extends Pick<Shot, 'index'>>(shots: T[]): T[][] {
-  const ordered = [...shots].sort((a, b) => a.index - b.index);
-  if (!ordered.length) return [];
-  const count = Math.ceil(ordered.length / SHEET_MAX_PANELS);
-  const groups: T[][] = [];
-  for (let g = 0, at = 0; g < count; g++) {
-    const size = Math.ceil((ordered.length - at) / (count - g));
-    groups.push(ordered.slice(at, at + size));
-    at += size;
-  }
-  return groups;
-}
-
-const NUMBER_WORDS = ['no', 'one', 'two', 'three', 'four', 'five', 'six'];
+const NUMBER_WORDS = ['no', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight'];
 const counted = (n: number, noun: string) => `${NUMBER_WORDS[n] ?? n} ${noun}${n === 1 ? '' : 's'}`;
 
 /**
@@ -95,7 +86,7 @@ export function compileSheetPrompt(
   ctxs: ShotContext[],
   layout: SheetLayout,
   /** `correction`: what the panels of the last sheet got wrong, by panel (docs/design/storyboard.md#scene-sheets). */
-  opts: { referenceLabels?: string[]; sceneReference?: boolean; correction?: string | null } = {},
+  opts: { referenceLabels?: string[]; correction?: string | null } = {},
 ): string {
   const first = ctxs[0]!;
   const { settings } = first;
@@ -131,8 +122,6 @@ export function compileSheetPrompt(
     lines.push(
       `Reference images, in order: ${opts.referenceLabels.map((l, i) => `${i + 1} ${l}`).join('; ')}.`,
     );
-  if (opts.sceneReference)
-    lines.push(promptVersionOf(settings) >= 3 ? SCENE_REFERENCE_PHRASE_V3 : SCENE_REFERENCE_PHRASE);
   lines.push('No text, numbers, captions or speech bubbles in the panels.');
   lines.push(`Avoid: ${EXCLUSIONS_STILL}${ctxs.some(avoidsTheLens) ? `, ${LOOKING_INTO_CAMERA}` : ''}.`);
   return lines.join(' ');
@@ -145,7 +134,6 @@ export function compileSheetRequest(
   opts: {
     referenceUris: string[];
     referenceLabels?: string[];
-    sceneReference?: boolean;
     correction?: string | null;
     attempt: number;
     model?: string;
@@ -159,7 +147,6 @@ export function compileSheetRequest(
         type: 'text',
         text: compileSheetPrompt(ctxs, layout, {
           referenceLabels: opts.referenceLabels,
-          sceneReference: opts.sceneReference,
           correction: opts.correction,
         }),
       },

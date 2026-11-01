@@ -3,12 +3,12 @@ import {
   compileSheetPrompt,
   compileSheetRequest,
   DEFAULT_SHEET_PIXELS,
+  drawnOnSheet,
   ProjectSettingsPatchSchema,
   ProjectSettingsSchema,
   SHEET_MAX_PANELS,
   SHEET_PROMPT_PREFIX,
   type ShotContext,
-  sheetGroups,
   sheetLayout,
   shotContextOf,
 } from '../src';
@@ -22,11 +22,19 @@ describe('scene sheets (docs/design/storyboard.md#scene-sheets)', () => {
       const l = sheetLayout(n, frame);
       return `${l.columns}x${l.rows}`;
     };
-    expect([2, 3, 4, 5, 6].map((n) => grid(n))).toEqual(['1x2', '1x3', '2x2', '2x3', '2x3']);
+    expect([2, 3, 4, 5, 6, 7, 8].map((n) => grid(n))).toEqual([
+      '1x2',
+      '1x3',
+      '2x2',
+      '2x3',
+      '2x3',
+      '2x4',
+      '2x4',
+    ]);
     // Upright frames sit side by side
     expect(grid(6, { width: 1080, height: 1920 })).toBe('3x2');
     expect(grid(9)).toBe(grid(SHEET_MAX_PANELS));
-    for (const n of [2, 3, 4, 5, 6]) {
+    for (const n of [2, 3, 4, 5, 6, 7, 8]) {
       const l = sheetLayout(n, HD);
       expect(l.width * l.height).toBeLessThanOrEqual(DEFAULT_SHEET_PIXELS);
       expect(l.width % 16).toBe(0);
@@ -50,19 +58,16 @@ describe('scene sheets (docs/design/storyboard.md#scene-sheets)', () => {
     expect(() => ProjectSettingsPatchSchema.parse({ storyboard: { sheetPixels: 100 } })).toThrow();
   });
 
-  it('splits a long scene into sheets as even as can be, in order', () => {
-    const shots = (n: number) => Array.from({ length: n }, (_, i) => ({ index: n - 1 - i }));
-    const sizes = (n: number) => sheetGroups(shots(n)).map((g) => g.length);
-    expect(sizes(1)).toEqual([1]);
-    expect(sizes(6)).toEqual([6]);
-    expect(sizes(7)).toEqual([4, 3]);
-    expect(sizes(13)).toEqual([5, 4, 4]);
-    expect(
-      sheetGroups(shots(7))
-        .flat()
-        .map((s) => s.index),
-    ).toEqual([0, 1, 2, 3, 4, 5, 6]);
-    expect(sheetGroups([])).toEqual([]);
+  it('draws a scene on one sheet when it is drawn whole and fits one, and alone otherwise', () => {
+    const clip = (n: number) => ({ shots: Array.from({ length: n }, (_, i) => ({ id: `s${i}` })) });
+    const all = (n: number) => clip(n).shots.map((s) => s.id);
+    expect(drawnOnSheet(clip(2), all(2))).toBe(true);
+    expect(drawnOnSheet(clip(SHEET_MAX_PANELS), all(SHEET_MAX_PANELS))).toBe(true);
+    // Two sheets of one scene disagree: a longer scene is drawn alone
+    expect(drawnOnSheet(clip(SHEET_MAX_PANELS + 1), all(SHEET_MAX_PANELS + 1))).toBe(false);
+    // A scene with frames kept, and a single frame
+    expect(drawnOnSheet(clip(4), all(4).slice(1))).toBe(false);
+    expect(drawnOnSheet(clip(1), all(1))).toBe(false);
   });
 
   describe('the prompt', () => {
@@ -135,9 +140,6 @@ describe('scene sheets (docs/design/storyboard.md#scene-sheets)', () => {
       const req = compileSheetRequest(five, layout, { referenceUris: ['data:a', 'data:b'], attempt: 0 });
       expect(req.parameters?.dimensions).toEqual({ width: layout.width, height: layout.height });
       expect(req.input.filter((p) => p.type === 'image')).toHaveLength(2);
-      expect(compileSheetPrompt(ctxs, sheetLayout(2, HD), { sceneReference: true })).toMatch(
-        /reference image/i,
-      );
       // A sheet drawn again says what each panel that failed its check must show
       const again = compileSheetPrompt(ctxs, sheetLayout(2, HD), {
         correction: 'in panel 2, Rosie holds the handle in both paws;',
