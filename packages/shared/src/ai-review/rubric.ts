@@ -53,7 +53,7 @@ export const REVIEW_RUBRICS = {
       },
       {
         id: 'feasibility',
-        ask: 'the video model can film it: two or three characters in a scene at most, simple clear actions, no crowds or background people (none at all when "brief.castOnly"), no on-screen text, no fine hand work or mechanical handling (boarding a lift, putting on equipment, tying, buckling, operating machines), no quick repeated motion, nothing in "video.weaknesses".',
+        ask: 'the video model can film it: two or three characters in a scene at most, simple clear actions, no crowds or background people (none at all when "brief.castOnly"), no on-screen text, no fine hand work or mechanical handling (boarding a lift, putting on equipment, tying, buckling, operating machines), no quick repeated motion, nothing in "video.weaknesses". A moment the brief itself asks for is never marked down for being there: score how filmably it is staged (its hardest part across a cut or off-screen, fewer characters in frame at once, far off and small, one slow movement instead of a quick repeated one).',
       },
       {
         id: 'brief',

@@ -141,7 +141,7 @@ and started again six times.
 | `pacing` | Do the beats fit the target length, and does no scene overstay? |
 | `visual` | Is the story told in actions a camera can see? |
 | `continuity` | Does every scene state its time of day, weather, light, what each character wears and carries? Do props keep their state from scene to scene? |
-| `feasibility` | Can an AI video model film it? Few characters per scene, simple clear actions, no crowds, no on-screen text, no fine hand work or mechanical handling (boarding a chairlift, tying a knot), no quick repeated motion |
+| `feasibility` | Can an AI video model film it? Few characters per scene, simple clear actions, no crowds, no on-screen text, no fine hand work or mechanical handling (boarding a chairlift, tying a knot), no quick repeated motion. A moment the brief itself asks for is judged by how filmably it is staged, never marked down for being there ([a person's decision](first-pass.md#one-rubric-for-the-maker-and-the-reviewer)) |
 | `brief` | Does it follow the brief: the named characters, the place, the tone, constraints such as a film with only its cast? |
 
 | Storyboard | What the reviewer asks |

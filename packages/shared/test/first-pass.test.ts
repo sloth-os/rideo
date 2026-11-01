@@ -122,6 +122,11 @@ describe('one rubric for the maker and the reviewer (docs/design/first-pass.md#o
     const lines = rubricLines('screenplay').split('\n');
     expect(lines).toHaveLength(8);
     expect(lines[6]).toMatch(/^- feasibility: the video model can film it: two or three characters/);
+    // A person's decision: a moment the brief asks for is judged by how filmably it is staged
+    // (docs/design/first-pass.md#one-rubric-for-the-maker-and-the-reviewer)
+    expect(lines[6]).toContain(
+      'A moment the brief itself asks for is never marked down for being there: score how filmably it is staged',
+    );
     expect(rubricLines('storyboard', ['pacing'])).toBe(
       `- pacing: each shot's length fits its action and its lines (about two words a second, plus a beat).`,
     );

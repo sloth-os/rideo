@@ -71,6 +71,13 @@ reviewed on, with the bar: every dimension 8 or more on the first review.
 The reviewers are not changed: a higher first score has to come from a better first draft, not from a softer judge.
 The rubric moved into shared code, and the reviewers' prompts are rendered from it word for word.
 
+**One change, a person's decision** (November 1, 2026): screenplay `feasibility` judges a moment the brief itself
+asks for by how filmably the screenplay stages it, never by its being there. Through fp4–fp32 the reviewer marked
+down the briefs' own events (four characters riding together, a kite that falls every time he runs) at 5–7 in every
+run, so no screenplay that kept its brief could reach 8, and a draft that dropped them lost `brief` instead. The
+writer gets the same words, as it gets every dimension. Feasibility scores from fp33 on are not comparable with
+earlier ones.
+
 The writer also gets the rules the reviewer's dimensions imply and that it used to break, in this order:
 
 - **The brief first.** Every character, place, landmark and event the brief names is on screen, in its order; a hard
@@ -583,7 +590,8 @@ What keeps each under 8, what was tried, and what to try next:
    that keeps the brief keeps the event. Tried: the brief adapted before writing (neutral, off unless a person turns
    it on) and a second reader rewriting hard moments (it took story out; removed). *Next:* a person's decision,
    because it changes what the review measures: judge a moment the brief demands by its filmable form; or plan such
-   moments at the shot level and let the storyboard and video reviews, which see what is filmed, judge them.
+   moments at the shot level and let the storyboard and video reviews, which see what is filmed, judge them. *Decided*
+   (November 1, 2026): the filmable form ([one rubric](#one-rubric-for-the-maker-and-the-reviewer)).
 2. **Views that drift** (riding cast consistency 7.6–8.1): a pony's blaze and build, a helmet that grows a brim in
    profile, an ear drawn through a helmet, paws that change colour. *Next:* a turnaround sheet (the three views in one
    picture, which an image model keeps consistent) split into the three references.
