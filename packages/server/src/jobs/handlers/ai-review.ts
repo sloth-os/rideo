@@ -44,7 +44,7 @@ import { throwIfAborted } from '../../util/abort';
 import { eachLimit } from '../../util/limit';
 import type { JobContext } from '../queue';
 import { cameraView, ensureBlocking } from './blocking';
-import { commitAs, docsFor, type HandlerDeps } from './common';
+import { commitAs, docsFor, type HandlerDeps, sampledReview } from './common';
 import { drawBoards } from './storyboard';
 
 const byIndex = <T extends { index: number }>(a: T, b: T) => a.index - b.index;
@@ -183,7 +183,7 @@ export async function reviewSceneFrames(
   video: VideoModelFacts,
 ) {
   const shots = [...clip.shots].sort(byIndex);
-  const frames = [];
+  const frames: { label: string; data: Buffer; blocking?: Buffer }[] = [];
   for (const s of shots)
     if (s.board) {
       const view = cameraView(docs, clip, s, 512);
@@ -193,10 +193,12 @@ export async function reviewSceneFrames(
         ...(view ? { blocking: view.png } : {}),
       });
     }
-  const out = await deps.llm.reviewStoryboardScene(
-    storyboardSceneInput(docs, clip, scene, number, video),
-    frames,
-    ctx.signal,
+  const out = await sampledReview(docs.project.settings.review?.judgeSamples, () =>
+    deps.llm.reviewStoryboardScene(
+      storyboardSceneInput(docs, clip, scene, number, video),
+      frames,
+      ctx.signal,
+    ),
   );
   return {
     out,
@@ -496,9 +498,11 @@ async function reviewScreenplayRounds(deps: HandlerDeps, ctx: JobContext) {
     const subject = screenplayReviewSubject(docs);
     const ordered = [...docs.screenplay!.scenes].sort(byIndex);
     const focus = sceneIds.map((id) => ordered.findIndex((s) => s.id === id) + 1).filter((n) => n > 0);
-    const out = await deps.llm.reviewScreenplay(
-      { ...screenplayReviewInput(docs, video), ...(focus.length ? { focus } : {}) },
-      ctx.signal,
+    const out = await sampledReview(settings.judgeSamples, () =>
+      deps.llm.reviewScreenplay(
+        { ...screenplayReviewInput(docs, video), ...(focus.length ? { focus } : {}) },
+        ctx.signal,
+      ),
     );
     const targets: ReviewTargets = { scenes: new Map(ordered.map((s, i) => [i + 1, s.id])) };
     const review = await writeReview(

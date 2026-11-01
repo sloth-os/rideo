@@ -26,6 +26,28 @@ const round1 = (n: number) => Math.round(n * 10) / 10;
 
 const byIndex = <T extends { index: number }>(a: T, b: T) => a.index - b.index;
 
+/**
+ * Several judge answers as one review (docs/design/ai-review.md#the-verdict): each dimension's score is the mean of the
+ * answers that scored it; the words (summary, strengths, issues, recommendations) are those of the answer nearest the
+ * means, so the review stays one judge's coherent account.
+ */
+export function meanOfReviews(outs: StageReviewOutput[]): StageReviewOutput {
+  if (outs.length <= 1) return outs[0]!;
+  const dims = [...new Set(outs.flatMap((o) => Object.keys(o.scores)))];
+  const mean: Record<string, number> = {};
+  for (const d of dims) {
+    const xs = outs.map((o) => o.scores[d]).filter((x): x is number => typeof x === 'number');
+    if (xs.length) mean[d] = round1(xs.reduce((a, b) => a + b, 0) / xs.length);
+  }
+  const distance = (o: StageReviewOutput) =>
+    Object.entries(mean).reduce((sum, [d, m]) => {
+      const x = o.scores[d];
+      return sum + (typeof x === 'number' ? (x - m) ** 2 : 100);
+    }, 0);
+  const nearest = outs.reduce((best, o) => (distance(o) < distance(best) ? o : best));
+  return { ...nearest, scores: mean };
+}
+
 /** The verdict of a review, decided by rules rather than by the model (docs/design/ai-review.md#the-verdict). */
 export function stageVerdict(
   stage: ReviewStage,

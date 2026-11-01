@@ -1,6 +1,12 @@
 import { rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { GatewayTask, MediaRef, ProjectDocs } from '@rideo/shared';
+import {
+  type GatewayTask,
+  type MediaRef,
+  meanOfReviews,
+  type ProjectDocs,
+  type StageReviewOutput,
+} from '@rideo/shared';
 import type { AiReviewService } from '../../domain/ai-review';
 import type { ClipService } from '../../domain/clips';
 import type { Deps } from '../../domain/deps';
@@ -154,4 +160,17 @@ export async function withPoster(
   } finally {
     await rm(posterTmp, { force: true });
   }
+}
+
+/**
+ * A review asked `samples` times at once and taken as one: each dimension's mean, the words of the answer nearest it
+ * (docs/design/ai-review.md#the-verdict).
+ */
+export async function sampledReview(
+  samples: number | undefined,
+  call: () => Promise<StageReviewOutput>,
+): Promise<StageReviewOutput> {
+  const n = Math.max(1, Math.min(5, Math.floor(samples ?? 1)));
+  if (n === 1) return call();
+  return meanOfReviews(await Promise.all(Array.from({ length: n }, () => call())));
 }

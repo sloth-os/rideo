@@ -115,6 +115,16 @@ the mean of the dimensions the model scored, and the review **passes** when the 
 is critical and no dimension is below `review.minDimension` (4 in the schema, 8 for new projects). `blocking` names
 what failed ("critical: the chairlift boarding cannot be generated", "pacing 3/10, below 8", "score 6.4 of 7").
 
+**Judge samples.** One judge answer is noisy: the same build and brief moved by up to a point between runs, and with
+every dimension held at a floor, a minimum over many noisy dimensions fails work that truly clears it (a storyboard truly
+at 8.5 on all seven dimensions passes one sample about 30% of the time if a sample errs by half a point, and the mean of
+three about 74%; [Rating Roulette](https://arxiv.org/abs/2510.27106) measured repeated runs of one judge agreeing at
+Krippendorff's α 0.27–0.56). With `review.judgeSamples` (1–5: 1 in the schema, 3 for new projects) the screenplay, the
+cast and each storyboard scene are reviewed that many times at once, and each dimension's score is the mean of the
+answers (`meanOfReviews`); the review's words (its summary, issues and recommendations) are those of the answer nearest
+that mean. The expected score does not move: work below the bar fails more reliably, work above it passes more
+reliably. A scene's review of its takes stays one call: it watches video.
+
 ## Dimensions
 
 | Screenplay | What the reviewer asks |

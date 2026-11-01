@@ -19,6 +19,7 @@ import {
   LOOKING_INTO_CAMERA,
   MAX_ANCHOR_IMAGES,
   makerRubric,
+  meanOfReviews,
   negativePromptFor,
   ProjectSettingsSchema,
   REFERENCE_VIEW_PRIORITY,
@@ -568,6 +569,28 @@ describe('a take that fails is told what to correct (docs/design/first-pass.md#a
     expect(fixed.indexOf('Make sure:')).toBeGreaterThan(fixed.indexOf('Action:'));
     expect(at(3, null)).not.toContain('Make sure:');
     expect(at(2, 'the kite stays flat')).not.toContain('Make sure:');
+  });
+});
+
+describe('judge samples (docs/design/ai-review.md#the-verdict)', () => {
+  const answer = (scores: Record<string, number>, summary: string) => ({
+    scores,
+    summary,
+    strengths: [],
+    issues: [],
+    recommendations: [],
+  });
+  it("scores each dimension by the answers' mean, in the words of the answer nearest it", () => {
+    const merged = meanOfReviews([
+      answer({ story: 8, pacing: 7 }, 'low'),
+      answer({ story: 9, pacing: 8 }, 'middle'),
+      answer({ story: 10, pacing: 9 }, 'high'),
+    ] as never);
+    expect(merged.scores).toEqual({ story: 9, pacing: 8 });
+    expect(merged.summary).toBe('middle');
+    // One answer is the review as it is
+    const one = answer({ story: 7 }, 'only');
+    expect(meanOfReviews([one] as never)).toBe(one);
   });
 });
 

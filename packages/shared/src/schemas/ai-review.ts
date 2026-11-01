@@ -56,6 +56,11 @@ export const ReviewSettingsSchema = z.object({
   watchTakes: z.boolean().default(false),
   /** Review the scenes each production extension writes before they are planned; on for new projects. */
   extensions: z.boolean().default(false),
+  /**
+   * Judge answers a screenplay, cast or storyboard review averages, each dimension by its mean
+   * (docs/design/ai-review.md#the-verdict): 1 in the schema, 3 for new projects.
+   */
+  judgeSamples: z.number().int().min(1).max(5).default(1),
 });
 export type ReviewSettings = z.infer<typeof ReviewSettingsSchema>;
 export const DEFAULT_REVIEW_SETTINGS: ReviewSettings = ReviewSettingsSchema.parse({});

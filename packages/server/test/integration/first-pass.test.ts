@@ -21,8 +21,26 @@ describe('the first pass', () => {
       brief: { prompt: 'Two friends learn to ride ponies at a riding school; nobody else appears.' },
       settings: { targetDurationSec: 30, pilotDurationSec: 10, resolution: { width: 320, height: 180 } },
     });
-    // New projects hold every score of every review at 8 (docs/design/first-pass.md#the-gate-at-8)
-    expect(created.settings.review).toMatchObject({ threshold: 8, sceneThreshold: 8, minDimension: 8 });
+    // New projects hold every score of every review at 8 (docs/design/first-pass.md#the-gate-at-8), each the mean of
+    // three judge answers (docs/design/ai-review.md#the-verdict)
+    expect(created.settings.review).toMatchObject({
+      threshold: 8,
+      sceneThreshold: 8,
+      minDimension: 8,
+      judgeSamples: 3,
+    });
+    const reviewCalls = async () => {
+      const line = (await (await fetch(`${stack.url}/metrics`)).text())
+        .split('\n')
+        .find(
+          (l) =>
+            l.startsWith('rideo_llm_calls_total{') &&
+            l.includes('task="screenplay.review"') &&
+            l.includes('ok'),
+        );
+      return line ? Number(line.split(' ').at(-1)) : 0;
+    };
+    const before = await reviewCalls();
     // Every framing spelled out, the director's desk and the brief's adaptation on request (docs/design/first-pass.md)
     expect(created.settings.generation.promptVersion).toBe(3);
     expect(created.settings.brief.adapt).toBe(false);
@@ -40,6 +58,8 @@ describe('the first pass', () => {
     expect(written.castOnly).toBe(false);
     const review = stack.gw.counters.lastInputs['screenplay.review'] as Record<string, any>;
     expect(review.video.weaknesses).toEqual(written.video.weaknesses);
+    // The screenplay was reviewed three times at once, and its scores are their means
+    expect((await reviewCalls()) - before).toBeGreaterThanOrEqual(3);
 
     // The cast: the whole figure first, every view whole; a place or a prop drawn once
     let docs = (await stack.api<any>('GET', `/projects/${pid}/state`)).docs;

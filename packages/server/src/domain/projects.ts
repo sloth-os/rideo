@@ -101,6 +101,8 @@ export class ProjectService extends Service {
         threshold: FIRST_PASS_BAR,
         sceneThreshold: FIRST_PASS_BAR,
         minDimension: FIRST_PASS_BAR,
+        // The mean of three judge answers (docs/design/ai-review.md#the-verdict)
+        judgeSamples: 3,
       },
     });
     const merged = mergeSettings(

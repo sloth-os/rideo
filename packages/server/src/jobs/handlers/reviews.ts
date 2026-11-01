@@ -54,7 +54,7 @@ import {
   writeReview,
 } from './ai-review';
 import { ensureBlocking } from './blocking';
-import { commitAs, docsFor, type HandlerDeps } from './common';
+import { commitAs, docsFor, type HandlerDeps, sampledReview } from './common';
 import { activeReferenceJobs } from './story';
 import { drawBoards } from './storyboard';
 
@@ -168,50 +168,57 @@ async function reviewCastRounds(deps: HandlerDeps, ctx: JobContext) {
         kind: 'character' as const,
         run: async () => {
           const wardrobe = c.wardrobe.find((w) => w.default) ?? c.wardrobe[0];
-          return deps.llm.reviewCast(
-            {
-              film,
-              subject: {
-                kind: 'character',
-                name: c.name,
-                role: c.role,
-                // The whole identity (face, hair, eyes, marks): what the references must show
-                identity: identityFragment(c),
-                wardrobe: wardrobe?.description ?? '',
-                references: c.references
-                  .slice(0, 6)
-                  .map((r, i) => ({ index: i + 1, view: r.view, approved: r.approved })),
+          const seen = await images(c.references);
+          return sampledReview(settings.judgeSamples, () =>
+            deps.llm.reviewCast(
+              {
+                film,
+                subject: {
+                  kind: 'character',
+                  name: c.name,
+                  role: c.role,
+                  // The whole identity (face, hair, eyes, marks): what the references must show
+                  identity: identityFragment(c),
+                  wardrobe: wardrobe?.description ?? '',
+                  references: c.references
+                    .slice(0, 6)
+                    .map((r, i) => ({ index: i + 1, view: r.view, approved: r.approved })),
+                },
+                others: chars
+                  .filter((o) => o.id !== c.id)
+                  .map((o) => ({ name: o.name, look: compactIdentity(o) })),
               },
-              others: chars
-                .filter((o) => o.id !== c.id)
-                .map((o) => ({ name: o.name, look: compactIdentity(o) })),
-            },
-            await images(c.references),
-            ctx.signal,
+              seen,
+              ctx.signal,
+            ),
           );
         },
       })),
       ...elements.map((e) => ({
         name: e.name,
         kind: 'element' as const,
-        run: async () =>
-          deps.llm.reviewCast(
-            {
-              film,
-              subject: {
-                kind: 'element',
-                elementKind: e.kind,
-                name: e.name,
-                description: e.description,
-                references: e.references
-                  .slice(0, 6)
-                  .map((r, i) => ({ index: i + 1, view: r.view, approved: r.approved })),
+        run: async () => {
+          const seen = await images(e.references);
+          return sampledReview(settings.judgeSamples, () =>
+            deps.llm.reviewCast(
+              {
+                film,
+                subject: {
+                  kind: 'element',
+                  elementKind: e.kind,
+                  name: e.name,
+                  description: e.description,
+                  references: e.references
+                    .slice(0, 6)
+                    .map((r, i) => ({ index: i + 1, view: r.view, approved: r.approved })),
+                },
+                others: [],
               },
-              others: [],
-            },
-            await images(e.references),
-            ctx.signal,
-          ),
+              seen,
+              ctx.signal,
+            ),
+          );
+        },
       })),
     ];
     const answers: (StageReviewOutput | undefined)[] = new Array(calls.length);
