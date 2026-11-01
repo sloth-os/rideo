@@ -163,12 +163,24 @@ const act = async (what, fn) => {
   }
 };
 
+/** Reviews run again after their job failed, by stage: twice at most. */
+const rerun = {};
+
 /** Takes the project past a gate whose review did not pass, as a person continuing anyway would. */
 async function unblock(pid, d, jobs) {
   const stage = d.project.workflow.stage;
   const approvals = d.project.workflow.approvals ?? {};
   const busy = jobs.some((j) => j.status === 'queued' || j.status === 'running');
   const r = d.aiReviews?.[stage === 'edit' ? 'cut' : stage];
+  // A review whose job failed (the provider answering 502 or 504 for a while) is run again, as a person would
+  if (r?.status === 'failed' && !busy && (rerun[r.stage] ?? 0) < 2) {
+    rerun[r.stage] = (rerun[r.stage] ?? 0) + 1;
+    await act(
+      `run the ${r.stage} review again after it failed (${String(r.error ?? '').slice(0, 120)})`,
+      () => api('POST', `/projects/${pid}/ai-reviews/${r.stage}/run`, {}),
+    );
+    return;
+  }
   const failed = r?.status === 'succeeded' && r.verdict && !r.verdict.passed && !r.override;
   if (failed)
     await act(`continue past the ${r.stage} review`, () =>

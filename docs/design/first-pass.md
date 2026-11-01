@@ -493,7 +493,8 @@ fix off (`review.maxRounds` 0, `review.sceneFixes` 0; `consistency.maxAttempts` 
 every run since fp8 passed 3, the default of new projects, so the checks that draw a frame or a view again could),
 lets the autopilot run, and
 continues past every gate that does not pass (*continue anyway*, as a person would), so that each step is made once
-and reviewed once. It records each review's first round: the overall score, every dimension, and the issues, and
+and reviewed once. A review whose job failed (the provider answering 502 or 504 for a while, as in fp32) is run again,
+twice at most, as a person would press *review again*; the report lists those runs among its actions. It records each review's first round: the overall score, every dimension, and the issues, and
 prints them against the gate:
 
 ```text
