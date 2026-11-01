@@ -64,7 +64,7 @@ settings.review = {
   judgeSamples: number;   // 1–5, default 1 (3 for new projects): judge answers a screenplay, cast or storyboard review averages
 };
 settings.storyboard.production: boolean;  // off in the schema, on for new projects: storyboard every production scene
-settings.storyboard.sheet: boolean;       // off in the schema: draw a scene's frames on one sheet (storyboard.md#scene-sheets)
+settings.storyboard.sheet: boolean;       // off in the schema, on for new projects: draw a scene on one sheet (storyboard.md#scene-sheets)
 ```
 
 The settings that are new since a project was made are off for it, so an older project's gates and jobs stay as they

@@ -83,8 +83,8 @@ first one changed keeps the reference it was drawn with until it is drawn again.
 
 ## Scene sheets
 
-Frames drawn one at a time do not see each other, and with `settings.storyboard.sheet` a scene drawn whole is drawn as
-one image instead: a storyboard sheet whose panels are its shots in order. Seedream 5.0 Pro has no group mode, so one
+Frames drawn one at a time do not see each other, and with `settings.storyboard.sheet` (off in the schema, on for new
+projects) a scene drawn whole is drawn as one image instead: a storyboard sheet whose panels are its shots in order. Seedream 5.0 Pro has no group mode, so one
 canvas is the only way its frames can see each other ([why](first-pass.md#a-scene-drawn-on-one-sheet)).
 
 - **When.** `drawBoards` sends a clip to `clip.sheet` when every one of its shots needs a frame, there are at least two

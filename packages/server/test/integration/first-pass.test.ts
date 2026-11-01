@@ -29,6 +29,8 @@ describe('the first pass', () => {
       minDimension: 8,
       judgeSamples: 3,
     });
+    // and draw each scene on one sheet (docs/design/first-pass.md#a-scene-drawn-on-one-sheet)
+    expect(created.settings.storyboard).toMatchObject({ sheet: true });
     const reviewCalls = async () => {
       const line = (await (await fetch(`${stack.url}/metrics`)).text())
         .split('\n')

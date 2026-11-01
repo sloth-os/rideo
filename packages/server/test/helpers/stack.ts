@@ -168,11 +168,11 @@ export async function readyStoryProject(
       targetDurationSec: 30,
       pilotDurationSec: 10,
       resolution: { width: 320, height: 180 },
-      // The AI reviews and the director's desk have tests of their own (test/integration/ai-review.test.ts,
-      // clip-review.test.ts, autopilot.test.ts, director-desk.test.ts)
+      // The AI reviews, the director's desk and scene sheets have tests of their own (test/integration/ai-review.test.ts,
+      // clip-review.test.ts, autopilot.test.ts, director-desk.test.ts, storyboard.test.ts#scene-sheets)
       review: { ...NO_REVIEWS, ...review },
       blocking: { enabled: false, ...blocking },
-      storyboard: { production: false, ...storyboard },
+      storyboard: { production: false, sheet: false, ...storyboard },
       ...rest,
     },
   });

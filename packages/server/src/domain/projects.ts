@@ -92,7 +92,8 @@ export class ProjectService extends Service {
       // of every review held at 8 (docs/design/first-pass.md#the-gate-at-8). The director's desk is a person's tool
       // until its AI blocking follows the shot plan (docs/design/first-pass.md#the-desk-on-request).
       blocking: { enabled: false, layoutImage: false },
-      storyboard: { enabled: true, scenes: 3, production: true },
+      // each scene drawn on one sheet (docs/design/first-pass.md#a-scene-drawn-on-one-sheet)
+      storyboard: { enabled: true, scenes: 3, production: true, sheet: true },
       review: {
         cast: true,
         cut: true,

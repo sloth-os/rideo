@@ -374,9 +374,29 @@ The scene whose panels survived their checks gained 1.3 points; the scene whose 
 alone gained nothing, as those frames no longer saw each other. So a sheet with a failed panel is now drawn again
 whole, told what that panel must show, and the best sheet's panels are kept (fp29: kite 7.6 and 7.7, every panel
 kept; riding 6.5 and 6.9, its scenes of seven and eight shots split over two sheets that disagreed, Sammy's helmet
-changing between them). So a scene is now drawn on one sheet of up to eight panels, or alone. Riding's first sheet drew ponies into the
-establishing panel, which shows the yard before they are found: the other panels of the same canvas show them. The
-sheet stays a setting, off in the schema, until a full run of both briefs compares it with frames drawn alone.
+changing between them). So a scene is now drawn on one sheet of up to eight panels, or alone.
+
+**One sheet against frames drawn alone** (fp28–fp31, frozen plans of four projects, eight scenes, each reviewed as the
+mean of three judge answers):
+
+| Scene | Drawn alone | One sheet | Panels kept |
+|---|---|---|---|
+| Kite fp25, 1 | 7.4 | 7.9 | 5 of 5 |
+| Kite fp25, 2 | 7.1 | 7.5 | 5 of 5 |
+| Kite fp26, 1 | 7.4 | 7.6 | 6 of 6 |
+| Kite fp26, 2 | 6.6 | 7.7 | 6 of 6 |
+| Riding fp25, 1 | 6.9 | 7.5 | 8 of 8 |
+| Riding fp25, 2 | 7.3 | 7.5 | 5 of 5 |
+| Riding fp27, 1 | 7.1 | 7.6 | 8 of 8 |
+| Riding fp27, 2 | 7.3 | 7.4 | 7 of 7 |
+| Mean | 7.14 | 7.59 | |
+
+Every scene scored higher on its sheet (+0.45 on average; eight of eight is a chance of 1 in 256 if the sheet did
+nothing): character 7.2 → 8.0, storytelling 7.2 → 8.0, continuity 5.5 → 6.2, pacing 7.9 → 8.0, feasibility 7.1 → 7.4,
+composition and coverage level. New projects draw their scenes on sheets. No scene had every dimension at 8 in
+either arm: continuity is what is left, the sheets' panels agreeing with each other but not always with the plan (a
+kite's tail streaming with a walk against the wind, a pony in an establishing panel before the ponies are found,
+because the canvas's other panels show them).
 
 ## The video reads its first frame
 
@@ -569,10 +589,14 @@ What keeps each under 8, what was tried, and what to try next:
    itself (fp14–fp17, read shot by shot); the drawings break it: a prop in a paw that the shot leaves on the grass,
    the lake on the other side in a close-up, a scarf hanging still in a gale. Tried: the staging check with
    corrections, the opening frame for the place only (as "the same moment" it cost a point, fp15), landmark sides and
-   the wind as reasons to redraw (fp17: one major issue left on the kite storyboard). *Being measured:* a scene drawn
-   on one sheet ([a scene drawn on one sheet](#a-scene-drawn-on-one-sheet)), its panels checked as frames, and
-   the props a shot does not show left out of its prompt
-   ([what a frame does not show](#what-a-frame-does-not-show-is-not-named)).
+   the wind as reasons to redraw (fp17: one major issue left on the kite storyboard). Then: a scene drawn on one
+   sheet ([a scene drawn on one sheet](#a-scene-drawn-on-one-sheet)): on eight scenes of frozen plans 7.14 → 7.59,
+   continuity 5.5 → 6.2, character 7.2 → 8.0, every scene better; on for new projects. What is left is each panel's
+   agreement with its plan (a tail streaming with a walk, a pony in a panel before the ponies are found), which the
+   sheet's retries, told what each failed panel must show, fix only sometimes. *Next:* the staging check answers with
+   the model's full reasoning (`frame.reconcile` is not in `REASONING_OFF_TASKS`; one panel's reading in fp29 took 217 s
+   and wrote 9,069 tokens), and a sheet waits for its slowest panel: measure whether it reads frames as well without
+   reasoning, as the identity judge did.
 4. **Stills that tell the beat** (storytelling 6–8): a frame is the start of its shot, so a beat inside the take was
    missing from the storyboard; the planner now starts a shot on its beat's pose (fp18, being measured).
 5. **The video** (scene 6.0–7.3, first takes 5.8–7.4): the video model adds its own failures (a kite that morphs and
