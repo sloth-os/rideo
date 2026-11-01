@@ -125,7 +125,11 @@ Krippendorff's α 0.27–0.56). With `review.judgeSamples` (1–5: 1 in the sche
 cast and each storyboard scene are reviewed that many times at once, and each dimension's score is the mean of the
 answers (`meanOfReviews`); the review's words (its summary, issues and recommendations) are those of the answer nearest
 that mean. The expected score does not move: work below the bar fails more reliably, work above it passes more
-reliably. A scene's review of its takes stays one call: it watches video.
+reliably. A scene's review of its takes stays one call: it watches video. Samples do not raise the calls in flight: a
+review of several subjects at once (the cast's characters and elements, three at a time; the storyboard's scenes)
+reviews its subjects that many times fewer at once (`subjectsAtOnce`): while the provider answered with 502s in
+fp32, a cast review of three subjects at a time with three answers each kept nine calls in flight, and its job failed
+and started again six times.
 
 ## Dimensions
 

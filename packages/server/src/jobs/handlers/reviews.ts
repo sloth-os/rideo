@@ -54,7 +54,7 @@ import {
   writeReview,
 } from './ai-review';
 import { ensureBlocking } from './blocking';
-import { commitAs, docsFor, type HandlerDeps, sampledReview } from './common';
+import { commitAs, docsFor, type HandlerDeps, sampledReview, subjectsAtOnce } from './common';
 import { activeReferenceJobs } from './story';
 import { drawBoards } from './storyboard';
 
@@ -226,7 +226,7 @@ async function reviewCastRounds(deps: HandlerDeps, ctx: JobContext) {
     ctx.progress(0, total, `reviewing the cast (round ${round})`);
     await eachLimit(
       calls.map((call, i) => ({ call, i })),
-      CAST_REVIEW_CONCURRENCY,
+      subjectsAtOnce(CAST_REVIEW_CONCURRENCY, settings.judgeSamples),
       async ({ call, i }) => {
         throwIfAborted(ctx.signal);
         answers[i] = await call.run();

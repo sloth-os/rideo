@@ -174,3 +174,11 @@ export async function sampledReview(
   if (n === 1) return call();
   return meanOfReviews(await Promise.all(Array.from({ length: n }, () => call())));
 }
+
+/**
+ * How many subjects a review of several reviews at once when each takes `samples` judge answers: the calls in flight
+ * stay at `concurrency` (docs/design/ai-review.md#the-verdict).
+ */
+export function subjectsAtOnce(concurrency: number, samples: number | undefined): number {
+  return Math.max(1, Math.floor(concurrency / Math.max(1, Math.floor(samples ?? 1))));
+}

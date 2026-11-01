@@ -44,7 +44,7 @@ import { throwIfAborted } from '../../util/abort';
 import { eachLimit } from '../../util/limit';
 import type { JobContext } from '../queue';
 import { cameraView, ensureBlocking } from './blocking';
-import { commitAs, docsFor, type HandlerDeps, sampledReview } from './common';
+import { commitAs, docsFor, type HandlerDeps, sampledReview, subjectsAtOnce } from './common';
 import { drawBoards } from './storyboard';
 
 const byIndex = <T extends { index: number }>(a: T, b: T) => a.index - b.index;
@@ -686,7 +686,7 @@ async function reviewStoryboardRounds(deps: HandlerDeps, ctx: JobContext) {
     ctx.progress(0, clips.length, `reviewing the storyboard of ${clips.length} scene(s) (round ${round})`);
     await eachLimit(
       clips.map((clip, k) => ({ clip, k })),
-      SCENE_REVIEW_CONCURRENCY,
+      subjectsAtOnce(SCENE_REVIEW_CONCURRENCY, settings.judgeSamples),
       async ({ clip, k }) => {
         throwIfAborted(ctx.signal);
         const scene = ordered.find((s) => s.id === clip.sceneId)!;
