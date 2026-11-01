@@ -16,6 +16,7 @@ import {
   detectScriptFormat,
   docPath,
   type Element,
+  fitBlockingToPlan,
   fountainFromPdfLines,
   importedToScreenplayOutput,
   type Job,
@@ -303,6 +304,7 @@ export class StoryboardService extends Service {
           .join('; ')}`,
       );
     let fixed: string[] = [];
+    let planFits: Record<string, 'agreed' | 'refit' | 'mismatch'> = {};
     const { result } = await this.mutate(
       actor,
       projectId,
@@ -315,10 +317,14 @@ export class StoryboardService extends Service {
         const ctx = blockingContextFor(docs, clip);
         const norm = normalizeBlocking(parsed.data, ctx, { line: opts.fix === true });
         fixed = norm.fixed;
-        clip.blocking = norm.blocking;
+        // An AI blocking's cameras follow each shot's planned layout, after the line
+        // (docs/design/director-desk.md#following-the-shot-plan)
+        const fit = opts.source === 'ai' ? fitBlockingToPlan(norm.blocking, ctx.shots, ctx.aspect) : null;
+        planFits = fit?.outcomes ?? {};
+        clip.blocking = fit?.blocking ?? norm.blocking;
         // The shot's lens is its camera's on the desk; a blocked move is its move when it has none
         for (const shot of clip.shots) {
-          const cam = norm.blocking.shots[shot.id]?.camera;
+          const cam = clip.blocking.shots[shot.id]?.camera;
           if (!cam) continue;
           if (shot.camera.lensMm !== cam.lensMm)
             shot.camera = { ...shot.camera, lensMm: Math.round(cam.lensMm) };
@@ -338,8 +344,16 @@ export class StoryboardService extends Service {
     this.deps.metrics.blockings.inc({ source, outcome: view.issues.length ? 'issues' : 'clean' });
     for (const i of view.issues) this.deps.metrics.blockingIssues.inc({ code: i.code });
     if (fixed.length) this.deps.metrics.blockingLineFixes.inc({}, fixed.length);
+    for (const outcome of Object.values(planFits)) this.deps.metrics.blockingPlanFits.inc({ outcome });
     this.deps.log.info(
-      { projectId, clipId, source, issues: view.issues.map((i) => i.code), lineFixes: fixed.length },
+      {
+        projectId,
+        clipId,
+        source,
+        issues: view.issues.map((i) => i.code),
+        lineFixes: fixed.length,
+        planFits,
+      },
       'blocking saved',
     );
     return view;

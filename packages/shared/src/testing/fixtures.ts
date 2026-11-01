@@ -205,6 +205,7 @@ export function shot(overrides: Partial<Shot> = {}): Shot {
     durationSec: 5,
     continuity: 'cut',
     endState: '',
+    layout: [],
     promptOverride: null,
     negativePrompt: null,
     startFrame: { mode: 'auto', resourceId: null },

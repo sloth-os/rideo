@@ -14,7 +14,7 @@ import {
   type SceneBlocking,
   SceneBlockingSchema,
 } from '../schemas/blocking';
-import type { Camera } from '../schemas/clip';
+import type { Camera, PlannedPlacement } from '../schemas/clip';
 import { fnv1a32 } from '../util/hash';
 
 /**
@@ -39,6 +39,8 @@ export interface BlockingShotInput {
   elementIds?: string[];
   camera: Pick<Camera, 'framing'> & { lensMm?: number | null };
   continuity?: 'cut' | 'continuous';
+  /** The planned layout of the shot's first frame (docs/design/director-desk.md#following-the-shot-plan). */
+  layout?: PlannedPlacement[];
 }
 
 /** The desk palette, in cast order; the prompt names each colour. */
@@ -906,6 +908,167 @@ export function blockingLine(layout: ShotLayout | null): string | null {
   return parts.join(' ');
 }
 
+/** Which projected facings agree with a planned one: a three-quarter turn counts for its side. */
+const FACING_AGREES: Record<PlannedPlacement['facing'], LaidOutCharacter['facing'][]> = {
+  left: ['left', 'camera_left'],
+  right: ['right', 'camera_right'],
+  camera: ['camera', 'camera_left', 'camera_right'],
+  away: ['away'],
+};
+const SIDE_RANK: Record<PlannedPlacement['side'], number> = { left: 0, centre: 1, right: 2 };
+const SAID_SIDE: Record<PlannedPlacement['side'], string> = {
+  left: 'left of frame',
+  centre: 'in the centre',
+  right: 'right of frame',
+};
+
+export interface PlanAgreement {
+  agrees: boolean;
+  /** Higher agrees more: two points a side, one a facing; a character out of frame or out of order costs. */
+  score: number;
+  misses: string[];
+}
+
+/**
+ * How a shot's camera agrees with its planned layout (docs/design/director-desk.md#following-the-shot-plan): each
+ * planned character in frame, on its side (a character a little off centre counts for the side it leans to), facing
+ * its way (a three-quarter turn counts for its side), and two characters in their order across the frame. A shot
+ * without a planned layout agrees.
+ */
+export function planAgreement(
+  layout: ShotLayout | null,
+  planned: PlannedPlacement[] | undefined,
+  names: Record<string, string> = {},
+): PlanAgreement {
+  const plan = planned ?? [];
+  if (!plan.length) return { agrees: true, score: 0, misses: [] };
+  if (!layout) return { agrees: false, score: -100, misses: ['the shot has no camera'] };
+  const name = (id: string) => names[id] ?? 'A character';
+  let score = 0;
+  const misses: string[] = [];
+  const placed: { p: PlannedPlacement; c: LaidOutCharacter }[] = [];
+  for (const p of plan) {
+    const c = layout.characters.find((x) => x.characterId === p.characterId);
+    if (!c?.inFrame) {
+      score -= 3;
+      misses.push(`${name(p.characterId)} is out of frame`);
+      continue;
+    }
+    placed.push({ p, c });
+    const leans = c.third === 'centre' && ((p.side === 'left' && c.x < 0) || (p.side === 'right' && c.x > 0));
+    if (p.side === c.third || leans) score += 2;
+    else misses.push(`${name(p.characterId)} is ${SAID_SIDE[c.third]}, not ${SAID_SIDE[p.side]}`);
+    if (FACING_AGREES[p.facing].includes(c.facing)) score += 1;
+    else misses.push(`${name(p.characterId)} faces ${c.facing.replace('_', ' ')}, not ${p.facing}`);
+  }
+  for (const a of placed)
+    for (const b of placed)
+      if (SIDE_RANK[a.p.side] < SIDE_RANK[b.p.side] && !(a.c.x < b.c.x)) {
+        score -= 2;
+        misses.push(`${name(a.p.characterId)} is not left of ${name(b.p.characterId)}`);
+      }
+  return { agrees: misses.length === 0, score, misses };
+}
+
+/**
+ * A layout in the plan's words where the camera agrees with it: a character the camera shows a little off centre, on
+ * the side the plan puts them, is said to be on that side, so the blocking line never contradicts the description.
+ */
+export function alignLayoutToPlan(
+  layout: ShotLayout | null,
+  planned: PlannedPlacement[] | undefined,
+): ShotLayout | null {
+  if (!layout || !planned?.length) return layout;
+  return {
+    ...layout,
+    characters: layout.characters.map((c) => {
+      const p = planned.find((x) => x.characterId === c.characterId);
+      const leans =
+        p &&
+        c.inFrame &&
+        c.third === 'centre' &&
+        ((p.side === 'left' && c.x < 0) || (p.side === 'right' && c.x > 0));
+      return leans ? { ...c, third: p.side } : c;
+    }),
+  };
+}
+
+/** Whether a blocked shot's camera agrees with its planned layout. */
+export function blockingAgreesWithPlan(
+  blocking: SceneBlocking,
+  shot: BlockingShotInput,
+  aspect: number,
+): boolean {
+  return planAgreement(shotLayout(blocking, shot, {}, aspect), shot.layout).agrees;
+}
+
+/** The directions the fit tries around a shot's subjects, after the AI's own camera. */
+const FIT_ANGLES: CameraAngle[] = [
+  'front',
+  'three_quarter_left',
+  'three_quarter_right',
+  'profile_left',
+  'profile_right',
+  'back',
+];
+
+/**
+ * The camera of a shot that agrees best with its planned layout: its own when it agrees, else the first of the
+ * solver's directions around its subjects that agrees, else the one that agrees most. Null without a camera or a
+ * planned layout. The line is not kept: the plan wins over it, and `line_crossed` reports the crossing.
+ */
+export function fitCameraToPlan(
+  blocking: SceneBlocking,
+  shot: BlockingShotInput,
+  aspect: number,
+): { shot: BlockingShot; agreement: PlanAgreement; refit: boolean } | null {
+  const entry = blocking.shots[shot.id];
+  if (!entry || !shot.layout?.length) return null;
+  const evaluate = (candidate: BlockingShot) =>
+    planAgreement(
+      shotLayout({ ...blocking, shots: { ...blocking.shots, [shot.id]: candidate } }, shot, {}, aspect),
+      shot.layout,
+    );
+  const own = evaluate(entry);
+  if (own.agrees) return { shot: entry, agreement: own, refit: false };
+  const base = entry.spec ?? defaultCameraSpec(shot);
+  const specs: CameraSpec[] = [];
+  if (base.angle === 'over_shoulder') {
+    const [a, b] = base.subjects.length >= 2 ? base.subjects : shot.characterIds;
+    if (a && b) specs.push({ ...base, subjects: [a, b] }, { ...base, subjects: [b, a] });
+  }
+  const subjects = base.angle === 'over_shoulder' || base.angle === 'pov' ? [] : base.subjects;
+  for (const angle of FIT_ANGLES) specs.push({ ...base, angle, subjects });
+  let best = { shot: entry, agreement: own };
+  for (const spec of specs) {
+    const candidate: BlockingShot = { ...entry, camera: solveCamera(blocking, shot, spec, aspect), spec };
+    const agreement = evaluate(candidate);
+    if (agreement.score > best.agreement.score) best = { shot: candidate, agreement };
+    if (agreement.agrees) {
+      best = { shot: candidate, agreement };
+      break;
+    }
+  }
+  return { shot: best.shot, agreement: best.agreement, refit: best.shot !== entry };
+}
+
+/** An AI blocking with each planned shot's camera fitted to its planned layout, and what each shot came to. */
+export function fitBlockingToPlan(
+  blocking: SceneBlocking,
+  shots: BlockingShotInput[],
+  aspect: number,
+): { blocking: SceneBlocking; outcomes: Record<string, 'agreed' | 'refit' | 'mismatch'> } {
+  let fitted = blocking;
+  const outcomes: Record<string, 'agreed' | 'refit' | 'mismatch'> = {};
+  for (const s of shots) {
+    const fit = fitCameraToPlan(fitted, s, aspect);
+    if (!fit) continue;
+    if (fit.refit) fitted = { ...fitted, shots: { ...fitted.shots, [s.id]: fit.shot } };
+    outcomes[s.id] = !fit.agreement.agrees ? 'mismatch' : fit.refit ? 'refit' : 'agreed';
+  }
+  return { blocking: fitted, outcomes };
+}
+
 /** The moves of a shot's characters for its video prompt: `Rosie walks from left of frame to the centre.` */
 export function blockingMoves(layout: ShotLayout | null): string | null {
   if (!layout) return null;
@@ -1002,6 +1165,20 @@ export function blockingIssues(
         shotId: s.id,
         characterId: null,
         message: `The camera of ${label(s)} stands inside ${inside.label || 'a landmark'}`,
+      });
+    // The camera against the shot's planned layout (docs/design/director-desk.md#following-the-shot-plan)
+    const plan = planAgreement(shotLayout(blocking, s, names, aspect), s.layout, names);
+    if (!plan.agrees)
+      issues.push({
+        code: 'plan_mismatch',
+        severity: 'warning',
+        shotId: s.id,
+        characterId: null,
+        message:
+          `The camera of ${label(s)} disagrees with its plan: ${plan.misses.slice(0, 2).join('; ')}`.slice(
+            0,
+            500,
+          ),
       });
     for (const actor of blocking.actors) {
       if (s.characterIds.includes(actor.characterId)) continue;

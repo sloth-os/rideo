@@ -1,4 +1,11 @@
-import { blockingLine, blockingMoves, figureLegend, shotLayout } from '../blocking';
+import {
+  alignLayoutToPlan,
+  blockingLine,
+  blockingMoves,
+  figureLegend,
+  planAgreement,
+  shotLayout,
+} from '../blocking';
 import { isStale, takeState } from '../consistency';
 import {
   compileShotPrompt,
@@ -76,6 +83,10 @@ export function blockingContextOf(
   const aspect = settings.resolution.width / Math.max(1, settings.resolution.height);
   const input = blockingShotOf(shot);
   const layout = shotLayout(b, input, names, aspect);
+  // A camera that disagrees with the shot's plan lends it nothing: the plan's words alone
+  // (docs/design/director-desk.md#following-the-shot-plan)
+  if (!planAgreement(layout, input.layout).agrees) return null;
+  const said = alignLayoutToPlan(layout, input.layout);
   // What the camera view is drawn from: the set, the shot's characters, the props and the shot's own marks and camera
   const signature = fnv1a32(
     JSON.stringify([
@@ -86,8 +97,8 @@ export function blockingContextOf(
     ]),
   ).toString(16);
   return {
-    line: blockingLine(layout),
-    moves: blockingMoves(layout),
+    line: blockingLine(said),
+    moves: blockingMoves(said),
     legend: figureLegend(b, input, names),
     signature,
   };
@@ -102,6 +113,7 @@ export function blockingShotOf(shot: Shot) {
     elementIds: shot.elementIds,
     camera: { framing: shot.camera.framing, lensMm: shot.camera.lensMm ?? null },
     continuity: shot.continuity,
+    layout: shot.layout ?? [],
   };
 }
 

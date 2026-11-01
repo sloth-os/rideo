@@ -198,6 +198,7 @@ export const BLOCKING_ISSUE_CODES = [
   'absent_in_frame',
   'actors_overlap',
   'outside_set',
+  'plan_mismatch',
 ] as const;
 export const BlockingIssueCodeSchema = z.enum(BLOCKING_ISSUE_CODES);
 export type BlockingIssueCode = z.infer<typeof BlockingIssueCodeSchema>;

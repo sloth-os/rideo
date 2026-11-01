@@ -442,6 +442,7 @@ Rules:
 - Keep the scene's time of day, weather and light ("scene.timeOfDay", "scene.continuity") in every shot. When the scene continues "previousShot" (the end of the previous scene), start from it.
 - Dialogue: put each line in the shot where it is spoken, keep the words of the scene's lines, and give one shot at most "maxWordsPerShot" words in total; spread a longer exchange over several shots (shot and reverse shot). When "dialogueLevel" is given, any line you write keeps to "dialogueGuidance".
 - "characters": names of the characters visible in the shot (only from the cast list). "props": names of the scene's props visible in the shot (only from scene.props).
+- "layout": the first frame's layout as data, for every character in "characters": "side" of the frame they are on ("left", "centre" or "right") and which way they face in the picture ("left", "right", "camera" or "away"), exactly as "description" says it.
 - Name only the characters in frame in a shot's "description" and "action": write where an unseen character is ("looks off-screen right"), never their name (the video model shows whoever the text names).
 - Use "continuity":"continuous" only when the shot continues the previous shot's final frame without a cut; the first shot is always "cut".
 - camera.framing: extreme_wide|wide|medium|medium_close|close_up|extreme_close_up|over_shoulder|pov|insert; camera.movement: static|pan|tilt|dolly_in|dolly_out|tracking|handheld|crane|zoom|orbit.
@@ -449,7 +450,7 @@ Rules:
 - When "direction" is given (what a new plan must do), follow it.
 ${PLANNER_FIRST_PASS}
 ${makerRubric('storyboard', { reviewer: 'a director of photography and a script supervisor, looking at the frames drawn from your shots,', only: ['composition', 'continuity', 'coverage', 'storytelling', 'feasibility', 'pacing'], names: 'In these criteria "film.castOnly" is your input "castOnly" and "video" is your input "video".' })}
-Return only JSON: {"shots":[{"description":"...","action":"...","endState":"...","camera":{"framing":"wide","movement":"static"},"lensMm":24,"characters":["Name"],"props":["prop name"],"durationSec":5,"continuity":"cut","dialogue":[{"character":"Name","line":"..."}]}]}`,
+Return only JSON: {"shots":[{"description":"...","action":"...","endState":"...","camera":{"framing":"wide","movement":"static"},"lensMm":24,"characters":["Name"],"layout":[{"name":"Name","side":"left","facing":"right"}],"props":["prop name"],"durationSec":5,"continuity":"cut","dialogue":[{"character":"Name","line":"..."}]}]}`,
 };
 
 export interface LabelledImage {

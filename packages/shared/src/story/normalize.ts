@@ -4,7 +4,7 @@ import { characterSeed, elementSeed } from '../prompt';
 import type { EditSuggestion } from '../schemas/analysis';
 import { SuggestionParamsSchema } from '../schemas/analysis';
 import { type Character, type Identity, newVoice } from '../schemas/character';
-import type { Shot } from '../schemas/clip';
+import type { PlannedPlacement, Shot } from '../schemas/clip';
 import type { TimeRange } from '../schemas/common';
 import { type Element, type ElementKind, elementIndex } from '../schemas/element';
 import type {
@@ -399,6 +399,15 @@ export function normalizePlannedShots(planned: LlmShot[], opts: ShotPlanOptions)
       durationSec: Math.round(s.durationSec * 100) / 100,
       continuity: index === 0 ? 'cut' : s.continuity,
       endState: (s.endState ?? '').trim().slice(0, 1000),
+      // The planned layout, of the shot's own characters, once each
+      layout: (s.layout ?? [])
+        .map((p) => ({ characterId: resolve(p.name), side: p.side, facing: p.facing }))
+        .filter(
+          (p, i, all): p is PlannedPlacement =>
+            !!p.characterId &&
+            characterIds.includes(p.characterId) &&
+            all.findIndex((q) => q.characterId === p.characterId) === i,
+        ),
       promptOverride: null,
       negativePrompt: null,
       startFrame: { mode: 'auto', resourceId: null },

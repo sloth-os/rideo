@@ -277,6 +277,17 @@ export function clipPlan(input: ClipPlanInput): ClipPlanOutput {
       action: i === 0 ? 'Wind moves through the space; figures hold still.' : 'A slow turn toward camera.',
       camera: { framing: framings[i % framings.length]!, movement: movements[i % movements.length]! },
       characters: i === 0 ? names : names.length ? [names[i % names.length]!] : [],
+      // The first frame's layout: a pair face each other, one character faces the camera
+      // (docs/design/director-desk.md#following-the-shot-plan)
+      layout: (i === 0 ? names : names.length ? [names[i % names.length]!] : []).map((name, k, inFrame) =>
+        inFrame.length === 1
+          ? { name, side: 'centre' as const, facing: 'camera' as const }
+          : k === 0
+            ? { name, side: 'left' as const, facing: 'right' as const }
+            : k === inFrame.length - 1
+              ? { name, side: 'right' as const, facing: 'left' as const }
+              : { name, side: 'centre' as const, facing: 'camera' as const },
+      ),
       durationSec: each,
       continuity: i > 0 && i % 2 === 1 ? ('continuous' as const) : ('cut' as const),
       dialogue: input.scene.dialogue[i] ? [input.scene.dialogue[i]!] : [],

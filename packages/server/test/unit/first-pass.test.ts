@@ -55,6 +55,8 @@ describe('makers aim at what their reviewers score', () => {
       'its "description" already shows that pose, clear in a still picture',
     );
     expect(SYSTEM_PROMPTS_V2['clip.plan']).toContain('The shot before it ends with that pose begun');
+    // The layout as data, for the director's desk (docs/design/director-desk.md#following-the-shot-plan)
+    expect(SYSTEM_PROMPTS_V2['clip.plan']).toContain('"layout": the first frame\'s layout as data');
     expect(SYSTEM_PROMPTS_V2['clip.plan']).toContain(
       'a shot in which someone walks somewhere lasts at least four seconds',
     );

@@ -169,6 +169,21 @@ export const LlmShotSchema = z.object({
   /** Prompt version 2: a real focal length and what the last frame shows (docs/design/continuity.md#shot-planning). */
   lensMm: z.coerce.number().int().min(8).max(800).optional().catch(undefined),
   endState: str(1000),
+  /** Who is on which side of the first frame, facing which way (docs/design/director-desk.md#following-the-shot-plan). */
+  layout: lenientArray(
+    z.object({
+      name: z.string().min(1).max(120),
+      side: z.preprocess(
+        (v) => (typeof v === 'string' ? v.toLowerCase().replace(/^center$/, 'centre') : v),
+        z.enum(['left', 'centre', 'right']),
+      ),
+      facing: z.preprocess(
+        (v) => (typeof v === 'string' ? v.toLowerCase() : v),
+        z.enum(['left', 'right', 'camera', 'away']),
+      ),
+    }),
+    8,
+  ).optional(),
 });
 export type LlmShot = z.infer<typeof LlmShotSchema>;
 

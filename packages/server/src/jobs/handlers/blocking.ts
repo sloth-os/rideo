@@ -1,5 +1,6 @@
 import {
   type BlockingShotInput,
+  blockingAgreesWithPlan,
   blockingFromPlan,
   blockingShotOf,
   blockingState,
@@ -149,6 +150,8 @@ export function cameraView(
   if (promptVersionBelow2(docs) || !b.shots[shot.id]) return null;
   const input: BlockingShotInput = blockingShotOf(shot);
   const { width: rw, height: rh } = settings.resolution;
+  // A camera view that disagrees with the shot's plan is not sent (docs/design/director-desk.md#following-the-shot-plan)
+  if (!blockingAgreesWithPlan(b, input, rw / Math.max(1, rh))) return null;
   const png = encodePng(renderShotView(b, input, { width, height: Math.round((width * rh) / rw) }));
   const names = Object.fromEntries(Object.values(docs.characters).map((c) => [c.id, c.name]));
   return {

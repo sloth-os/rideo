@@ -346,6 +346,14 @@ export const ShotStatusSchema = z.enum([
 ]);
 export type ShotStatus = z.infer<typeof ShotStatusSchema>;
 
+/** Where the shot planner puts a character in the frame (docs/design/director-desk.md#following-the-shot-plan). */
+export const PlannedPlacementSchema = z.object({
+  characterId: IdSchema,
+  side: z.enum(['left', 'centre', 'right']),
+  facing: z.enum(['left', 'right', 'camera', 'away']),
+});
+export type PlannedPlacement = z.infer<typeof PlannedPlacementSchema>;
+
 export const ShotSchema = z.object({
   id: IdSchema,
   index: z.number().int().nonnegative(),
@@ -361,6 +369,8 @@ export const ShotSchema = z.object({
   continuity: z.enum(['cut', 'continuous']).default('cut'),
   /** What the last frame shows: positions, poses, what is in hand (docs/design/continuity.md#shot-planning). */
   endState: z.string().max(1000).default(''),
+  /** The planned layout of the first frame: who is on which side, facing which way (empty: not planned). */
+  layout: z.array(PlannedPlacementSchema).max(8).default([]),
   promptOverride: z.string().max(8000).nullable().default(null),
   negativePrompt: z.string().max(2000).nullable().default(null),
   startFrame: StartFrameSchema.default({ mode: 'auto', resourceId: null }),

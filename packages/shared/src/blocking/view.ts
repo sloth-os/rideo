@@ -3,6 +3,7 @@ import type { Clip } from '../schemas/clip';
 import type { ProjectDocs } from '../schemas/documents';
 import { blockingShotOf } from '../storyboard';
 import {
+  alignLayoutToPlan,
   type BlockingContext,
   blockingCast,
   blockingIssues,
@@ -59,7 +60,10 @@ export function blockingView(
     draft: d,
     issues: blockingIssues(d, ctx.shots, names, ctx.aspect),
     lines: Object.fromEntries(
-      ctx.shots.map((s) => [s.id, blockingLine(shotLayout(d, s, names, ctx.aspect))]),
+      ctx.shots.map((s) => [
+        s.id,
+        blockingLine(alignLayoutToPlan(shotLayout(d, s, names, ctx.aspect), s.layout)),
+      ]),
     ),
   };
 }

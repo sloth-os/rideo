@@ -47,6 +47,20 @@ describe("the director's desk", () => {
     const view = await stack.api<BlockingView>('GET', `/projects/${projectId}/clips/${clip.id}/blocking`);
     expect(view.state).toBe('ready');
     expect(view.issues.filter((i) => i.code === 'line_crossed')).toEqual([]);
+    // Each shot's camera follows its planned layout (docs/design/director-desk.md#following-the-shot-plan)
+    expect(view.issues.filter((i) => i.code === 'plan_mismatch')).toEqual([]);
+    const state = await stateOf(projectId);
+    const nameOf = (id: string) => state.docs.characters[id].name;
+    for (const shot of clip.shots)
+      for (const p of shot.layout) {
+        expect(shot.characterIds).toContain(p.characterId);
+        const where = { left: 'left of frame', centre: 'in the centre', right: 'right of frame' }[
+          p.side as 'left' | 'centre' | 'right'
+        ];
+        if (p.side !== 'centre')
+          expect(view.lines[shot.id]).toContain(`${nameOf(p.characterId)} is ${where}`);
+      }
+    expect(clip.shots.some((s: any) => s.layout.length)).toBe(true);
     for (const shot of clip.shots) {
       expect(shot.board).toBeTruthy();
       const line = view.lines[shot.id];
@@ -125,5 +139,6 @@ describe("the director's desk", () => {
     expect(done.result).toMatchObject({ shots: clip.shots.length });
     const metrics = await (await fetch(`${stack.url}/metrics`)).text();
     expect(metrics).toMatch(/rideo_blocking_total\{outcome="(clean|issues)",source="ai"\} \d/);
+    expect(metrics).toMatch(/rideo_blocking_plan_fits_total\{outcome="(agreed|refit)"\} [1-9]/);
   }, 240_000);
 });

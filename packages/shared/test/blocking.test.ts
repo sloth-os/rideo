@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  alignLayoutToPlan,
   type BlockingShotInput,
   blockingFromPlan,
   blockingHash,
@@ -18,6 +19,8 @@ import {
   facingOf,
   figureLegend,
   figurePoints,
+  fitBlockingToPlan,
+  fitCameraToPlan,
   heightFromIdentity,
   landmarkColor,
   lineOfAction,
@@ -26,6 +29,7 @@ import {
   moveEnd,
   normalizeBlocking,
   ProjectSettingsSchema,
+  planAgreement,
   projectPoint,
   renderShotView,
   type SceneBlocking,
@@ -456,5 +460,145 @@ describe('prompts with a blocking (prompt version 2)', () => {
     );
     expect(off.blocking).toBeNull();
     expect(blockingView(docs, clip).state).toBe('ready');
+  });
+});
+
+describe('following the shot plan (docs/design/director-desk.md#following-the-shot-plan)', () => {
+  // Rosie (x -0.9, facing +x) and Sammy (x 0.9, facing -x) face each other on the beach
+  const planned = (
+    layout: BlockingShotInput['layout'],
+    s: BlockingShotInput = SHOTS[0]!,
+  ): BlockingShotInput => ({ ...s, layout });
+  const asPlanned = planned([
+    { characterId: ROSIE, side: 'left', facing: 'right' },
+    { characterId: SAMMY, side: 'right', facing: 'left' },
+  ]);
+  const fromBehind = planned([
+    { characterId: SAMMY, side: 'left', facing: 'right' },
+    { characterId: ROSIE, side: 'right', facing: 'left' },
+  ]);
+
+  it('agrees when every planned character is on its side, facing its way, in order', () => {
+    const b = solved();
+    expect(planAgreement(shotLayout(b, asPlanned, names, ASPECT), asPlanned.layout, names)).toMatchObject({
+      agrees: true,
+      misses: [],
+    });
+    const swapped = planAgreement(shotLayout(b, fromBehind, names, ASPECT), fromBehind.layout, names);
+    expect(swapped.agrees).toBe(false);
+    expect(swapped.misses).toContain('Sammy is right of frame, not left of frame');
+    // A shot without a plan agrees, whatever its camera
+    expect(planAgreement(shotLayout(b, SHOTS[0]!, names, ASPECT), undefined).agrees).toBe(true);
+  });
+
+  it('solves a camera the plan sees from the other side, and keeps one that agrees', () => {
+    const b = solved();
+    expect(fitCameraToPlan(b, asPlanned, ASPECT)).toMatchObject({
+      refit: false,
+      agreement: { agrees: true },
+    });
+    const fit = fitCameraToPlan(b, fromBehind, ASPECT)!;
+    expect(fit).toMatchObject({ refit: true, agreement: { agrees: true } });
+    // Seen from the back of the set now: the camera stands behind the pair
+    expect(fit.shot.camera.z).toBeLessThan(0);
+    expect(fitCameraToPlan(b, SHOTS[1]!, ASPECT)).toBeNull();
+  });
+
+  it('fits a whole scene, reports a plan no camera can show, and the plan wins over the line', () => {
+    // A later two-shot the plan sees from behind: the first two-shot set the line from the front
+    const later = planned(fromBehind.layout, shot(4, [ROSIE, SAMMY], 'wide'));
+    // Both with their backs to the camera: they face each other, so no camera shows that
+    const impossible = planned(
+      [
+        { characterId: ROSIE, side: 'left', facing: 'away' },
+        { characterId: SAMMY, side: 'right', facing: 'away' },
+      ],
+      SHOTS[3]!,
+    );
+    const shots = [SHOTS[0]!, SHOTS[1]!, SHOTS[2]!, impossible, later];
+    const b = normalizeBlocking(beach(), { ...ctx, shots }, { line: true }).blocking;
+    const { blocking, outcomes } = fitBlockingToPlan(b, shots, ASPECT);
+    expect(outcomes).toEqual({ [impossible.id]: 'mismatch', [later.id]: 'refit' });
+    const issues = blockingIssues(blocking, shots, names, ASPECT);
+    expect(issues.filter((i) => i.code === 'plan_mismatch').map((i) => i.shotId)).toEqual([impossible.id]);
+    // The plan wins over the line: the later two-shot is seen from behind, and the crossing is reported
+    expect(issues.some((i) => i.code === 'line_crossed' && i.shotId === later.id)).toBe(true);
+  });
+
+  it('says the planned side of a character the camera shows a little off centre on that side', () => {
+    const layout = {
+      characters: [
+        {
+          characterId: ROSIE,
+          name: 'Rosie',
+          x: -0.2,
+          y: 0,
+          depth: 4,
+          inFrame: true,
+          third: 'centre' as const,
+          depthLabel: null,
+          facing: 'right' as const,
+          to: null,
+          edge: null,
+        },
+        {
+          characterId: SAMMY,
+          name: 'Sammy',
+          x: 0.2,
+          y: 0,
+          depth: 4,
+          inFrame: true,
+          third: 'centre' as const,
+          depthLabel: null,
+          facing: 'left' as const,
+          to: null,
+          edge: null,
+        },
+      ],
+      behind: [],
+      light: 'behind' as const,
+      lightSide: null,
+      interior: false,
+    };
+    expect(planAgreement(layout, asPlanned.layout).agrees).toBe(true);
+    expect(blockingLine(alignLayoutToPlan(layout, asPlanned.layout))).toContain(
+      'Rosie is left of frame, facing right; Sammy is right of frame, facing left',
+    );
+    // Without a plan, the camera's own thirds
+    expect(blockingLine(alignLayoutToPlan(layout, undefined))).toContain('Rosie is in the centre');
+  });
+
+  it('gives a shot whose camera disagrees with its plan neither its blocking line nor its camera view', () => {
+    const rosie = f.character({ id: ROSIE, name: 'Rosie' });
+    const sammy = f.character({ id: SAMMY, name: 'Sammy' });
+    const settings = ProjectSettingsSchema.parse({
+      generation: { promptVersion: 3 },
+      blocking: { enabled: true, layoutImage: true },
+    });
+    const shotOf = (layout: BlockingShotInput['layout']) =>
+      f.shot({
+        id: SHOTS[0]!.id,
+        index: 0,
+        characterIds: [ROSIE, SAMMY],
+        camera: { framing: 'wide', movement: 'static' },
+        layout,
+      });
+    const docs = (shotDoc: ReturnType<typeof shotOf>) => {
+      const clip = f.clip({ shots: [shotDoc], blocking: solved() });
+      return {
+        clip,
+        docs: f.docs({
+          project: f.project({ settings }),
+          characters: { [ROSIE]: rosie, [SAMMY]: sammy },
+          clips: { [clip.id]: clip },
+        }),
+      };
+    };
+    const agrees = docs(shotOf(asPlanned.layout));
+    expect(shotContextOf(agrees.clip.shots[0]!, agrees.docs, agrees.clip).blocking?.line).toContain(
+      'Rosie is left of frame',
+    );
+    const disagrees = docs(shotOf(fromBehind.layout));
+    expect(shotContextOf(disagrees.clip.shots[0]!, disagrees.docs, disagrees.clip).blocking).toBeNull();
   });
 });

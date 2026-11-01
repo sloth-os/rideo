@@ -115,6 +115,28 @@ side as their two-shot, so eyelines match.
 cameras are solved, cameras of cuts are kept on the line, sizes and colours are clamped to their ranges. AI blocking
 always goes through it; the desk runs it when a person asks the desk to **Fix the blocking**.
 
+## Following the shot plan
+
+The shot planner writes, beside each shot's description, its **planned layout** (`shot.layout`): every character
+in frame with the side of the frame they are on (`left`, `centre`, `right`) and which way they face in the picture
+(`left`, `right`, `camera`, `away`), as the description says it. Measured on six storyboards with the desk on, the AI
+blocking's cameras disagreed with it (blocking 3–5): a camera described `front` of a pair the plan saw from the other
+side put everyone on the other side of the frame, and the frames followed neither the plan nor the camera view.
+
+So after an AI blocking is normalized, `fitBlockingToPlan` checks every shot's camera against its planned layout
+(`planAgreement`: each planned character in frame, on its side, facing its way; a three-quarter turn counts for its
+side, a character a little off centre counts for the side it leans to, and two characters keep their order across
+the frame). A shot whose camera disagrees is solved again from the solver's other directions around its subjects
+(`front`, the three-quarters, the profiles, `back`, and over either shoulder for an over-the-shoulder shot), and the
+camera that agrees best is kept; the AI's own camera stays when it agrees. The plan wins over the line: a shot planned
+from the other side of the line is solved there, and `line_crossed` reports it.
+
+A shot whose camera still disagrees with its plan gets neither its blocking line nor its camera view: the image model
+gets the plan's words alone rather than a picture that contradicts them (`plan_mismatch`, a warning). Where the camera
+agrees because a character leans to their planned side from the middle third, the blocking line says the planned side
+(`alignLayoutToPlan`), so the line never contradicts the description. A shot without a planned layout (planned before
+it, or by a person) keeps the blocking as it is.
+
 ## Checks
 
 `blockingIssues(blocking, clip, ctx)` (shared) lists what breaks the scene, shown on the desk, sent to the storyboard
@@ -129,6 +151,7 @@ reviewer and logged by the jobs:
 | `absent_in_frame` | warning | a character of the scene who is not in the shot stands in its frame (the render leaves them out, the frame would not) |
 | `actors_overlap` | warning | two characters closer than 0.35 m |
 | `outside_set` | warning | a mark or a camera outside the set |
+| `plan_mismatch` | warning | the shot's camera shows its characters on other sides or facing other ways than its planned layout: the shot gets neither its blocking line nor its camera view |
 
 ## What the image and video models get
 
@@ -214,7 +237,9 @@ REST and MCP call the same `StoryboardService` methods. A blocking that does not
 
 `rideo_blocking_total{source, outcome}` counts blockings saved (`source`: `ai`, `user`; `outcome`: `clean`,
 `issues`), `rideo_blocking_issues_total{code}` the issues found when one is saved, and
-`rideo_blocking_line_fixes_total` the cameras the solver brought back over the line. The job logs the project, the
+`rideo_blocking_line_fixes_total` the cameras the solver brought back over the line, and
+`rideo_blocking_plan_fits_total{outcome}` each AI-blocked shot against its planned layout (`agreed` as blocked,
+`refit` by another camera, `mismatch` still disagreeing). The job logs the project, the
 clip, the shots solved and the issues.
 
 ## Mock gateway
