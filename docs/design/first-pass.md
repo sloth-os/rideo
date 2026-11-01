@@ -471,6 +471,9 @@ Every run from fp4 to fp24, first round only (one build and brief move by up to 
 | Storyboard | 7.2 (6.6–7.9, 17) | 6.8 (5.6–7.3, 14) | none (fp19: 7.9, five of seven at 8) |
 | Pilot scene (video) | 6.6 (6.0–7.3, 7) | 5.9 (1) | none (fp18: 7.3, five of ten at 8) |
 
+The demo server's gateway offers one image model (`doubao-seedream-5.0-pro`) and one video model (`wan3.0-video-prime`)
+(November 1, 2026): every run above used them, so "a stronger model" below means adding a provider to the gateway.
+
 What keeps each under 8, what was tried, and what to try next:
 
 1. **A brief that asks for what the video model cannot film** (screenplay feasibility 5–7 on every run). The reviewer
