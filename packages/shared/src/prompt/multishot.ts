@@ -184,6 +184,8 @@ export function compileMultiShotRequest(
         sceneLine(
           first.scene,
           (first.elements ?? []).find((e) => e.kind === 'location'),
+          // The props none of the sequence's shots show (docs/design/first-pass.md#what-a-frame-does-not-show-is-not-named)
+          { hidden: (first.hiddenProps ?? []).filter((n) => ctxs.every((c) => c.hiddenProps?.includes(n))) },
         ),
       ]
         .filter(Boolean)

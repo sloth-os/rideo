@@ -56,6 +56,7 @@ function setup(settings: Record<string, unknown> = {}) {
     keyframe: f.imageMedia({ path: `media/keyframes/${shot.id}.png` }),
     createdAt: '2026-10-01T00:00:00.000Z',
     request: { prompt: 'p', seed: 1, referenceCount: 1 },
+    sheet: null,
     promptHash: boardPromptHash(shotContextOf(shot, docs)),
     consistency: f.report(),
     characterLocks: Object.fromEntries(

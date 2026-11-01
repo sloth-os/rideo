@@ -294,6 +294,11 @@ export interface ShotContext {
   sceneReference?: boolean;
   /** Version 2: the clip's cast who are not in this shot, by name (docs/design/continuity.md#prompts-version-2). */
   offscreen?: string[];
+  /**
+   * Version 3: the project's props this shot does not show, by name; the scene line leaves out the continuity's
+   * sentences that name one (docs/design/first-pass.md#what-a-frame-does-not-show-is-not-named).
+   */
+  hiddenProps?: string[];
   /** Version 2: what each reference image of a keyframe request shows, in order (docs/design/continuity.md). */
   referenceLabels?: string[];
   /**
@@ -394,14 +399,31 @@ export function elementLines(elements: Element[]): string[] {
 export function sceneLine(
   scene: ShotContext['scene'],
   location: Pick<Element, 'name'> | undefined,
-  opts: { placeOnly?: boolean } = {},
+  /** `hidden`: props the shot does not show; a sentence of the continuity naming one is left out. */
+  opts: { placeOnly?: boolean; hidden?: string[] } = {},
 ): string | null {
   if (!scene) return null;
   const place = clean(scene.location) || clean(location?.name) || clean(scene.heading);
   const where = [place, clean(scene.timeOfDay)].filter(Boolean).join(', ');
-  const state = opts.placeOnly ? '' : clean(scene.continuity);
+  const state = opts.placeOnly ? '' : withoutSentencesNaming(clean(scene.continuity), opts.hidden ?? []);
   if (!where && !state) return null;
   return `Scene: ${[where, state].filter(Boolean).join('; ')}.`;
+}
+
+/**
+ * A text without its sentences that name any of these things, by their whole names, in any case
+ * (docs/design/first-pass.md#what-a-frame-does-not-show-is-not-named).
+ */
+export function withoutSentencesNaming(text: string, names: string[]): string {
+  const patterns = names
+    .map((n) => clean(n))
+    .filter(Boolean)
+    .map((n) => new RegExp(`\\b${n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+')}\\b`, 'i'));
+  if (!patterns.length || !text) return text;
+  return text
+    .split(/(?<=[.!?])\s+/)
+    .filter((sentence) => !patterns.some((p) => p.test(sentence)))
+    .join(' ');
 }
 
 /** Who a character is in a video prompt (version 2): the first frame shows the face, the text says who is who. */
@@ -539,7 +561,10 @@ function compileShotPromptV2(
       light: !(video && startsFromFrame(settings)),
     }),
   );
-  const sceneText = sceneLine(ctx.scene, location, { placeOnly: video && !!ctx.offscreen?.length });
+  const sceneText = sceneLine(ctx.scene, location, {
+    placeOnly: video && !!ctx.offscreen?.length,
+    hidden: ctx.hiddenProps,
+  });
   if (sceneText) lines.push(sceneText);
   lines.push(...shotBodyV2(ctx, mode, { ...opts, cameraSaid: !!hold }));
   // Version 3: a take made again after its watch says what the last attempt got wrong

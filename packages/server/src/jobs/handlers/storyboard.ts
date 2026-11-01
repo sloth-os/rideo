@@ -27,6 +27,7 @@ import { cameraView, ensureBlocking, withCameraView } from './blocking';
 import { commitAs, docsFor, type HandlerDeps } from './common';
 import { speakLines } from './dialogue';
 import { generateKeyframe, prepareShotReferences, stagingFor } from './keyframe';
+import type { SheetPanel } from './sheet';
 
 /**
  * The scene reference of a storyboard frame (docs/design/storyboard.md#jobs): the clip's first shot's frame when it is
@@ -40,28 +41,69 @@ export function boardSceneReference(clip: Clip, shot: Shot, docs: ProjectDocs): 
 
 /**
  * Draws these frames and waits for them: each clip's first shot first, then the others in parallel, so they take
- * the first frame as their scene reference (docs/design/storyboard.md#jobs).
+ * the first frame as their scene reference (docs/design/storyboard.md#jobs). With `sheets`, a scene drawn whole (every
+ * shot of its clip, two or more) is drawn on its sheets first and each shot starts from its panel
+ * (docs/design/storyboard.md#scene-sheets); a sheet that fails leaves its shots to be drawn one at a time.
  */
 export async function drawBoards(
   ctx: JobContext,
   targets: { clip: Clip; shot: Shot }[],
+  opts: { sheets?: boolean } = {},
 ): Promise<(Job | undefined)[]> {
   const isFirst = ({ clip, shot }: { clip: Clip; shot: Shot }) =>
     shot.index === Math.min(...clip.shots.map((s) => s.index));
+  const panels = opts.sheets ? await drawSheets(ctx, targets) : new Map<string, SheetPanel>();
   const spawn = async (list: { clip: Clip; shot: Shot }[]) => {
     const jobs: Job[] = [];
-    for (const { clip, shot } of list)
+    for (const { clip, shot } of list) {
+      const panel = panels.get(shot.id);
       jobs.push(
         await ctx.spawn(
           'shot.board',
-          { clipId: clip.id, shotId: shot.id },
+          { clipId: clip.id, shotId: shot.id, ...(panel ? { panel } : {}) },
           { dedupeKey: `board:${shot.id}` },
         ),
       );
+    }
     return jobs.length ? ctx.waitFor(jobs.map((j) => j.id)) : [];
   };
   const firsts = await spawn(targets.filter(isFirst));
   return [...firsts, ...(await spawn(targets.filter((t) => !isFirst(t))))];
+}
+
+/** The sheets of the scenes these frames draw whole, at once; each shot's panel by its id. */
+async function drawSheets(
+  ctx: JobContext,
+  targets: { clip: Clip; shot: Shot }[],
+): Promise<Map<string, SheetPanel>> {
+  const byClip = new Map<string, { clip: Clip; shotIds: string[] }>();
+  for (const { clip, shot } of targets) {
+    const entry = byClip.get(clip.id) ?? { clip, shotIds: [] };
+    entry.shotIds.push(shot.id);
+    byClip.set(clip.id, entry);
+  }
+  const whole = [...byClip.values()].filter(
+    ({ clip, shotIds }) => shotIds.length >= 2 && clip.shots.every((s) => shotIds.includes(s.id)),
+  );
+  const jobs: Job[] = [];
+  for (const { clip, shotIds } of whole)
+    jobs.push(await ctx.spawn('clip.sheet', { clipId: clip.id, shotIds }, { dedupeKey: `sheet:${clip.id}` }));
+  const panels = new Map<string, SheetPanel>();
+  if (!jobs.length) return panels;
+  for (const job of await ctx.waitFor(jobs.map((j) => j.id))) {
+    if (job?.status !== 'succeeded') {
+      ctx.log.warn(
+        { sheetJobId: job?.id, error: job?.error?.message },
+        'a scene sheet failed; its frames are drawn one at a time',
+      );
+      continue;
+    }
+    for (const [shotId, panel] of Object.entries(
+      (job.result as { panels?: Record<string, SheetPanel> })?.panels ?? {},
+    ))
+      panels.set(shotId, panel);
+  }
+  return panels;
 }
 
 /**
@@ -69,7 +111,7 @@ export async function drawBoards(
  * TTS dialogue when the speakers have locked voices; committed as the shot's unapproved storyboard frame.
  */
 export async function shotBoard(deps: HandlerDeps, ctx: JobContext) {
-  const { clipId, shotId } = ctx.job.params as { clipId: string; shotId: string };
+  const { clipId, shotId, panel } = ctx.job.params as { clipId: string; shotId: string; panel?: SheetPanel };
   const docs = await docsFor(deps, ctx);
   const clip = docs.clips[clipId];
   if (!clip) throw notFound(`clip ${clipId}`);
@@ -135,6 +177,19 @@ export async function shotBoard(deps: HandlerDeps, ctx: JobContext) {
       step: 'board',
       // Drawn again while it contradicts its shot (docs/design/first-pass.md#frames-that-follow-their-shot)
       staging: stagingFor(shotCtx, 'storyboard', withScene ? sceneFrame : null),
+      // Its panel of the scene's sheet first (docs/design/storyboard.md#scene-sheets)
+      ...(panel
+        ? {
+            given: {
+              keyframe: panel.keyframe,
+              prompt: panel.prompt,
+              seed: panel.seed,
+              imageModel: panel.imageModel,
+              taskId: panel.taskId,
+              seen: panel.seen ?? null,
+            },
+          }
+        : {}),
       progress: (attempt) =>
         ctx.progress(0.1 + (0.6 * attempt) / maxAttempts, 1, `frame attempt ${attempt + 1}/${maxAttempts}`),
     });
@@ -144,6 +199,8 @@ export async function shotBoard(deps: HandlerDeps, ctx: JobContext) {
         ? await speakLines(deps, ctx, { shot, characters: docs.characters, settings, dir, name })
         : null;
     const report = kf.report!;
+    const kept = !!panel && kf.keyframe?.hash === panel.keyframe.hash;
+    if (panel) deps.metrics.storyboardSheetPanels.inc({ result: kept ? 'kept' : 'redrawn' });
     const board: ShotBoard = {
       keyframe: kf.keyframe!,
       createdAt: new Date().toISOString(),
@@ -168,6 +225,7 @@ export async function shotBoard(deps: HandlerDeps, ctx: JobContext) {
             lipSync: 'none',
           }
         : null,
+      sheet: kept ? { keyframe: panel!.sheet, panel: panel!.panel, panels: panel!.panels } : null,
       gatewayTaskIds: kf.taskIds,
       approved: false,
       approvedAt: null,
@@ -241,7 +299,7 @@ export async function storyboardGenerate(deps: HandlerDeps, ctx: JobContext) {
         .map((shot) => ({ clip, shot })),
     );
   ctx.progress(0.2, 1, `drawing ${targets.length} frame(s)`);
-  const done = await drawBoards(ctx, targets);
+  const done = await drawBoards(ctx, targets, { sheets: docs.project.settings.storyboard.sheet });
   // The frames are reviewed before any video (docs/design/ai-review.md#how-a-review-runs)
   await deps.services.aiReviews
     .followUp(ctx.actor, ctx.job.projectId, 'storyboard')

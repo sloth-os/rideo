@@ -268,6 +268,77 @@ describe('storyboard', () => {
   }, 120_000);
 });
 
+describe('scene sheets (docs/design/storyboard.md#scene-sheets)', () => {
+  it('draws a scene whole on one sheet, draws the sheet again while a panel fails its check, and keeps the best', async () => {
+    const { projectId: pid } = await readyStoryProject(stack, {
+      storyboard: { scenes: 2, sheet: true, sheetPixels: 1_000_000 },
+      targetDurationSec: 60,
+      pilotDurationSec: 30,
+    });
+    // Scene 2's second shot is drawn otherwise than its text, on every sheet: the staging check asks for it again
+    const scenes = (await state(pid)).docs.screenplay.scenes.slice(0, 2);
+    for (const scene of scenes) {
+      const plan = await stack.api<Job>('POST', `/projects/${pid}/clips/plan`, { sceneId: scene.id });
+      expectSucceeded(await stack.waitJob(pid, plan.id));
+    }
+    let clips = await clipsOf(pid);
+    const odd = [...clips[1]!.shots].sort((a, b) => a.index - b.index)[1]!;
+    await stack.api('PATCH', `/projects/${pid}/clips/${clips[1]!.id}/shots/${odd.id}`, {
+      description: `${odd.description} The gate is drawn otherwise.`,
+    });
+    const job = await stack.api<Job>('POST', `/projects/${pid}/storyboard/generate`, {});
+    expect(expectSucceeded(await stack.waitJob(pid, job.id, 300_000)).result).toMatchObject({ failed: 0 });
+    await stack.waitIdle(pid);
+    clips = await clipsOf(pid);
+    for (const clip of clips) {
+      const shots = [...clip.shots].sort((a, b) => a.index - b.index);
+      expect(shots.length).toBeGreaterThanOrEqual(2);
+      // One image for the scene: its sheet, laid out for its shots
+      const sheetTask = shots[0]!.board!.gatewayTaskIds[0]!;
+      const sheet = requestOf(sheetTask);
+      expect(sheet.input[0].text).toMatch(/^A storyboard sheet of \w+ panels in \w+ columns? and \w+ rows?/);
+      expect(sheet.input[0].text).toContain(`Panel ${shots.length}: `);
+      const { width, height } = sheet.parameters.dimensions;
+      expect(width * height).toBeLessThanOrEqual(1_000_000);
+      for (const [k, shot] of shots.entries()) {
+        const board = shot.board!;
+        expect(board.consistency.status).toBe('passed');
+        // Every panel kept from the best sheet: no drawing of its own, the sheet it was cut from, its reading
+        expect(board.gatewayTaskIds).toEqual([sheetTask]);
+        expect(board.seen?.keyframeHash).toBe(board.keyframe.hash);
+        expect(board.seen?.conflicts.length ?? 0).toBe(shot.id === odd.id ? 1 : 0);
+        expect(board.keyframe.path).toMatch(/panel/);
+        expect(board.keyframe.width! / board.keyframe.height!).toBeCloseTo(16 / 9, 1);
+        expect(board.sheet).toMatchObject({ panel: k + 1, panels: shots.length });
+        expect(board.sheet!.keyframe.path).toMatch(/^media\/keyframes\/sheet-c/);
+      }
+    }
+    // The odd panel's scene was drawn again whole, told what that panel must show; the first sheet stayed the best
+    const sheets = [...stack.gw.store.requests.values()]
+      .map((r) => (r as any).input?.[0]?.text as string | undefined)
+      .filter((t): t is string => !!t?.startsWith('A storyboard sheet'));
+    expect(
+      sheets.filter((t) => t.includes('Make sure: in panel 2, the gate stands closed behind them.')),
+    ).toHaveLength(2);
+    expect(sheets.filter((t) => t.includes('Make sure:'))).toHaveLength(2);
+    const metrics = await (await fetch(`${stack.url}/metrics`)).text();
+    expect(metrics).toMatch(/rideo_storyboard_sheets_total\{outcome="gutters"\} [1-9]/);
+    expect(metrics).toMatch(/rideo_storyboard_sheet_panels_total\{result="kept"\} [1-9]/);
+    // A frame drawn again alone is not a sheet: one edited shot is redrawn with its scene reference
+    const first = clips[0]!;
+    const lead = [...first.shots].sort((a, b) => a.index - b.index)[0]!;
+    await stack.api('PATCH', `/projects/${pid}/clips/${first.id}/shots/${lead.id}`, {
+      description: `${lead.description} A gull circles overhead.`,
+    });
+    const again = await stack.api<Job>('POST', `/projects/${pid}/storyboard/generate`, {});
+    expectSucceeded(await stack.waitJob(pid, again.id, 300_000));
+    await stack.waitIdle(pid);
+    const redrawn = (await clipsOf(pid))[0]!.shots.find((s) => s.id === lead.id)!.board!;
+    expect(redrawn.sheet).toBeNull();
+    expect(requestOf(redrawn.gatewayTaskIds[0]!).input[0].text).not.toMatch(/^A storyboard sheet/);
+  }, 600_000);
+});
+
 describe('shot list', () => {
   it('lists every planned shot as CSV and as a PDF with the frames', async () => {
     const { pid } = await storyboarded({ storyboard: { scenes: 1 } });

@@ -595,7 +595,7 @@ async function drawFrames(deps: HandlerDeps, ctx: JobContext, clipIds: string[])
       .map((shot) => ({ clip: clip!, shot }));
   });
   // Each scene's first frame first: the others take it as their scene reference
-  await drawBoards(ctx, targets);
+  await drawBoards(ctx, targets, { sheets: docs.project.settings.storyboard.sheet });
 }
 
 /** Applies a storyboard round's fixes: shots revised and redrawn, scenes planned again and drawn. */

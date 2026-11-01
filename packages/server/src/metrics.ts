@@ -463,6 +463,16 @@ export class Metrics {
   readonly storyboardFrames = this.add(
     new Counter('rideo_storyboard_frames_total', 'Storyboard frames by consistency gate result'),
   );
+  /** Scene sheets (docs/design/storyboard.md#scene-sheets): how each was cut, or that it failed. */
+  readonly storyboardSheets = this.add(
+    new Counter('rideo_storyboard_sheets_total', 'Scene sheets by outcome (gutters, cells, failed)'),
+  );
+  readonly storyboardSheetPanels = this.add(
+    new Counter(
+      'rideo_storyboard_sheet_panels_total',
+      'Panels of scene sheets kept as frames or redrawn alone',
+    ),
+  );
   readonly voiceChecks = this.add(
     new Counter('rideo_voice_checks_total', 'Speaker checks of native-audio takes by result'),
   );

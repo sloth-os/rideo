@@ -115,6 +115,9 @@ the same text.
 <time of day>; <continuity>.` The location and the light no longer depend on each shot's description remembering
 them. The video prompt of a shot that shows only part of the cast keeps the place and the time (`Scene: <location>,
 <time of day>.`): the continuity names every character's clothes and props, and Wan put the absent one into the shot.
+With prompt version 3 the line leaves out every sentence of the continuity that names a prop of the project the shot
+does not show (one not among its elements): a hidden prop named is a prop drawn
+([what a frame does not show](first-pass.md#what-a-frame-does-not-show-is-not-named)).
 
 **Continuing the previous shot.** A keyframe of a cut inside a scene whose previous shot has an end state adds
 `Continues from the previous shot: <end state>.`; a continuous shot starts from the previous last frame as before

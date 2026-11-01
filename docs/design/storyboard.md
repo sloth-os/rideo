@@ -36,6 +36,7 @@ type ShotBoard = {
   characterLocks: Record<string, number>;
   elementLocks: Record<string, number>;
   audio: TakeAudio | null;             // the shot's TTS dialogue, for the animatic and the video pass
+  sheet: { keyframe: MediaRef; panel: number; panels: number } | null; // the scene sheet it was cut from (#scene-sheets)
   gatewayTaskIds: string[];
   approved: boolean; approvedAt: string | null; approvedBy: Actor | null;
 } | null;
@@ -60,8 +61,9 @@ again.
 
 | Kind | Lane | Does |
 |---|---|---|
-| `storyboard.generate` | control | plan the storyboarded scenes that have no clip (`clip.plan`), block each in 3D when `settings.blocking.enabled` (`scene.block` for a scene without a blocking; an incomplete one is completed: [director's desk](director-desk.md)), then `shot.board` for every shot whose frame is missing, failed, stale or outdated: each scene's first shot first, then its other shots in parallel; waits for them |
-| `shot.board` | image | R1/E1 preconditions, the keyframe with references, judge and retries (the shot pipeline's keyframe step, shared code), and the shot's TTS dialogue when the server has a TTS provider and every speaker has a locked voice; commits `shot.board` (unapproved) |
+| `storyboard.generate` | control | plan the storyboarded scenes that have no clip (`clip.plan`), block each in 3D when `settings.blocking.enabled` (`scene.block` for a scene without a blocking; an incomplete one is completed: [director's desk](director-desk.md)), then `shot.board` for every shot whose frame is missing, failed, stale or outdated: each scene's first shot first, then its other shots in parallel; waits for them. With `settings.storyboard.sheet` a scene whose every frame is drawn gets its `clip.sheet` first, and its shots start from their panels |
+| `clip.sheet` | image | [scene sheets](#scene-sheets): the scene's shots drawn together as the panels of one image, up to six a sheet, and cut apart at the gutters; returns each shot's panel |
+| `shot.board` | image | R1/E1 preconditions, the keyframe with references, judge and retries (the shot pipeline's keyframe step, shared code), and the shot's TTS dialogue when the server has a TTS provider and every speaker has a locked voice; commits `shot.board` (unapproved). Given a panel of its scene's sheet, the panel is its first attempt, checked like any drawn frame |
 
 **The blocking.** A shot of a blocked scene is drawn with its blocking line in the keyframe prompt and its camera view
 as the last reference image ([what the image and video models get](director-desk.md#what-the-image-and-video-models-get)).
@@ -78,6 +80,43 @@ is drawn and did not fail (approved or not). The swimming demo drew all sixteen 
 it, and the storyboard review scored their continuity 5 in all three rounds: the watermelon halves wandered from one
 side of the beach to the other and onto a blanket, the shoreline and the sun swapped sides. A frame redrawn after the
 first one changed keeps the reference it was drawn with until it is drawn again.
+
+## Scene sheets
+
+Frames drawn one at a time do not see each other, and with `settings.storyboard.sheet` a scene drawn whole is drawn as
+one image instead: a storyboard sheet whose panels are its shots in order. Seedream 5.0 Pro has no group mode, so one
+canvas is the only way its frames can see each other ([why](first-pass.md#a-scene-drawn-on-one-sheet)).
+
+- **When.** `drawBoards` sends a clip to `clip.sheet` when every one of its shots needs a frame and there are at least
+  two; a scene with some frames kept (a review's fixes, an edited shot) has its other frames drawn one at a time, with
+  the scene reference, as before.
+- **Layout** (`sheetLayout`, shared). Up to `SHEET_MAX_PANELS` (6) shots a sheet, in order; a longer scene takes
+  several sheets, each later one with the first sheet's first panel as its scene reference. The grid is the one whose
+  canvas is nearest square, an empty cell counting as much as a canvas a third wider than square: two or three 16:9
+  frames in one column, four in 2×2, five or six in two columns of three rows. The canvas is as large as the image model
+  draws (`settings.storyboard.sheetPixels`, 4,600,000 by default: Seedream 5.0 Pro refuses more than 4,624,220
+  pixels), so six panels are about 1,150×650 pixels each. A cell no shot fills shows the place alone.
+- **Prompt** (`compileSheetRequest`, shared). `A storyboard sheet of N panels in C columns and R rows …` (the
+  `SHEET_PROMPT_PREFIX` the mock gateway reads), the style once, the scene line once (without the props none of its
+  shots show), then `Panel k (<framing>): <the shot's keyframe description> <who is in frame>.` for each panel, the
+  characters' identities and the elements once, the reference images in order (the cast and elements of all its shots,
+  `prepareShotReferences` over their union), `No text, numbers, captions or speech bubbles.` and the still's exclusions.
+- **Cutting** (`cutSheet`, server). A 960-pixel grey copy of the sheet gives each column's and row's share of
+  near-white pixels; the gutters are the runs above 90%, and the panels are the runs between them. When the runs do
+  not come out as the grid's columns and rows the sheet is cut into equal cells. Each panel is cut a little inside its
+  edges, to the frame's aspect from its middle, and kept at its own size.
+- **Checks.** `clip.sheet` reads every panel against its shot (the staging check, `frame.reconcile`, the first panel as
+  the others' opening frame). A sheet with a panel to redraw is drawn again whole, up to `consistency.maxAttempts`
+  times, told what each such panel must show (`Make sure: in panel 2, …`), and the sheet with the fewest panels to
+  redraw (then the fewest conflicts) is kept: a panel drawn again on its own loses what the sheet's panels agree on.
+  Each shot's `shot.board` takes its panel, with its reading, as its first attempt; the identity judge and the quality
+  checks read it as any drawn frame, and only a panel that fails them is drawn again on its own, with the scene
+  reference, as before. A kept panel's board records `sheet` (the sheet's image, the panel's number and how many it
+  had), the sheet's request, and its reading as `seen`.
+- **Failures.** A sheet that cannot be drawn or cut leaves its shots to be drawn one at a time.
+
+`rideo_storyboard_sheets_total{outcome}` counts sheets by how they were cut (`gutters`, `cells`) or `failed`;
+`rideo_storyboard_sheet_panels_total{result}` counts panels `kept` or `redrawn`.
 
 ## Video pass
 

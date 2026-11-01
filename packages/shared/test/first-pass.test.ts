@@ -21,6 +21,7 @@ import {
   makerRubric,
   meanOfReviews,
   negativePromptFor,
+  ProjectSettingsPatchSchema,
   ProjectSettingsSchema,
   REFERENCE_VIEW_PRIORITY,
   REVIEW_DIMENSIONS,
@@ -38,9 +39,11 @@ import {
   StageReviewSchema,
   screenplayFromLlm,
   selectReferences,
+  shotContextOf,
   stageVerdict,
   VIDEO_MODEL_FACTS,
   videoFacts,
+  withoutSentencesNaming,
   workingBrief,
 } from '../src';
 import * as f from '../src/testing/fixtures';
@@ -572,6 +575,56 @@ describe('a take that fails is told what to correct (docs/design/first-pass.md#a
   });
 });
 
+describe('what a frame does not show is not named (docs/design/first-pass.md#what-a-frame-does-not-show-is-not-named)', () => {
+  const continuity =
+    'Bright afternoon, windy. Sammy carries the big red kite under his right arm. The big sandwich on the red cloth is inside the closed backpack.';
+  it('leaves out the sentences that name a hidden prop, by its whole name in any case', () => {
+    expect(withoutSentencesNaming(continuity, ['Big Sandwich'])).toBe(
+      'Bright afternoon, windy. Sammy carries the big red kite under his right arm.',
+    );
+    // A part of a name is not the name
+    expect(withoutSentencesNaming(continuity, ['Sandwich Box'])).toBe(continuity);
+    expect(withoutSentencesNaming(continuity, [])).toBe(continuity);
+  });
+
+  it("keeps the project's props a shot does not show out of its version 3 prompts", () => {
+    const kite = f.element({ kind: 'prop', name: 'Big Red Kite' });
+    const sandwich = f.element({ kind: 'prop', name: 'Big Sandwich' });
+    const hill = f.element({ kind: 'location', name: 'Green Hill' });
+    const scene = {
+      ...f.screenplay().scenes[0]!,
+      id: 'scn_0000000000aaaaaa',
+      location: 'Green Hill',
+      timeOfDay: 'afternoon',
+      continuity,
+    };
+    const prompts = (promptVersion: 2 | 3, elementIds: string[]) => {
+      const shot = f.shot({ elementIds });
+      const clip = f.clip({ sceneId: scene.id, shots: [shot] });
+      const docs = f.docs({
+        project: f.project({ settings: ProjectSettingsSchema.parse({ generation: { promptVersion } }) }),
+        screenplay: f.screenplay({ scenes: [scene] }),
+        elements: { [kite.id]: kite, [sandwich.id]: sandwich, [hill.id]: hill },
+        clips: { [clip.id]: clip },
+      });
+      const ctx = shotContextOf(shot, docs, clip);
+      return { ctx, keyframe: compileShotPrompt(ctx, 'keyframe'), video: compileShotPrompt(ctx, 'video') };
+    };
+    const hidden = prompts(3, [hill.id, kite.id]);
+    expect(hidden.ctx.hiddenProps).toEqual(['Big Sandwich']);
+    for (const text of [hidden.keyframe, hidden.video]) {
+      expect(text).not.toMatch(/sandwich/i);
+      expect(text).toContain('Sammy carries the big red kite under his right arm');
+    }
+    // A shot that shows the sandwich says where it is; version 2 prompts are as they were
+    expect(prompts(3, [hill.id, kite.id, sandwich.id]).keyframe).toContain(
+      'The big sandwich on the red cloth',
+    );
+    expect(prompts(2, [hill.id]).keyframe).toContain('The big sandwich on the red cloth');
+    expect(prompts(2, [hill.id]).ctx.hiddenProps).toBeUndefined();
+  });
+});
+
 describe('judge samples (docs/design/ai-review.md#the-verdict)', () => {
   const answer = (scores: Record<string, number>, summary: string) => ({
     scores,
@@ -580,6 +633,13 @@ describe('judge samples (docs/design/ai-review.md#the-verdict)', () => {
     issues: [],
     recommendations: [],
   });
+  it('is a setting a person or an agent can change', () => {
+    expect(ProjectSettingsPatchSchema.parse({ review: { judgeSamples: 2 } }).review).toEqual({
+      judgeSamples: 2,
+    });
+    expect(() => ProjectSettingsPatchSchema.parse({ review: { judgeSamples: 9 } })).toThrow();
+  });
+
   it("scores each dimension by the answers' mean, in the words of the answer nearest it", () => {
     const merged = meanOfReviews([
       answer({ story: 8, pacing: 7 }, 'low'),

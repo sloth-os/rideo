@@ -47,6 +47,7 @@ export const JOB_KINDS = [
   'cast.review',
   'takes.watch',
   'cut.review',
+  'clip.sheet',
 ] as const;
 export const JobKindSchema = z.enum(JOB_KINDS);
 export type JobKind = z.infer<typeof JobKindSchema>;
@@ -104,6 +105,7 @@ export const JOB_LANES: Record<JobKind, Lane> = {
   'takes.watch': 'llm',
   // waits for the takes' watches, the scene reviews and their fixes
   'cut.review': 'control',
+  'clip.sheet': 'image',
 };
 
 /**
@@ -155,6 +157,7 @@ export const JOB_GATEWAY: Record<JobKind, 'required' | 'optional' | 'none'> = {
   'cast.review': 'required',
   'takes.watch': 'required',
   'cut.review': 'required',
+  'clip.sheet': 'required',
 };
 
 export const EDITOR_JOB_KINDS = ['media.process', 'analysis.signals', 'export.render'] as const;

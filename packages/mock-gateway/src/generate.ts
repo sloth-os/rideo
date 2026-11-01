@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { runFfmpeg, synthesizeFrame, synthesizeMusic, synthesizeVideo } from './media';
 import { MOCK_MODELS, type Modality } from './models';
-import { decodePng, encodePng, isPng, parseDataUri } from './png';
+import { decodePng, encodePng, isPng, parseDataUri, type Rgba } from './png';
 import { allSignatures, type Rgb, signatureColor } from './signature';
 import { type RunResult, TaskError } from './tasks';
 
@@ -196,6 +196,44 @@ function dims(params: Record<string, unknown> | undefined, fallback: { width: nu
   return { width, height };
 }
 
+const NUMBER_WORDS = ['no', 'one', 'two', 'three', 'four', 'five', 'six'];
+
+/**
+ * A storyboard sheet's grid (docs/design/storyboard.md#scene-sheets): "A storyboard sheet of six panels in two columns
+ * and three rows".
+ */
+function sheetGrid(prompt: string): { columns: number; rows: number } | null {
+  const m = /^A storyboard sheet of \w+ panels? in (\w+) columns? and (\w+) rows?/i.exec(prompt);
+  if (!m) return null;
+  const n = (w: string) => (/^\d+$/.test(w) ? Number(w) : NUMBER_WORDS.indexOf(w.toLowerCase()));
+  const columns = n(m[1]!);
+  const rows = n(m[2]!);
+  return columns > 0 && rows > 0 ? { columns, rows } : null;
+}
+
+/** A white canvas of the grid's panels, each a frame of its own with the references' signatures, thin gutters between. */
+function synthesizeSheet(
+  width: number,
+  height: number,
+  grid: { columns: number; rows: number },
+  seed: number,
+  sigs: Rgb[],
+): Rgba {
+  const gutter = Math.max(4, Math.round(Math.min(width, height) * 0.02));
+  const cellW = Math.floor((width - gutter * (grid.columns + 1)) / grid.columns);
+  const cellH = Math.floor((height - gutter * (grid.rows + 1)) / grid.rows);
+  const data = Buffer.alloc(width * height * 4, 255);
+  for (let r = 0; r < grid.rows; r++)
+    for (let c = 0; c < grid.columns; c++) {
+      const panel = synthesizeFrame(cellW, cellH, seed ^ (r * grid.columns + c + 1), sigs);
+      const x0 = gutter + c * (cellW + gutter);
+      const y0 = gutter + r * (cellH + gutter);
+      for (let y = 0; y < cellH; y++)
+        panel.data.copy(data, ((y0 + y) * width + x0) * 4, y * cellW * 4, (y + 1) * cellW * 4);
+    }
+  return { width, height, data };
+}
+
 export async function runImage(body: Record<string, any>, ctx: GenerateContext): Promise<RunResult> {
   const parts = body.input as Part[];
   const params = (body.parameters ?? {}) as Record<string, unknown>;
@@ -210,7 +248,10 @@ export async function runImage(body: Record<string, any>, ctx: GenerateContext):
   const outputs = [];
   for (let i = 0; i < count; i++) {
     const seed = hash(prompt) ^ Number(params.seed ?? 0) ^ i;
-    const png = encodePng(synthesizeFrame(width, height, seed, sigs));
+    const grid = sheetGrid(prompt);
+    const png = encodePng(
+      grid ? synthesizeSheet(width, height, grid, seed, sigs) : synthesizeFrame(width, height, seed, sigs),
+    );
     const name = `${randomBytes(8).toString('hex')}.png`;
     if (params.delivery === 'inline') {
       outputs.push({ uri: `data:image/png;base64,${png.toString('base64')}`, mime_type: 'image/png' });

@@ -65,6 +65,10 @@ export const StoryboardSettingsSchema = z.object({
   scenes: z.number().int().min(1).max(50).default(3),
   /** Storyboard every production scene before its video (docs/design/ai-review.md#production-storyboards). */
   production: z.boolean().default(false),
+  /** Draw a scene's frames together on one sheet and cut it into panels (docs/design/storyboard.md#scene-sheets). */
+  sheet: z.boolean().default(false),
+  /** The largest canvas the image model draws a sheet on, in pixels (Seedream 5.0 Pro: 4,624,220). */
+  sheetPixels: z.number().int().min(1_000_000).max(16_777_216).default(4_600_000),
 });
 export type StoryboardSettings = z.infer<typeof StoryboardSettingsSchema>;
 
@@ -120,7 +124,13 @@ export const ProjectSettingsSchema = z.object({
     rejectMusic: false,
   }),
   dialogue: DialogueSettingsSchema.default({ mode: 'off', lipSync: true, level: 'any' }),
-  storyboard: StoryboardSettingsSchema.default({ enabled: true, scenes: 3, production: false }),
+  storyboard: StoryboardSettingsSchema.default({
+    enabled: true,
+    scenes: 3,
+    production: false,
+    sheet: false,
+    sheetPixels: 4_600_000,
+  }),
   /** The 3D director's desk (docs/design/director-desk.md#jobs). */
   blocking: BlockingSettingsSchema.default({ enabled: false, layoutImage: true }),
   generation: z

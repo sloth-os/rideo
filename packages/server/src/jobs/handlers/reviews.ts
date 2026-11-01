@@ -355,7 +355,7 @@ export async function clipStoryboard(deps: HandlerDeps, ctx: JobContext) {
     const targets = c.shots
       .filter((s) => boardNeedsGeneration(boardState(s, d)))
       .map((shot) => ({ clip: c, shot }));
-    if (targets.length) await drawBoards(ctx, targets);
+    if (targets.length) await drawBoards(ctx, targets, { sheets: d.project.settings.storyboard.sheet });
   };
   ctx.progress(0.15, 1, `drawing the frames of scene ${scene}`);
   await draw();

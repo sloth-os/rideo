@@ -326,6 +326,15 @@ export const ShotBoardSchema = z.object({
   elementLocks: z.record(z.string(), z.number().int().nonnegative()).default({}),
   /** The shot's TTS dialogue, for the animatic and the video pass. */
   audio: TakeAudioSchema.nullable().default(null),
+  /** The scene sheet the frame was cut from (docs/design/storyboard.md#scene-sheets): its image and which panel. */
+  sheet: z
+    .object({
+      keyframe: MediaRefSchema,
+      panel: z.number().int().min(1),
+      panels: z.number().int().min(1),
+    })
+    .nullable()
+    .default(null),
   gatewayTaskIds: z.array(z.string()).default([]),
   approved: z.boolean().default(false),
   approvedAt: IsoDateSchema.nullable().default(null),

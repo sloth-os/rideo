@@ -79,7 +79,14 @@ export const ProjectSettingsPatchSchema = z
       .partial(),
     /** The storyboard stage (docs/design/storyboard.md). */
     storyboard: z
-      .object({ enabled: z.boolean(), scenes: z.number().int().min(1).max(50), production: z.boolean() })
+      .object({
+        enabled: z.boolean(),
+        scenes: z.number().int().min(1).max(50),
+        production: z.boolean(),
+        /** docs/design/storyboard.md#scene-sheets */
+        sheet: z.boolean(),
+        sheetPixels: z.number().int().min(1_000_000).max(16_777_216),
+      })
       .partial(),
     /** The 3D director's desk (docs/design/director-desk.md#jobs). */
     blocking: z.object({ enabled: z.boolean(), layoutImage: z.boolean() }).partial(),
@@ -119,6 +126,8 @@ export const ProjectSettingsPatchSchema = z
         minDimension: z.number().min(0).max(10),
         watchTakes: z.boolean(),
         extensions: z.boolean(),
+        /** docs/design/ai-review.md#the-verdict */
+        judgeSamples: z.number().int().min(1).max(5),
       })
       .partial(),
     watermark: z.object({ enabled: z.boolean() }).partial(),

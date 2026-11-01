@@ -314,6 +314,68 @@ of Rosie flagged because "the opening frame shows Sammy"; a kite the plan had pu
 it was overhead in the opening frame), the frames drifted from their shots and the kite storyboard scored 6.6
 (continuity 4.5) against 7.6 the run before.
 
+### What a frame does not show is not named
+
+Every prompt of a scene's shots carries the scene's continuity, and the continuity names props that a shot does not
+show: "The big sandwich on the red cloth is inside the closed backpack." Image models draw what a prompt names, hidden
+or not. On a sheet of fp26's first kite scene (see [a scene drawn on one sheet](#a-scene-drawn-on-one-sheet)) a loaf
+poked out of Rosie's closed backpack in every panel, and the storyboard review marked it major in each of them.
+
+So with prompt version 3 the scene line leaves out each sentence of the continuity that names a prop of the project
+the shot does not show, one that is not among its elements (`ShotContext.hiddenProps`, by the prop's whole name;
+`sceneLine` with `hidden`). A sentence that also says something the shot does show goes with it: the shot's own
+description and elements say what it shows. The checks and the reviewers still read the whole continuity, so a frame
+that shows the hidden prop is still a conflict.
+
+## A scene drawn on one sheet
+
+Each frame drawn alone followed its shot, and the frames still disagreed with each other: the storyboards' continuity
+stayed at 4–6 through fp4–fp27 while the cast scored 9. Generating a set together is the literature's cure for frames
+that disagree: diffusion transformers draw coherent multi-panel sets from one prompt, and panels drawn jointly agree
+more than panels drawn beside fixed neighbours ([IC-LoRA](https://arxiv.org/abs/2410.23775)); ByteDance credits
+Seedream's multi-image output to "global planning and in-context consistency" and pitches it for storyboards
+([Seedream 4.0](https://arxiv.org/abs/2509.20427)). Seedream 5.0 Pro, the gateway's only image model, has no group mode
+([BytePlus](https://docs.byteplus.com/en/docs/ModelArk/1541523)), so one canvas is the only way its frames can see each
+other, and its own showcase is a storyboard of panels in a single picture.
+
+So with `storyboard.sheet` a scene drawn whole is drawn as one sheet and cut into its panels, and each panel is checked
+as its shot's first attempt ([scene sheets](storyboard.md#scene-sheets)). The gateway caps the canvas at 4,624,220
+pixels, so six panels come out about 1,050×590 each: enough for the reviewer, who reads frames at 512 pixels, and for
+a take's first frame, which Wan scales to the take's own size.
+
+**Measured on frozen plans.** fp26's first kite scene (six shots) was judged three times as fp26 drew it (each frame
+alone, checked, the best of three attempts) and three times as the six panels of one sheet, drawn once from the shots'
+own descriptions and not checked:
+
+| | Score | Composition | Continuity | Character | Coverage | Storytelling | Feasibility | Pacing |
+|---|---|---|---|---|---|---|---|---|
+| Frames drawn alone | 7.27 | 7.0 | 5.0 | 8.7 | 8.3 | 7.0 | 6.3 | 8.7 |
+| One sheet's panels | 7.53 | 8.0 | 4.7 | 8.7 | 8.0 | 7.7 | 7.3 | 8.3 |
+
+The panels agreed on what the frames had disagreed about: the kite stayed in Sammy's arms in Rosie's close-up, where
+fp26's frame had it already flying, and the lake, the tree and the grass kept their sides. Continuity did not rise,
+for two reasons. The scene's continuity named the sandwich packed in the closed backpack, and the sheet drew a loaf
+poking out of it in every one of Rosie's panels ([what a frame does not show](#what-a-frame-does-not-show-is-not-named)
+now leaves that sentence out); and the kite's tail, a detail each panel's line asked for, streamed with Sammy's walk
+rather than with the wind in two panels. In the pipeline each panel is read against its shot like any frame, and these
+panels were not. **Measured with checks** (fp28, frozen plans): the storyboarded scenes of fp26's kite and fp27's riding projects, every
+frame drawn again, either alone or from a sheet whose panels were checked and, when they failed, drawn again alone;
+each scene reviewed as the mean of three judge answers:
+
+| Scene | Drawn alone | Sheet, failed panels drawn alone | Panels kept |
+|---|---|---|---|
+| Kite 1 | 7.4 | 7.2 | 1 of 6 |
+| Kite 2 | 6.6 | 7.9 (continuity 7.3, character 8.7) | 5 of 6 |
+| Riding 1 | 7.1 | 6.7 | 5 of 8 |
+| Riding 2 | 7.3 | 7.3 (character 8 against 6.7) | 4 of 7 |
+| Mean | 7.10 (continuity 5.3, character 6.8) | 7.28 (continuity 5.7, character 7.9) | |
+
+The scene whose panels survived their checks gained 1.3 points; the scene whose panels were nearly all drawn again
+alone gained nothing, as those frames no longer saw each other. So a sheet with a failed panel is now drawn again
+whole, told what that panel must show, and the best sheet's panels are kept. Riding's first sheet drew ponies into the
+establishing panel, which shows the yard before they are found: the other panels of the same canvas show them. The
+sheet stays a setting, off in the schema, until a full run of both briefs compares it with frames drawn alone.
+
 ## The video reads its first frame
 
 A take starts from a picture, its approved storyboard frame or its keyframe, and its prompt restated the shot as
@@ -486,6 +548,10 @@ Every run from fp4 to fp24, first round only (one build and brief move by up to 
 The demo server's gateway offers one image model (`doubao-seedream-5.0-pro`) and one video model (`wan3.0-video-prime`)
 (November 1, 2026): every run above used them, so "a stronger model" below means adding a provider to the gateway.
 
+Each screenplay, cast and storyboard review of new projects is now the mean of three judge answers
+([judge samples](ai-review.md#the-verdict)): the numbers above are single answers, and a minimum over seven noisy
+dimensions fails work that truly clears the bar.
+
 What keeps each under 8, what was tried, and what to try next:
 
 1. **A brief that asks for what the video model cannot film** (screenplay feasibility 5–7 on every run). The reviewer
@@ -501,17 +567,21 @@ What keeps each under 8, what was tried, and what to try next:
    itself (fp14–fp17, read shot by shot); the drawings break it: a prop in a paw that the shot leaves on the grass,
    the lake on the other side in a close-up, a scarf hanging still in a gale. Tried: the staging check with
    corrections, the opening frame for the place only (as "the same moment" it cost a point, fp15), landmark sides and
-   the wind as reasons to redraw (fp17: one major issue left on the kite storyboard). *Next:* draw a frame as an edit
-   of the previous frame of the same camera setup, and measure it against frames drawn from references.
+   the wind as reasons to redraw (fp17: one major issue left on the kite storyboard). *Being measured:* a scene drawn
+   on one sheet ([a scene drawn on one sheet](#a-scene-drawn-on-one-sheet)), its panels checked as frames, and
+   the props a shot does not show left out of its prompt
+   ([what a frame does not show](#what-a-frame-does-not-show-is-not-named)).
 4. **Stills that tell the beat** (storytelling 6–8): a frame is the start of its shot, so a beat inside the take was
    missing from the storyboard; the planner now starts a shot on its beat's pose (fp18, being measured).
 5. **The video** (scene 6.0–7.3, first takes 5.8–7.4): the video model adds its own failures (a kite that morphs and
    pops into the sky, a close-up drifting wide, a head turning to the camera). Tried: the first frame read before
    the take, nobody looks into the lens, the take told where it ends (fp18: 7.3, storytelling and physics 8), the
    take's camera said first with what it must not do (fp19: two of six takes still pulled back, so the drift is the
-model's; a take watch that finds it could have the take made again). *Next:* a take whose watch finds its planned end
-   state missed is made again before the scene review, and props the model handles badly (a kite in the wind) kept
-   still or out of the moving part of a shot.
+model's; a take watch that finds it could have the take made again). Wan's own prompt rewriter is already off
+   (`enhance_prompt: false`, which the gateway sends as `prompt_extend`). A take whose watch fails is made again
+   (fp25: drift and wrong voices gone) and now told what to correct
+   ([a take that fails](#a-take-that-fails-is-told-what-to-correct)). *Next:* props the model handles badly (a kite in
+   the wind) kept to one state per short take, or out of the moving part of a shot.
 6. **Close framings drawn whole** (fixed, fp7) and **the AI blocking**: its cameras now follow each shot's planned
    layout where its marks allow ([following the shot plan](director-desk.md#following-the-shot-plan)), yet with the
    desk on the storyboards scored 6.1 and 6.6 (fp27) against 7.2 and 6.8 without it: the image model does not draw

@@ -42,6 +42,7 @@ import { consistencyRecheck } from '../jobs/handlers/recheck';
 import { recipeRun } from '../jobs/handlers/recipe';
 import { castReview, clipStoryboard, cutReview, takesWatch } from '../jobs/handlers/reviews';
 import { searchIndex } from '../jobs/handlers/search-index';
+import { clipSheet } from '../jobs/handlers/sheet';
 import { shotGenerate } from '../jobs/handlers/shot';
 import { shotGroup } from '../jobs/handlers/shot-group';
 import {
@@ -415,6 +416,7 @@ export function createStudio(
   reg('voice.design', voiceDesign);
   reg('storyboard.generate', storyboardGenerate);
   reg('shot.board', shotBoard);
+  reg('clip.sheet', clipSheet);
   reg('take.edit', takeEdit);
   reg('take.extend', takeExtend);
   reg('timeline.extend', timelineExtend);

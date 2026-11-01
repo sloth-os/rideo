@@ -64,6 +64,14 @@ export function shotContextOf(shot: Shot, docs: BoardDocs, clip?: Clip): ShotCon
       : null,
     previousEndState: previous?.endState || null,
     blocking: owner ? blockingContextOf(owner, shot, docs) : null,
+    // Version 3: what the shot does not show is not named (docs/design/first-pass.md#what-a-frame-does-not-show-is-not-named)
+    ...(promptVersionOf(docs.project.settings) >= 3
+      ? {
+          hiddenProps: Object.values(docs.elements)
+            .filter((e) => e.kind === 'prop' && !shot.elementIds.includes(e.id))
+            .map((e) => e.name),
+        }
+      : {}),
   };
 }
 

@@ -151,6 +151,19 @@ export async function generateKeyframe(
      * its shot (`frame.reconcile`), and drawn again while it contradicts what the shot needs.
      */
     staging?: { shot: FrameReconcileInput['shot']; source: 'storyboard' | 'keyframe'; opening?: MediaRef };
+    /**
+     * A frame already drawn, its first attempt: a panel of the scene's sheet
+     * (docs/design/storyboard.md#scene-sheets), checked like any frame and drawn again alone only if it fails.
+     */
+    given?: {
+      keyframe: MediaRef;
+      prompt: string;
+      seed: number;
+      imageModel?: string;
+      taskId?: string;
+      /** Its reading against the shot, already made: a frame that passes the gate is kept as it is. */
+      seen?: FrameReading | null;
+    };
     progress: (attempt: number) => void;
   },
 ): Promise<KeyframeResult> {
@@ -167,29 +180,37 @@ export async function generateKeyframe(
   for (let attempt = 0; attempt < input.maxAttempts; attempt++) {
     throwIfAborted(ctx.signal);
     input.progress(attempt);
-    const req = compileKeyframeRequest(
-      {
-        ...shotCtx,
-        referenceLabels: refs.referenceLabels.slice(0, refs.referenceUris.length),
-        correction,
-      },
-      {
-        referenceUris: refs.referenceUris,
-        attempt,
-        model: shotCtx.settings.models.image,
-        variation: input.variation,
-      },
-    );
-    out.prompt = (req.input[0] as { text: string }).text;
-    out.seed = req.parameters?.seed ?? 0;
-    const task = await deps.gateway.generateImage(req, gatewayOptions(ctx, 'image', input.step, attempt));
-    out.taskIds.push(task.id);
-    out.imageModel = task.model || out.imageModel;
-    out.keyframe = await deps.media.importUri(projectId, task.outputs![0]!.uri, {
-      kind: 'keyframes',
-      name: `${input.name}-a${attempt + 1}`,
-      signal: ctx.signal,
-    });
+    if (attempt === 0 && input.given) {
+      out.prompt = input.given.prompt;
+      out.seed = input.given.seed;
+      out.imageModel = input.given.imageModel ?? out.imageModel;
+      if (input.given.taskId) out.taskIds.push(input.given.taskId);
+      out.keyframe = input.given.keyframe;
+    } else {
+      const req = compileKeyframeRequest(
+        {
+          ...shotCtx,
+          referenceLabels: refs.referenceLabels.slice(0, refs.referenceUris.length),
+          correction,
+        },
+        {
+          referenceUris: refs.referenceUris,
+          attempt,
+          model: shotCtx.settings.models.image,
+          variation: input.variation,
+        },
+      );
+      out.prompt = (req.input[0] as { text: string }).text;
+      out.seed = req.parameters?.seed ?? 0;
+      const task = await deps.gateway.generateImage(req, gatewayOptions(ctx, 'image', input.step, attempt));
+      out.taskIds.push(task.id);
+      out.imageModel = task.model || out.imageModel;
+      out.keyframe = await deps.media.importUri(projectId, task.outputs![0]!.uri, {
+        kind: 'keyframes',
+        name: `${input.name}-a${attempt + 1}`,
+        signal: ctx.signal,
+      });
+    }
     const png = await deps.media.pngBuffer(projectId, out.keyframe, 512);
     out.report = await verifyFrames({
       judge: input.judge,
@@ -218,6 +239,13 @@ export async function generateKeyframe(
     });
     if (!best?.report || betterAttempt(out.report, best.report))
       best = { keyframe: out.keyframe, report: out.report, prompt: out.prompt, seed: out.seed };
+    // A panel already read against its shot, from the best of its scene's sheets (docs/design/storyboard.md#scene-sheets)
+    const read =
+      attempt === 0 && input.given?.seen?.keyframeHash === out.keyframe.hash ? input.given.seen : null;
+    if (read && attemptDone(out.report)) {
+      staged = { keyframe: out.keyframe, report: out.report, prompt: out.prompt, seed: out.seed, seen: read };
+      break;
+    }
     if (attemptDone(out.report) && input.staging) {
       const seen = await readFrame(deps, ctx, input.staging, out.keyframe);
       if (!seen) break;
@@ -278,7 +306,7 @@ export function stagingFor(
 /** What a frame shows against its shot (`frame.reconcile`): null when the model cannot say. */
 export type FrameReading = FrameReconcileOutput & { keyframeHash: string; model: string };
 
-async function readFrame(
+export async function readFrame(
   deps: HandlerDeps,
   ctx: JobContext,
   staging: NonNullable<Parameters<typeof generateKeyframe>[2]['staging']>,
