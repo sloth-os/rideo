@@ -227,6 +227,20 @@ describe('takes watched whole', () => {
     expect(take.consistency.quality.watch).toMatchObject({ passed: false, motion: 0.2 });
     expect(take.consistency.quality.passed).toBe(false);
     expect(take.consistency.quality.issues.join(' ')).toMatch(/watched: The figure morphs/);
+    // The second take was told what the first one's watch found wrong
+    // (docs/design/first-pass.md#a-take-that-fails-is-told-what-to-correct)
+    const takePrompts = (take.gatewayTaskIds as string[])
+      .map(
+        (id) =>
+          (stack.gw.store.requests.get(id) as { input: { text?: string }[] } | undefined)?.input[0]?.text ??
+          '',
+      )
+      .filter((t) => t.startsWith('One continuous shot'));
+    expect(takePrompts).toHaveLength(2);
+    expect(takePrompts[0]).not.toContain('Make sure:');
+    expect(takePrompts[1]).toContain(
+      'Make sure: every figure keeps its shape and size from the first frame to the last.',
+    );
   }, 600_000);
 
   it('watches the takes of the cut that were made before the watch, from their videos', async () => {

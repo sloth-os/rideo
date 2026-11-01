@@ -257,7 +257,8 @@ the listener (`take.watch`), so it adds no time to an attempt:
   objects keeping shape and number), `action` (the planned action happens, in order, within the take), `camera` (the
   framing and the move as planned) and `identity` (everyone stays themselves from the first frame to the last), an
   overall score from 0 to 10, the people seen who should not be there, and issues with the time in the take, the
-  severity and what is seen.
+  severity and what is seen; and `fix`, when the take fails, what the next take must show instead, said positively,
+  which the next attempt's video prompt says as `Make sure: …` (prompt version 3).
 - **Verdict** (`watchVerdict`, shared): the attempt fails when a critical issue is seen, `motion`, `physics` or
   `identity` is below `consistency.qualityThreshold`, `action` is below 0.6 (`WATCH_MIN_ACTION`) or `camera` below
   0.7 (`WATCH_MIN_CAMERA`); a score the watcher did not give is `null` and never fails a take (it showed as 0.5

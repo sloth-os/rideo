@@ -1247,6 +1247,8 @@ const judged = z
   .catch(null);
 /** What the watcher answers about a whole take. */
 export const TakeWatchOutputSchema = z.object({
+  /** When the take fails: what the next take must show instead, said positively (prompt version 3 says it). */
+  fix: clipped(1000),
   overall: z.coerce.number().min(0).max(10).catch(5).default(5),
   motion: unit,
   physics: unit,

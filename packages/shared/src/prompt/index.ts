@@ -542,6 +542,10 @@ function compileShotPromptV2(
   const sceneText = sceneLine(ctx.scene, location, { placeOnly: video && !!ctx.offscreen?.length });
   if (sceneText) lines.push(sceneText);
   lines.push(...shotBodyV2(ctx, mode, { ...opts, cameraSaid: !!hold }));
+  // Version 3: a take made again after its watch says what the last attempt got wrong
+  // (docs/design/first-pass.md#a-take-that-fails-is-told-what-to-correct)
+  if (video && promptVersionOf(settings) >= 3 && clean(ctx.correction ?? ''))
+    lines.push(`Make sure: ${clean(ctx.correction!)}.`);
   if (ctx.characters.length) {
     lines.push(
       mode === 'keyframe'

@@ -68,6 +68,8 @@ export const TakeWatchSchema = z.object({
   overall: z.number().min(0).max(10),
   motion: z.number().min(0).max(1),
   physics: z.number().min(0).max(1),
+  /** What the next take must show instead, when this one fails (docs/design/first-pass.md#a-take-that-fails-is-told-what-to-correct). */
+  fix: z.string().max(1000).default(''),
   /** Null when the watcher gave none (docs/design/ai-review.md#takes-watched-whole). */
   action: z.number().min(0).max(1).nullable(),
   camera: z.number().min(0).max(1).nullable(),

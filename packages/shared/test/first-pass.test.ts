@@ -347,7 +347,8 @@ describe('a redraw told what to correct (docs/design/first-pass.md#frames-that-f
     const ctx: ShotContext = { shot: f.shot(), characters: [], screenplay: null, settings };
     const fix = 'the red kite lies flat on the grass';
     expect(compileShotPrompt({ ...ctx, correction: fix }, 'keyframe')).toContain(`Make sure: ${fix}.`);
-    expect(compileShotPrompt({ ...ctx, correction: fix }, 'video')).not.toContain('Make sure:');
+    // A take made again says its own correction too (docs/design/first-pass.md#a-take-that-fails-is-told-what-to-correct)
+    expect(compileShotPrompt({ ...ctx, correction: fix }, 'video')).toContain(`Make sure: ${fix}.`);
     expect(compileShotPrompt(ctx, 'keyframe')).not.toContain('Make sure:');
     const ref = compileReferenceRequest(f.character({ name: 'Rosie' }), 'profile', {
       screenplay: null,
@@ -546,6 +547,27 @@ describe('the take holds its camera (docs/design/first-pass.md#the-take-holds-it
       { referenceUris: [], attempt: 0 },
     );
     expect(req.parameters?.negative_prompt ?? '').not.toContain('camera pulling back');
+  });
+});
+
+describe('a take that fails is told what to correct (docs/design/first-pass.md#a-take-that-fails-is-told-what-to-correct)', () => {
+  it("says the last attempt's correction in a version 3 take, after its action", () => {
+    const at = (promptVersion: 2 | 3, correction: string | null) =>
+      compileShotPrompt(
+        {
+          shot: f.shot({ action: 'Sammy lifts the kite.' }),
+          characters: [],
+          screenplay: null,
+          settings: ProjectSettingsSchema.parse({ generation: { promptVersion } }),
+          correction,
+        },
+        'video',
+      );
+    const fixed = at(3, 'the kite stays a flat red diamond held against his chest');
+    expect(fixed).toContain('Make sure: the kite stays a flat red diamond held against his chest.');
+    expect(fixed.indexOf('Make sure:')).toBeGreaterThan(fixed.indexOf('Action:'));
+    expect(at(3, null)).not.toContain('Make sure:');
+    expect(at(2, 'the kite stays flat')).not.toContain('Make sure:');
   });
 });
 

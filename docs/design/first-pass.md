@@ -358,6 +358,17 @@ Rosie's, and a line in another character's voice was advisory. The listener now 
 `inFrame`, and a line heard in another character's voice fails the take, which is made again
 ([quality checks](continuity.md#quality-checks-in-the-gate)).
 
+### A take that fails is told what to correct
+
+A take that failed its watch was made again from the same prompt with another seed, while a frame drawn again is told
+what its reading found wrong ([frames that follow their shot](#frames-that-follow-their-shot)). Targeted feedback on
+a failed video, the correct state said in the next prompt, is the training-free method with the best measured effect
+on physical adherence ([PhyT2V](https://arxiv.org/abs/2412.00596): 2.3 times better adherence to physical rules),
+where a generic rewrite does not help. So the take watch also answers
+`fix`: when the take fails, what the next take must show instead, said positively ("the kite stays a flat red diamond
+held against Sammy's chest; the camera holds its medium framing"), and with prompt version 3 the next attempt's video
+prompt says `Make sure: …` after its action.
+
 ### The take holds its camera
 
 The take watch's most frequent issue after fp16 was the camera: a static medium shot that pulls back, a dolly-in that

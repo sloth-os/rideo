@@ -246,6 +246,7 @@ export function takeWatchOf(
     model: opts.model,
     via: opts.via,
     overall: round1(out.overall),
+    fix: out.fix,
     motion: out.motion,
     physics: out.physics,
     action: out.action,

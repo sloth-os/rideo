@@ -92,6 +92,7 @@ export function sceneBlock(input: SceneBlockInput): SceneBlockOutput {
 export function takeWatch(input: TakeWatchInput, watched: boolean): TakeWatchOutput {
   const glitch = MOTION_GLITCH.test(`${input.shot.description} ${input.shot.action}`);
   return {
+    fix: glitch ? 'every figure keeps its shape and size from the first frame to the last' : '',
     overall: glitch ? 3 : 8,
     motion: glitch ? 0.2 : 0.9,
     physics: 0.85,

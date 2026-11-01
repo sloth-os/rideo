@@ -462,10 +462,13 @@ export async function shotGenerate(deps: HandlerDeps, ctx: JobContext) {
       let best: Candidate | null = null;
       const videoTaskIds: string[] = [];
       let videoReq = compileVideoRequest(videoCtx, videoOpts(0));
+      // What the last attempt's watch found wrong, for the next take to show instead
+      // (docs/design/first-pass.md#a-take-that-fails-is-told-what-to-correct)
+      let correction: string | null = null;
       for (let attempt = 0; attempt < maxAttempts; attempt++) {
         throwIfAborted(ctx.signal);
         ctx.progress(0.35 + (0.45 * attempt) / maxAttempts, 1, `video attempt ${attempt + 1}/${maxAttempts}`);
-        videoReq = compileVideoRequest(videoCtx, videoOpts(attempt));
+        videoReq = compileVideoRequest({ ...videoCtx, correction }, videoOpts(attempt));
         const videoStarted = Date.now();
         const task = await deps.gateway.generateVideo(
           videoReq,
@@ -592,6 +595,7 @@ export async function shotGenerate(deps: HandlerDeps, ctx: JobContext) {
         // Identity first, then the quality checks, then the score (docs/design/continuity.md#quality-checks-in-the-gate).
         if (betterAttempt(report, best?.report ?? null)) best = candidate;
         if (attemptDone(report)) break;
+        correction = report.quality?.watch?.fix?.trim() || correction;
         if (report.status === 'failed')
           ctx.log.info({ attempt, score: report.score }, 'video failed the consistency gate');
         else
