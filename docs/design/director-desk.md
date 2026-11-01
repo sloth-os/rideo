@@ -132,7 +132,12 @@ camera that agrees best is kept; the AI's own camera stays when it agrees. The p
 from the other side of the line is solved there, and `line_crossed` reports it.
 
 A shot whose camera still disagrees with its plan gets neither its blocking line nor its camera view: the image model
-gets the plan's words alone rather than a picture that contradicts them (`plan_mismatch`, a warning). Where the camera
+gets the plan's words alone rather than a picture that contradicts them (`plan_mismatch`, a warning).
+
+Measured (fp27, the desk on): the fit refit about half of the shots to agree with their plan and left about four in ten
+disagreeing (the AI's marks could not give the planned layout from any direction), and the storyboards scored 6.1 (kite)
+and 6.6 (riding), blocking 4 and 3.5, against 7.2 and 6.8 on average with the desk off: the image model did not follow
+the mannequins' camera views better when they agreed with the plan. The desk stays off for new projects. Where the camera
 agrees because a character leans to their planned side from the middle third, the blocking line says the planned side
 (`alignLayoutToPlan`), so the line never contradicts the description. A shot without a planned layout (planned before
 it, or by a person) keeps the blocking as it is.
