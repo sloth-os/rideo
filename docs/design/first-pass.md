@@ -80,7 +80,10 @@ earlier ones. With the decision worded only as "how filmably it is staged", fp40
 kite's repeated failed runs and its catch in the tree and the four riders' finish as major, staged as the writer's
 rules stage them; so the criterion names the filmable forms it accepts (its hardest part across a cut or off-screen;
 many characters far off and small, at a walk or standing; a repeated event as two or three slow, separate attempts;
-a fall or a catch as a slow settle seen in its before and after), the same words the writer gets.
+a fall or a catch as a slow settle seen in its before and after), the same words the writer gets. The person decided
+the filmable form; this list is the implementation's reading of it, and a softer judge on those forms than the decision
+alone: feasibility scores from fp41 on are not comparable with fp33–fp40. Feasibility rose from 5 and 6.7 (fp32) to 6.7–7.3
+(fp41), an eighth of the screenplay's score, so most of that score's rise from 7.4 to 8.08 is in the other dimensions.
 
 The writer also gets the rules the reviewer's dimensions imply and that it used to break, in this order:
 
@@ -164,6 +167,10 @@ it afresh, with new judge answers, and that is the score the gate and the measur
 review's noise does not carry that noise into its own score. A paused model (ai-gateway.md#outages) is waited for, as a job waits for it, up to three times; a draft whose
 review still fails to run is kept only when no other could be scored. `rideo_screenplay_drafts_total{kept}` counts whether the first or a later draft was kept; the
 job's result lists every draft's score.
+
+Measured: 7.92 (fp40) against 7.80 for one draft (fp35, fp39), within the runs' spread, with three of fp40's runs
+losing a draft's review to a paused model. It costs about $1.60 more a screenplay ($0.63–1.01 to $2.14–2.70) and about ten
+minutes. It is on for new projects, its gain not established.
 
 ## The brief, adapted for the video model
 
@@ -460,6 +467,13 @@ either arm: continuity is what is left, the sheets' panels agreeing with each ot
 kite's tail streaming with a walk against the wind, a pony in an establishing panel before the ponies are found,
 because the canvas's other panels show them).
 
+What this does not show: **fresh plans have not reproduced the gain.** Storyboards on sheets drawn from new screenplays
+scored kite 7.3 and 7.3 and riding 7.1 and 6.7 (fp32, fp39), against 7.2 and 6.8 before sheets; plans vary from run to run by
+more than the sheet adds, and four runs cannot tell. The one-sheet rule was also made after seeing fp27's riding scenes, two
+of the eight, so those two are not an independent test. And **what sheets do to takes was not measured**: a take now starts
+from a panel of about 1,050×590. Kite's first takes held (6.6, 6.8 against 5.8–7.2 before); riding's (5.25, 4.25) have
+no earlier run to compare with. Frames on frozen plans carried into takes, each way, would settle it.
+
 ## The video reads its first frame
 
 A take starts from a picture, its approved storyboard frame or its keyframe, and its prompt restated the shot as
@@ -514,6 +528,10 @@ where a generic rewrite does not help. So the take watch also answers
 `fix`: when the take fails, what the next take must show instead, said positively ("the kite stays a flat red diamond
 held against Sammy's chest; the camera holds its medium framing"), and with prompt version 3 the next attempt's video
 prompt says `Make sure: …` after its action.
+
+Measured, without a control arm: of the 17 takes made again with a correction in fp32 and fp39, 4 ended passing their
+watch (riding 2 of 13, kite 2 of 4); of the 3 made again before corrections (fp25, fp26), 2. Nothing yet shows the
+correction helps.
 
 ### The take holds its camera
 
@@ -592,6 +610,7 @@ cell is one run's first round; the scores of the same build and brief differ by 
 | fp15: the opening frame kept as "the same moment" | riding 7.9; kite 7.4 | riding 8.9 (consistency 7.9); kite **9.0, every dimension 8 or more** | riding 6.9; kite 6.6 (continuity 5 and 4.5: later frames held to the opening frame's states and people) |
 | fp16: the screenplay read for the video model (removed since); the opening frame for the place only | riding 7.0; kite 6.8 | riding 8.7 (consistency 7.6); kite **8.9, every dimension 8 or more** | riding 6.5; kite 7.3; kite pilot scene 6.3 (temporal and physics 5: the kite launched a scene early), first takes 6.0 |
 | fp17: wrong-side landmarks and wind redrawn, nobody looks into the lens | riding 7.1; kite 7.4 | riding 8.9 (consistency 7.9); kite **9.0, every dimension 8 or more** | riding 6.7 (a frame lost to an empty image, fixed since); kite **7.4, one major issue** (storytelling and coverage 8, character 9) |
+| fp41: feasibility names the forms it accepts, with two drafts (screenplays only, three at a time) | riding **8.4**, 7.7, 7.9; kite **8.3, 8.4**, 7.8: mean 8.08; no run with every dimension at 8 (feasibility 6.7–7.3 in all six, continuity 7–8.7) | – | – |
 | fp40: two screenplay drafts, the better reviewed kept (screenplays only, six at once) | riding 7.4, 7.7, 7.6; kite **8.4, 8.3, 8.1** (feasibility 7–7.3 the one dimension under 8 in each; continuity 7.7–8): 7.92 against 7.80 for one draft (fp35, fp39); three of the six runs lost a draft's review to the model pausing under twelve writers at once, which a draft's review now waits out | – | – |
 | fp39: everything so far, new projects' settings (feasibility by staging, thin parts kept out, casts and scenes on sheets, reviews the mean of three answers) | riding 7.5 (continuity 6.7, feasibility 6.3); kite 7.4 (brief 7, feasibility 6.7) | riding 8.8 (likeness 7.9); kite **9.1, every dimension 8 or more** | riding 6.7 (continuity 4.4: Sammy's helmet gone from two panels, a brush and a bucket that move); kite 7.3 (continuity 6.4); pilot scenes riding 5.2 (continuity and temporal 3) and kite 6.0 (continuity 4), first takes riding 4.3 (1 of 8 at 8), kite 6.6; $53 for both |
 | fp35: thin, loose parts never story points; a bag's contents unseen (screenplays only) | riding 7.9 (continuity 8, visual 9; pacing 7.3, feasibility 6.7), 7.8 (continuity 6.3, pacing and feasibility 7); kite **8.1** (feasibility 8; story, dialogue and continuity 7.7), **8.1** (continuity 7.3, feasibility 7) | – | – |
@@ -642,6 +661,10 @@ The demo server's gateway offers one image model (`doubao-seedream-5.0-pro`) and
 Each screenplay, cast and storyboard review of new projects is now the mean of three judge answers
 ([judge samples](ai-review.md#the-verdict)): the numbers above are single answers, and a minimum over seven noisy
 dimensions fails work that truly clears the bar.
+
+Where each stood on November 2, 2026 with new projects' settings, first round: screenplays 8.08 over six runs (fp41; no run
+with every dimension at 8: feasibility 6.7–7.3), casts 9.1 and 8.8 (fp39; kite every dimension at 8, riding likeness 7.9),
+storyboards 7.3 and 6.7 (fp39; continuity 6.4 and 4.4), pilot scenes 6.0 and 5.2 (fp39; continuity 4 and 3).
 
 What keeps each under 8, what was tried, and what to try next:
 

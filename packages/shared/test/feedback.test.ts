@@ -873,6 +873,19 @@ describe('what changed since the last feedback (docs/design/feedback.md#what-cha
       },
     ]);
     expect(retakeCounts(retakes)).toEqual({ better: 1, same: 1, worse: 0 });
+    // More held against the new take than against the old one
+    const worse = compareRetakes({
+      previous: { issues: [issue(fixedShot.id, 'minor', 'i1')], recommendations: [rec] },
+      before,
+      after,
+      issues: [issue(fixedShot.id, 'critical', 'i1'), issue(fixedShot.id, 'minor', 'i2')],
+      clips,
+    });
+    expect(worse.find((r) => r.shotId === fixedShot.id)).toMatchObject({
+      before: { issues: 1 },
+      after: { issues: 4 },
+      outcome: 'worse',
+    });
     // Nothing changed: nothing to compare
     expect(
       compareRetakes({
