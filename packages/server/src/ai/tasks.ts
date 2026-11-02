@@ -583,6 +583,8 @@ export const REASONING_OFF_TASKS: ReadonlySet<LlmTaskId> = new Set([
   'sound.check',
   'voice.judge',
   'frame.caption',
+  // A sheet waits for the slowest of its panels' readings (docs/design/ai-gateway.md#reasoning)
+  'frame.reconcile',
 ]);
 
 /**

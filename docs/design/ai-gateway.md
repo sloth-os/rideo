@@ -154,7 +154,7 @@ Embeddings (optional, used by [media search](search.md)): OpenAI-style `POST /pr
 ### Reasoning
 
 Checks and captions, made for every attempt of every shot, answer without reasoning
-(`REASONING_OFF_TASKS`: `consistency.judge`, `sound.check`, `voice.judge`, `frame.caption`): OpenAI-compatible calls
+(`REASONING_OFF_TASKS`: `consistency.judge`, `sound.check`, `voice.judge`, `frame.caption`, `frame.reconcile`): OpenAI-compatible calls
 send `enable_thinking: false` (Qwen's switch), Gemini calls `thinkingConfig.thinkingBudget: 0`; Anthropic models do
 not reason unless asked. An upstream that refuses the field (a 400 naming it) is asked again without it, and that
 adapter never sends it again (the same for every optional field). Writing, planning and feedback keep the model's
@@ -163,6 +163,9 @@ stand-in panda or a cast member who should not be there), `qwen3.8-max` judged t
 with and without reasoning and caught all four bad ones; without it a call took 8.6 s instead of 57.1 s (median) and
 wrote 231 tokens instead of 2,304. Its scores run higher without reasoning (identity mostly 0.95–1.0 instead of
 0.85–0.9), so a threshold near the top would separate less. `RIDEO_CHECK_REASONING=model` keeps the model's default.
+The staging check (`frame.reconcile`) joined them once scenes were drawn on sheets
+([first pass](first-pass.md#a-scene-drawn-on-one-sheet)): a sheet waits for the reading of its slowest panel, and one
+reading with reasoning took 217 s and wrote 9,069 tokens.
 
 ### Refusals
 
