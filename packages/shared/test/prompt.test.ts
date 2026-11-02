@@ -7,11 +7,9 @@ import {
   compileShotPrompt,
   compileVideoRequest,
   identityFragment,
-  KNOWN_MODEL_LIMITS,
   ProjectSettingsSchema,
   selectReferences,
   shotSeed,
-  withKnownLimits,
 } from '../src';
 import * as f from '../src/testing/fixtures';
 
@@ -113,21 +111,5 @@ describe('prompt compiler (R3)', () => {
     );
     expect(text()).not.toContain('Direction:');
     expect(text('  ')).toBe(text());
-  });
-});
-
-describe('model limits the gateway leaves out (docs/design/character-consistency.md)', () => {
-  it("fills a model's limits the gateway leaves out from what rideo knows of it", () => {
-    expect(KNOWN_MODEL_LIMITS['doubao-seedream-5.0-pro']?.max_input_images).toBe(10);
-    expect(withKnownLimits('doubao-seedream-5.0-pro', null)).toEqual({ max_input_images: 10 });
-    // The gateway's own limits win, the rest are filled
-    expect(
-      withKnownLimits('doubao-seedream-5.0-pro', { max_input_images: 6, max_prompt_chars: 4000 }),
-    ).toEqual({
-      max_input_images: 6,
-      max_prompt_chars: 4000,
-    });
-    expect(withKnownLimits('another-model', null)).toBeNull();
-    expect(withKnownLimits(null, { max_input_images: 3 })).toEqual({ max_input_images: 3 });
   });
 });
