@@ -169,7 +169,6 @@ describe('LLM adapters speak each upstream through the gateway proxy', () => {
     expect([...REASONING_OFF_TASKS].sort()).toEqual([
       'consistency.judge',
       'frame.caption',
-      'frame.reconcile',
       'sound.check',
       'voice.judge',
     ]);
