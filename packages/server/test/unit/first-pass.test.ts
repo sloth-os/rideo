@@ -20,6 +20,10 @@ describe('makers aim at what their reviewers score', () => {
       // The brief first: a hard moment is made filmable, never dropped
       expect(prompt).toContain('The brief comes first');
       expect(prompt).toContain('happens across a cut, with a visible before and after');
+      // The writer's own fragile details (docs/design/first-pass.md#one-rubric-for-the-maker-and-the-reviewer)
+      expect(prompt).toContain(
+        'Thin, loose parts (a string, a strap, a tail, a loop) are never wrapped round',
+      );
       expect(prompt).toContain('who carries each one, in which hand, or where it rests');
       expect(prompt).toContain('"video" is your input "video"');
     }

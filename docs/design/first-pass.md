@@ -91,7 +91,11 @@ The writer also gets the rules the reviewer's dimensions imply and that it used 
   and after (at the mounting block, then in the saddle). Every action takes its slowest, simplest form that still
   tells the story (a walk before a trot, a pole stepped over at a walk, the pony standing still before Sammy slides
   off), one motion at a time. A quick repeated motion becomes one or two slow movements (one big bounce at the trot);
-  fine hand work becomes a broad gesture with a big object (carrots in a wide bucket).
+  fine hand work becomes a broad gesture with a big object (carrots in a wide bucket). Thin, loose parts (a string,
+  a strap, a tail, a loop) are never wrapped round, tied to or looped over anyone and nothing turns on their path, and
+  what a bag holds stays out of sight until the beat that takes it out: fp33's reviewer marked down a kite string
+  looped round Sammy's forearm through three scenes and a sandwich kept in view in an open backpack, both the
+  writer's own details, once feasibility no longer marked down the brief's events.
 - **Density.** A scene holds about one clear action for every five or six seconds, with its lines between them.
 - **Setups.** Every prop and landmark a later beat needs is set up earlier, where it stands (the hay pile in the
   corner of the paddock), with its state.
@@ -400,7 +404,9 @@ mean of three judge answers):
 
 Every scene scored higher on its sheet (+0.45 on average; eight of eight is a chance of 1 in 256 if the sheet did
 nothing): character 7.2 → 8.0, storytelling 7.2 → 8.0, continuity 5.5 → 6.2, pacing 7.9 → 8.0, feasibility 7.1 → 7.4,
-composition and coverage level. New projects draw their scenes on sheets. No scene had every dimension at 8 in
+composition and coverage level. New projects draw their scenes on sheets. Ten reference images instead of four (Seedream 5.0 Pro takes up to ten;
+the gateway does not say so, and rideo's default for a model it does not know is four) did not help on the same
+eight scenes (fp34): 7.45 against 7.59, two scenes better, two level, four worse, character no higher; reverted. No scene had every dimension at 8 in
 either arm: continuity is what is left, the sheets' panels agreeing with each other but not always with the plan (a
 kite's tail streaming with a walk against the wind, a pony in an establishing panel before the ponies are found,
 because the canvas's other panels show them).
