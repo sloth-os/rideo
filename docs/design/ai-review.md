@@ -65,6 +65,7 @@ settings.review = {
 };
 settings.storyboard.production: boolean;  // off in the schema, on for new projects: storyboard every production scene
 settings.storyboard.sheet: boolean;       // off in the schema, on for new projects: draw a scene on one sheet (storyboard.md#scene-sheets)
+settings.consistency.turnaround: boolean; // off in the schema, on for new projects: a character's views on one sheet (first-pass.md)
 ```
 
 The settings that are new since a project was made are off for it, so an older project's gates and jobs stay as they

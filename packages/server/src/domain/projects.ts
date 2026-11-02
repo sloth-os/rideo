@@ -82,6 +82,8 @@ export class ProjectService extends Service {
         judge: c.consistency.judge,
         // New projects check every attempt for jumps and physics (docs/design/continuity.md#quality-checks-in-the-gate).
         qualityChecks: true,
+        // and draw a character's views on one sheet (docs/design/first-pass.md#a-characters-views-drawn-on-one-sheet)
+        turnaround: true,
       },
       // New projects speak their dialogue when the server has a TTS provider (docs/design/dialogue.md).
       dialogue: { mode: c.tts ? 'tts' : 'off', lipSync: true },

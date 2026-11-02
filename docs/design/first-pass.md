@@ -220,7 +220,7 @@ the third, a pony's blaze ending at the eyes in one view, a helmet's flower movi
 scene's frames agreed more when drawn together ([a scene drawn on one sheet](#a-scene-drawn-on-one-sheet): character
 7.2 → 8.0), and a character's views may too.
 
-With `consistency.turnaround` (off in the schema while it is measured), `character.refs` draws the views it is asked
+With `consistency.turnaround` (off in the schema, on for new projects), `character.refs` draws the views it is asked
 for as the panels of one image, in one row of square cells (`compileTurnaroundRequest`: `Character reference sheet of
 three panels in three columns and one row`, each panel its view's words, the same neutral background, every panel the
 same character part by part), cuts it at the gutters (`cutSheet`) and keeps each panel as its view's reference, at the
@@ -228,6 +228,20 @@ canvas's size (three square cells of about 1,230 pixels at 4.6 million). An appr
 the anchor, as before. Each panel is checked against its subject and the sheet's other panels (`reference.check`); while
 one fails, the sheet is drawn again whole, within `consistency.maxAttempts`, told what each failed panel must show
 (`Make sure: in panel 2, …`), and the sheet with the fewest failed panels is kept. A single view is drawn alone.
+
+**Measured on frozen casts** (fp38: the screenplays and elements of fp27 and fp32, every character's three views drawn
+again either alone or on one sheet, each cast reviewed as the mean of three judge answers):
+
+| Cast | Views alone | One sheet |
+|---|---|---|
+| Kite fp32 | 9.3 (consistency 8.5) | 9.5 (consistency 8.9) |
+| Riding fp32 | 9.1 (consistency 8.3) | 9.1 (consistency 8.5) |
+| Kite fp27 | 9.3 (consistency 8.5) | 9.3 (consistency 8.9) |
+| Riding fp27 | 9.0 (consistency 8.1) | 9.3 (consistency 8.7) |
+
+Every cast had every dimension at 8 or more in both arms; on its sheet each was as good or better, and consistency, the
+dimension that fell to 7.9 in fp32, rose in all four (8.35 → 8.75). New projects draw their characters' views on one
+sheet.
 
 ### References that match their subject
 
