@@ -128,6 +128,9 @@ describe('one rubric for the maker and the reviewer (docs/design/first-pass.md#o
     expect(lines[6]).toContain(
       'A moment the brief itself asks for is never marked down for being there: score how filmably it is staged',
     );
+    // and the filmable forms it accepts, as the writer is told them
+    expect(lines[6]).toContain('a repeated event as two or three slow, separate attempts');
+    expect(lines[6]).toContain('many characters far off and small, at a walk or standing');
     expect(rubricLines('storyboard', ['pacing'])).toBe(
       `- pacing: each shot's length fits its action and its lines (about two words a second, plus a beat).`,
     );

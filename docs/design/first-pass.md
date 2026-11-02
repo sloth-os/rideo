@@ -76,7 +76,11 @@ asks for by how filmably the screenplay stages it, never by its being there. Thr
 down the briefs' own events (four characters riding together, a kite that falls every time he runs) at 5–7 in every
 run, so no screenplay that kept its brief could reach 8, and a draft that dropped them lost `brief` instead. The
 writer gets the same words, as it gets every dimension. Feasibility scores from fp33 on are not comparable with
-earlier ones.
+earlier ones. With the decision worded only as "how filmably it is staged", fp40's reviewer still marked down the
+kite's repeated failed runs and its catch in the tree and the four riders' finish as major, staged as the writer's
+rules stage them; so the criterion names the filmable forms it accepts (its hardest part across a cut or off-screen;
+many characters far off and small, at a walk or standing; a repeated event as two or three slow, separate attempts;
+a fall or a catch as a slow settle seen in its before and after), the same words the writer gets.
 
 The writer also gets the rules the reviewer's dimensions imply and that it used to break, in this order:
 
