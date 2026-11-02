@@ -61,6 +61,11 @@ export const ReviewSettingsSchema = z.object({
    * (docs/design/ai-review.md#the-verdict): 1 in the schema, 3 for new projects.
    */
   judgeSamples: z.number().int().min(1).max(5).default(1),
+  /**
+   * Screenplay drafts written at once, the one its review scores higher kept
+   * (docs/design/first-pass.md#two-drafts-the-better-kept): 1 in the schema, 2 for new projects.
+   */
+  screenplayDrafts: z.number().int().min(1).max(3).default(1),
 });
 export type ReviewSettings = z.infer<typeof ReviewSettingsSchema>;
 export const DEFAULT_REVIEW_SETTINGS: ReviewSettings = ReviewSettingsSchema.parse({});

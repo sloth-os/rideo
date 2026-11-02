@@ -149,6 +149,18 @@ still disagreed with each other (the wind blowing both ways, a tree on either si
 - **Places and props** are described by what a picture shows clearly (shapes, materials, colours, where things
   stand), never by traces or tiny details: "gentle hoofprints" came out as tufts of grass.
 
+### Two drafts, the better kept
+
+The same writer and brief gave screenplays from 7.4 to 8.2 between runs (fp35, fp39): one draft is a draw from a wide
+spread. With `review.screenplayDrafts` (1–3: 1 in the schema, 2 for new projects) and the screenplay reviewed,
+`screenplay.generate` writes that many drafts at once from the same input, reviews each as the screenplay review would (its judge samples, one draft
+after another so the calls in flight stay those of one review), and keeps the draft with the higher score (a draft
+that passes before one that does not; `bestDraft`). Only the kept draft is saved. The stage's own review then reviews
+it afresh, with new judge answers, and that is the score the gate and the measurement read: a draft picked on one
+review's noise does not carry that noise into its own score. A paused model (ai-gateway.md#outages) is waited for, as a job waits for it, up to three times; a draft whose
+review still fails to run is kept only when no other could be scored. `rideo_screenplay_drafts_total{kept}` counts whether the first or a later draft was kept; the
+job's result lists every draft's score.
+
 ## The brief, adapted for the video model
 
 A brief can ask for what the video model renders badly: the riding brief's two riders side by side over a pole are four

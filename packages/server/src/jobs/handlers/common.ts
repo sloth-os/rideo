@@ -20,9 +20,11 @@ import type { StoryService } from '../../domain/story';
 import type { StoryboardService } from '../../domain/storyboard';
 import type { VoiceService } from '../../domain/voices';
 import type { WorkflowService } from '../../domain/workflow';
+import { AppError } from '../../errors';
 import type { GenerateOptions } from '../../gateway/gateway-client';
 import { LANE_PEAKS_PER_SEC, makePeaks, makeStrip } from '../../media/lanes';
 import { makePoster } from '../../media/poster';
+import { sleep } from '../../util/abort';
 import type { Tx } from '../../vcs/repo';
 import type { JobContext } from '../queue';
 
@@ -181,4 +183,24 @@ export async function sampledReview(
  */
 export function subjectsAtOnce(concurrency: number, samples: number | undefined): number {
   return Math.max(1, Math.floor(concurrency / Math.max(1, Math.floor(samples ?? 1))));
+}
+
+/**
+ * Runs a call that a paused model may turn away (docs/design/ai-gateway.md#outages): a retryable error that says how
+ * long to wait is waited for (at most two minutes) and the call made again, up to `tries` times, as a job would wait.
+ */
+export async function waitingOutPauses<T>(
+  call: () => Promise<T>,
+  opts: { signal?: AbortSignal; tries?: number; onWait?: (waitMs: number) => void } = {},
+): Promise<T> {
+  for (let tries = 0; ; tries++) {
+    try {
+      return await call();
+    } catch (err) {
+      const wait = err instanceof AppError && err.retryable ? err.hint.retryAfterMs : undefined;
+      if (wait === undefined || tries >= (opts.tries ?? 3)) throw err;
+      opts.onWait?.(wait);
+      await sleep(Math.min(wait + 1000, 120_000), opts.signal);
+    }
+  }
 }

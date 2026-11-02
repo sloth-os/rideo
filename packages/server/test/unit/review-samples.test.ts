@@ -1,6 +1,7 @@
 import type { StageReviewOutput } from '@rideo/shared';
 import { describe, expect, it } from 'vitest';
-import { sampledReview, subjectsAtOnce } from '../../src/jobs/handlers/common';
+import { AppError } from '../../src/errors';
+import { sampledReview, subjectsAtOnce, waitingOutPauses } from '../../src/jobs/handlers/common';
 
 const answer = (story: number): StageReviewOutput => ({
   scores: { story },
@@ -38,5 +39,49 @@ describe('judge samples (docs/design/ai-review.md#the-verdict)', () => {
     expect(subjectsAtOnce(6, 3)).toBe(2);
     // Never none
     expect(subjectsAtOnce(1, 5)).toBe(1);
+  });
+});
+
+describe('a paused model waited out (docs/design/ai-gateway.md#outages)', () => {
+  const paused = () =>
+    new AppError('llm_error', 'screenplay.review: x is paused after 6 failed calls in a row', [], true, {
+      retryAfterMs: 5,
+      sparesAttempt: true,
+    });
+
+  it('waits for the pause and calls again, as a job would', async () => {
+    let calls = 0;
+    const waits: number[] = [];
+    const out = await waitingOutPauses(
+      async () => {
+        if (++calls < 3) throw paused();
+        return 'reviewed';
+      },
+      { onWait: (ms) => waits.push(ms) },
+    );
+    expect(out).toBe('reviewed');
+    expect(waits).toEqual([5, 5]);
+  });
+
+  it('gives up after its tries, and at once on an error that says no wait', async () => {
+    let calls = 0;
+    await expect(
+      waitingOutPauses(
+        async () => {
+          calls++;
+          throw paused();
+        },
+        { tries: 2 },
+      ),
+    ).rejects.toThrow(/is paused/);
+    expect(calls).toBe(3);
+    calls = 0;
+    await expect(
+      waitingOutPauses(async () => {
+        calls++;
+        throw new AppError('validation_error', 'bad input');
+      }),
+    ).rejects.toThrow('bad input');
+    expect(calls).toBe(1);
   });
 });

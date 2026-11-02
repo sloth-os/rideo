@@ -170,14 +170,18 @@ export const TINY = {
   },
   blocking: { enabled: false },
   storyboard: { production: false },
+  // A character's views on one sheet has its own integration test (first-pass.test.ts): the mock's videos drawn from
+  // its panels' references let a regenerated take show an unexpected cut in feedback.spec.ts's re-export
+  consistency: { turnaround: false },
 };
 
-/** TINY with a spec's settings, the nested review, blocking and storyboard settings merged into TINY's. */
+/** TINY with a spec's settings, the nested review, blocking, storyboard and consistency settings merged into TINY's. */
 export function tinyWith(settings: Record<string, unknown> = {}) {
-  const { review, blocking, storyboard, ...rest } = settings as {
+  const { review, blocking, storyboard, consistency, ...rest } = settings as {
     review?: object;
     blocking?: object;
     storyboard?: object;
+    consistency?: object;
   };
   return {
     ...TINY,
@@ -185,6 +189,7 @@ export function tinyWith(settings: Record<string, unknown> = {}) {
     review: { ...TINY.review, ...review },
     blocking: { ...TINY.blocking, ...blocking },
     storyboard: { ...TINY.storyboard, ...storyboard },
+    consistency: { ...TINY.consistency, ...consistency },
   };
 }
 

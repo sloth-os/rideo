@@ -130,6 +130,8 @@ export const ProjectSettingsPatchSchema = z
         extensions: z.boolean(),
         /** docs/design/ai-review.md#the-verdict */
         judgeSamples: z.number().int().min(1).max(5),
+        /** docs/design/first-pass.md#two-drafts-the-better-kept */
+        screenplayDrafts: z.number().int().min(1).max(3),
       })
       .partial(),
     watermark: z.object({ enabled: z.boolean() }).partial(),

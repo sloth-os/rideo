@@ -467,6 +467,13 @@ export class Metrics {
   readonly storyboardSheets = this.add(
     new Counter('rideo_storyboard_sheets_total', 'Scene sheets by outcome (gutters, cells, failed)'),
   );
+  /** Screenplay drafts written at once (docs/design/first-pass.md#two-drafts-the-better-kept): which was kept. */
+  readonly screenplayDrafts = this.add(
+    new Counter(
+      'rideo_screenplay_drafts_total',
+      'Screenplays written as several drafts, by the draft kept (first, later)',
+    ),
+  );
   /** Characters' views drawn on one sheet (docs/design/first-pass.md#a-characters-views-drawn-on-one-sheet). */
   readonly turnaroundSheets = this.add(
     new Counter(

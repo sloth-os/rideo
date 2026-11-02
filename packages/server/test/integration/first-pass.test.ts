@@ -53,7 +53,12 @@ describe('the first pass', () => {
 
     // The writer gets what the video model renders well and badly, as its reviewer does
     const gen = await stack.api<Job>('POST', `/projects/${pid}/screenplay/generate`, {});
-    expectSucceeded(await stack.waitJob(pid, gen.id));
+    const generated = expectSucceeded(await stack.waitJob(pid, gen.id));
+    // Two drafts at once, each reviewed, the better kept (docs/design/first-pass.md#two-drafts-the-better-kept)
+    expect(created.settings.review.screenplayDrafts).toBe(2);
+    expect(generated.result).toMatchObject({ drafts: [expect.any(Number), expect.any(Number)] });
+    expect([0, 1]).toContain((generated.result as { kept: number }).kept);
+    expect((await reviewCalls()) - before).toBeGreaterThanOrEqual(2 * 3);
     // The review the screenplay queues when it is written
     await stack.waitIdle(pid);
     const written = stack.gw.counters.lastInputs['screenplay.generate'] as Record<string, any>;
@@ -62,8 +67,10 @@ describe('the first pass', () => {
     expect(written.castOnly).toBe(false);
     const review = stack.gw.counters.lastInputs['screenplay.review'] as Record<string, any>;
     expect(review.video.weaknesses).toEqual(written.video.weaknesses);
-    // The screenplay was reviewed three times at once, and its scores are their means
-    expect((await reviewCalls()) - before).toBeGreaterThanOrEqual(3);
+    // The kept draft was then reviewed afresh, three times at once, and its scores are their means
+    expect((await reviewCalls()) - before).toBeGreaterThanOrEqual(3 * 3);
+    const metrics = await (await fetch(`${stack.url}/metrics`)).text();
+    expect(metrics).toMatch(/rideo_screenplay_drafts_total\{kept="(first|later)"\} 1/);
 
     // The cast: the whole figure first, every view whole; a place or a prop drawn once
     let docs = (await stack.api<any>('GET', `/projects/${pid}/state`)).docs;

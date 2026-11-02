@@ -2,6 +2,7 @@ import {
   appendScenes,
   approvedElementReferences,
   approvedReferences,
+  bestDraft,
   briefAdaptation,
   briefHash,
   CHARACTER_VIEWS,
@@ -22,16 +23,21 @@ import {
   newId,
   nextUnwrittenBeats,
   type Project,
+  type ProjectDocs,
   type ProjectSettings,
   promptVersionOf,
   type ReferenceCheckInput,
   type ReferenceCheckOutput,
   type ReferenceView,
   type Resource,
+  reviewSettings,
   type Screenplay,
+  type ScreenplayGenerateOutput,
+  type StageReviewOutput,
   screenplayFromLlm,
   shotRangeFor,
   slugify,
+  stageVerdict,
   turnaroundLayout,
   type VideoModelFacts,
   videoFacts,
@@ -43,7 +49,15 @@ import { sampleFrames } from '../../media/frames';
 import { cutSheet } from '../../media/sheet';
 import { throwIfAborted } from '../../util/abort';
 import type { JobContext } from '../queue';
-import { commitAs, docsFor, gatewayOptions, type HandlerDeps } from './common';
+import { screenplayReviewInput } from './ai-review';
+import {
+  commitAs,
+  docsFor,
+  gatewayOptions,
+  type HandlerDeps,
+  sampledReview,
+  waitingOutPauses,
+} from './common';
 
 /**
  * Prompt version 2 of the writing tasks (docs/design/continuity.md#storytelling): the dialogue level and the longest
@@ -122,21 +136,44 @@ export async function screenplayGenerate(deps: HandlerDeps, ctx: JobContext) {
     p,
     'video' in writing.direction ? writing.direction.video : undefined,
   );
-  ctx.progress(0.3, 1, 'writing the screenplay');
-  const out = await deps.llm.generateScreenplay(
-    {
-      prompt,
-      targetDurationSec: p.settings.targetDurationSec,
-      pilotDurationSec: p.settings.pilotDurationSec,
-      language: p.settings.language,
-      aspectRatio: p.settings.aspectRatio,
-      attachments,
-      ...writing.direction,
-    },
-    ctx.signal,
-    writing.version,
+  // Several drafts at once, the better reviewed kept (docs/design/first-pass.md#two-drafts-the-better-kept)
+  const draftCount =
+    p.settings.review?.screenplay === false
+      ? 1
+      : Math.max(1, Math.min(3, Math.floor(p.settings.review?.screenplayDrafts ?? 1)));
+  ctx.progress(
+    0.3,
+    1,
+    draftCount > 1 ? `writing ${draftCount} drafts of the screenplay` : 'writing the screenplay',
+  );
+  const outs = await Promise.all(
+    Array.from({ length: draftCount }, () =>
+      deps.llm.generateScreenplay(
+        {
+          prompt,
+          targetDurationSec: p.settings.targetDurationSec,
+          pilotDurationSec: p.settings.pilotDurationSec,
+          language: p.settings.language,
+          aspectRatio: p.settings.aspectRatio,
+          attachments,
+          ...writing.direction,
+        },
+        ctx.signal,
+        writing.version,
+      ),
+    ),
   );
   throwIfAborted(ctx.signal);
+  const drafts = outs.length > 1 ? await reviewDrafts(deps, ctx, docs, outs) : null;
+  const kept = drafts ? bestDraft(drafts) : 0;
+  const out = outs[kept]!;
+  if (drafts) {
+    deps.metrics.screenplayDrafts.inc({ kept: kept === 0 ? 'first' : 'later' });
+    ctx.log.info(
+      { projectId, drafts: drafts.map((d) => d?.score ?? null), kept },
+      'kept the better screenplay draft',
+    );
+  }
   ctx.progress(0.9, 1, 'saving');
   const { result } = await commitAs(
     deps,
@@ -169,6 +206,7 @@ export async function screenplayGenerate(deps: HandlerDeps, ctx: JobContext) {
         characters: characters.length,
         elements: elements.length,
         castOnly,
+        ...(drafts ? { drafts: drafts.map((d) => d?.score ?? null), kept } : {}),
       };
     },
     (r) =>
@@ -179,6 +217,66 @@ export async function screenplayGenerate(deps: HandlerDeps, ctx: JobContext) {
     .followUp(ctx.actor, projectId, 'screenplay')
     .catch((err) => ctx.log.warn({ err: (err as Error).message }, 'could not queue the screenplay review'));
   return result;
+}
+
+/**
+ * Each draft reviewed as the screenplay review would review it, with its judge samples, one draft after another so the
+ * calls in flight stay those of one review (docs/design/first-pass.md#two-drafts-the-better-kept); null for a draft
+ * whose review failed.
+ */
+async function reviewDrafts(
+  deps: HandlerDeps,
+  ctx: JobContext,
+  docs: ProjectDocs,
+  outs: ScreenplayGenerateOutput[],
+): Promise<({ score: number; passed: boolean } | null)[]> {
+  const settings = reviewSettings(docs);
+  const project = docs.project;
+  const { limits } = await deps.gateway.limitsFor('video', project.settings.models.video);
+  const video = videoFacts(limits, project.settings);
+  const scored: ({ score: number; passed: boolean } | null)[] = [];
+  for (const [k, o] of outs.entries()) {
+    throwIfAborted(ctx.signal);
+    ctx.progress(0.75 + (0.15 * k) / outs.length, 1, `reviewing draft ${k + 1} of ${outs.length}`);
+    try {
+      const draft = screenplayFromLlm(o, {
+        targetDurationSec: project.settings.targetDurationSec,
+        language: project.settings.language,
+        existing: Object.values(docs.characters),
+        existingElements: Object.values(docs.elements),
+      });
+      const draftDocs: ProjectDocs = {
+        ...docs,
+        screenplay: draft.screenplay,
+        characters: { ...docs.characters, ...Object.fromEntries(draft.characters.map((c) => [c.id, c])) },
+        elements: { ...docs.elements, ...Object.fromEntries(draft.elements.map((e) => [e.id, e])) },
+      };
+      // A paused model is waited for, as a job waits for it (docs/design/ai-gateway.md#outages)
+      const review = await waitingOutPauses(
+        () =>
+          sampledReview(settings.judgeSamples, () =>
+            deps.llm.reviewScreenplay(screenplayReviewInput(draftDocs, video), ctx.signal),
+          ),
+        {
+          signal: ctx.signal,
+          onWait: (waitMs) => ctx.log.info({ draft: k + 1, waitMs }, 'waiting for the paused model'),
+        },
+      );
+      const verdict = stageVerdict(
+        'screenplay',
+        review.scores,
+        review.issues,
+        settings.threshold,
+        settings.minDimension,
+      );
+      scored.push({ score: verdict.score, passed: verdict.passed });
+    } catch (err) {
+      throwIfAborted(ctx.signal);
+      ctx.log.warn({ draft: k + 1, err: (err as Error).message }, 'could not review a screenplay draft');
+      scored.push(null);
+    }
+  }
+  return scored;
 }
 
 /**

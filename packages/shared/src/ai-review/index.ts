@@ -48,6 +48,20 @@ export function meanOfReviews(outs: StageReviewOutput[]): StageReviewOutput {
   return { ...nearest, scores: mean };
 }
 
+/**
+ * The draft to keep of several reviewed at once (docs/design/first-pass.md#two-drafts-the-better-kept): one that passes
+ * before one that does not, then the higher score, then the earlier; a draft that could not be reviewed (null) only when
+ * none could.
+ */
+export function bestDraft(reviews: ({ score: number; passed: boolean } | null)[]): number {
+  let best = 0;
+  const rank = (r: { score: number; passed: boolean } | null) => (r ? (r.passed ? 1000 : 0) + r.score : -1);
+  reviews.forEach((r, k) => {
+    if (rank(r) > rank(reviews[best] ?? null)) best = k;
+  });
+  return best;
+}
+
 /** The verdict of a review, decided by rules rather than by the model (docs/design/ai-review.md#the-verdict). */
 export function stageVerdict(
   stage: ReviewStage,

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  bestDraft,
   briefAdaptation,
   briefHash,
   CHARACTER_VIEWS,
@@ -627,6 +628,41 @@ describe('what a frame does not show is not named (docs/design/first-pass.md#wha
     );
     expect(prompts(2, [hill.id]).keyframe).toContain('The big sandwich on the red cloth');
     expect(prompts(2, [hill.id]).ctx.hiddenProps).toBeUndefined();
+  });
+});
+
+describe('two drafts, the better kept (docs/design/first-pass.md#two-drafts-the-better-kept)', () => {
+  it('keeps a passing draft, then the higher score, then the earlier; an unreviewed one only when none was', () => {
+    expect(
+      bestDraft([
+        { score: 7.6, passed: false },
+        { score: 8.1, passed: true },
+      ]),
+    ).toBe(1);
+    expect(
+      bestDraft([
+        { score: 8.4, passed: false },
+        { score: 8.1, passed: true },
+      ]),
+    ).toBe(1);
+    expect(
+      bestDraft([
+        { score: 7.9, passed: false },
+        { score: 7.4, passed: false },
+      ]),
+    ).toBe(0);
+    expect(
+      bestDraft([
+        { score: 7.5, passed: false },
+        { score: 7.5, passed: false },
+      ]),
+    ).toBe(0);
+    expect(bestDraft([null, { score: 6, passed: false }])).toBe(1);
+    expect(bestDraft([null, null])).toBe(0);
+    expect(ReviewSettingsSchema.parse({}).screenplayDrafts).toBe(1);
+    expect(ProjectSettingsPatchSchema.parse({ review: { screenplayDrafts: 2 } }).review).toEqual({
+      screenplayDrafts: 2,
+    });
   });
 });
 
