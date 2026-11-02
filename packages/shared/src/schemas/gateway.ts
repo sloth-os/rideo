@@ -160,3 +160,22 @@ export const ModelLimitsEntrySchema = z.looseObject({
   limits: ModelLimitsSchema.optional().nullable(),
 });
 export type ModelLimitsEntry = z.infer<typeof ModelLimitsEntrySchema>;
+
+/**
+ * What rideo knows of models the gateway lists without limits (docs/design/character-consistency.md): their limits
+ * fill what the gateway leaves out, and the gateway's own win.
+ */
+export const KNOWN_MODEL_LIMITS: Readonly<Record<string, ModelLimits>> = {
+  // Pro and Flash "take up to 10 inputs" (https://docs.apiyi.com/en/api-capabilities/seedream-image/overview)
+  'doubao-seedream-5.0-pro': { max_input_images: 10 },
+};
+
+/** A model's limits: the gateway's, filled from `KNOWN_MODEL_LIMITS`; null when neither knows the model. */
+export function withKnownLimits(
+  model: string | null,
+  limits: ModelLimits | null | undefined,
+): ModelLimits | null {
+  const known = model ? KNOWN_MODEL_LIMITS[model] : undefined;
+  if (!known) return limits ?? null;
+  return { ...known, ...(limits ?? {}) };
+}

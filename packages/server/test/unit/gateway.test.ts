@@ -253,6 +253,11 @@ describe('GatewayClient (SDK)', () => {
   it('reads model limits and the proxy authenticates with the gateway key', async () => {
     expect((await client.limitsFor('video', 'auto')).limits?.max_duration_seconds).toBe(10);
     expect((await client.limitsFor('image', 'mock-image-v1')).model).toBe('mock-image-v1');
+    // A model the gateway does not describe takes what rideo knows of it (docs/design/character-consistency.md)
+    expect((await client.limitsFor('image', 'doubao-seedream-5.0-pro')).limits).toEqual({
+      max_input_images: 10,
+    });
+    expect((await client.limitsFor('image', 'unknown-image-model')).limits).toBeNull();
     const proxy = new ProxyClient({ baseUrl: gw.url, apiKey: 'k' });
     const res = await proxy.fetch('api.openai.com', '/v1/chat/completions', {
       method: 'POST',

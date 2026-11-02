@@ -8,6 +8,7 @@ import {
   type ModelLimitsEntry,
   ModelLimitsEntrySchema,
   TERMINAL_TASK_STATUSES,
+  withKnownLimits,
 } from '@rideo/shared';
 import {
   Configuration,
@@ -227,7 +228,9 @@ export class GatewayClient {
   ): Promise<{ model: string | null; limits: ModelLimits | null }> {
     const entries = await this.modelLimits(modality).catch(() => [] as ModelLimitsEntry[]);
     const entry = model && model !== 'auto' ? entries.find((e) => e.id === model) : entries[0];
-    return { model: entry?.id ?? null, limits: entry?.limits ?? null };
+    // What the gateway leaves out of a model it does not describe (docs/design/character-consistency.md)
+    const id = entry?.id ?? (model && model !== 'auto' ? model : null);
+    return { model: entry?.id ?? null, limits: withKnownLimits(id, entry?.limits) };
   }
 
   generateImage(req: GatewayImageRequest, opts: GenerateOptions): Promise<GatewayTask> {

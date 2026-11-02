@@ -86,7 +86,10 @@ params: { duration_seconds: clamp(shot.durationSec, model min/max), dimensions, 
 Reference selection: per character, approved references matching the shot's wardrobe first, then by view
 priority `full_body > three_quarter > front > profile > expression > custom` (the whole outfit with the face first,
 [first pass](first-pass.md#references-drawn-from-a-whole-figure)). The model's
-`max_input_images` limit (from `GET /v1/models/limits`, cached for 5 minutes) is shared across the cast.
+`max_input_images` limit (from `GET /v1/models/limits`, cached for 5 minutes) is shared across the cast. A model the
+gateway does not describe takes what rideo knows of it (`KNOWN_MODEL_LIMITS`, shared): Seedream 5.0 Pro takes up to 10
+input images ([APIYI](https://docs.apiyi.com/en/api-capabilities/seedream-image/overview)), where the default for an
+unknown model is 4, one image a character when four are in a scene.
 When the cast needs more images than the model accepts, the server composes one labelled **cast sheet**
 (ffmpeg `xstack`) and sends that single image instead.
 
