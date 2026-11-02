@@ -332,6 +332,8 @@ export const ShotBoardSchema = z.object({
       keyframe: MediaRefSchema,
       panel: z.number().int().min(1),
       panels: z.number().int().min(1),
+      /** The panel a full-size frame was drawn from (`storyboard.sheetFullSize`). */
+      drawnFrom: MediaRefSchema.optional(),
     })
     .nullable()
     .default(null),

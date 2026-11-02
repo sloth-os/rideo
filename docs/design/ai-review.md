@@ -66,6 +66,7 @@ settings.review = {
 };
 settings.storyboard.production: boolean;  // off in the schema, on for new projects: storyboard every production scene
 settings.storyboard.sheet: boolean;       // off by default: draw a scene on one sheet (storyboard.md#scene-sheets)
+settings.storyboard.sheetFullSize: boolean; // off by default: draw each frame at full size from its panel
 settings.consistency.turnaround: boolean; // off in the schema, on for new projects: a character's views on one sheet (first-pass.md)
 ```
 

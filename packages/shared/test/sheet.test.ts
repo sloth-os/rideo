@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
+  compilePanelRenderRequest,
   compileSheetPrompt,
   compileSheetRequest,
   compileTurnaroundRequest,
   DEFAULT_SHEET_PIXELS,
   drawnOnSheet,
+  PANEL_RENDER_LABEL,
+  PANEL_RENDER_PHRASE,
   ProjectSettingsPatchSchema,
   ProjectSettingsSchema,
   SHEET_MAX_PANELS,
@@ -59,6 +62,10 @@ describe('scene sheets (docs/design/storyboard.md#scene-sheets)', () => {
       ProjectSettingsPatchSchema.parse({ storyboard: { sheet: true, sheetPixels: 2_000_000 } }).storyboard,
     ).toEqual({ sheet: true, sheetPixels: 2_000_000 });
     expect(() => ProjectSettingsPatchSchema.parse({ storyboard: { sheetPixels: 100 } })).toThrow();
+    expect(ProjectSettingsSchema.parse({}).storyboard.sheetFullSize).toBe(false);
+    expect(ProjectSettingsPatchSchema.parse({ storyboard: { sheetFullSize: true } }).storyboard).toEqual({
+      sheetFullSize: true,
+    });
   });
 
   it('draws a scene on one sheet when it is drawn whole and fits one, and alone otherwise', () => {
@@ -131,6 +138,30 @@ describe('scene sheets (docs/design/storyboard.md#scene-sheets)', () => {
       expect(text.match(/Characters \(keep identities/g)).toHaveLength(1);
       expect(text).toContain('Reference images, in order: 1 Sammy; 2 Rosie.');
       expect(text).toContain('No text, numbers, captions or speech bubbles in the panels.');
+    });
+
+    it("draws a full-size frame from its panel: the panel first, the shot's own frame and framing", () => {
+      const [ctx] = contexts();
+      const req = compilePanelRenderRequest(
+        {
+          ...ctx!,
+          referenceLabels: ['Sammy'],
+          sceneReference: true,
+          correction: 'the kite stays under his arm',
+        },
+        { panelUri: 'data:panel', referenceUris: ['data:sammy'], attempt: 1 },
+      );
+      const text = (req.input[0] as { text: string }).text;
+      expect(text.startsWith(PANEL_RENDER_PHRASE)).toBe(true);
+      expect(text).toContain(`Reference images, in order: 1 ${PANEL_RENDER_LABEL}; 2 Sammy.`);
+      expect(text).toContain('Sammy walks up the path');
+      expect(text).toContain('wide shot');
+      expect(text).toContain('Make sure: the kite stays under his arm.');
+      // The panel shows the place: no opening frame beside it
+      expect(text).not.toMatch(/last reference image/i);
+      expect(req.input.slice(1).map((p) => (p as { uri: string }).uri)).toEqual(['data:panel', 'data:sammy']);
+      // At the project's resolution, whatever the panel's
+      expect(req.parameters?.dimensions).toEqual(ctx!.settings.resolution);
     });
 
     it('fills a cell no shot fills with the place alone, and asks for the layout canvas', () => {

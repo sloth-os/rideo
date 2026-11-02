@@ -36,7 +36,7 @@ type ShotBoard = {
   characterLocks: Record<string, number>;
   elementLocks: Record<string, number>;
   audio: TakeAudio | null;             // the shot's TTS dialogue, for the animatic and the video pass
-  sheet: { keyframe: MediaRef; panel: number; panels: number } | null; // the scene sheet it was cut from (#scene-sheets)
+  sheet: { keyframe: MediaRef; panel: number; panels: number; drawnFrom?: MediaRef } | null; // its scene sheet (#scene-sheets)
   gatewayTaskIds: string[];
   approved: boolean; approvedAt: string | null; approvedBy: Actor | null;
 } | null;
@@ -115,10 +115,16 @@ canvas is the only way its frames can see each other ([why](first-pass.md#a-scen
   checks read it as any drawn frame, and only a panel that fails them is drawn again on its own, with the scene
   reference, as before. A kept panel's board records `sheet` (the sheet's image, the panel's number and how many it
   had), the sheet's request, and its reading as `seen`.
+- **Full-size frames.** With `settings.storyboard.sheetFullSize` (off by default) a panel is not the frame: each shot's
+  `shot.board` draws its frame at the project's resolution from its panel (`compilePanelRenderRequest`: the panel first
+  among the shot's reference images, `PANEL_RENDER_PHRASE` before its keyframe prompt), keeping what the panel shows (who
+  stands where and faces which way, every prop and landmark where it is, the looks, the light) and framing it as the
+  shot's camera line says. The frame goes through the same checks as any frame, and one that contradicts its shot is drawn
+  again from the panel, told what to correct, never alone. The board's `sheet` records the panel as `drawnFrom`.
 - **Failures.** A sheet that cannot be drawn or cut leaves its shots to be drawn one at a time.
 
 `rideo_storyboard_sheets_total{outcome}` counts sheets by how they were cut (`gutters`, `cells`) or `failed`;
-`rideo_storyboard_sheet_panels_total{result}` counts panels `kept` or `redrawn`.
+`rideo_storyboard_sheet_panels_total{result}` counts panels `kept`, `redrawn` alone or drawn again at full size (`full_size`).
 
 ## Video pass
 

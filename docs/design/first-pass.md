@@ -492,6 +492,11 @@ known. A take from a full frame shrunk to a panel's size would tell them apart; 
 research recommended and this build skipped. The sheet stays a setting (`storyboard.sheet`), for a storyboard that is only
 reviewed.
 
+**Full-size frames from panels** (`storyboard.sheetFullSize`, [scene sheets](storyboard.md#scene-sheets)): each panel drawn
+again at the project's resolution, keeping what it shows and framed as its shot's camera line says, so that a take starts from
+a full frame that still agrees with the scene's other frames. Being measured (fp43) on the same plans as fp42, with frames
+drawn alone again beside it, and each arm's storyboards reviewed.
+
 ## The video reads its first frame
 
 A take starts from a picture, its approved storyboard frame or its keyframe, and its prompt restated the shot as
