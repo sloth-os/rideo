@@ -173,7 +173,7 @@ export async function readyStoryProject(
       // clip-review.test.ts, autopilot.test.ts, director-desk.test.ts, storyboard.test.ts#scene-sheets, first-pass.test.ts)
       review: { ...NO_REVIEWS, ...review },
       blocking: { enabled: false, ...blocking },
-      storyboard: { production: false, sheet: false, ...storyboard },
+      storyboard: { production: false, ...storyboard },
       consistency: { turnaround: false, ...consistency },
       ...rest,
     },

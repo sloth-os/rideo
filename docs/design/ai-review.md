@@ -65,7 +65,7 @@ settings.review = {
   screenplayDrafts: number; // 1–3, default 1 (2 for new projects): drafts written at once, the better reviewed kept (first-pass.md)
 };
 settings.storyboard.production: boolean;  // off in the schema, on for new projects: storyboard every production scene
-settings.storyboard.sheet: boolean;       // off in the schema, on for new projects: draw a scene on one sheet (storyboard.md#scene-sheets)
+settings.storyboard.sheet: boolean;       // off by default: draw a scene on one sheet (storyboard.md#scene-sheets)
 settings.consistency.turnaround: boolean; // off in the schema, on for new projects: a character's views on one sheet (first-pass.md)
 ```
 

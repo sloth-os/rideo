@@ -458,7 +458,7 @@ mean of three judge answers):
 
 Every scene scored higher on its sheet (+0.45 on average; eight of eight is a chance of 1 in 256 if the sheet did
 nothing): character 7.2 → 8.0, storytelling 7.2 → 8.0, continuity 5.5 → 6.2, pacing 7.9 → 8.0, feasibility 7.1 → 7.4,
-composition and coverage level. New projects draw their scenes on sheets. Ten reference images instead of four (Seedream 5.0 Pro takes up to ten;
+composition and coverage level. Ten reference images instead of four (Seedream 5.0 Pro takes up to ten;
 the gateway does not say so, and rideo's default for a model it does not know is four) did not help on the same
 eight scenes (fp34): 7.45 against 7.59, two scenes better, two level, four worse, character no higher; reverted. The
 staging check without its reasoning (fp36) drew each scene's sheets three times faster (about five minutes instead of
@@ -467,12 +467,30 @@ either arm: continuity is what is left, the sheets' panels agreeing with each ot
 kite's tail streaming with a walk against the wind, a pony in an establishing panel before the ponies are found,
 because the canvas's other panels show them).
 
-What this does not show: **fresh plans have not reproduced the gain.** Storyboards on sheets drawn from new screenplays
+What this does not show: fresh plans have not reproduced the gain. Storyboards on sheets drawn from new screenplays
 scored kite 7.3 and 7.3 and riding 7.1 and 6.7 (fp32, fp39), against 7.2 and 6.8 before sheets; plans vary from run to run by
 more than the sheet adds, and four runs cannot tell. The one-sheet rule was also made after seeing fp27's riding scenes, two
-of the eight, so those two are not an independent test. And **what sheets do to takes was not measured**: a take now starts
-from a panel of about 1,050×590. Kite's first takes held (6.6, 6.8 against 5.8–7.2 before); riding's (5.25, 4.25) have
-no earlier run to compare with. Frames on frozen plans carried into takes, each way, would settle it.
+of the eight, so those two are not an independent test.
+
+**Takes from panels lose to takes from frames, so new projects do not draw on sheets** (fp42, November 2026). On the frozen
+plans of fp39 (four scenes, 24 shots, $64), each scene's frames were drawn alone or on a sheet, approved, and each shot made
+once with no retries. The rule was set before the results: sheets stay the default unless takes from panels score at least 0.5
+lower on the shots' watches or the scenes' reviews.
+
+| Panels minus frames | Difference | |
+|---|---|---|
+| Shot's watch, overall | **−1.62** (95% CI −2.33 to −0.96) | 16 shots lower, 6 level, 2 higher; kite −1.60, riding −1.64 |
+| Watch passed | 19 of 24 from frames, 10 of 24 from panels | at 8 or more: 8 and 2 |
+| Watch camera, action, motion (0–1) | −0.20, −0.12, −0.09 | physics −0.03 and identity +0.01 level |
+| Scene review, mean of three | −0.26 (95% CI −0.81 to +0.37) | kite −1.00, −0.43; riding +0.64, −0.24 |
+
+The difference is not morphing (major morph or duplicate issues in 5 takes against 4) but framing (12 against 6) and missed
+end states (7 against 3). The camera loss is all in closer framings (wide −0.01; medium to close −0.23 to −0.29), and the
+smallest panels lost most (about 900 pixels wide −2.12, about 1,050 −1.38). A panel's conflicts with its shot do not explain it:
+within each arm they barely track the take's score. Whether the cause is a panel's size or how a sheet composes it is not
+known. A take from a full frame shrunk to a panel's size would tell them apart; a full frame drawn from its panel is what the
+research recommended and this build skipped. The sheet stays a setting (`storyboard.sheet`), for a storyboard that is only
+reviewed.
 
 ## The video reads its first frame
 
@@ -610,6 +628,7 @@ cell is one run's first round; the scores of the same build and brief differ by 
 | fp15: the opening frame kept as "the same moment" | riding 7.9; kite 7.4 | riding 8.9 (consistency 7.9); kite **9.0, every dimension 8 or more** | riding 6.9; kite 6.6 (continuity 5 and 4.5: later frames held to the opening frame's states and people) |
 | fp16: the screenplay read for the video model (removed since); the opening frame for the place only | riding 7.0; kite 6.8 | riding 8.7 (consistency 7.6); kite **8.9, every dimension 8 or more** | riding 6.5; kite 7.3; kite pilot scene 6.3 (temporal and physics 5: the kite launched a scene early), first takes 6.0 |
 | fp17: wrong-side landmarks and wind redrawn, nobody looks into the lens | riding 7.1; kite 7.4 | riding 8.9 (consistency 7.9); kite **9.0, every dimension 8 or more** | riding 6.7 (a frame lost to an empty image, fixed since); kite **7.4, one major issue** (storytelling and coverage 8, character 9) |
+| fp42: takes from frames against takes from panels, the frozen plans of fp39, one attempt a shot | – | – | shots' watches: frames 6.54, panels 4.92; scene reviews: frames 6.42, panels 6.16; sheets off for new projects |
 | fp41: feasibility names the forms it accepts, with two drafts (screenplays only, three at a time) | riding **8.4**, 7.7, 7.9; kite **8.3, 8.4**, 7.8: mean 8.08; no run with every dimension at 8 (feasibility 6.7–7.3 in all six, continuity 7–8.7) | – | – |
 | fp40: two screenplay drafts, the better reviewed kept (screenplays only, six at once) | riding 7.4, 7.7, 7.6; kite **8.4, 8.3, 8.1** (feasibility 7–7.3 the one dimension under 8 in each; continuity 7.7–8): 7.92 against 7.80 for one draft (fp35, fp39); three of the six runs lost a draft's review to the model pausing under twelve writers at once, which a draft's review now waits out | – | – |
 | fp39: everything so far, new projects' settings (feasibility by staging, thin parts kept out, casts and scenes on sheets, reviews the mean of three answers) | riding 7.5 (continuity 6.7, feasibility 6.3); kite 7.4 (brief 7, feasibility 6.7) | riding 8.8 (likeness 7.9); kite **9.1, every dimension 8 or more** | riding 6.7 (continuity 4.4: Sammy's helmet gone from two panels, a brush and a bucket that move); kite 7.3 (continuity 6.4); pilot scenes riding 5.2 (continuity and temporal 3) and kite 6.0 (continuity 4), first takes riding 4.3 (1 of 8 at 8), kite 6.6; $53 for both |
@@ -664,7 +683,8 @@ dimensions fails work that truly clears the bar.
 
 Where each stood on November 2, 2026 with new projects' settings, first round: screenplays 8.08 over six runs (fp41; no run
 with every dimension at 8: feasibility 6.7–7.3), casts 9.1 and 8.8 (fp39; kite every dimension at 8, riding likeness 7.9),
-storyboards 7.3 and 6.7 (fp39; continuity 6.4 and 4.4), pilot scenes 6.0 and 5.2 (fp39; continuity 4 and 3).
+storyboards 7.3 and 6.7 (fp39, on sheets; continuity 6.4 and 4.4), pilot scenes 6.0 and 5.2 (fp39, from panels; continuity
+4 and 3). New projects have since gone back to frames drawn alone (fp42), so their storyboards and pilots await a new full run.
 
 What keeps each under 8, what was tried, and what to try next:
 
@@ -684,9 +704,8 @@ What keeps each under 8, what was tried, and what to try next:
    corrections, the opening frame for the place only (as "the same moment" it cost a point, fp15), landmark sides and
    the wind as reasons to redraw (fp17: one major issue left on the kite storyboard). Then: a scene drawn on one
    sheet ([a scene drawn on one sheet](#a-scene-drawn-on-one-sheet)): on eight scenes of frozen plans 7.14 → 7.59,
-   continuity 5.5 → 6.2, character 7.2 → 8.0, every scene better; on for new projects. What is left is each panel's
-   agreement with its plan (a tail streaming with a walk, a pony in a panel before the ponies are found), which the
-   sheet's retries, told what each failed panel must show, fix only sometimes. *Next:* the staging check answers with
+   continuity 5.5 → 6.2, character 7.2 → 8.0, every scene better, but takes from its panels scored 1.62 lower, so it is off
+   for new projects until a full-size frame can keep what the panel agreed on. *Next:* the staging check answers with
    the model's full reasoning (`frame.reconcile` is not in `REASONING_OFF_TASKS`; one panel's reading in fp29 took 217 s
    and wrote 9,069 tokens), and a sheet waits for its slowest panel: measure whether it reads frames as well without
    reasoning, as the identity judge did.

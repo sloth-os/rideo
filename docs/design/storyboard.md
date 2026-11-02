@@ -83,8 +83,8 @@ first one changed keeps the reference it was drawn with until it is drawn again.
 
 ## Scene sheets
 
-Frames drawn one at a time do not see each other, and with `settings.storyboard.sheet` (off in the schema, on for new
-projects) a scene drawn whole is drawn as one image instead: a storyboard sheet whose panels are its shots in order. Seedream 5.0 Pro has no group mode, so one
+Frames drawn one at a time do not see each other, and with `settings.storyboard.sheet` (off by default: takes from its panels
+[scored lower](first-pass.md#a-scene-drawn-on-one-sheet)) a scene drawn whole is drawn as one image instead: a storyboard sheet whose panels are its shots in order. Seedream 5.0 Pro has no group mode, so one
 canvas is the only way its frames can see each other ([why](first-pass.md#a-scene-drawn-on-one-sheet)).
 
 - **When.** `drawBoards` sends a clip to `clip.sheet` when every one of its shots needs a frame, there are at least two
@@ -96,7 +96,7 @@ canvas is the only way its frames can see each other ([why](first-pass.md#a-scen
   counting as much as a canvas a third wider than square: two or three 16:9 frames in one column, four in 2×2, five
   or six in two columns of three rows, seven or eight in two columns of four. The canvas is as large as the image
   model draws (`settings.storyboard.sheetPixels`, 4,600,000 by default: Seedream 5.0 Pro refuses more than 4,624,220
-  pixels), so six panels are about 1,050×590 pixels each and eight about 1,000×560. A cell no shot fills shows the
+  pixels), so six panels are about 1,050×590 pixels each and eight about 900×510. A cell no shot fills shows the
   place alone.
 - **Prompt** (`compileSheetRequest`, shared). `A storyboard sheet of N panels in C columns and R rows …` (the
   `SHEET_PROMPT_PREFIX` the mock gateway reads), the style once, the scene line once (without the props none of its
