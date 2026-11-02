@@ -163,6 +163,9 @@ stand-in panda or a cast member who should not be there), `qwen3.8-max` judged t
 with and without reasoning and caught all four bad ones; without it a call took 8.6 s instead of 57.1 s (median) and
 wrote 231 tokens instead of 2,304. Its scores run higher without reasoning (identity mostly 0.95–1.0 instead of
 0.85–0.9), so a threshold near the top would separate less. `RIDEO_CHECK_REASONING=model` keeps the model's default.
+The staging check (`frame.reconcile`) keeps its reasoning: without it (fp36) a scene's sheet took about five minutes
+instead of fifteen, but the same eight frozen scenes scored 0.3 lower, seven of eight worse
+([first pass](first-pass.md#a-scene-drawn-on-one-sheet)).
 
 ### Refusals
 

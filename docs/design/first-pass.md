@@ -406,7 +406,9 @@ Every scene scored higher on its sheet (+0.45 on average; eight of eight is a ch
 nothing): character 7.2 → 8.0, storytelling 7.2 → 8.0, continuity 5.5 → 6.2, pacing 7.9 → 8.0, feasibility 7.1 → 7.4,
 composition and coverage level. New projects draw their scenes on sheets. Ten reference images instead of four (Seedream 5.0 Pro takes up to ten;
 the gateway does not say so, and rideo's default for a model it does not know is four) did not help on the same
-eight scenes (fp34): 7.45 against 7.59, two scenes better, two level, four worse, character no higher; reverted. No scene had every dimension at 8 in
+eight scenes (fp34): 7.45 against 7.59, two scenes better, two level, four worse, character no higher; reverted. The
+staging check without its reasoning (fp36) drew each scene's sheets three times faster (about five minutes instead of
+fifteen) and scored 0.3 lower on the same scenes, seven of eight worse: the check keeps reasoning. No scene had every dimension at 8 in
 either arm: continuity is what is left, the sheets' panels agreeing with each other but not always with the plan (a
 kite's tail streaming with a walk against the wind, a pony in an establishing panel before the ponies are found,
 because the canvas's other panels show them).
