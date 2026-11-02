@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   compileSheetPrompt,
   compileSheetRequest,
+  compileTurnaroundRequest,
   DEFAULT_SHEET_PIXELS,
   drawnOnSheet,
   ProjectSettingsPatchSchema,
@@ -11,6 +12,8 @@ import {
   type ShotContext,
   sheetLayout,
   shotContextOf,
+  TURNAROUND_PROMPT_PREFIX,
+  turnaroundLayout,
 } from '../src';
 import * as f from '../src/testing/fixtures';
 
@@ -147,5 +150,42 @@ describe('scene sheets (docs/design/storyboard.md#scene-sheets)', () => {
       expect(again).toContain('Make sure: in panel 2, Rosie holds the handle in both paws.');
       expect(compileSheetPrompt(ctxs, sheetLayout(2, HD), { correction: ' ' })).not.toContain('Make sure');
     });
+  });
+});
+
+describe("a character's views on one sheet (docs/design/first-pass.md#a-characters-views-drawn-on-one-sheet)", () => {
+  it('is off in the schema, and a person or an agent can turn it on', () => {
+    expect(ProjectSettingsSchema.parse({}).consistency.turnaround).toBe(false);
+    expect(ProjectSettingsPatchSchema.parse({ consistency: { turnaround: true } }).consistency).toEqual({
+      turnaround: true,
+    });
+  });
+
+  it('lays the views out in one row of square cells, as large as the model draws', () => {
+    const l = turnaroundLayout(3, DEFAULT_SHEET_PIXELS);
+    expect([l.columns, l.rows, l.panels]).toEqual([3, 1, 3]);
+    expect(l.width * l.height).toBeLessThanOrEqual(DEFAULT_SHEET_PIXELS);
+    expect(l.width / l.columns / l.height).toBeCloseTo(1, 1);
+  });
+
+  it('asks for the same character in every panel, the views in order, with the anchor and the last corrections', () => {
+    const sammy = f.character({ name: 'Sammy' });
+    const req = compileTurnaroundRequest(sammy, ['full_body', 'three_quarter', 'profile'], {
+      screenplay: f.screenplay(),
+      settings: ProjectSettingsSchema.parse({}),
+      baseImageUri: 'data:image/png;base64,AAAA',
+      correction: 'in panel 3, the raincoat is buttoned closed',
+    });
+    const text = (req.input[0] as { text: string }).text;
+    expect(text.startsWith(`${TURNAROUND_PROMPT_PREFIX} three panels in three columns and one row`)).toBe(
+      true,
+    );
+    expect(text.indexOf('panel 1, full body')).toBeLessThan(text.indexOf('panel 3, side profile'));
+    expect(text).toContain('no text. Sammy:');
+    expect(text).toContain('Every panel shows exactly the same character');
+    expect(text).toContain('Make sure: in panel 3, the raincoat is buttoned closed.');
+    expect(req.input.filter((p) => p.type === 'image')).toHaveLength(1);
+    const l = turnaroundLayout(3, DEFAULT_SHEET_PIXELS);
+    expect(req.parameters?.dimensions).toEqual({ width: l.width, height: l.height });
   });
 });

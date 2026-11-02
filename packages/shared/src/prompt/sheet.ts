@@ -1,6 +1,7 @@
 import type { GatewayImageRequest } from '../schemas/gateway';
 import {
   avoidsTheLens,
+  counted,
   EXCLUSIONS_STILL,
   elementLines,
   identityFragment,
@@ -74,9 +75,6 @@ export function sheetLayout(
   const height = Math.floor(width / aspect / 16) * 16;
   return { columns, rows, panels: n, width, height };
 }
-
-const NUMBER_WORDS = ['no', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight'];
-const counted = (n: number, noun: string) => `${NUMBER_WORDS[n] ?? n} ${noun}${n === 1 ? '' : 's'}`;
 
 /**
  * The prompt of a sheet: its layout, the style and the scene once, each panel's shot as its keyframe would say it,

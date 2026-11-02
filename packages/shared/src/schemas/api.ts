@@ -71,6 +71,8 @@ export const ProjectSettingsPatchSchema = z
         qualityThreshold: z.number().min(0).max(1),
         castOnly: z.boolean(),
         rejectMusic: z.boolean(),
+        /** docs/design/first-pass.md#a-characters-views-drawn-on-one-sheet */
+        turnaround: z.boolean(),
       })
       .partial(),
     /** Dialogue audio (docs/design/dialogue.md#from-lines-to-audio) and its level (docs/design/continuity.md). */

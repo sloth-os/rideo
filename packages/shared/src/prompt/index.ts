@@ -1070,6 +1070,73 @@ export const MAX_ANCHOR_IMAGES = 3;
 /** How far a reference drawn again moves its seed (a prime, so attempts never meet another view's seed). */
 const ATTEMPT_SEED_STEP = 7919;
 
+const NUMBER_WORDS = ['no', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight'];
+/** A count in words a prompt reads: "three panels", "one row". */
+export const counted = (n: number, noun: string) => `${NUMBER_WORDS[n] ?? n} ${noun}${n === 1 ? '' : 's'}`;
+
+/** How a character's turnaround sheet's prompt starts (the mock gateway reads its grid and its subject). */
+export const TURNAROUND_PROMPT_PREFIX = 'Character reference sheet of';
+
+/**
+ * A character's views drawn together on one sheet, one row of square cells as large as `maxPixels` allows
+ * (docs/design/first-pass.md#a-characters-views-drawn-on-one-sheet).
+ */
+export function turnaroundLayout(
+  views: number,
+  maxPixels: number,
+): { columns: number; rows: 1; panels: number; width: number; height: number } {
+  const n = Math.max(1, Math.floor(views));
+  const width = Math.floor(Math.sqrt(maxPixels * n) / 16) * 16;
+  return { columns: n, rows: 1, panels: n, width, height: Math.floor(width / n / 16) * 16 };
+}
+
+/**
+ * The request of a character's turnaround sheet: its views in one row, each panel the same character part by part, with
+ * the anchor as the reference views use it, and what the last sheet's failed panels must show.
+ */
+export function compileTurnaroundRequest(
+  c: Character,
+  views: ReferenceView[],
+  ctx: {
+    screenplay: Pick<Screenplay, 'style'> | null;
+    settings: ProjectSettings;
+    baseImageUri?: string;
+    baseImageUris?: string[];
+    model?: string;
+    direction?: string;
+    attempt?: number;
+    correction?: string;
+  },
+): GatewayImageRequest {
+  const layout = turnaroundLayout(views.length, ctx.settings.storyboard.sheetPixels);
+  const style = clean(ctx.screenplay?.style.visual);
+  const direction = clean(ctx.direction);
+  const correction = clean(ctx.correction);
+  const anchors = anchorUris(ctx);
+  const panels = views.map((v, k) => `panel ${k + 1}, ${VIEW_PHRASE[v]}`).join('; ');
+  const text = [
+    `${TURNAROUND_PROMPT_PREFIX} ${counted(views.length, 'panel')} in ${counted(views.length, 'column')} and one row, with thin white gutters between the panels and around them: the same character once in each panel, ${panels}; the same neutral light-grey background in every panel, even soft studio lighting, sharp focus, no text.`,
+    identityFragment(c),
+    'Every panel shows exactly the same character: the same face, fur, markings and proportions, the same outfit with every part in the same colour, shape and place.',
+    direction ? `Direction: ${direction}.` : '',
+    style ? `Visual style: ${style}.` : '',
+    anchors.length ? sameCharacter(anchors.length) : '',
+    correction ? `Make sure: ${correction}.` : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
+  return {
+    ...(ctx.model && ctx.model !== 'auto' ? { model: ctx.model } : {}),
+    input: [{ type: 'text', text }, ...anchors.map((uri) => ({ type: 'image' as const, uri }))],
+    parameters: {
+      dimensions: { width: layout.width, height: layout.height },
+      seed: (c.seed + (ctx.attempt ?? 0) * ATTEMPT_SEED_STEP) % MAX_SEED,
+      negative_prompt: BASE_NEGATIVE,
+      output_count: 1,
+    },
+  };
+}
+
 export function referenceDimensions(settings: Pick<ProjectSettings, 'resolution'>): {
   width: number;
   height: number;

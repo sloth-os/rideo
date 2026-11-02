@@ -278,6 +278,68 @@ describe('references that match their subject (docs/design/first-pass.md#referen
   }, 300_000);
 });
 
+describe("a character's views drawn on one sheet (docs/design/first-pass.md#a-characters-views-drawn-on-one-sheet)", () => {
+  it('draws the views as the panels of one sheet, cuts them apart, and draws the sheet again while a panel fails', async () => {
+    const created = await stack.api<Project>('POST', '/projects', {
+      kind: 'story',
+      title: 'The Kite',
+      brief: { prompt: 'Two friends fly a kite on a windy hill.' },
+      settings: {
+        targetDurationSec: 20,
+        pilotDurationSec: 10,
+        resolution: { width: 320, height: 180 },
+        consistency: { turnaround: true },
+        storyboard: { sheetPixels: 1_000_000 },
+      },
+    });
+    expect(created.settings.consistency.turnaround).toBe(true);
+    const pid = created.id;
+    const gen = await stack.api<Job>('POST', `/projects/${pid}/screenplay/generate`, {});
+    expectSucceeded(await stack.waitJob(pid, gen.id));
+    await stack.waitIdle(pid);
+    const docs = (await stack.api<any>('GET', `/projects/${pid}/state`)).docs;
+    const [wrong, right] = Object.values<Character>(docs.characters);
+    // The mock finds the first character's panels do not match: the whole sheet is drawn again
+    await stack.api('PATCH', `/projects/${pid}/characters/${wrong!.id}`, {
+      identity: { ...wrong!.identity, face: `${wrong!.identity.face}, drawn wrong` },
+    });
+    const views = ['full_body', 'three_quarter', 'profile'];
+    for (const c of [wrong!, right!]) {
+      const j = await stack.api<Job>('POST', `/projects/${pid}/characters/${c.id}/references/generate`, {
+        views,
+      });
+      expectSucceeded(await stack.waitJob(pid, j.id));
+    }
+    const jobs = await stack.api<Job[]>('GET', `/projects/${pid}/jobs`);
+    const textsOf = (id: string) =>
+      jobs
+        .find((j) => j.kind === 'character.refs' && j.params.characterId === id)!
+        .gatewayTasks.map(
+          (t) => (stack.gw.store.requests.get(t.id) as { input: { text?: string }[] }).input[0]!.text!,
+        );
+    // One image for all three views when they match
+    const once = textsOf(right!.id);
+    expect(once).toHaveLength(1);
+    expect(once[0]).toMatch(/^Character reference sheet of three panels in three columns and one row/);
+    expect(once[0]).toContain('panel 2, three-quarter view');
+    // A sheet whose panels fail is drawn again whole, told what each failed panel must show
+    const again = textsOf(wrong!.id);
+    expect(again).toHaveLength(created.settings.consistency.maxAttempts);
+    expect(again.every((t) => t.startsWith('Character reference sheet of'))).toBe(true);
+    expect(again[0]).not.toContain('Make sure:');
+    expect(again[1]).toContain("Make sure: in panel 1, the backpack's top is closed");
+    const after = (await stack.api<any>('GET', `/projects/${pid}/state`)).docs;
+    for (const c of [wrong!, right!]) {
+      const refs = after.characters[c.id].references as Character['references'];
+      // One reference kept per view, each a square panel cut from the sheet
+      expect(refs.map((r) => r.view)).toEqual(views);
+      for (const r of refs) expect(r.media.width).toBe(r.media.height);
+    }
+    const metrics = await (await fetch(`${stack.url}/metrics`)).text();
+    expect(metrics).toMatch(/rideo_turnaround_sheets_total\{outcome="gutters"\} [1-9]/);
+  }, 300_000);
+});
+
 describe('the brief adapted for the video model (docs/design/first-pass.md#the-brief-adapted-for-the-video-model)', () => {
   it('adapts a brief before it is written, and the writer and the reviewer work from the adaptation', async () => {
     const brief = 'Two friends learn to ride ponies; at the end they ride side by side over a pole.';

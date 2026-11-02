@@ -199,11 +199,15 @@ function dims(params: Record<string, unknown> | undefined, fallback: { width: nu
 const NUMBER_WORDS = ['no', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight'];
 
 /**
- * A storyboard sheet's grid (docs/design/storyboard.md#scene-sheets): "A storyboard sheet of six panels in two columns
+ * A sheet's grid (docs/design/storyboard.md#scene-sheets): "A storyboard sheet of six panels in two columns
  * and three rows".
  */
 function sheetGrid(prompt: string): { columns: number; rows: number } | null {
-  const m = /^A storyboard sheet of \w+ panels? in (\w+) columns? and (\w+) rows?/i.exec(prompt);
+  // A scene's storyboard sheet, or a character's turnaround (docs/design/first-pass.md#a-characters-views-drawn-on-one-sheet)
+  const m =
+    /^(?:A storyboard sheet|Character reference sheet) of \w+ panels? in (\w+) columns? and (\w+) rows?/i.exec(
+      prompt,
+    );
   if (!m) return null;
   const n = (w: string) => (/^\d+$/.test(w) ? Number(w) : NUMBER_WORDS.indexOf(w.toLowerCase()));
   const columns = n(m[1]!);

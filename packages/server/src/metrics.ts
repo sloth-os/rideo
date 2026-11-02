@@ -467,6 +467,13 @@ export class Metrics {
   readonly storyboardSheets = this.add(
     new Counter('rideo_storyboard_sheets_total', 'Scene sheets by outcome (gutters, cells, failed)'),
   );
+  /** Characters' views drawn on one sheet (docs/design/first-pass.md#a-characters-views-drawn-on-one-sheet). */
+  readonly turnaroundSheets = this.add(
+    new Counter(
+      'rideo_turnaround_sheets_total',
+      "Characters' turnaround sheets by how they were cut (gutters, cells)",
+    ),
+  );
   readonly storyboardSheetPanels = this.add(
     new Counter(
       'rideo_storyboard_sheet_panels_total',

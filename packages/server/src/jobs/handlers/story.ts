@@ -9,6 +9,7 @@ import {
   type Consent,
   compileElementReferenceRequest,
   compileReferenceRequest,
+  compileTurnaroundRequest,
   dialogueDirection,
   docPath,
   type Element,
@@ -31,6 +32,7 @@ import {
   screenplayFromLlm,
   shotRangeFor,
   slugify,
+  turnaroundLayout,
   type VideoModelFacts,
   videoFacts,
   workingBrief,
@@ -38,6 +40,7 @@ import {
 import type { LabelledImage } from '../../ai/tasks';
 import { AppError, notFound } from '../../errors';
 import { sampleFrames } from '../../media/frames';
+import { cutSheet } from '../../media/sheet';
 import { throwIfAborted } from '../../util/abort';
 import type { JobContext } from '../queue';
 import { commitAs, docsFor, gatewayOptions, type HandlerDeps } from './common';
@@ -343,9 +346,44 @@ export async function characterRefs(deps: HandlerDeps, ctx: JobContext) {
   const { direction, replaces = [] } = ctx.job.params as { direction?: string; replaces?: string[] };
   const projectId = ctx.job.projectId;
   let done = 0;
+  const c0 = (await docsFor(deps, ctx)).characters[characterId];
+  if (!c0) throw notFound(`character ${characterId}`);
+  const characterName = c0.name;
+  const addReference = (view: ReferenceView, media: MediaRef) =>
+    commitAs(
+      deps,
+      ctx,
+      (tx) => {
+        const cur = tx.require<Character>(docPath.character(characterId), `character ${characterId}`);
+        if (cur.lock.locked) throw new AppError('character_locked', `${cur.name} is locked`);
+        tx.set(docPath.character(characterId), {
+          ...cur,
+          references: [
+            ...cur.references,
+            {
+              id: newId('reference'),
+              view,
+              media,
+              source: 'generated',
+              approved: false,
+              createdAt: new Date().toISOString(),
+            },
+          ],
+        });
+      },
+      `Generate ${view.replace('_', ' ')} reference for ${characterName}`,
+    );
+  // The views drawn together on one sheet (docs/design/first-pass.md#a-characters-views-drawn-on-one-sheet)
+  if ((await docsFor(deps, ctx)).project.settings.consistency.turnaround && views.length >= 2) {
+    const panels = await drawTurnaround(deps, ctx, { characterId, views, direction });
+    for (const [k, view] of views.entries()) {
+      await addReference(view, panels[k]!);
+      done++;
+    }
+  }
   // The views this job drew, sent with each next view beside the anchor (docs/design/first-pass.md#references-drawn-from-a-whole-figure)
   const drawn: MediaRef[] = [];
-  for (const view of views) {
+  for (const view of done ? [] : views) {
     throwIfAborted(ctx.signal);
     const docs = await docsFor(deps, ctx);
     const c = docs.characters[characterId];
@@ -383,29 +421,7 @@ export async function characterRefs(deps: HandlerDeps, ctx: JobContext) {
       settings: docs.project.settings,
     });
     drawn.push(media);
-    await commitAs(
-      deps,
-      ctx,
-      (tx) => {
-        const cur = tx.require<Character>(docPath.character(characterId), `character ${characterId}`);
-        if (cur.lock.locked) throw new AppError('character_locked', `${cur.name} is locked`);
-        tx.set(docPath.character(characterId), {
-          ...cur,
-          references: [
-            ...cur.references,
-            {
-              id: newId('reference'),
-              view,
-              media,
-              source: 'generated',
-              approved: false,
-              createdAt: new Date().toISOString(),
-            },
-          ],
-        });
-      },
-      `Generate ${view.replace('_', ' ')} reference for ${c.name}`,
-    );
+    await addReference(view, media);
     done++;
   }
   ctx.progress(done, views.length, 'done');
@@ -417,6 +433,129 @@ export async function characterRefs(deps: HandlerDeps, ctx: JobContext) {
   );
   await castFollowUp(deps, ctx);
   return { generated: done, ...(dismissed ? { dismissed } : {}) };
+}
+
+/**
+ * A character's views drawn together on one sheet and cut into one reference each
+ * (docs/design/first-pass.md#a-characters-views-drawn-on-one-sheet): with prompt version 3 each panel is checked against
+ * its subject and the sheet's other panels, and the sheet is drawn again whole, told what each failed panel must show,
+ * while one fails; the sheet with the fewest failed panels is kept.
+ */
+async function drawTurnaround(
+  deps: HandlerDeps,
+  ctx: JobContext,
+  input: { characterId: string; views: ReferenceView[]; direction?: string },
+): Promise<MediaRef[]> {
+  const projectId = ctx.job.projectId;
+  const docs = await docsFor(deps, ctx);
+  const c = docs.characters[input.characterId];
+  if (!c) throw notFound(`character ${input.characterId}`);
+  if (c.lock.locked)
+    throw new AppError('character_locked', `${c.name} was locked while references were generating`);
+  const settings = docs.project.settings;
+  const anchor = approvedReferences(c)[0] ?? c.references[0];
+  const baseImageUri = anchor ? await deps.media.pngDataUri(projectId, anchor.media, 1024) : undefined;
+  const checked = promptVersionOf(settings) >= 3 && settings.consistency.maxAttempts > 1;
+  const attempts = checked ? settings.consistency.maxAttempts : 1;
+  const layout = turnaroundLayout(input.views.length, settings.storyboard.sheetPixels);
+  const subject = { kind: 'character' as const, name: c.name, description: identityFragment(c) };
+  return deps.media.withTmpDir(async (dir) => {
+    let best: { panels: MediaRef[]; failed: number; issues: number } | null = null;
+    let correction: string | undefined;
+    for (let attempt = 0; attempt < attempts; attempt++) {
+      throwIfAborted(ctx.signal);
+      ctx.progress(attempt, attempts, `${c.name}: the views on one sheet (attempt ${attempt + 1})`);
+      const task = await deps.gateway.generateImage(
+        compileTurnaroundRequest(c, input.views, {
+          screenplay: docs.screenplay,
+          settings,
+          baseImageUri,
+          model: settings.models.image,
+          direction: input.direction,
+          attempt,
+          correction,
+        }),
+        gatewayOptions(ctx, 'image', 'turnaround', attempt),
+      );
+      const sheet = await deps.media.importUri(projectId, task.outputs![0]!.uri, {
+        kind: 'refs',
+        name: `${slugify(c.name)}-turnaround-a${attempt + 1}`,
+        signal: ctx.signal,
+      });
+      const cut = await cutSheet(
+        deps.ff,
+        await deps.media.localPath(projectId, sheet),
+        layout,
+        { width: 1, height: 1 },
+        dir,
+        ctx.signal,
+      );
+      deps.metrics.turnaroundSheets.inc({ outcome: cut.gutters ? 'gutters' : 'cells' });
+      const panels: MediaRef[] = [];
+      for (const [k, view] of input.views.entries())
+        panels.push(
+          await deps.media.putFile(projectId, cut.files[k]!, {
+            kind: 'refs',
+            name: `${slugify(c.name)}-${view}`,
+          }),
+        );
+      if (!checked) return panels;
+      // Each panel against its subject and the sheet's other panels
+      const pngs = await Promise.all(panels.map((m) => deps.media.pngBuffer(projectId, m, 512)));
+      const outs = await Promise.all(
+        panels.map(async (m, k) => {
+          const others = pngs.filter((_, j) => j !== k).slice(0, MAX_ANCHOR_IMAGES);
+          try {
+            const out = await deps.llm.checkReference(
+              { subject, view: input.views[k]!, earlier: others.length },
+              others,
+              await deps.media.pngBuffer(projectId, m, 768),
+              ctx.signal,
+            );
+            deps.metrics.referenceChecks.inc({
+              kind: 'character',
+              outcome: out.matches ? 'matched' : 'mismatched',
+            });
+            return out;
+          } catch (err) {
+            throwIfAborted(ctx.signal);
+            deps.metrics.referenceChecks.inc({ kind: 'character', outcome: 'error' });
+            ctx.log.warn(
+              { projectId, err: (err as Error).message },
+              'could not check a turnaround panel; keeping it',
+            );
+            return null;
+          }
+        }),
+      );
+      const failed = outs.filter((o) => o && !o.matches).length;
+      const issues = outs.reduce((n, o) => n + (o && !o.matches ? o.issues.length : 0), 0);
+      ctx.log.info(
+        {
+          projectId,
+          character: c.name,
+          attempt,
+          views: input.views.length,
+          gutters: cut.gutters,
+          failed,
+          issues,
+        },
+        'cut a turnaround sheet into its views',
+      );
+      if (!best || failed < best.failed || (failed === best.failed && issues < best.issues))
+        best = { panels, failed, issues };
+      if (!failed) break;
+      correction = outs
+        .map((o, k) =>
+          o && !o.matches
+            ? `in panel ${k + 1}, ${o.fix.trim() || o.issues.join('; ') || 'it matches its subject'}`
+            : '',
+        )
+        .filter(Boolean)
+        .join('; ');
+    }
+    return best!.panels;
+  });
 }
 
 /**

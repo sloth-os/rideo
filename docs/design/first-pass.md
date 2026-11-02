@@ -212,6 +212,23 @@ planner is told the same. The words a shot can hold (`wordsCapacity`, the writer
 - **Materials stay as described.** An element's prompt says the film's style is its light and rendering, and every
   material stays as described: the plush look turned the pole jump's wooden supports into fur.
 
+### A character's views drawn on one sheet
+
+Views drawn one after another, each from the views before it, still disagreed: fp32's cast reviews held consistency at
+7.9 for both films (a backpack teal in one view and green in the others, a raincoat open in two views and buttoned in
+the third, a pony's blaze ending at the eyes in one view, a helmet's flower moving from the front to the side). A
+scene's frames agreed more when drawn together ([a scene drawn on one sheet](#a-scene-drawn-on-one-sheet): character
+7.2 → 8.0), and a character's views may too.
+
+With `consistency.turnaround` (off in the schema while it is measured), `character.refs` draws the views it is asked
+for as the panels of one image, in one row of square cells (`compileTurnaroundRequest`: `Character reference sheet of
+three panels in three columns and one row`, each panel its view's words, the same neutral background, every panel the
+same character part by part), cuts it at the gutters (`cutSheet`) and keeps each panel as its view's reference, at the
+canvas's size (three square cells of about 1,230 pixels at 4.6 million). An approved or uploaded reference is sent as
+the anchor, as before. Each panel is checked against its subject and the sheet's other panels (`reference.check`); while
+one fails, the sheet is drawn again whole, within `consistency.maxAttempts`, told what each failed panel must show
+(`Make sure: in panel 2, …`), and the sheet with the fewest failed panels is kept. A single view is drawn alone.
+
 ### References that match their subject
 
 Most of what the cast reviews still found was one reference adding or changing something: a toy dragon in a

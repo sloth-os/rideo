@@ -25,6 +25,8 @@ export const ConsistencySettingsSchema = z.object({
   castOnly: z.boolean().default(false),
   /** Music heard in a take fails its sound check, so it is generated again (docs/design/continuity.md). */
   rejectMusic: z.boolean().default(false),
+  /** Draw a character's views together on one sheet (docs/design/first-pass.md#a-characters-views-drawn-on-one-sheet). */
+  turnaround: z.boolean().default(false),
 });
 export type ConsistencySettings = z.infer<typeof ConsistencySettingsSchema>;
 
@@ -122,6 +124,7 @@ export const ProjectSettingsSchema = z.object({
     qualityThreshold: 0.5,
     castOnly: false,
     rejectMusic: false,
+    turnaround: false,
   }),
   dialogue: DialogueSettingsSchema.default({ mode: 'off', lipSync: true, level: 'any' }),
   storyboard: StoryboardSettingsSchema.default({
