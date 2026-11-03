@@ -84,9 +84,10 @@ const task = await client.generateMusic(req, { idempotencyKey, signal, metadata,
 - Every finished task adds its output (images, seconds) and cost (`usage.cost` when the gateway reports one, else the
   price table) to the current job's usage, and to `rideo_gateway_task_seconds` and `rideo_gateway_usage_total`.
 - Outputs arrive as `https://…` or `data:` URIs. `MediaStore.importUri()` downloads, hashes and stores them.
-- Reference images go inline, as `data:` URIs. mm-gateway (at least to 58225c9) forwards only an image part's `url` on its
+- Reference images go inline, as `data:` URIs. mm-gateway before f3ff138 forwards only an image part's `url` on its
   `volcengine` route, so **Seedream gets none of them, with no error**
-  ([first-pass](first-pass.md#the-image-model-never-saw-its-references)). The video route forwards them.
+  ([first-pass](first-pass.md#the-image-model-never-saw-its-references)): run f3ff138 or later. The video route forwards them
+  either way.
 
 ## Proxy usage (LLM, vision, STT, embeddings)
 
