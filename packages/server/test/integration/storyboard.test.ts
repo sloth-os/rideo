@@ -339,66 +339,6 @@ describe('scene sheets (docs/design/storyboard.md#scene-sheets)', () => {
   }, 600_000);
 });
 
-describe('full-size frames from panels (docs/design/storyboard.md#scene-sheets)', () => {
-  it("draws each frame at the project's resolution from its panel, and again from the panel when it contradicts its shot", async () => {
-    const { projectId: pid } = await readyStoryProject(stack, {
-      storyboard: { scenes: 2, sheet: true, sheetFullSize: true, sheetPixels: 1_000_000 },
-      targetDurationSec: 60,
-      pilotDurationSec: 30,
-    });
-    const scenes = (await state(pid)).docs.screenplay.scenes.slice(0, 2);
-    for (const scene of scenes) {
-      const plan = await stack.api<Job>('POST', `/projects/${pid}/clips/plan`, { sceneId: scene.id });
-      expectSucceeded(await stack.waitJob(pid, plan.id));
-    }
-    let clips = await clipsOf(pid);
-    const odd = [...clips[1]!.shots].sort((a, b) => a.index - b.index)[1]!;
-    await stack.api('PATCH', `/projects/${pid}/clips/${clips[1]!.id}/shots/${odd.id}`, {
-      description: `${odd.description} The gate is drawn otherwise.`,
-    });
-    const job = await stack.api<Job>('POST', `/projects/${pid}/storyboard/generate`, {});
-    expect(expectSucceeded(await stack.waitJob(pid, job.id, 300_000)).result).toMatchObject({ failed: 0 });
-    await stack.waitIdle(pid);
-    clips = await clipsOf(pid);
-    const settings = (await state(pid)).docs.project.settings;
-    for (const clip of clips) {
-      const shots = [...clip.shots].sort((a, b) => a.index - b.index);
-      const sheetTask = shots[0]!.board!.gatewayTaskIds[0]!;
-      expect(requestOf(sheetTask).input[0].text).toMatch(/^A storyboard sheet of /);
-      for (const [k, shot] of shots.entries()) {
-        const board = shot.board!;
-        // The sheet it came from, the panel it was drawn from, and a frame of the project's size
-        expect(board.gatewayTaskIds[0]).toBe(sheetTask);
-        expect(board.sheet).toMatchObject({ panel: k + 1, panels: shots.length });
-        expect(board.sheet!.drawnFrom!.path).toMatch(/panel/);
-        expect(board.keyframe.path).toMatch(/^media\/keyframes\/board-/);
-        expect(board.keyframe.hash).not.toBe(board.sheet!.drawnFrom!.hash);
-        expect([board.keyframe.width, board.keyframe.height]).toEqual([
-          settings.resolution.width,
-          settings.resolution.height,
-        ]);
-        expect(board.consistency.status).toBe('passed');
-        expect(board.seen?.keyframeHash).toBe(board.keyframe.hash);
-        const drawn = requestOf(board.gatewayTaskIds[1]!);
-        expect(drawn.input[0].text).toMatch(/^Draw the first reference image again at full size/);
-        expect(drawn.input[0].text).not.toContain(shot.description);
-        expect(drawn.parameters.dimensions).toEqual(settings.resolution);
-        expect(drawn.input.filter((p: { type: string }) => p.type === 'image')).toHaveLength(1);
-        expect(drawn.input[0].text).not.toContain(SCENE_REFERENCE);
-        if (shot.id === odd.id) {
-          // Drawn again from the same panel, told what to correct, never alone
-          expect(board.gatewayTaskIds.length).toBeGreaterThan(2);
-          const again = requestOf(board.gatewayTaskIds[2]!);
-          expect(again.input[0].text).toMatch(/^Draw the first reference image again/);
-          expect(again.input[0].text).toContain('Make sure: the gate stands closed behind them.');
-        } else expect(board.gatewayTaskIds).toHaveLength(2);
-      }
-    }
-    const metrics = await (await fetch(`${stack.url}/metrics`)).text();
-    expect(metrics).toMatch(/rideo_storyboard_sheet_panels_total\{result="full_size"\} [1-9]/);
-  }, 600_000);
-});
-
 describe('shot list', () => {
   it('lists every planned shot as CSV and as a PDF with the frames', async () => {
     const { pid } = await storyboarded({ storyboard: { scenes: 1 } });

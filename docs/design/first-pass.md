@@ -35,8 +35,8 @@ opening frame as a reference, ten references against six, a character's views dr
 references and fp43's frames from panels. What stands: what goes by words (the writers, the reviewers, the planner's rules,
 framings spelled out) and what Wan did with its first frames (fp42's takes from panels).
 
-The fix belongs to mm-gateway. Until a gateway with it is pinned (`e2e/real/env.ts`), the demo server does not get the numbers
-from fp45 on, and `storyboard.sheetFullSize` draws unrelated pictures: it needs the fix.
+mm-gateway has the fix since f3ff138, and the real-model suite pins it (`e2e/real/env.ts`). A deployed gateway gets references,
+and the numbers from fp45 on, once it runs that image or later; on November 3, 2026 the demo server still ran 98b05a9.
 
 ## What the first pass scored
 
@@ -528,7 +528,7 @@ within each arm they barely track the take's score. Whether the cause was a pane
 unknown; frames at full size from panels answered it below (fp47): on the camera, the composition. The sheet stays a setting
 (`storyboard.sheet`), for a storyboard that is only reviewed.
 
-**Full-size frames from panels** (`storyboard.sheetFullSize`, [scene sheets](storyboard.md#scene-sheets)): each panel drawn
+**Full-size frames from panels** (a setting built for this measurement, and [removed after it](storyboard.md#scene-sheets)): each panel drawn
 again at the project's resolution as the very same picture, so that a take starts from a full frame that still agrees with the
 scene's other frames. It needs a gateway that [delivers references](#the-image-model-never-saw-its-references). fp43 measured a
 first prompt on a gateway that dropped them, so its arm was one more run of frames drawn from words, and with the two others it
@@ -549,7 +549,7 @@ the three runs from words, +0.17, +0.29 and +0.24, every interval spanning zero;
 stays the blocker, and what is left in it is staging and props, not looks. Fresh runs do not show even the character gain:
 storyboards 7.0 and 6.6, character 6.3 and 7.0 (fp47), inside the range of the runs from words.
 
-**Takes from frames at full size lose, so `sheetFullSize` stays off** (fp47; same plans and rule, one attempt a shot):
+**Takes from frames at full size lose, so the setting was removed** (fp47; same plans and rule, one attempt a shot):
 
 | Frames | Shots' watches | Passed | Camera (0–1) | Scene reviews |
 |---|---|---|---|---|
@@ -770,8 +770,8 @@ with every dimension at 8: feasibility 6.7–7.3), casts 9.1 and 8.8 (fp39; kite
 storyboards 7.3 and 6.7 (fp39, on sheets; continuity 6.4 and 4.4), pilot scenes 6.0 and 5.2 (fp39, from panels; continuity
 4 and 3). New projects have since gone back to frames drawn alone (fp42).
 
-With references delivered on an eval gateway (November 3; fp47, one run of each brief, not what the demo server gets until a
-gateway with the fix is pinned): screenplays 8.2 and 8.1 (continuity 7.3; feasibility 7 and 7.7), casts 9.1 and 8.9 with every
+With references delivered on an eval gateway (November 3; fp47, one run of each brief, not what the demo server gets until its
+gateway runs the fix): screenplays 8.2 and 8.1 (continuity 7.3; feasibility 7 and 7.7), casts 9.1 and 8.9 with every
 dimension at 8 (riding did that 3 runs in 15 before, so one run proves little), storyboards 7.0 and 6.6 (continuity 5.7 and 5.3).
 Scene reviews on frozen plans, one attempt a shot: 6.32 (continuity 4.5). A pilot of these fresh runs has not been made.
 

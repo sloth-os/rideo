@@ -9,7 +9,6 @@ import {
   type ConsistencyReport,
   compactIdentity,
   compileKeyframeRequest,
-  compilePanelRenderRequest,
   type Element,
   type FrameReconcileInput,
   type FrameReconcileOutput,
@@ -165,8 +164,6 @@ export async function generateKeyframe(
       /** Its reading against the shot, already made: a frame that passes the gate is kept as it is. */
       seen?: FrameReading | null;
     };
-    /** Every attempt is drawn from this panel, at full size (docs/design/storyboard.md#scene-sheets). */
-    panelBase?: { uri: string };
     progress: (attempt: number) => void;
   },
 ): Promise<KeyframeResult> {
@@ -190,23 +187,19 @@ export async function generateKeyframe(
       if (input.given.taskId) out.taskIds.push(input.given.taskId);
       out.keyframe = input.given.keyframe;
     } else {
-      const framed = {
-        ...shotCtx,
-        referenceLabels: refs.referenceLabels.slice(0, refs.referenceUris.length),
-        correction,
-      };
-      const req = input.panelBase
-        ? compilePanelRenderRequest(framed, {
-            panelUri: input.panelBase.uri,
-            attempt,
-            model: shotCtx.settings.models.image,
-          })
-        : compileKeyframeRequest(framed, {
-            referenceUris: refs.referenceUris,
-            attempt,
-            model: shotCtx.settings.models.image,
-            variation: input.variation,
-          });
+      const req = compileKeyframeRequest(
+        {
+          ...shotCtx,
+          referenceLabels: refs.referenceLabels.slice(0, refs.referenceUris.length),
+          correction,
+        },
+        {
+          referenceUris: refs.referenceUris,
+          attempt,
+          model: shotCtx.settings.models.image,
+          variation: input.variation,
+        },
+      );
       out.prompt = (req.input[0] as { text: string }).text;
       out.seed = req.parameters?.seed ?? 0;
       const task = await deps.gateway.generateImage(req, gatewayOptions(ctx, 'image', input.step, attempt));

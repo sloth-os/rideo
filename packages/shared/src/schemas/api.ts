@@ -88,7 +88,6 @@ export const ProjectSettingsPatchSchema = z
         /** docs/design/storyboard.md#scene-sheets */
         sheet: z.boolean(),
         sheetPixels: z.number().int().min(1_000_000).max(16_777_216),
-        sheetFullSize: z.boolean(),
       })
       .partial(),
     /** The 3D director's desk (docs/design/director-desk.md#jobs). */

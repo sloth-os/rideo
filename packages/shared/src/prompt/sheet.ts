@@ -1,7 +1,6 @@
 import type { GatewayImageRequest } from '../schemas/gateway';
 import {
   avoidsTheLens,
-  compileKeyframeRequest,
   counted,
   EXCLUSIONS_STILL,
   elementLines,
@@ -158,25 +157,4 @@ export function compileSheetRequest(
       output_count: 1,
     },
   };
-}
-
-/** A full-size frame is its panel, larger: the same picture, and nothing of the shot's own lines to draw anew. */
-export const PANEL_RENDER_PHRASE =
-  'Draw the first reference image again at full size, as the very same picture: the same framing and crop, everyone in the same place and the same pose, the same background and landmarks, the same light and colours. Move nothing, add nothing, widen nothing. Only give it full detail and sharp focus, filling the whole canvas, with no border, no panels and no gutters.';
-/**
- * The image request of a full-size frame drawn from its panel: the shot's keyframe request with the panel as its one
- * reference image and a prompt of its own, that asks for the same picture; a correction is said as for any frame.
- */
-export function compilePanelRenderRequest(
-  ctx: ShotContext,
-  opts: { panelUri: string; attempt: number; model?: string },
-): GatewayImageRequest {
-  const req = compileKeyframeRequest(
-    { ...ctx, sceneReference: false, blockingImage: false, referenceLabels: [] },
-    { referenceUris: [opts.panelUri], attempt: opts.attempt, model: opts.model },
-  );
-  const [, ...images] = req.input;
-  const correction = ctx.correction?.trim().replace(/[.;\s]+$/, '');
-  const text = correction ? `${PANEL_RENDER_PHRASE} Make sure: ${correction}.` : PANEL_RENDER_PHRASE;
-  return { ...req, input: [{ type: 'text', text }, ...images] };
 }

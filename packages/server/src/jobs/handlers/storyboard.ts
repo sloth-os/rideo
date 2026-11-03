@@ -144,13 +144,10 @@ export async function shotBoard(deps: HandlerDeps, ctx: JobContext) {
     const withScene =
       sceneFrame &&
       (maxImages === undefined || (maxImages >= 3 && shotRefs.referenceUris.length < maxImages));
-    // A full-size frame is drawn from its panel, which already shows the scene's place
-    const fullSize = !!panel && settings.storyboard.sheetFullSize === true;
     // The shot's camera view on the desk, before the scene reference (docs/design/director-desk.md)
     const view = withCameraView(shotRefs, cameraView(docs, clip, shot), {
       maxImages,
-      sceneReferenceUri:
-        withScene && !fullSize ? await deps.media.pngDataUri(ctx.job.projectId, sceneFrame, 1024) : null,
+      sceneReferenceUri: withScene ? await deps.media.pngDataUri(ctx.job.projectId, sceneFrame, 1024) : null,
     });
     const refs = view.refs;
     const shotCtx: ShotContext = {
@@ -179,21 +176,19 @@ export async function shotBoard(deps: HandlerDeps, ctx: JobContext) {
       step: 'board',
       // Drawn again while it contradicts its shot (docs/design/first-pass.md#frames-that-follow-their-shot)
       staging: stagingFor(shotCtx, 'storyboard', withScene ? sceneFrame : null),
-      // Drawn at full size from its panel, or its panel of the scene's sheet first (docs/design/storyboard.md#scene-sheets)
-      ...(fullSize
-        ? { panelBase: { uri: await deps.media.pngDataUri(ctx.job.projectId, panel.keyframe, 1920) } }
-        : panel
-          ? {
-              given: {
-                keyframe: panel.keyframe,
-                prompt: panel.prompt,
-                seed: panel.seed,
-                imageModel: panel.imageModel,
-                taskId: panel.taskId,
-                seen: panel.seen ?? null,
-              },
-            }
-          : {}),
+      // Its panel of the scene's sheet first (docs/design/storyboard.md#scene-sheets)
+      ...(panel
+        ? {
+            given: {
+              keyframe: panel.keyframe,
+              prompt: panel.prompt,
+              seed: panel.seed,
+              imageModel: panel.imageModel,
+              taskId: panel.taskId,
+              seen: panel.seen ?? null,
+            },
+          }
+        : {}),
       progress: (attempt) =>
         ctx.progress(0.1 + (0.6 * attempt) / maxAttempts, 1, `frame attempt ${attempt + 1}/${maxAttempts}`),
     });
@@ -204,8 +199,7 @@ export async function shotBoard(deps: HandlerDeps, ctx: JobContext) {
         : null;
     const report = kf.report!;
     const kept = !!panel && kf.keyframe?.hash === panel.keyframe.hash;
-    if (panel)
-      deps.metrics.storyboardSheetPanels.inc({ result: fullSize ? 'full_size' : kept ? 'kept' : 'redrawn' });
+    if (panel) deps.metrics.storyboardSheetPanels.inc({ result: kept ? 'kept' : 'redrawn' });
     const board: ShotBoard = {
       keyframe: kf.keyframe!,
       createdAt: new Date().toISOString(),
@@ -230,16 +224,8 @@ export async function shotBoard(deps: HandlerDeps, ctx: JobContext) {
             lipSync: 'none',
           }
         : null,
-      sheet:
-        kept || fullSize
-          ? {
-              keyframe: panel!.sheet,
-              panel: panel!.panel,
-              panels: panel!.panels,
-              ...(fullSize ? { drawnFrom: panel!.keyframe } : {}),
-            }
-          : null,
-      gatewayTaskIds: fullSize ? [panel!.taskId, ...kf.taskIds] : kf.taskIds,
+      sheet: kept ? { keyframe: panel!.sheet, panel: panel!.panel, panels: panel!.panels } : null,
+      gatewayTaskIds: kf.taskIds,
       approved: false,
       approvedAt: null,
       approvedBy: null,

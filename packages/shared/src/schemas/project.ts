@@ -71,8 +71,6 @@ export const StoryboardSettingsSchema = z.object({
   sheet: z.boolean().default(false),
   /** The largest canvas the image model draws a sheet on, in pixels (Seedream 5.0 Pro: 4,624,220). */
   sheetPixels: z.number().int().min(1_000_000).max(16_777_216).default(4_600_000),
-  /** Draw each frame at the project's resolution from its panel (docs/design/storyboard.md#scene-sheets). */
-  sheetFullSize: z.boolean().default(false),
 });
 export type StoryboardSettings = z.infer<typeof StoryboardSettingsSchema>;
 
@@ -135,7 +133,6 @@ export const ProjectSettingsSchema = z.object({
     production: false,
     sheet: false,
     sheetPixels: 4_600_000,
-    sheetFullSize: false,
   }),
   /** The 3D director's desk (docs/design/director-desk.md#jobs). */
   blocking: BlockingSettingsSchema.default({ enabled: false, layoutImage: true }),
