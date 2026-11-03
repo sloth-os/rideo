@@ -561,7 +561,7 @@ they run on real models in CI, so `story.spec.ts` takes close to an hour: its li
 Each spec also reads the studio's `/metrics` (`rideo_llm_calls_total`, `rideo_gateway_tasks_total`) to check that the
 calls it expects were made and succeeded. The suite's projects judge with a threshold of 0.5 and two attempts per
 keyframe and per video: the cost stays bounded, and a strict verdict on a good picture does not keep the video model
-from being exercised. A run takes about 10–20 minutes and costs a few images, two short videos and a few dozen vision
+from being exercised. A run takes about an hour and costs a dozen or so images, a few short videos and a few dozen vision
 calls. Retries are off: a failure is reported, not paid for twice.
 
 ### Measuring the first pass (`scripts/first-pass.mjs`)
