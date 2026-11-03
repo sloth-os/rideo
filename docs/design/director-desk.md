@@ -136,7 +136,9 @@ gets the plan's words alone rather than a picture that contradicts them (`plan_m
 
 Measured (fp27, the desk on): the fit refit about half of the shots to agree with their plan and left about four in ten
 disagreeing (the AI's marks could not give the planned layout from any direction), and the storyboards scored 6.1 (kite)
-and 6.6 (riding), blocking 4 and 3.5, against 7.2 and 6.8 on average with the desk off: the image model did not follow
+and 6.6 (riding), blocking 4 and 3.5, against 7.2 and 6.8 on average with the desk off (a gateway fault kept every image from the image model in these runs, so this
+tested the blocking line and not the camera view; [measured again](first-pass.md#the-desk-on-request) with images delivered, the
+desk still scored lower): the image model did not follow
 the mannequins' camera views better when they agreed with the plan. The desk stays off for new projects. Where the camera
 agrees because a character leans to their planned side from the middle third, the blocking line says the planned side
 (`alignLayoutToPlan`), so the line never contradicts the description. A shot without a planned layout (planned before

@@ -354,6 +354,11 @@ blocking a scene took about ten minutes of reasoning. New projects are created w
 ([the planner's rules](#one-rubric-for-the-maker-and-the-reviewer)). A person turns the desk on, or blocks a scene by
 hand, when a scene needs it. What would let the AI blocking back on is in [what is left](#what-is-left).
 
+The runs above [never showed the image model a camera view](#the-image-model-never-saw-its-references). Measured again with
+references delivered (fp46, the frozen plans of fp39, one run of four scenes): 7.00 with blocking 4.4 and continuity 5.8, against
+7.27 and 5.6 with the desk off, and the reviews now fault the blocking itself ("crosses the 180-degree line", "line crosses on
+nearly every cut"). The desk stays off, now on a measurement that tests it.
+
 ## Frames that follow their shot
 
 The storyboards' weakest dimension was continuity (5 on every measured run), and most of what it found was a frame
@@ -519,10 +524,9 @@ lower on the shots' watches or the scenes' reviews.
 The difference is not morphing (major morph or duplicate issues in 5 takes against 4) but framing (12 against 6) and missed
 end states (7 against 3). The camera loss is all in closer framings (wide −0.01; medium to close −0.23 to −0.29), and the
 smallest panels lost most (about 900 pixels wide −2.12, about 1,050 −1.38). A panel's conflicts with its shot do not explain it:
-within each arm they barely track the take's score. Whether the cause is a panel's size or how a sheet composes it is not
-known. A take from a full frame shrunk to a panel's size would tell them apart; a full frame drawn from its panel is what the
-research recommended and this build skipped. The sheet stays a setting (`storyboard.sheet`), for a storyboard that is only
-reviewed.
+within each arm they barely track the take's score. Whether the cause was a panel's size or how a sheet composes it was then
+unknown; frames at full size from panels answered it below (fp47): on the camera, the composition. The sheet stays a setting
+(`storyboard.sheet`), for a storyboard that is only reviewed.
 
 **Full-size frames from panels** (`storyboard.sheetFullSize`, [scene sheets](storyboard.md#scene-sheets)): each panel drawn
 again at the project's resolution as the very same picture, so that a take starts from a full frame that still agrees with the
@@ -540,9 +544,31 @@ The storyboards of the same four scenes with references delivered (fp46; three j
 | From panels, the panel alone | 7.40 | 5.8 | 8.5 | 7.6 |
 | From panels, with the cast's images too | 7.35 | 5.8 | 8.3 | 7.4 |
 
-References fix the character score (riding's first scene from 5–6 to 9) and move the rest a little: against the three runs from
-words, +0.17, +0.29 and +0.24, every interval spanning zero; riding gains and kite does not. Continuity stays the blocker, and
-what is left in it is staging and props, not looks. Takes from these frames are being measured (fp47).
+On these plans references raise the character score (riding's first scene from 5–6 to 9) and move the rest a little: against
+the three runs from words, +0.17, +0.29 and +0.24, every interval spanning zero; riding gains and kite does not. Continuity
+stays the blocker, and what is left in it is staging and props, not looks. Fresh runs do not show even the character gain:
+storyboards 7.0 and 6.6, character 6.3 and 7.0 (fp47), inside the range of the runs from words.
+
+**Takes from frames at full size lose, so `sheetFullSize` stays off** (fp47; same plans and rule, one attempt a shot):
+
+| Frames | Shots' watches | Passed | Camera (0–1) | Scene reviews |
+|---|---|---|---|---|
+| From words (three runs) | 6.54, 6.33, 6.42 | 19, 18, 17 of 24 | 0.82, 0.82, 0.80 | 6.42, 6.49, 6.33 |
+| Alone, with their references | 6.50 | 18 | 0.84 | 6.32 |
+| Panels (fp42) | 4.92 | 10 | 0.62 | 6.16 |
+| At full size from panels | 5.08 | 9 | 0.57 | 6.22 |
+
+Per shot against the three runs from words: full size **−1.35** (95% CI −1.96 to −0.78; kite −0.27, riding −2.12), alone with
+references +0.07 (−0.42 to +0.57), with take identity +0.04 (0 to +0.08) and scene character 7.4 against 6.5–6.9. Scene reviews
+stay within noise for all of them, continuity 4.2–4.7.
+
+What breaks is the camera. On riding 9 of 14 takes from full-size frames pull back, widen or cut away from their first frame,
+as 8 of 14 do from panels, against 1, 2, 2 and 3 of 14 from frames drawn alone (kite: 0 or 1 of 10 in every arm). Panels and their
+full-size frames lose it alike by the shot's framing (medium close: camera 0.37 and 0.35; medium 0.59 and 0.56; wide 0.91 and 0.75),
+so on the camera it is the composition and not the size, which retires the panel widths above as a cause. Size does matter on kite:
+full size recovers what panels lost there (5.40 to 6.50), in action and motion and not in the camera. Why riding's panels break and
+kite's do not is not known. The prompts do not explain it: the same shot's two prompts differ only in how the frame was read, with
+the same camera line.
 
 ## The video reads its first frame
 
@@ -680,6 +706,9 @@ cell is one run's first round; the scores of the same build and brief differ by 
 | fp15: the opening frame kept as "the same moment" | riding 7.9; kite 7.4 | riding 8.9 (consistency 7.9); kite **9.0, every dimension 8 or more** | riding 6.9; kite 6.6 (continuity 5 and 4.5: later frames held to the opening frame's states and people) |
 | fp16: the screenplay read for the video model (removed since); the opening frame for the place only | riding 7.0; kite 6.8 | riding 8.7 (consistency 7.6); kite **8.9, every dimension 8 or more** | riding 6.5; kite 7.3; kite pilot scene 6.3 (temporal and physics 5: the kite launched a scene early), first takes 6.0 |
 | fp17: wrong-side landmarks and wind redrawn, nobody looks into the lens | riding 7.1; kite 7.4 | riding 8.9 (consistency 7.9); kite **9.0, every dimension 8 or more** | riding 6.7 (a frame lost to an empty image, fixed since); kite **7.4, one major issue** (storytelling and coverage 8, character 9) |
+| fp47: fresh runs, references delivered, new projects' settings (to the storyboard) | riding 8.1 (continuity 7.3, feasibility 7.7, pacing 7.7); kite 8.2 (continuity 7.3, feasibility 7) | riding **8.9, every dimension 8 or more** (likeness 8.5); kite **9.1, every dimension 8 or more** | riding 6.6 (continuity 5.3, feasibility 6); kite 7.0 (continuity 5.7, character 6.3) |
+| fp47: fp39's plans, takes with references delivered: frames alone; at full size from panels | – | – | shots' watches 6.50; 5.08; [above](#a-scene-drawn-on-one-sheet) |
+| fp46: the desk with references delivered (storyboards only) | – | – | 7.00 (blocking 4.4, continuity 5.8); [the desk stays off](#the-desk-on-request) |
 | fp46: the plans of fp39, references delivered: frames alone; from panels; from panels with the cast (storyboards only) | – | – | 7.27; **7.40**; 7.35 (continuity 5.6–5.8, character 8.1–8.5; [above](#a-scene-drawn-on-one-sheet)) |
 | fp44, fp45: a frame drawn from its panel, [references dropped, then delivered](#the-image-model-never-saw-its-references) | – | – | unrelated pictures; the same picture (SSIM to 0.97, identity 13 of 13) |
 | fp43: fp42's plans again: frames, and frames "from panels" on a gateway that dropped the panels (so frames from words again) | – | – | shots' watches 6.33 and 6.42; scene reviews 6.49 and 6.33; storyboards 7.10 and 7.08 |
@@ -739,7 +768,12 @@ dimensions fails work that truly clears the bar.
 Where each stood on November 2, 2026 with new projects' settings, first round: screenplays 8.08 over six runs (fp41; no run
 with every dimension at 8: feasibility 6.7–7.3), casts 9.1 and 8.8 (fp39; kite every dimension at 8, riding likeness 7.9),
 storyboards 7.3 and 6.7 (fp39, on sheets; continuity 6.4 and 4.4), pilot scenes 6.0 and 5.2 (fp39, from panels; continuity
-4 and 3). New projects have since gone back to frames drawn alone (fp42), so their storyboards and pilots await a new full run.
+4 and 3). New projects have since gone back to frames drawn alone (fp42).
+
+With references delivered on an eval gateway (November 3; fp47, one run of each brief, not what the demo server gets until a
+gateway with the fix is pinned): screenplays 8.2 and 8.1 (continuity 7.3; feasibility 7 and 7.7), casts 9.1 and 8.9 with every
+dimension at 8 (riding did that 3 runs in 15 before, so one run proves little), storyboards 7.0 and 6.6 (continuity 5.7 and 5.3).
+Scene reviews on frozen plans, one attempt a shot: 6.32 (continuity 4.5). A pilot of these fresh runs has not been made.
 
 All of it [drawn from words](#the-image-model-never-saw-its-references): what was tried with images below needs measuring again.
 

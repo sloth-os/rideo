@@ -115,7 +115,8 @@ canvas is the only way its frames can see each other ([why](first-pass.md#a-scen
   checks read it as any drawn frame, and only a panel that fails them is drawn again on its own, with the scene
   reference, as before. A kept panel's board records `sheet` (the sheet's image, the panel's number and how many it
   had), the sheet's request, and its reading as `seen`.
-- **Full-size frames.** With `settings.storyboard.sheetFullSize` (off by default, and it needs a gateway that
+- **Full-size frames.** With `settings.storyboard.sheetFullSize` (off by default: takes from these frames score 1.35 lower,
+  [fp47](first-pass.md#a-scene-drawn-on-one-sheet); and it needs a gateway that
   [delivers references](first-pass.md#the-image-model-never-saw-its-references)) a panel is not the frame: each shot's
   `shot.board` draws its frame at the project's resolution from its panel (`compilePanelRenderRequest`: the panel as the
   one reference image, and a prompt that asks for the very same picture and says nothing else of the shot; the cast's
