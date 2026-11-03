@@ -30,8 +30,6 @@ describe('a fallback endpoint', () => {
       kind: 'story',
       title: 'Fallback',
       brief: { prompt: 'a keeper of letters' },
-      // One draft: the overload below turns away every call of one writer run
-      settings: { review: { screenplayDrafts: 1 } },
     });
     const before = stack.gw.counters.proxyCalls['fallback.example'] ?? 0;
     // Every call the text model gets in one run is turned away

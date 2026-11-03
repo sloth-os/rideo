@@ -51,11 +51,13 @@ describe('the first pass', () => {
     expect(created.settings.blocking).toMatchObject({ enabled: false, layoutImage: false });
     const pid = created.id;
 
+    // One screenplay draft unless a project asks for more, as its settings do (docs/design/first-pass.md#two-drafts-the-better-kept)
+    expect(created.settings.review.screenplayDrafts).toBe(1);
+    await stack.api('PATCH', `/projects/${pid}`, { settings: { review: { screenplayDrafts: 2 } } });
     // The writer gets what the video model renders well and badly, as its reviewer does
     const gen = await stack.api<Job>('POST', `/projects/${pid}/screenplay/generate`, {});
     const generated = expectSucceeded(await stack.waitJob(pid, gen.id));
-    // Two drafts at once, each reviewed, the better kept (docs/design/first-pass.md#two-drafts-the-better-kept)
-    expect(created.settings.review.screenplayDrafts).toBe(2);
+    // Two drafts at once, each reviewed, the better kept
     expect(generated.result).toMatchObject({ drafts: [expect.any(Number), expect.any(Number)] });
     expect([0, 1]).toContain((generated.result as { kept: number }).kept);
     expect((await reviewCalls()) - before).toBeGreaterThanOrEqual(2 * 3);

@@ -191,7 +191,7 @@ still disagreed with each other (the wind blowing both ways, a tree on either si
 ### Two drafts, the better kept
 
 The same writer and brief gave screenplays from 7.4 to 8.2 between runs (fp35, fp39): one draft is a draw from a wide
-spread. With `review.screenplayDrafts` (1–3: 1 in the schema, 2 for new projects) and the screenplay reviewed,
+spread. With `review.screenplayDrafts` (1–3, default 1; *Screenplay drafts* in the project settings) and the screenplay reviewed,
 `screenplay.generate` writes that many drafts at once from the same input, reviews each as the screenplay review would (its judge samples, one draft
 after another so the calls in flight stay those of one review), and keeps the draft with the higher score (a draft
 that passes before one that does not; `bestDraft`). Only the kept draft is saved. The stage's own review then reviews
@@ -202,7 +202,7 @@ job's result lists every draft's score.
 
 Measured: 7.92 (fp40) against 7.80 for one draft (fp35, fp39), within the runs' spread, with three of fp40's runs
 losing a draft's review to a paused model. It costs about $1.60 more a screenplay ($0.63–1.01 to $2.14–2.70) and about ten
-minutes. It is on for new projects, its gain not established.
+minutes. Its gain is not established, so new projects write one draft, and a project that wants more asks for it in its settings.
 
 ## The brief, adapted for the video model
 
@@ -773,7 +773,8 @@ storyboards 7.3 and 6.7 (fp39, on sheets; continuity 6.4 and 4.4), pilot scenes 
 With references delivered on an eval gateway (November 3; fp47, one run of each brief, not what the demo server gets until its
 gateway runs the fix): screenplays 8.2 and 8.1 (continuity 7.3; feasibility 7 and 7.7), casts 9.1 and 8.9 with every
 dimension at 8 (riding did that 3 runs in 15 before, so one run proves little), storyboards 7.0 and 6.6 (continuity 5.7 and 5.3).
-Scene reviews on frozen plans, one attempt a shot: 6.32 (continuity 4.5). A pilot of these fresh runs has not been made.
+Scene reviews on frozen plans, one attempt a shot: 6.32 (continuity 4.5). A pilot of these fresh runs has not been made. Those
+screenplays were written with two drafts; new projects have since gone back to one ([two drafts](#two-drafts-the-better-kept)).
 
 All of it [drawn from words](#the-image-model-never-saw-its-references): what was tried with images below needs measuring again.
 

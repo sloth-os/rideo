@@ -294,6 +294,26 @@ function SettingsDialog({
                 data-testid="review-scene-fixes"
               />
             </Field>
+            <Field label="Screenplay drafts, the best reviewed kept (each extra draft costs more and takes longer)">
+              <Input
+                type="number"
+                min={1}
+                max={3}
+                value={s.review.screenplayDrafts}
+                // Without a review of the screenplay there is nothing to choose by: one draft is written
+                disabled={!s.review.screenplay}
+                onChange={(e) =>
+                  setS({
+                    ...s,
+                    review: {
+                      ...s.review,
+                      screenplayDrafts: Math.min(3, Math.max(1, Math.round(Number(e.target.value)))),
+                    },
+                  })
+                }
+                data-testid="review-screenplay-drafts"
+              />
+            </Field>
             <div className="pt-1" data-testid="review-gates">
               <p className="mb-1 text-[12px] font-medium">Review gates</p>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">

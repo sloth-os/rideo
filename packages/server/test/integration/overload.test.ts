@@ -251,8 +251,6 @@ describe('an overloaded model provider', () => {
       kind: 'story',
       title: 'Outage',
       brief: { prompt: 'a keeper of letters' },
-      // One draft: the calls counted below are those of one writer run
-      settings: { review: { screenplayDrafts: 1 } },
     });
     const before = stack.gw.counters.overloaded;
     stack.gw.overloadChat(6);

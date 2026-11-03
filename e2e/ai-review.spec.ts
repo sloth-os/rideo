@@ -73,6 +73,38 @@ test('the project settings show the review gates at 8 and save a new bar', async
     .toMatchObject({ threshold: 8, sceneThreshold: 8, minDimension: 7.5 });
 });
 
+/** How many screenplay drafts a project writes (docs/design/first-pass.md#two-drafts-the-better-kept), desktop and phone. */
+test('a project writes one screenplay draft until its settings ask for more', async ({
+  page,
+  request,
+}, testInfo) => {
+  test.setTimeout(240_000);
+  const api = new Api(request);
+  const pid = await api.storyProject(`Screenplay drafts (${testInfo.project.name})`, {
+    settings: { review: { screenplay: true } },
+  });
+  await page.goto(`/p/${pid}/overview`);
+  await page.getByTestId('open-settings').click();
+  const drafts = page.getByTestId('review-screenplay-drafts');
+  await expect(drafts).toHaveValue('1');
+  await expect(drafts).toBeEnabled();
+  await drafts.fill('2');
+  await page.getByTestId('settings-save').click();
+  await expect
+    .poll(async () => (await api.call<any>('GET', `/projects/${pid}/state`)).docs.project.settings.review)
+    .toMatchObject({ screenplayDrafts: 2 });
+  // The studio writes as many as the settings say
+  const job = await api.call<any>('POST', `/projects/${pid}/screenplay/generate`, {});
+  await api.waitJob(pid, job.id, 180_000);
+  const done = await api.call<any>('GET', `/projects/${pid}/jobs/${job.id}`);
+  expect(done.result).toMatchObject({ drafts: [expect.any(Number), expect.any(Number)] });
+  // Without a review of the screenplay there is nothing to choose by, and the setting says so
+  await api.call('PATCH', `/projects/${pid}`, { settings: { review: { screenplay: false } } });
+  await page.goto(`/p/${pid}/overview`);
+  await page.getByTestId('open-settings').click();
+  await expect(page.getByTestId('review-screenplay-drafts')).toBeDisabled();
+});
+
 /** The brief adapted for the video model (docs/design/first-pass.md#the-brief-adapted-for-the-video-model), desktop and phone. */
 test('the Story view shows what of the brief the video model renders badly and how it is filmed', async ({
   page,

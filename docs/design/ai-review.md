@@ -62,7 +62,7 @@ settings.review = {
   watchTakes: boolean;    // off in the schema, on for new projects: watch every video attempt whole
   extensions: boolean;    // off in the schema, on for new projects: review the scenes production writes
   judgeSamples: number;   // 1–5, default 1 (3 for new projects): judge answers a screenplay, cast or storyboard review averages
-  screenplayDrafts: number; // 1–3, default 1 (2 for new projects): drafts written at once, the better reviewed kept (first-pass.md)
+  screenplayDrafts: number; // 1–3, default 1, in the project settings: drafts written at once, the better reviewed kept (first-pass.md)
 };
 settings.storyboard.production: boolean;  // off in the schema, on for new projects: storyboard every production scene
 settings.storyboard.sheet: boolean;       // off by default: draw a scene on one sheet (storyboard.md#scene-sheets)

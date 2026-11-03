@@ -105,8 +105,6 @@ export class ProjectService extends Service {
         minDimension: FIRST_PASS_BAR,
         // The mean of three judge answers (docs/design/ai-review.md#the-verdict)
         judgeSamples: 3,
-        // Two screenplay drafts, the better reviewed kept (docs/design/first-pass.md#two-drafts-the-better-kept)
-        screenplayDrafts: 2,
       },
     });
     const merged = mergeSettings(
