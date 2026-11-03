@@ -552,6 +552,10 @@ hosts, the duration override, the missing variables and the redacted log.
 | `story.spec.ts` | vision: `media.describe`, `screenplay.generate`, `clip.plan`, `consistency.judge`; image: references and keyframes; video: the pilot's shots | a brief with an image and a video attached → screenplay → one front reference per character and one view per element in use → cast locked (storyboard off) → the pilot clip planned in shots of the catalog's length: every shot gets a take with a keyframe from the image model and the vision model's verdict on it; at least one take has a video from the video model, started from its keyframe and judged on its frames (a shot whose keyframe fails the gate twice gets none) |
 | `footage.spec.ts` | vision: `footage.analyze` | footage uploaded → analysis → the model's summary and suggestions next to the rules' → accept all → auto edit |
 
+The suite checks the plumbing, not the quality, so its project asks for one screenplay draft and one judge answer per review
+(`REAL_PROJECT_SETTINGS`): the two drafts and three answers of new projects take about 17 minutes on the real text model, and
+have their own tests on the mock gateway (`first-pass.test.ts`, `review-samples.test.ts`).
+
 Each spec also reads the studio's `/metrics` (`rideo_llm_calls_total`, `rideo_gateway_tasks_total`) to check that the
 calls it expects were made and succeeded. The suite's projects judge with a threshold of 0.5 and two attempts per
 keyframe and per video: the cost stays bounded, and a strict verdict on a good picture does not keep the video model

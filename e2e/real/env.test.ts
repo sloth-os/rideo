@@ -1,3 +1,4 @@
+import { ProjectSettingsPatchSchema } from '@rideo/shared';
 import { describe, expect, it } from 'vitest';
 import {
   backendBaseUrl,
@@ -10,6 +11,7 @@ import {
   studioEnv,
   visionProxyRoot,
 } from './env';
+import { REAL_PROJECT_SETTINGS } from './support';
 
 /** mm-gateway's reference to an environment variable in its configuration. */
 const ref = (name: string) => `\${${name}}`;
@@ -198,5 +200,14 @@ describe('real-model suite variables', () => {
     expect(message).toContain('VISION_MODEL_TYPE is not one of openai, gemini, anthropic');
     expect(message).toContain('VISION_MODEL_BASE_URL is not an http(s) URL');
     for (const secret of ['image-secret', 'vision-secret']) expect(message).not.toContain(secret);
+  });
+});
+
+describe("the suite's project", () => {
+  it('keeps every setting through the REST schema, with one draft and one judge answer', () => {
+    // A setting the patch schema does not list is dropped silently, and the project runs on new projects' defaults
+    const parsed = ProjectSettingsPatchSchema.parse(REAL_PROJECT_SETTINGS);
+    expect(parsed).toMatchObject(REAL_PROJECT_SETTINGS);
+    expect(parsed.review).toMatchObject({ screenplayDrafts: 1, judgeSamples: 1 });
   });
 });
