@@ -147,7 +147,7 @@ jobs:
     runs-on: ubuntu-24.04
     needs: real-ai-check
     if: needs.real-ai-check.outputs.configured == 'true'
-    timeout-minutes: 60
+    timeout-minutes: 75
     env:
       IMAGE_MODEL_TYPE: ${{ vars.IMAGE_MODEL_TYPE }}
       IMAGE_MODEL_BASE_URL: ${{ vars.IMAGE_MODEL_BASE_URL }}

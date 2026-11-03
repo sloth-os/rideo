@@ -9,7 +9,7 @@ export default defineConfig({
   testMatch: /\.spec\.ts$/,
   outputDir: 'test-results/real',
   // Video models take minutes per shot.
-  timeout: 45 * 60_000,
+  timeout: 60 * 60_000,
   expect: { timeout: 60_000 },
   fullyParallel: false,
   workers: 1,

@@ -554,7 +554,9 @@ hosts, the duration override, the missing variables and the redacted log.
 
 The suite checks the plumbing, not the quality, so its project asks for one screenplay draft and one judge answer per review
 (`REAL_PROJECT_SETTINGS`): the two drafts and three answers of new projects take about 17 minutes on the real text model, and
-have their own tests on the mock gateway (`first-pass.test.ts`, `review-samples.test.ts`).
+have their own tests on the mock gateway (`first-pass.test.ts`, `review-samples.test.ts`). It keeps the checks of each frame
+against its shot (`frame.reconcile`, about 3 minutes a call) and of each reference (`reference.check`, about 2), the only place
+they run on real models in CI, so `story.spec.ts` takes close to an hour: its limit is 60 minutes and the job's 75.
 
 Each spec also reads the studio's `/metrics` (`rideo_llm_calls_total`, `rideo_gateway_tasks_total`) to check that the
 calls it expects were made and succeeded. The suite's projects judge with a threshold of 0.5 and two attempts per
