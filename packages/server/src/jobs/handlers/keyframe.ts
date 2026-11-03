@@ -198,7 +198,6 @@ export async function generateKeyframe(
       const req = input.panelBase
         ? compilePanelRenderRequest(framed, {
             panelUri: input.panelBase.uri,
-            referenceUris: refs.referenceUris,
             attempt,
             model: shotCtx.settings.models.image,
           })

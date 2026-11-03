@@ -6,6 +6,38 @@ paid video again. The cheapest fix is the one that is never needed: each step's 
 revision or regeneration, should pass its review. This page describes how the makers of each step aim at what their
 reviewer scores, and the gate that holds every score at 8.
 
+## The image model never saw its references
+
+Found on November 3, 2026, and it changes how to read this page: **every image up to fp44 was drawn from its prompt
+alone.** The studio sends reference images inline (`data:` URIs, `MediaStore.pngDataUri`). mm-gateway parses an inline image
+into the part's `data` (`translators/rest.py`, since 52fce2b9e, August 11), and its `volcengine` provider, which serves
+`doubao-seedream-5.0-pro`, forwards only `url`:
+
+```python
+kwargs["image"] = [i.url for i in request.input_images() if i.url]
+```
+
+So Seedream gets none of them, and nothing reports it. Asked only to "draw the first reference image again" with a panel of two
+pandas attached, it drew graduation classes and dockworkers (fp44). The video route keeps the URI as `url`, so Wan does get its
+first frames.
+
+With that line patched on an eval copy of the gateway (`i.url or f"data:{i.mime_type or 'image/png'};base64,{i.data}"`, as its
+`openrouter` provider does), and the provider accepting all of them (fp45):
+
+| The same prompt, drawn from a scene's panels | References dropped (fp44) | Delivered (fp45) |
+|---|---|---|
+| Likeness to the panel (SSIM at 720×405) | 0.27–0.42 | 0.55–0.97 (8 of 13 at 0.95 or more; the lowest were drawn again to a correction) |
+| Identity check | 0 of 8 passed: no panda in the frame | 13 of 13 passed |
+
+What to discount on this page: anything measured about what the image model does with an image, because it tested the prompt
+alone. That is the [desk](#the-desk-on-request)'s camera views ("the image model did not follow"), frame edits, the scene's
+opening frame as a reference, ten references against six, a character's views drawn from their anchor, the sheets' cast
+references and fp43's frames from panels. What stands: what goes by words (the writers, the reviewers, the planner's rules,
+framings spelled out) and what Wan did with its first frames (fp42's takes from panels).
+
+The fix belongs to mm-gateway. Until a gateway with it is pinned (`e2e/real/env.ts`), the demo server does not get the numbers
+from fp45 on, and `storyboard.sheetFullSize` draws unrelated pictures: it needs the fix.
+
 ## What the first pass scored
 
 The riding demo (`prj_01m63xqksfnddtj9`, image of 13b849c, qwen3.8-max reviewing, 2026-10-29) was the first run of
@@ -493,9 +525,24 @@ research recommended and this build skipped. The sheet stays a setting (`storybo
 reviewed.
 
 **Full-size frames from panels** (`storyboard.sheetFullSize`, [scene sheets](storyboard.md#scene-sheets)): each panel drawn
-again at the project's resolution, keeping what it shows and framed as its shot's camera line says, so that a take starts from
-a full frame that still agrees with the scene's other frames. Being measured (fp43) on the same plans as fp42, with frames
-drawn alone again beside it, and each arm's storyboards reviewed.
+again at the project's resolution as the very same picture, so that a take starts from a full frame that still agrees with the
+scene's other frames. It needs a gateway that [delivers references](#the-image-model-never-saw-its-references). fp43 measured a
+first prompt on a gateway that dropped them, so its arm was one more run of frames drawn from words, and with the two others it
+gives this comparison its noise: takes 6.54, 6.33, 6.42; scene reviews 6.42, 6.49, 6.33; storyboards 7.15, 7.10, 7.08. It also
+repeated fp42's result, takes from panels 1.42 under takes from frames (CI −2.08..−0.71, 18 of 24 lower).
+
+The storyboards of the same four scenes with references delivered (fp46; three judge answers each):
+
+| Frames | Storyboard | Continuity | Character | Composition |
+|---|---|---|---|---|
+| Drawn from words (three runs) | 7.08–7.15 | 5.3–5.4 | 7.3–7.7 | 7.0–7.2 |
+| Alone, with their references | 7.27 | 5.6 | 8.1 | 7.2 |
+| From panels, the panel alone | 7.40 | 5.8 | 8.5 | 7.6 |
+| From panels, with the cast's images too | 7.35 | 5.8 | 8.3 | 7.4 |
+
+References fix the character score (riding's first scene from 5–6 to 9) and move the rest a little: against the three runs from
+words, +0.17, +0.29 and +0.24, every interval spanning zero; riding gains and kite does not. Continuity stays the blocker, and
+what is left in it is staging and props, not looks. Takes from these frames are being measured (fp47).
 
 ## The video reads its first frame
 
@@ -633,6 +680,9 @@ cell is one run's first round; the scores of the same build and brief differ by 
 | fp15: the opening frame kept as "the same moment" | riding 7.9; kite 7.4 | riding 8.9 (consistency 7.9); kite **9.0, every dimension 8 or more** | riding 6.9; kite 6.6 (continuity 5 and 4.5: later frames held to the opening frame's states and people) |
 | fp16: the screenplay read for the video model (removed since); the opening frame for the place only | riding 7.0; kite 6.8 | riding 8.7 (consistency 7.6); kite **8.9, every dimension 8 or more** | riding 6.5; kite 7.3; kite pilot scene 6.3 (temporal and physics 5: the kite launched a scene early), first takes 6.0 |
 | fp17: wrong-side landmarks and wind redrawn, nobody looks into the lens | riding 7.1; kite 7.4 | riding 8.9 (consistency 7.9); kite **9.0, every dimension 8 or more** | riding 6.7 (a frame lost to an empty image, fixed since); kite **7.4, one major issue** (storytelling and coverage 8, character 9) |
+| fp46: the plans of fp39, references delivered: frames alone; from panels; from panels with the cast (storyboards only) | – | – | 7.27; **7.40**; 7.35 (continuity 5.6–5.8, character 8.1–8.5; [above](#a-scene-drawn-on-one-sheet)) |
+| fp44, fp45: a frame drawn from its panel, [references dropped, then delivered](#the-image-model-never-saw-its-references) | – | – | unrelated pictures; the same picture (SSIM to 0.97, identity 13 of 13) |
+| fp43: fp42's plans again: frames, and frames "from panels" on a gateway that dropped the panels (so frames from words again) | – | – | shots' watches 6.33 and 6.42; scene reviews 6.49 and 6.33; storyboards 7.10 and 7.08 |
 | fp42: takes from frames against takes from panels, the frozen plans of fp39, one attempt a shot | – | – | shots' watches: frames 6.54, panels 4.92; scene reviews: frames 6.42, panels 6.16; sheets off for new projects |
 | fp41: feasibility names the forms it accepts, with two drafts (screenplays only, three at a time) | riding **8.4**, 7.7, 7.9; kite **8.3, 8.4**, 7.8: mean 8.08; no run with every dimension at 8 (feasibility 6.7–7.3 in all six, continuity 7–8.7) | – | – |
 | fp40: two screenplay drafts, the better reviewed kept (screenplays only, six at once) | riding 7.4, 7.7, 7.6; kite **8.4, 8.3, 8.1** (feasibility 7–7.3 the one dimension under 8 in each; continuity 7.7–8): 7.92 against 7.80 for one draft (fp35, fp39); three of the six runs lost a draft's review to the model pausing under twelve writers at once, which a draft's review now waits out | – | – |
@@ -690,6 +740,8 @@ Where each stood on November 2, 2026 with new projects' settings, first round: s
 with every dimension at 8: feasibility 6.7–7.3), casts 9.1 and 8.8 (fp39; kite every dimension at 8, riding likeness 7.9),
 storyboards 7.3 and 6.7 (fp39, on sheets; continuity 6.4 and 4.4), pilot scenes 6.0 and 5.2 (fp39, from panels; continuity
 4 and 3). New projects have since gone back to frames drawn alone (fp42), so their storyboards and pilots await a new full run.
+
+All of it [drawn from words](#the-image-model-never-saw-its-references): what was tried with images below needs measuring again.
 
 What keeps each under 8, what was tried, and what to try next:
 

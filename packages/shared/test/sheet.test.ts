@@ -6,7 +6,6 @@ import {
   compileTurnaroundRequest,
   DEFAULT_SHEET_PIXELS,
   drawnOnSheet,
-  PANEL_RENDER_LABEL,
   PANEL_RENDER_PHRASE,
   ProjectSettingsPatchSchema,
   ProjectSettingsSchema,
@@ -140,28 +139,25 @@ describe('scene sheets (docs/design/storyboard.md#scene-sheets)', () => {
       expect(text).toContain('No text, numbers, captions or speech bubbles in the panels.');
     });
 
-    it("draws a full-size frame from its panel: the panel first, the shot's own frame and framing", () => {
+    it("draws a full-size frame as its panel, larger: the panel alone, and none of the shot's own lines", () => {
       const [ctx] = contexts();
       const req = compilePanelRenderRequest(
-        {
-          ...ctx!,
-          referenceLabels: ['Sammy'],
-          sceneReference: true,
-          correction: 'the kite stays under his arm',
-        },
-        { panelUri: 'data:panel', referenceUris: ['data:sammy'], attempt: 1 },
+        { ...ctx!, referenceLabels: ['Sammy'], sceneReference: true },
+        { panelUri: 'data:panel', attempt: 0 },
       );
-      const text = (req.input[0] as { text: string }).text;
-      expect(text.startsWith(PANEL_RENDER_PHRASE)).toBe(true);
-      expect(text).toContain(`Reference images, in order: 1 ${PANEL_RENDER_LABEL}; 2 Sammy.`);
-      expect(text).toContain('Sammy walks up the path');
-      expect(text).toContain('wide shot');
-      expect(text).toContain('Make sure: the kite stays under his arm.');
-      // The panel shows the place: no opening frame beside it
-      expect(text).not.toMatch(/last reference image/i);
-      expect(req.input.slice(1).map((p) => (p as { uri: string }).uri)).toEqual(['data:panel', 'data:sammy']);
+      expect((req.input[0] as { text: string }).text).toBe(PANEL_RENDER_PHRASE);
+      expect(req.input.slice(1).map((p) => (p as { uri: string }).uri)).toEqual(['data:panel']);
       // At the project's resolution, whatever the panel's
       expect(req.parameters?.dimensions).toEqual(ctx!.settings.resolution);
+      // A correction is said after it
+      const told = compilePanelRenderRequest(
+        { ...ctx!, correction: 'the kite stays under his arm.' },
+        { panelUri: 'data:panel', attempt: 1 },
+      );
+      expect((told.input[0] as { text: string }).text).toBe(
+        `${PANEL_RENDER_PHRASE} Make sure: the kite stays under his arm.`,
+      );
+      expect(told.parameters?.seed).not.toBe(req.parameters?.seed);
     });
 
     it('fills a cell no shot fills with the place alone, and asks for the layout canvas', () => {

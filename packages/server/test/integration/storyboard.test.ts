@@ -380,17 +380,16 @@ describe('full-size frames from panels (docs/design/storyboard.md#scene-sheets)'
         expect(board.consistency.status).toBe('passed');
         expect(board.seen?.keyframeHash).toBe(board.keyframe.hash);
         const drawn = requestOf(board.gatewayTaskIds[1]!);
-        expect(drawn.input[0].text).toMatch(
-          /^Draw the first reference image, the storyboard panel of this shot/,
-        );
+        expect(drawn.input[0].text).toMatch(/^Draw the first reference image again at full size/);
+        expect(drawn.input[0].text).not.toContain(shot.description);
         expect(drawn.parameters.dimensions).toEqual(settings.resolution);
-        expect(drawn.input.filter((p: { type: string }) => p.type === 'image').length).toBeGreaterThan(0);
+        expect(drawn.input.filter((p: { type: string }) => p.type === 'image')).toHaveLength(1);
         expect(drawn.input[0].text).not.toContain(SCENE_REFERENCE);
         if (shot.id === odd.id) {
           // Drawn again from the same panel, told what to correct, never alone
           expect(board.gatewayTaskIds.length).toBeGreaterThan(2);
           const again = requestOf(board.gatewayTaskIds[2]!);
-          expect(again.input[0].text).toMatch(/^Draw the first reference image/);
+          expect(again.input[0].text).toMatch(/^Draw the first reference image again/);
           expect(again.input[0].text).toContain('Make sure: the gate stands closed behind them.');
         } else expect(board.gatewayTaskIds).toHaveLength(2);
       }

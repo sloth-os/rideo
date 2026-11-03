@@ -160,32 +160,23 @@ export function compileSheetRequest(
   };
 }
 
-/** What a panel is called among a full-size frame's reference images (docs/design/storyboard.md#scene-sheets). */
-export const PANEL_RENDER_LABEL = 'the storyboard panel of this shot';
-/** What a full-size frame keeps of its panel, and what it takes from its shot: the framing. */
+/** A full-size frame is its panel, larger: the same picture, and nothing of the shot's own lines to draw anew. */
 export const PANEL_RENDER_PHRASE =
-  'Draw the first reference image, the storyboard panel of this shot, again as one finished film frame at full size: keep what it shows (who stands where and faces which way, every prop and landmark where it is, the looks of everyone and everything, the light and the weather), frame it as the Camera line below says, and give it full detail and sharp focus. One single picture, with no panels and no gutters.';
-
+  'Draw the first reference image again at full size, as the very same picture: the same framing and crop, everyone in the same place and the same pose, the same background and landmarks, the same light and colours. Move nothing, add nothing, widen nothing. Only give it full detail and sharp focus, filling the whole canvas, with no border, no panels and no gutters.';
 /**
- * The image request of a full-size frame drawn from its panel: the shot's keyframe request with the panel first among its
- * reference images and what to keep of it first in its prompt; a correction is said as for any frame.
+ * The image request of a full-size frame drawn from its panel: the shot's keyframe request with the panel as its one
+ * reference image and a prompt of its own, that asks for the same picture; a correction is said as for any frame.
  */
 export function compilePanelRenderRequest(
   ctx: ShotContext,
-  opts: { panelUri: string; referenceUris: string[]; attempt: number; model?: string },
+  opts: { panelUri: string; attempt: number; model?: string },
 ): GatewayImageRequest {
   const req = compileKeyframeRequest(
-    {
-      ...ctx,
-      sceneReference: false,
-      blockingImage: false,
-      referenceLabels: [PANEL_RENDER_LABEL, ...(ctx.referenceLabels ?? [])],
-    },
-    { referenceUris: [opts.panelUri, ...opts.referenceUris], attempt: opts.attempt, model: opts.model },
+    { ...ctx, sceneReference: false, blockingImage: false, referenceLabels: [] },
+    { referenceUris: [opts.panelUri], attempt: opts.attempt, model: opts.model },
   );
-  const [text, ...images] = req.input;
-  return {
-    ...req,
-    input: [{ type: 'text', text: `${PANEL_RENDER_PHRASE} ${(text as { text: string }).text}` }, ...images],
-  };
+  const [, ...images] = req.input;
+  const correction = ctx.correction?.trim().replace(/[.;\s]+$/, '');
+  const text = correction ? `${PANEL_RENDER_PHRASE} Make sure: ${correction}.` : PANEL_RENDER_PHRASE;
+  return { ...req, input: [{ type: 'text', text }, ...images] };
 }
