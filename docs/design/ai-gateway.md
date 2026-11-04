@@ -87,6 +87,8 @@ const task = await client.generateMusic(req, { idempotencyKey, signal, metadata,
 - A negative prompt the backend has no field for is merged into the prompt by mm-gateway (`d35ef17` on; older gateways drop it).
   So a still sends only what concerns a still, with no motion artefacts, and a video to a model that declares
   `supports_negative_prompt: false` (Wan 3.0) sends only what a person typed for the shot: its prompt's `Avoid:` line has the rest.
+- A task's `routing.adjustments` says what the backend that served it could not carry as asked: `merged` into the prompt, `translated`
+  to the nearest it takes, or `dropped` (mm-gateway `3f39b4e` on).
 - Reference images go inline, as `data:` URIs. mm-gateway before f3ff138 forwards only an image part's `url` on its
   `volcengine` route, so **Seedream gets none of them, with no error**
   ([first-pass](first-pass.md#the-image-model-never-saw-its-references)): run f3ff138 or later. The video route forwards them

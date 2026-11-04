@@ -6,7 +6,7 @@ import { z } from 'zod';
  */
 
 /** The gateway image the suite runs; MM_GATEWAY_IMAGE overrides it. */
-export const DEFAULT_GATEWAY_IMAGE = 'ghcr.io/sloth-os/mm-gateway:sha-d35ef17';
+export const DEFAULT_GATEWAY_IMAGE = 'ghcr.io/sloth-os/mm-gateway:sha-3f39b4e';
 
 /** The tag on everything the suite configures in the gateway, and the only one its key may use. */
 export const SUITE_TAG = 'rideo-real';
