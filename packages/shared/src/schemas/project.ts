@@ -27,6 +27,8 @@ export const ConsistencySettingsSchema = z.object({
   rejectMusic: z.boolean().default(false),
   /** Draw a character's views together on one sheet (docs/design/first-pass.md#a-characters-views-drawn-on-one-sheet). */
   turnaround: z.boolean().default(false),
+  /** Correct a frame by an edit of itself rather than a new drawing (docs/design/first-pass.md#frames-that-follow-their-shot). */
+  frameEdits: z.boolean().default(false),
 });
 export type ConsistencySettings = z.infer<typeof ConsistencySettingsSchema>;
 
@@ -125,6 +127,7 @@ export const ProjectSettingsSchema = z.object({
     castOnly: false,
     rejectMusic: false,
     turnaround: false,
+    frameEdits: false,
   }),
   dialogue: DialogueSettingsSchema.default({ mode: 'off', lipSync: true, level: 'any' }),
   storyboard: StoryboardSettingsSchema.default({

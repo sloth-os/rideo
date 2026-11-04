@@ -602,6 +602,60 @@ function compileShotPromptV2(
   return lines.join(' ');
 }
 
+/** What a frame corrected by an edit of itself keeps (docs/design/first-pass.md#frames-that-follow-their-shot). */
+export const FRAME_EDIT_PHRASE =
+  'Edit the first image: keep everything in it exactly as it is (the characters and how they look, the place, the light, the framing and the style) and change only this:';
+/** The cast's references sent with a frame to edit, after the frame. */
+export const FRAME_EDIT_MAX_REFERENCES = 3;
+
+/** The image request of a frame corrected by an edit of itself: the frame first, what to change, and who is who. */
+export function compileFrameEditRequest(
+  ctx: ShotContext,
+  opts: {
+    /** The frame the reading asked to correct. */
+    frameUri: string;
+    /** What the reading found wrong, said as what the picture must show. */
+    fix: string;
+    /** Only those with a label go: a scene's opening frame beside the cast would have nothing to say what it is. */
+    referenceUris: string[];
+    referenceLabels: string[];
+    attempt: number;
+    model?: string;
+    variation?: number;
+  },
+): GatewayImageRequest {
+  const { shot, settings } = ctx;
+  const labels = opts.referenceLabels.slice(
+    0,
+    Math.min(FRAME_EDIT_MAX_REFERENCES, opts.referenceUris.length),
+  );
+  const refs = opts.referenceUris.slice(0, labels.length);
+  const text = [
+    `${FRAME_EDIT_PHRASE} ${clean(opts.fix).replace(/[.;\s]+$/, '')}.`,
+    labels.length
+      ? `The next images show how they look: ${labels.map((l, i) => `${i + 2} ${l}`).join('; ')}.`
+      : '',
+    `Avoid: ${EXCLUSIONS_STILL}${avoidsTheLens(ctx) ? `, ${LOOKING_INTO_CAMERA}` : ''}.`,
+  ]
+    .filter(Boolean)
+    .join(' ');
+  return {
+    ...(opts.model && opts.model !== 'auto' ? { model: opts.model } : {}),
+    input: [
+      { type: 'text', text },
+      { type: 'image', uri: opts.frameUri },
+      ...refs.map((uri) => ({ type: 'image' as const, uri })),
+    ],
+    parameters: {
+      dimensions: { width: settings.resolution.width, height: settings.resolution.height },
+      seed: shotSeed(shot, ctx.characters, opts.attempt, opts.variation),
+      // A still has no camera movement to hold
+      negative_prompt: negativePromptFor(ctx, { camera: false }),
+      output_count: 1,
+    },
+  };
+}
+
 /** The negative prompt of a shot: version 2 adds motion artefacts and keeps to 500 characters. */
 export function negativePromptFor(
   ctx: Pick<ShotContext, 'shot' | 'settings'>,

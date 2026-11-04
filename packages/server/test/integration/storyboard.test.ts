@@ -2,7 +2,14 @@ import { execFileSync } from 'node:child_process';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { type Clip, type Job, SCENE_REFERENCE_PHRASE_V3, type Timeline } from '@rideo/shared';
+import {
+  type Clip,
+  FRAME_EDIT_MAX_REFERENCES,
+  FRAME_EDIT_PHRASE,
+  type Job,
+  SCENE_REFERENCE_PHRASE_V3,
+  type Timeline,
+} from '@rideo/shared';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { PdfDocument, pdfTextLines } from '../../src/media/pdf';
 import { startEditorWorker } from '../helpers/editor-worker';
@@ -336,6 +343,43 @@ describe('scene sheets (docs/design/storyboard.md#scene-sheets)', () => {
     const redrawn = (await clipsOf(pid))[0]!.shots.find((s) => s.id === lead.id)!.board!;
     expect(redrawn.sheet).toBeNull();
     expect(requestOf(redrawn.gatewayTaskIds[0]!).input[0].text).not.toMatch(/^A storyboard sheet/);
+  }, 600_000);
+});
+
+describe('a frame corrected by an edit of itself (docs/design/first-pass.md#frames-that-follow-their-shot)', () => {
+  it('edits the frame its reading read, and leaves a frame that needs nothing as it was drawn', async () => {
+    const { projectId: pid } = await readyStoryProject(stack, {
+      storyboard: { scenes: 1 },
+      consistency: { frameEdits: true },
+      targetDurationSec: 60,
+      pilotDurationSec: 30,
+    });
+    const scene = (await state(pid)).docs.screenplay.scenes[0]!;
+    const plan = await stack.api<Job>('POST', `/projects/${pid}/clips/plan`, { sceneId: scene.id });
+    expectSucceeded(await stack.waitJob(pid, plan.id));
+    let [clip] = await clipsOf(pid);
+    const [plain, odd] = [...clip!.shots].sort((a, b) => a.index - b.index);
+    await stack.api('PATCH', `/projects/${pid}/clips/${clip!.id}/shots/${odd!.id}`, {
+      description: `${odd!.description} The gate is drawn otherwise.`,
+    });
+    const job = await stack.api<Job>('POST', `/projects/${pid}/storyboard/generate`, {});
+    expectSucceeded(await stack.waitJob(pid, job.id, 300_000));
+    await stack.waitIdle(pid);
+    [clip] = await clipsOf(pid);
+    const boardOf = (id: string) => clip!.shots.find((s) => s.id === id)!.board!;
+    expect(boardOf(plain!.id).gatewayTaskIds).toHaveLength(1);
+    const asks = boardOf(odd!.id).gatewayTaskIds.map(requestOf);
+    expect(asks.length).toBeGreaterThan(1);
+    // The first attempt draws; the next edits what it drew, told only what to change
+    expect(asks[0].input[0].text).not.toContain(FRAME_EDIT_PHRASE);
+    for (const ask of asks.slice(1)) {
+      expect(ask.input[0].text).toContain(`${FRAME_EDIT_PHRASE} the gate stands closed behind them.`);
+      expect(ask.input[1]).toMatchObject({ type: 'image', uri: expect.stringMatching(/^data:image\//) });
+      expect(ask.input.length).toBeLessThanOrEqual(2 + FRAME_EDIT_MAX_REFERENCES);
+      expect(ask.input[0].text).not.toContain(SCENE_REFERENCE);
+    }
+    const metrics = await (await fetch(`${stack.url}/metrics`)).text();
+    expect(metrics).toMatch(/rideo_frame_edits_total\{source="storyboard"\} [1-9]/);
   }, 600_000);
 });
 

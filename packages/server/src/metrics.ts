@@ -266,6 +266,13 @@ export class Metrics {
       'First frames read before a video starts from them, by source (storyboard, keyframe) and outcome (agreed, adjusted, error)',
     ),
   );
+  /** Frames corrected by an edit of themselves (docs/design/first-pass.md#frames-that-follow-their-shot). */
+  readonly frameEdits = this.add(
+    new Counter(
+      'rideo_frame_edits_total',
+      'Frames corrected by an edit of the frame instead of drawn again, by source (storyboard, keyframe)',
+    ),
+  );
   /** AI-blocked shots against their planned layout (docs/design/director-desk.md#following-the-shot-plan). */
   readonly blockingPlanFits = this.add(
     new Counter(

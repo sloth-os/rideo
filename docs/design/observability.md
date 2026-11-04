@@ -97,6 +97,7 @@ cost), as does a take replaced by a regeneration: the cost of quality, which the
 | `rideo_brief_adaptations_total` | counter | `outcome` (`adapted`, `unchanged`, `error`) | briefs read for the video model before they are written ([first pass](first-pass.md#the-brief-adapted-for-the-video-model)) |
 | `rideo_reference_checks_total` | counter | `kind` (`character`, `element`), `outcome` (`matched`, `mismatched`, `error`) | cast references checked as they are drawn ([first pass](first-pass.md#references-that-match-their-subject)) |
 | `rideo_frame_reconciles_total` | counter | `source` (`storyboard`, `keyframe`), `outcome` (`agreed`, `adjusted`, `redraw`, `error`) | first frames read before a video starts from them ([first pass](first-pass.md#the-video-reads-its-first-frame)) |
+| `rideo_frame_edits_total` | counter | `source` (`storyboard`, `keyframe`) | Frames corrected by an edit of the frame instead of drawn again ([frames that follow their shot](design/first-pass.md#frames-that-follow-their-shot)) |
 | `rideo_take_watch_score` | histogram | – | overall scores 0–10 of takes watched whole |
 | `rideo_clip_review_watched_total` | counter | `watched` (`video`, `frames`) | scene reviews by what the vision model watched |
 | `rideo_autopilot_approvals_total` | counter | `step` (`cast`, `resources`, `frames`, `clip`, `pilot`, `production`, `cut`) | approvals autopilot made after a passing review |

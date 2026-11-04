@@ -66,6 +66,7 @@ settings.review = {
 };
 settings.storyboard.production: boolean;  // off in the schema, on for new projects: storyboard every production scene
 settings.storyboard.sheet: boolean;       // off by default: draw a scene on one sheet (storyboard.md#scene-sheets)
+settings.consistency.frameEdits: boolean; // off by default: correct a frame by an edit of itself (first-pass.md#frames-that-follow-their-shot)
 settings.consistency.turnaround: boolean; // off in the schema, on for new projects: a character's views on one sheet (first-pass.md)
 ```
 

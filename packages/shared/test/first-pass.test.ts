@@ -8,6 +8,7 @@ import {
   ClipReviewSchema,
   clipReviewVerdict,
   compileElementReferenceRequest,
+  compileFrameEditRequest,
   compileKeyframeRequest,
   compileMultiShotRequest,
   compileReferenceRequest,
@@ -15,6 +16,8 @@ import {
   DEFAULT_REVIEW_SETTINGS,
   ELEMENT_VIEWS,
   FIRST_PASS_BAR,
+  FRAME_EDIT_MAX_REFERENCES,
+  FRAME_EDIT_PHRASE,
   FrameReconcileOutputSchema,
   headCropped,
   LOOKING_INTO_CAMERA,
@@ -734,5 +737,58 @@ describe("a scene's continuity (docs/design/continuity.md#storytelling)", () => 
       existing: [],
     });
     expect(screenplay.scenes[0]!.continuity).toBe(long.trim());
+  });
+});
+
+describe('a frame corrected by an edit of itself (docs/design/first-pass.md#frames-that-follow-their-shot)', () => {
+  const ctx: ShotContext = {
+    shot: f.shot({ camera: { ...f.shot().camera, movement: 'static' } }),
+    characters: [],
+    screenplay: null,
+    settings: ProjectSettingsSchema.parse({ generation: { promptVersion: 3 } }),
+  };
+  const edit = (opts: { referenceUris: string[]; referenceLabels: string[] }) =>
+    compileFrameEditRequest(ctx, {
+      frameUri: 'data:image/jpeg;base64,FRAME',
+      fix: 'Rosie faces frame right; the string hangs from the kite to the handle.',
+      attempt: 1,
+      ...opts,
+    });
+
+  it('sends the frame first, a few of the cast references, and only what to change', () => {
+    const req = edit({
+      referenceUris: ['data:a', 'data:b', 'data:c', 'data:d', 'data:e'],
+      referenceLabels: ['Rosie (whole figure)', 'Rosie (three quarter)', 'Sammy (whole figure)', 'x', 'y'],
+    });
+    const [text, frame, ...refs] = req.input as { type: string; text?: string; uri?: string }[];
+    expect(text!.text).toContain(
+      `${FRAME_EDIT_PHRASE} Rosie faces frame right; the string hangs from the kite to the handle.`,
+    );
+    expect(text!.text).toContain(
+      'The next images show how they look: 2 Rosie (whole figure); 3 Rosie (three quarter); 4 Sammy (whole figure).',
+    );
+    expect(frame).toEqual({ type: 'image', uri: 'data:image/jpeg;base64,FRAME' });
+    expect(refs).toHaveLength(FRAME_EDIT_MAX_REFERENCES);
+    // None of the shot's own lines, which would ask for a new drawing
+    expect(text!.text).not.toContain(ctx.shot.description);
+    expect(req.parameters?.dimensions).toEqual(ctx.settings.resolution);
+  });
+
+  it("leaves out an image nothing says the purpose of, such as the scene's opening frame", () => {
+    const req = edit({
+      referenceUris: ['data:rosie', 'data:opening'],
+      referenceLabels: ['Rosie (whole figure)'],
+    });
+    expect(req.input.slice(1).map((p) => (p as { uri: string }).uri)).toEqual([
+      'data:image/jpeg;base64,FRAME',
+      'data:rosie',
+    ]);
+  });
+
+  it('is off until a project asks for it, and the patch schema carries it', () => {
+    expect(ProjectSettingsSchema.parse({}).consistency.frameEdits).toBe(false);
+    expect(ProjectSettingsPatchSchema.parse({ consistency: { frameEdits: true } }).consistency).toEqual({
+      frameEdits: true,
+    });
   });
 });

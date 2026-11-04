@@ -392,7 +392,13 @@ review later marks (in fp20's kite storyboard five of the review's six major iss
 readings), and a new seed fixes about one frame in five, so an edit ("keep everything in it exactly as it is and change
 only this") looked likely to converge. Measured on fp23 and fp24, it did not: continuity stayed at 4–5.5 (the kite
 storyboard 7.1 and the riding ones 6.7 and 6.9, against 7.2 and 6.8 on average without edits), and the kite
-storyboard's character fell to 6 (8–9 on every run before).
+storyboard's character fell to 6 (8–9 on every run before). Those runs [dropped every reference image](#the-image-model-never-saw-its-references),
+so the "edit" never saw the frame it was to edit: they measured a sentence, not an edit.
+
+With `consistency.frameEdits` (off by default) an attempt after a reading that asks for a redraw edits the frame that reading
+read (`compileFrameEditRequest`: the frame first, up to three of the cast's labelled references, "Edit the first image: keep
+everything in it exactly as it is … and change only this: …"). It passes the same checks, the best attempt is still the one kept,
+and an edit that fails them is followed by a drawing. `rideo_frame_edits_total{source}` counts them. Being measured (fp48).
 
 ## Frames that agree with each other
 
