@@ -513,7 +513,7 @@ videos through the pipeline. It does not grade the models: an answer passes when
 | `VISION_MODEL` | | `qwen3.8-max` | its id |
 | `VISION_MODEL_API_KEY` | yes | | its key |
 | `VIDEO_GEN_DURATION_SEC` | | `5` (default) | the shot length the video model renders |
-| `MM_GATEWAY_IMAGE` | | `ghcr.io/sloth-os/mm-gateway:sha-3f39b4e` (default) | the gateway image to run: the default delivers inline reference images to Seedream ([what older gateways do](design/first-pass.md#the-image-model-never-saw-its-references)), [says in the prompt what a backend has no field for](design/ai-gateway.md#sdk-usage), and has Wan 3.x's native requests (sound, first and last frames, references, the resolution tier) |
+| `MM_GATEWAY_IMAGE` | | `ghcr.io/sloth-os/mm-gateway:sha-bca5bd9` (default) | the gateway image to run: the default delivers inline reference images to Seedream ([what older gateways do](design/first-pass.md#the-image-model-never-saw-its-references)), [says in the prompt what a backend has no field for](design/ai-gateway.md#sdk-usage), and has Wan 3.x's native requests (sound, first and last frames, references, the resolution tier) |
 | `MM_GATEWAY_URL` / `MM_GATEWAY_API_KEY` | | | use a running gateway configured the same way instead |
 
 ```bash
