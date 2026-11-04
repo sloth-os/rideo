@@ -84,6 +84,9 @@ const task = await client.generateMusic(req, { idempotencyKey, signal, metadata,
 - Every finished task adds its output (images, seconds) and cost (`usage.cost` when the gateway reports one, else the
   price table) to the current job's usage, and to `rideo_gateway_task_seconds` and `rideo_gateway_usage_total`.
 - Outputs arrive as `https://…` or `data:` URIs. `MediaStore.importUri()` downloads, hashes and stores them.
+- A negative prompt the backend has no field for is merged into the prompt by mm-gateway (`d35ef17` on; older gateways drop it).
+  So a still sends only what concerns a still, with no motion artefacts, and a video to a model that declares
+  `supports_negative_prompt: false` (Wan 3.0) sends only what a person typed for the shot: its prompt's `Avoid:` line has the rest.
 - Reference images go inline, as `data:` URIs. mm-gateway before f3ff138 forwards only an image part's `url` on its
   `volcengine` route, so **Seedream gets none of them, with no error**
   ([first-pass](first-pass.md#the-image-model-never-saw-its-references)): run f3ff138 or later. The video route forwards them

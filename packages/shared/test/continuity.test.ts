@@ -177,8 +177,14 @@ describe('prompt version 2 (docs/design/continuity.md#prompts-version-2)', () =>
     const long = negativePromptFor(ctx);
     expect(long.length).toBeLessThanOrEqual(NEGATIVE_PROMPT_MAX);
     expect(long.startsWith(BASE_NEGATIVE)).toBe(true);
-    const req = compileKeyframeRequest(ctxV2(), { referenceUris: [], attempt: 0 });
-    expect(req.parameters?.negative_prompt).toBe(BASE_NEGATIVE_V2);
+    // A still has no motion to spoil, and the gateway may say this in its prompt
+    const still = compileKeyframeRequest(ctxV2(), { referenceUris: [], attempt: 0 });
+    expect(still.parameters?.negative_prompt).toBe(BASE_NEGATIVE);
+    const own = ctxV2();
+    own.shot.negativePrompt = 'kangaroos';
+    expect(compileKeyframeRequest(own, { referenceUris: [], attempt: 0 }).parameters?.negative_prompt).toBe(
+      `${BASE_NEGATIVE}, kangaroos`,
+    );
   });
 
   it('turns the provider’s prompt rewriting off for version 2 unless the project asks for it', () => {
@@ -208,6 +214,12 @@ describe('prompt version 2 (docs/design/continuity.md#prompts-version-2)', () =>
     });
     expect(framed.input.map((p) => (p.type === 'text' ? 'text' : p.role))).toEqual(['text', 'first_frame']);
     expect(framed.parameters).not.toHaveProperty('negative_prompt');
+    // What a person typed still goes: the gateway says it in the prompt, whose Avoid line has the rest
+    const typed = ctxV2();
+    typed.shot.negativePrompt = 'kangaroos';
+    expect(
+      compileVideoRequest(typed, { referenceUris: [], attempt: 0, limits: wan3 }).parameters?.negative_prompt,
+    ).toBe('kangaroos');
     // Without a frame the references go; other models keep both and the negative prompt
     const referenced = compileVideoRequest(ctx, {
       referenceUris: ['data:image/png;base64,BB'],

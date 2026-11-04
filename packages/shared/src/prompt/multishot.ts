@@ -13,6 +13,7 @@ import {
   inFrameLine,
   LOOKING_INTO_CAMERA,
   negativePromptFor,
+  ownNegativePrompt,
   PHYSICS_LINE,
   plannedShotRange,
   promptVersionOf,
@@ -239,7 +240,7 @@ export function compileMultiShotRequest(
       dimensions: { width: first.settings.resolution.width, height: first.settings.resolution.height },
       seed: shotSeed(first.shot, first.characters, opts.attempt),
       ...(opts.limits?.supports_negative_prompt === false
-        ? {}
+        ? ownNegativePrompt(first)
         : {
             negative_prompt: v2
               ? negativePromptFor(first, { camera: false })

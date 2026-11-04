@@ -153,7 +153,7 @@ export function compileSheetRequest(
     parameters: {
       dimensions: { width: layout.width, height: layout.height },
       seed: shotSeed(first.shot, first.characters, opts.attempt),
-      negative_prompt: negativePromptFor(first, { camera: false }),
+      negative_prompt: negativePromptFor(first, { still: true }),
       output_count: 1,
     },
   };

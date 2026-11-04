@@ -398,7 +398,19 @@ so the "edit" never saw the frame it was to edit: they measured a sentence, not 
 With `consistency.frameEdits` (off by default) an attempt after a reading that asks for a redraw edits the frame that reading
 read (`compileFrameEditRequest`: the frame first, up to three of the cast's labelled references, "Edit the first image: keep
 everything in it exactly as it is … and change only this: …"). It passes the same checks, the best attempt is still the one kept,
-and an edit that fails them is followed by a drawing. `rideo_frame_edits_total{source}` counts them. Being measured (fp48).
+and an edit that fails them is followed by a drawing. `rideo_frame_edits_total{source}` counts them.
+
+Measured with references delivered (fp48, the frozen plans of fp39, four scenes, one run of each):
+
+| A frame the reading flags | Correction that fixed it | Never fixed in three attempts | Conflicts in the kept frames | Storyboard |
+|---|---|---|---|---|
+| Drawn again | 10 of 29 (34%) | 9 | 20 | 7.40 (7.27 in fp46) |
+| Edited | 12 of 19 (63%) | 2 | 12 | 7.23 (continuity 5.8, character 8.6) |
+
+An edit keeps the place, the light and the look and changes what it was told, as the earlier runs could not show. It fixes what the
+reading flags and the review does not reward it: −0.11 against the two runs drawn again (95% CI −0.38 to +0.11), continuity level.
+The reading looks at one frame; what the review still marks is mostly between frames (a handle that teleports, a string gone in the
+next shot). So it stays off.
 
 ## Frames that agree with each other
 
@@ -712,6 +724,7 @@ cell is one run's first round; the scores of the same build and brief differ by 
 | fp15: the opening frame kept as "the same moment" | riding 7.9; kite 7.4 | riding 8.9 (consistency 7.9); kite **9.0, every dimension 8 or more** | riding 6.9; kite 6.6 (continuity 5 and 4.5: later frames held to the opening frame's states and people) |
 | fp16: the screenplay read for the video model (removed since); the opening frame for the place only | riding 7.0; kite 6.8 | riding 8.7 (consistency 7.6); kite **8.9, every dimension 8 or more** | riding 6.5; kite 7.3; kite pilot scene 6.3 (temporal and physics 5: the kite launched a scene early), first takes 6.0 |
 | fp17: wrong-side landmarks and wind redrawn, nobody looks into the lens | riding 7.1; kite 7.4 | riding 8.9 (consistency 7.9); kite **9.0, every dimension 8 or more** | riding 6.7 (a frame lost to an empty image, fixed since); kite **7.4, one major issue** (storytelling and coverage 8, character 9) |
+| fp48: frames corrected by an edit of themselves; negatives merged into still prompts by the gateway (storyboards only, plans of fp39) | – | – | 7.23 ([edits](#frames-that-follow-their-shot)); 7.35 (merged, +0.01 against frames without them, 95% CI −0.08 to +0.10) |
 | fp47: fresh runs, references delivered, new projects' settings (to the storyboard) | riding 8.1 (continuity 7.3, feasibility 7.7, pacing 7.7); kite 8.2 (continuity 7.3, feasibility 7) | riding **8.9, every dimension 8 or more** (likeness 8.5); kite **9.1, every dimension 8 or more** | riding 6.6 (continuity 5.3, feasibility 6); kite 7.0 (continuity 5.7, character 6.3) |
 | fp47: fp39's plans, takes with references delivered: frames alone; at full size from panels | – | – | shots' watches 6.50; 5.08; [above](#a-scene-drawn-on-one-sheet) |
 | fp46: the desk with references delivered (storyboards only) | – | – | 7.00 (blocking 4.4, continuity 5.8); [the desk stays off](#the-desk-on-request) |

@@ -649,25 +649,37 @@ export function compileFrameEditRequest(
     parameters: {
       dimensions: { width: settings.resolution.width, height: settings.resolution.height },
       seed: shotSeed(shot, ctx.characters, opts.attempt, opts.variation),
-      // A still has no camera movement to hold
-      negative_prompt: negativePromptFor(ctx, { camera: false }),
+      negative_prompt: negativePromptFor(ctx, { still: true }),
       output_count: 1,
     },
   };
 }
 
+/**
+ * What a person typed for this shot, for a model without a negative prompt field: the gateway says it in the prompt,
+ * whose own `Avoid:` line already has the rest (docs/design/ai-gateway.md#sdk-usage).
+ */
+export function ownNegativePrompt(ctx: Pick<ShotContext, 'shot'>): { negative_prompt?: string } {
+  const own = clean(ctx.shot.negativePrompt ?? '');
+  return own ? { negative_prompt: own } : {};
+}
+
 /** The negative prompt of a shot: version 2 adds motion artefacts and keeps to 500 characters. */
 export function negativePromptFor(
   ctx: Pick<ShotContext, 'shot' | 'settings'>,
-  /** `camera: false`: a sequence, whose segments each have their own camera. */
-  opts: { camera?: boolean } = {},
+  opts: {
+    /** `false`: a sequence, whose segments each have their own camera. */
+    camera?: boolean;
+    /** A still has no motion to spoil, and the gateway may say this in its prompt (docs/design/ai-gateway.md#sdk-usage). */
+    still?: boolean;
+  } = {},
 ): string {
   if (promptVersionOf(ctx.settings) < 2)
     return [BASE_NEGATIVE, clean(ctx.shot.negativePrompt ?? '')].filter(Boolean).join(', ');
   const text = [
-    BASE_NEGATIVE_V2,
+    opts.still ? BASE_NEGATIVE : BASE_NEGATIVE_V2,
     avoidsTheLens(ctx) ? LOOKING_INTO_CAMERA.replace(/^anyone /, '') : '',
-    opts.camera === false ? '' : (cameraHold(ctx)?.avoid ?? ''),
+    opts.still || opts.camera === false ? '' : (cameraHold(ctx)?.avoid ?? ''),
     clean(ctx.shot.negativePrompt ?? ''),
   ]
     .filter(Boolean)
@@ -932,7 +944,7 @@ export function compileKeyframeRequest(
       dimensions: { width: settings.resolution.width, height: settings.resolution.height },
       seed: shotSeed(shot, ctx.characters, opts.attempt, opts.variation),
       // A still has no camera movement to hold
-      negative_prompt: negativePromptFor(ctx, { camera: false }),
+      negative_prompt: negativePromptFor(ctx, { still: true }),
       output_count: 1,
     },
   };
@@ -991,7 +1003,9 @@ export function compileVideoRequest(
       duration_seconds: clampDuration(opts.durationSec ?? shot.durationSec, opts.limits),
       dimensions: { width: settings.resolution.width, height: settings.resolution.height },
       seed: shotSeed(shot, ctx.characters, opts.attempt, opts.variation),
-      ...(opts.limits?.supports_negative_prompt === false ? {} : { negative_prompt: negativePromptFor(ctx) }),
+      ...(opts.limits?.supports_negative_prompt === false
+        ? ownNegativePrompt(ctx)
+        : { negative_prompt: negativePromptFor(ctx) }),
       include_audio: opts.includeAudio ?? settings.generation.includeAudio,
       camera_motion:
         cameraMove(shot.camera.move)?.cameraMotion ?? (shot.camera.movement === 'static' ? 'fixed' : 'auto'),

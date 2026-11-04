@@ -24,7 +24,7 @@ prompts": the latest version, or 1); switching makes current storyboard frames
 | Planning (`clip.plan`) | shots sized to the model | + coverage rules, lens, end state, the previous shot, dialogue sized to the shot |
 | Keyframe prompt | style, description, camera, cast, elements | + the scene line, the previous shot's end state, the scene reference image, exclusions |
 | Video prompt | style, description, action, camera, cast, elements, dialogue | blocks: scene, shot, camera, cast, dialogue with voices (or "No dialogue."), sound, style, physics, exclusions |
-| Negative prompt | `BASE_NEGATIVE` | `BASE_NEGATIVE` + motion artefacts, at most 500 characters |
+| Negative prompt | `BASE_NEGATIVE` | a video: `BASE_NEGATIVE` + motion artefacts, at most 500 characters; a still: `BASE_NEGATIVE` |
 | Gate | identity (R4) | + temporal check and physics, continuity judged with the identity (when `consistency.qualityChecks`) |
 
 ## Storytelling
@@ -182,7 +182,8 @@ Avoid: <exclusions>.
   not move (an insert that widened, a close-up that pulled back).
 - **Exclusions in the text.** Some models (Wan 3.0) have no negative prompt field, so the last block lists the
   exclusions; the `negative_prompt` parameter carries them only for models that have one (`supports_negative_prompt`
-  is not `false`).
+  is not `false`). For the others it carries only what a person typed for the shot, which the gateway merges into the prompt
+  ([SDK usage](ai-gateway.md#sdk-usage)).
 - **Frames or references.** A model whose limits say `exclusive_frames_and_references` (Wan 3.0) takes a first or
   last frame, or references, never both: a request with a start frame sends no references (the frame already shows
   the cast and the place, and the gateway would drop them after carrying megabytes of images).
@@ -195,7 +196,8 @@ wording of the prompt; the board's prompt hash leaves the labels out.
 
 **Negative prompt.** `BASE_NEGATIVE_V2` = `BASE_NEGATIVE` + `morphing, warping, flicker, extra or missing limbs,
 floating objects, sliding feet, objects passing through each other, sudden lighting change, jump cut`, plus the shot's
-own negative prompt, cut at 500 characters (the limit of Wan models).
+own negative prompt, cut at 500 characters (the limit of Wan models). A still takes `BASE_NEGATIVE` and the shot's own: it has no
+motion to spoil.
 
 **Prompt rewriting.** Some providers rewrite prompts with their own LLM (Wan's `prompt_extend`, on by default), which
 can change a line of dialogue, drop a continuity detail or plan more shots (Wan 2.6 made multi-shot videos only with
