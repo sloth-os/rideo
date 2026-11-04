@@ -235,6 +235,12 @@ function SettingsDialog({
               'castOnly',
             )}
             {toggle(
+              'Correct a flagged frame by editing it, not drawing it again',
+              s.consistency.frameEdits,
+              (v) => setS({ ...s, consistency: { ...s.consistency, frameEdits: v } }),
+              'frameEdits',
+            )}
+            {toggle(
               'Music in a take fails it: generate it again (each retry is a paid take)',
               s.consistency.rejectMusic,
               (v) => setS({ ...s, consistency: { ...s.consistency, rejectMusic: v } }),

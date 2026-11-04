@@ -73,6 +73,26 @@ test('the project settings show the review gates at 8 and save a new bar', async
     .toMatchObject({ threshold: 8, sceneThreshold: 8, minDimension: 7.5 });
 });
 
+/** A flagged frame edited rather than drawn again (docs/design/first-pass.md#frames-that-follow-their-shot), desktop and phone. */
+test('the project settings turn on correcting a flagged frame by editing it', async ({
+  page,
+  request,
+}, testInfo) => {
+  const api = new Api(request);
+  const pid = await api.storyProject(`Frame edits (${testInfo.project.name})`);
+  await page.goto(`/p/${pid}/overview`);
+  await page.getByTestId('open-settings').click();
+  const edits = page.locator('input[name="frameEdits"]');
+  await expect(edits).not.toBeChecked();
+  await edits.check();
+  await page.getByTestId('settings-save').click();
+  await expect
+    .poll(
+      async () => (await api.call<any>('GET', `/projects/${pid}/state`)).docs.project.settings.consistency,
+    )
+    .toMatchObject({ frameEdits: true });
+});
+
 /** How many screenplay drafts a project writes (docs/design/first-pass.md#two-drafts-the-better-kept), desktop and phone. */
 test('a project writes one screenplay draft until its settings ask for more', async ({
   page,

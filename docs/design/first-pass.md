@@ -35,8 +35,7 @@ opening frame as a reference, ten references against six, a character's views dr
 references and fp43's frames from panels. What stands: what goes by words (the writers, the reviewers, the planner's rules,
 framings spelled out) and what Wan did with its first frames (fp42's takes from panels).
 
-mm-gateway has the fix since f3ff138, and the real-model suite pins it (`e2e/real/env.ts`). A deployed gateway gets references,
-and the numbers from fp45 on, once it runs that image or later; on November 3, 2026 the demo server still ran 98b05a9.
+mm-gateway has the fix since f3ff138, and the real-model suite and the demo server run it (`e2e/real/env.ts`).
 
 ## What the first pass scored
 
@@ -395,7 +394,7 @@ storyboard 7.1 and the riding ones 6.7 and 6.9, against 7.2 and 6.8 on average w
 storyboard's character fell to 6 (8–9 on every run before). Those runs [dropped every reference image](#the-image-model-never-saw-its-references),
 so the "edit" never saw the frame it was to edit: they measured a sentence, not an edit.
 
-With `consistency.frameEdits` (off by default) an attempt after a reading that asks for a redraw edits the frame that reading
+With `consistency.frameEdits` (off by default; *Correct a flagged frame by editing it* in the project settings) an attempt after a reading that asks for a redraw edits the frame that reading
 read (`compileFrameEditRequest`: the frame first, up to three of the cast's labelled references, "Edit the first image: keep
 everything in it exactly as it is … and change only this: …"). It passes the same checks, the best attempt is still the one kept,
 and an edit that fails them is followed by a drawing. `rideo_frame_edits_total{source}` counts them.
@@ -789,8 +788,7 @@ with every dimension at 8: feasibility 6.7–7.3), casts 9.1 and 8.8 (fp39; kite
 storyboards 7.3 and 6.7 (fp39, on sheets; continuity 6.4 and 4.4), pilot scenes 6.0 and 5.2 (fp39, from panels; continuity
 4 and 3). New projects have since gone back to frames drawn alone (fp42).
 
-With references delivered on an eval gateway (November 3; fp47, one run of each brief, not what the demo server gets until its
-gateway runs the fix): screenplays 8.2 and 8.1 (continuity 7.3; feasibility 7 and 7.7), casts 9.1 and 8.9 with every
+With references delivered on an eval gateway (November 3; fp47, one run of each brief): screenplays 8.2 and 8.1 (continuity 7.3; feasibility 7 and 7.7), casts 9.1 and 8.9 with every
 dimension at 8 (riding did that 3 runs in 15 before, so one run proves little), storyboards 7.0 and 6.6 (continuity 5.7 and 5.3).
 Scene reviews on frozen plans, one attempt a shot: 6.32 (continuity 4.5). A pilot of these fresh runs has not been made. Those
 screenplays were written with two drafts; new projects have since gone back to one ([two drafts](#two-drafts-the-better-kept)).
