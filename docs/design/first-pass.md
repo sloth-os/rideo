@@ -406,10 +406,30 @@ Measured with references delivered (fp48, the frozen plans of fp39, four scenes,
 | Drawn again | 10 of 29 (34%) | 9 | 20 | 7.40 (7.27 in fp46) |
 | Edited | 12 of 19 (63%) | 2 | 12 | 7.23 (continuity 5.8, character 8.6) |
 
-An edit keeps the place, the light and the look and changes what it was told, as the earlier runs could not show. It fixes what the
-reading flags and the review does not reward it: −0.11 against the two runs drawn again (95% CI −0.38 to +0.11), continuity level.
+An edit keeps the place, the light and the look, as the earlier runs could not show, and sometimes changes what it was told; often it
+barely changes the picture ([below](#a-scene-read-whole-tried-removed)), so part of that fix rate is the reading changing its mind. It
+clears what the reading flags and the review does not reward it: −0.11 against the two runs drawn again (95% CI −0.38 to +0.11), continuity level.
 The reading looks at one frame; what the review still marks is mostly between frames (a handle that teleports, a string gone in the
 next shot). So it stays off.
+
+### A scene read whole (tried, removed)
+
+The reading above looks at one frame at a time, and what the storyboard review still marks is mostly between frames: a handle that
+teleports, a string gone in the next shot, a barn on the other side. So a scene's frames, once drawn and before the review, were read
+together (`scene.reconcile`: every frame in story order with every shot's plan), and the frame each contradiction named was edited, up to
+half of the scene, keeping a frame whose edit failed its checks. Measured with references delivered on the plans of fp39, four scenes:
+
+| Edit | Storyboard | Continuity | Edited frames flagged again when the scene is read again | Likeness before to after (SSIM, median) |
+|---|---|---|---|---|
+| None (control, same time) | 7.20 | 5.6 | – | – |
+| "Keep everything in it exactly as it is and change only this" | 7.15 and 7.03 | 5.5 and 5.0 | 4 of 7 | 0.73 |
+| "Change the first image so that this is true", the rest after it | 7.23 | 5.5 | 5 of 7 | 0.81 |
+
+The reading works: what it names is what the review goes on to mark ("stray kite handle ring", "the bucket floats at Rosie's waist", "the
+paw on Rosie, not Biscuit's neck"). The edit does not: side by side, most edited frames are the same picture with the fault still in it,
+with either wording, and frames nobody edited are flagged on the second reading too, so the reading itself varies. The image model
+re-renders rather than moves an object. Finding the faults is no longer the problem: what would make this worth having is an image model
+that can move things in a picture it is given.
 
 ## Frames that agree with each other
 
@@ -723,6 +743,7 @@ cell is one run's first round; the scores of the same build and brief differ by 
 | fp15: the opening frame kept as "the same moment" | riding 7.9; kite 7.4 | riding 8.9 (consistency 7.9); kite **9.0, every dimension 8 or more** | riding 6.9; kite 6.6 (continuity 5 and 4.5: later frames held to the opening frame's states and people) |
 | fp16: the screenplay read for the video model (removed since); the opening frame for the place only | riding 7.0; kite 6.8 | riding 8.7 (consistency 7.6); kite **8.9, every dimension 8 or more** | riding 6.5; kite 7.3; kite pilot scene 6.3 (temporal and physics 5: the kite launched a scene early), first takes 6.0 |
 | fp17: wrong-side landmarks and wind redrawn, nobody looks into the lens | riding 7.1; kite 7.4 | riding 8.9 (consistency 7.9); kite **9.0, every dimension 8 or more** | riding 6.7 (a frame lost to an empty image, fixed since); kite **7.4, one major issue** (storytelling and coverage 8, character 9) |
+| fp49, fp50: a scene's frames read together and edited, with two wordings (storyboards only, plans of fp39) | – | – | 7.15, 7.03, 7.23 against 7.20 at the same time; [the reading finds the faults, the edit does not fix them](#a-scene-read-whole-tried-removed) |
 | fp48: frames corrected by an edit of themselves; negatives merged into still prompts by the gateway (storyboards only, plans of fp39) | – | – | 7.23 ([edits](#frames-that-follow-their-shot)); 7.35 (merged, +0.01 against frames without them, 95% CI −0.08 to +0.10) |
 | fp47: fresh runs, references delivered, new projects' settings (to the storyboard) | riding 8.1 (continuity 7.3, feasibility 7.7, pacing 7.7); kite 8.2 (continuity 7.3, feasibility 7) | riding **8.9, every dimension 8 or more** (likeness 8.5); kite **9.1, every dimension 8 or more** | riding 6.6 (continuity 5.3, feasibility 6); kite 7.0 (continuity 5.7, character 6.3) |
 | fp47: fp39's plans, takes with references delivered: frames alone; at full size from panels | – | – | shots' watches 6.50; 5.08; [above](#a-scene-drawn-on-one-sheet) |
