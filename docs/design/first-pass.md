@@ -431,6 +431,21 @@ with either wording, and frames nobody edited are flagged on the second reading 
 re-renders rather than moves an object. Finding the faults is no longer the problem: what would make this worth having is an image model
 that can move things in a picture it is given.
 
+### A scene read whole, then a frame picked (tried, not merged)
+
+Since an edit cannot fix what the reading finds, a frame the reading faulted was drawn twice more instead, told what to correct, and
+the reading model chose among the three beside the scene's other frames (a candidate offered only when it passed the checks of any
+frame). Measured against a control drawn at the same time (fp51, the same four scenes):
+
+| | Storyboard | Continuity | Character | Composition | Coverage |
+|---|---|---|---|---|---|
+| Control | 7.28 | 5.5 | 8.1 | 7.35 | 7.75 |
+| Faulted frames picked again | 7.17 | 5.9 | 8.25 | 7.18 | 7.42 |
+
+The difference is −0.10 (95% CI −0.35 to +0.23); continuity rose in three scenes of four (+1.0, +0.3, +1.0, −0.7) and coverage
+fell, as a choice of the frame that agrees most with the others is also a choice of the frame most like them. A new candidate was
+chosen for 7 of 8 faulted frames, and 5 of the 8 were faulted again when the scene was read again, about as many as after an edit.
+
 ## Frames that agree with each other
 
 Each frame followed its own shot and the storyboards' continuity stayed at 5–6: the frames disagreed with each other.
@@ -744,6 +759,7 @@ cell is one run's first round; the scores of the same build and brief differ by 
 | fp16: the screenplay read for the video model (removed since); the opening frame for the place only | riding 7.0; kite 6.8 | riding 8.7 (consistency 7.6); kite **8.9, every dimension 8 or more** | riding 6.5; kite 7.3; kite pilot scene 6.3 (temporal and physics 5: the kite launched a scene early), first takes 6.0 |
 | fp17: wrong-side landmarks and wind redrawn, nobody looks into the lens | riding 7.1; kite 7.4 | riding 8.9 (consistency 7.9); kite **9.0, every dimension 8 or more** | riding 6.7 (a frame lost to an empty image, fixed since); kite **7.4, one major issue** (storytelling and coverage 8, character 9) |
 | fp49, fp50: a scene's frames read together and edited, with two wordings (storyboards only, plans of fp39) | – | – | 7.15, 7.03, 7.23 against 7.20 at the same time; [the reading finds the faults, the edit does not fix them](#a-scene-read-whole-tried-removed) |
+| fp51: the faulted frames drawn twice more and one picked (storyboards only, plans of fp39) | – | – | 7.17 against 7.28 at the same time, continuity 5.9 against 5.5; [5 of 8 faulted again](#a-scene-read-whole-then-a-frame-picked-tried-not-merged) |
 | fp48: frames corrected by an edit of themselves; negatives merged into still prompts by the gateway (storyboards only, plans of fp39) | – | – | 7.23 ([edits](#frames-that-follow-their-shot)); 7.35 (merged, +0.01 against frames without them, 95% CI −0.08 to +0.10) |
 | fp47: fresh runs, references delivered, new projects' settings (to the storyboard) | riding 8.1 (continuity 7.3, feasibility 7.7, pacing 7.7); kite 8.2 (continuity 7.3, feasibility 7) | riding **8.9, every dimension 8 or more** (likeness 8.5); kite **9.1, every dimension 8 or more** | riding 6.6 (continuity 5.3, feasibility 6); kite 7.0 (continuity 5.7, character 6.3) |
 | fp47: fp39's plans, takes with references delivered: frames alone; at full size from panels | – | – | shots' watches 6.50; 5.08; [above](#a-scene-drawn-on-one-sheet) |
@@ -835,7 +851,9 @@ What keeps each under 8, what was tried, and what to try next:
    the wind as reasons to redraw (fp17: one major issue left on the kite storyboard). Then: a scene drawn on one
    sheet ([a scene drawn on one sheet](#a-scene-drawn-on-one-sheet)): on eight scenes of frozen plans 7.14 → 7.59,
    continuity 5.5 → 6.2, character 7.2 → 8.0, every scene better, but takes from its panels scored 1.62 lower, so it is off
-   for new projects until a full-size frame can keep what the panel agreed on. *Next:* the staging check answers with
+   for new projects until a full-size frame can keep what the panel agreed on. Then: a scene's frames read together, and the
+   frames it faults edited or drawn again and picked (fp49–fp51): the reading finds what the review marks, and neither way
+   clears it (4 to 5 of 7 or 8 faulted again). *Next:* the staging check answers with
    the model's full reasoning (`frame.reconcile` is not in `REASONING_OFF_TASKS`; one panel's reading in fp29 took 217 s
    and wrote 9,069 tokens), and a sheet waits for its slowest panel: measure whether it reads frames as well without
    reasoning, as the identity judge did.
