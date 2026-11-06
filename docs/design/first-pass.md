@@ -746,6 +746,17 @@ with 6 of 8 passing against 2. The same render and no new video: each take now h
 each shot shows that shot. A take that fails is made again alone, so the old split would have made six of the eight
 shots again and the new one two. With riding 1 at 6.67, fp53's four scenes average 6.83 against about 6.4 shot by shot.
 
+**Fresh renders with the split** (fp56, November 2026, the plans of fp39 drawn and rendered again, one render a scene and no
+remakes): every cut was found but one (riding 1's first, placed from the plan), 19 of the 24 takes passed their watch, and
+the scenes reviewed kite 1 6.93, kite 2 5.90, riding 1 6.40 and riding 2 7.23, a mean of 6.62, above every one of the six
+runs shot by shot (6.16 to 6.49). Three scenes gain 0.5 to 0.7 over the mean of those runs and kite 2 loses 0.6, as it did
+in fp53. Its story is the kite's: lifted, dropped and flown, with a string and a tail. Made shot by shot, every take starts
+from a frame whose kite was drawn and checked; rendered in one request, every shot after the first starts from what the
+video model made of the one before, and its review names the kite (a string running into empty sky, a tail floating free:
+physics 4.0 against 5.0 to 6.7) and a close-up that puts the lone tree on the other side. A scene can have both: a shot
+with an approved frame starts a new group ([when](multi-shot.md#when)), so approving the frames where a prop must be
+exactly right, and only those, would render the rest in one request from each of them (not measured).
+
 ## Scenes count what they heard
 
 A scene watched before the edit is heard by the audio-visual model ([scenes before the
@@ -814,6 +825,7 @@ cell is one run's first round; the scores of the same build and brief differ by 
 | fp49, fp50: a scene's frames read together and edited, with two wordings (storyboards only, plans of fp39) | – | – | 7.15, 7.03, 7.23 against 7.20 at the same time; [the reading finds the faults, the edit does not fix them](#a-scene-read-whole-tried-removed) |
 | fp52: the faulted frames edited by Qwen-Image 2.0 Pro (storyboards only, plans of fp39) | – | – | 6.75 against 7.00 at the same time, continuity 5.17 against 5.68; [7 of 7 faulted again](#a-scene-read-whole-edited-by-another-model-tried-not-merged) |
 | fp53: each scene rendered in one request (plans of fp39, one render, no remakes) | – | – | scene reviews 6.80, 6.00, 5.97, 7.83 (mean 6.65) against about 6.4 shot by shot; [the split decides it](#a-scene-rendered-in-one-request-measured-not-the-default) |
+| fp56: each scene drawn and rendered again in one request with the split (plans of fp39, one render, no remakes) | – | – | scene reviews 6.93, 5.90, 6.40, 7.23 (mean 6.62) against 6.16–6.49 for six runs shot by shot; takes passing 19 of 24 |
 | fp55: fp53's riding 1 render split again at the cuts found near the planned ones (same render, reviewed beside the old split) | – | – | scene 6.67 against 5.97; takes passing 6 of 8 against 2 |
 | fp54: HappyHorse 1.1 instead of Wan 3.0, from the same 13 approved frames | – | – | shots' watch 5.0 against 6.1, passed 5 against 7; kite scene 5.7 |
 | fp51: the faulted frames drawn twice more and one picked (storyboards only, plans of fp39) | – | – | 7.17 against 7.28 at the same time, continuity 5.9 against 5.5; [5 of 8 faulted again](#a-scene-read-whole-then-a-frame-picked-tried-not-merged) |
@@ -926,9 +938,10 @@ model's; a take watch that finds it could have the take made again). Wan's own p
    ([a take that fails](#a-take-that-fails-is-told-what-to-correct)). HappyHorse 1.1, the provider's other image-to-video
    model, scored lower from the same frames (fp54). A scene rendered in one request scored up to 7.83 where its cuts were
    found ([one request](#a-scene-rendered-in-one-request-measured-not-the-default)), and the split now takes the cuts it
-   finds (fp55: riding 1 from 5.97 to 6.67 on the same render). *Next:* whole scenes rendered in one request measured
-   again on fresh renders, a render with too few cuts made again; then props the model handles badly (a kite in the wind)
-   kept to one state per short take, or out of the moving part of a shot.
+   finds (fp55: riding 1 from 5.97 to 6.67 on the same render); fresh renders reproduced it (fp56: mean 6.62 against 6.16 to
+   6.49 shot by shot) except in the scene whose story is a prop (kite 2). *Next:* approved frames only where a prop must be
+   exact, the rest of the scene rendered in one request from them; a render with too few cuts made again; then props the
+   model handles badly (a kite in the wind) kept to one state per short take, or out of the moving part of a shot.
 6. **Close framings drawn whole** (fixed, fp7) and **the AI blocking**: its cameras now follow each shot's planned
    layout where its marks allow ([following the shot plan](director-desk.md#following-the-shot-plan)), yet with the
    desk on the storyboards scored 6.1 and 6.6 (fp27) against 7.2 and 6.8 without it: the image model does not draw
