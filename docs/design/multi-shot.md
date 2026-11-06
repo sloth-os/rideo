@@ -59,9 +59,18 @@ lines put every line, word for word and in the right voice, inside its own shot 
 ## Splitting and verification
 
 The result is analysed with the shared scene-change filter (`select='gt(scene,0.3)',showinfo`, parsed by
-`parseAnalysisLog`). When it finds exactly one cut fewer than the group has shots, those cuts split the video;
-otherwise the planned durations do. The model keeps its own timing: Wan 3.0 cut a 3/4/3/4/3 s plan at 3.3, 8.1, 10.5
-and 14.2 s, and each take keeps its segment's length. A detected cut is its new shot's first frame, rounded to the
+`parseAnalysisLog`), and the cuts it finds are matched to the plan's (`multiShotBoundaries`): the planned durations,
+scaled to the render's length, give each cut its expected time, and each expected cut takes the nearest cut found
+within 0.45 of the shorter of its two shots (at most 1.5 s), in order, choosing the most cuts and then the closest. An
+expected cut that finds none keeps its expected time. The split is `detected` when every cut was found, `aligned` when
+some were, `planned` when none. The model keeps its own timing: Wan 3.0 cut a 3/4/3/4/3 s plan at 3.3, 8.1, 10.5 and
+14.2 s, and cut riding's 5/4/4/3/3/4/3/4 s plan 1.3 s off its fourth planned cut; each take keeps its segment's length.
+Until November 2026 the cuts split the video only when there was exactly one fewer than shots, and the planned times
+otherwise: a render with one cut too faint to find was split at the planned times throughout, and a flash counted as a
+cut threw every segment off ([one request](first-pass.md#a-scene-rendered-in-one-request-measured-not-the-default)). A
+render with far fewer cuts than shots (Wan rendered three shots for a plan of five) is logged
+(`the render has fewer cuts than its plan`); its segments' checks find what it left out.
+`rideo_sequence_splits_total{cut}` counts the splits. A detected cut is its new shot's first frame, rounded to the
 millisecond (10.042 for 10.0417), so a segment ends, and the next begins, half a frame before it: cut at the rounded
 time, a take ended on one frame of the next shot, which the jump check saw.
 

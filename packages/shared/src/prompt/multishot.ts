@@ -255,24 +255,69 @@ export function compileMultiShotRequest(
   };
 }
 
+/** How far a found cut may be from its expected time: this share of the shorter of its two shots, up to the cap. */
+export const CUT_TOLERANCE_SHARE = 0.45;
+export const CUT_TOLERANCE_MAX_SEC = 1.5;
+
 /**
- * Where to split a multi-shot render: the detected cuts when there is exactly one fewer than shots, otherwise the
- * planned durations scaled to the render's length. Returns the `planned.length + 1` boundaries.
+ * Where to split a multi-shot render (docs/design/multi-shot.md#splitting-and-verification): each cut the plan expects
+ * (the planned durations scaled to the render's length) takes the nearest cut found within its tolerance, in order,
+ * choosing the most cuts and then the closest; one that finds none keeps its expected time. `found` counts the cuts
+ * taken from the render. Returns the `planned.length + 1` boundaries.
  */
 export function multiShotBoundaries(
   detected: readonly number[],
   planned: readonly number[],
   total: number,
-): { boundaries: number[]; cut: 'detected' | 'planned' } {
+): { boundaries: number[]; cut: 'detected' | 'aligned' | 'planned'; found: number } {
   const cuts = [...detected].filter((t) => t > 0.2 && t < total - 0.2).sort((a, b) => a - b);
-  if (cuts.length === planned.length - 1) return { boundaries: [0, ...cuts, total], cut: 'detected' };
   const sum = planned.reduce((n, d) => n + d, 0) || 1;
-  const boundaries = [0];
+  const lengths = planned.map((d) => (d / sum) * total);
+  const expected: number[] = [];
   let at = 0;
-  for (const d of planned) {
-    at += (d / sum) * total;
-    boundaries.push(Math.round(at * 1000) / 1000);
+  for (const d of lengths.slice(0, -1)) {
+    at += d;
+    expected.push(at);
   }
-  boundaries[boundaries.length - 1] = total;
-  return { boundaries, cut: 'planned' };
+  const tolerance = expected.map((_, i) =>
+    Math.min(CUT_TOLERANCE_MAX_SEC, CUT_TOLERANCE_SHARE * Math.min(lengths[i]!, lengths[i + 1]!)),
+  );
+  // best[i][j]: the first i expected cuts matched among the first j found ones, the most matches and then the closest
+  const n = expected.length;
+  const m = cuts.length;
+  type Cell = { found: number; distance: number; step: 'skip' | 'keep' | 'match' | null };
+  const best: Cell[][] = Array.from({ length: n + 1 }, (_, i) =>
+    Array.from({ length: m + 1 }, (_, j) => ({
+      found: 0,
+      distance: 0,
+      step: i ? 'keep' : j ? 'skip' : null,
+    })),
+  );
+  const better = (a: Cell, b: Cell) => a.found > b.found || (a.found === b.found && a.distance < b.distance);
+  for (let i = 1; i <= n; i++)
+    for (let j = 1; j <= m; j++) {
+      const keep = best[i - 1]![j]!;
+      const skip = best[i]![j - 1]!;
+      let cell: Cell = better(skip, keep) ? { ...skip, step: 'skip' } : { ...keep, step: 'keep' };
+      const gap = Math.abs(cuts[j - 1]! - expected[i - 1]!);
+      if (gap <= tolerance[i - 1]!) {
+        const prev = best[i - 1]![j - 1]!;
+        const match: Cell = { found: prev.found + 1, distance: prev.distance + gap, step: 'match' };
+        if (better(match, cell)) cell = match;
+      }
+      best[i]![j] = cell;
+    }
+  const placed = expected.map((t) => Math.round(t * 1000) / 1000);
+  for (let i = n, j = m; i > 0; ) {
+    const step = best[i]![j]!.step;
+    if (step === 'match') placed[--i] = cuts[--j]!;
+    else if (step === 'skip') j--;
+    else i--;
+  }
+  const found = best[n]![m]!.found;
+  return {
+    boundaries: [0, ...placed, total],
+    cut: found === n ? 'detected' : found ? 'aligned' : 'planned',
+    found,
+  };
 }

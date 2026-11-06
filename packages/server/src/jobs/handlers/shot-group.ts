@@ -63,7 +63,7 @@ interface Segment {
   taskId: string;
   prompt: string;
   seed: number;
-  cut: 'detected' | 'planned';
+  cut: 'detected' | 'aligned' | 'planned';
 }
 
 /** Cut times of a render with the footage analysis' scene filter (docs/design/multi-shot.md#splitting-and-verification). */
@@ -219,11 +219,19 @@ export async function shotGroup(deps: HandlerDeps, ctx: JobContext) {
         const total = rawProbe.durationSec || planned.reduce((n, d) => n + d, 0);
         // Each segment keeps its part of the sound
         const sound = voiced && rawProbe.hasAudio;
-        const { boundaries, cut } = multiShotBoundaries(
+        const { boundaries, cut, found } = multiShotBoundaries(
           await detectCuts(deps, raw, total, ctx.signal),
           planned,
           total,
         );
+        deps.metrics.sequenceSplits.inc({ cut });
+        ctx.log.info({ clipId, cut, found, expected: shots.length - 1, boundaries }, 'split the render');
+        // A render that left out shots cannot be split into them; its segments' checks find what is missing
+        if (found * 2 < shots.length - 1)
+          ctx.log.warn(
+            { clipId, found, expected: shots.length - 1 },
+            'the render has fewer cuts than its plan',
+          );
         // A cut's time is its new shot's first frame, rounded to the millisecond (10.042 for 10.0417): a segment
         // ends, and the next begins, half a frame earlier, so neither holds a frame of the other shot
         const half = 0.5 / (rawProbe.fps || 30);

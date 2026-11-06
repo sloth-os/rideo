@@ -139,6 +139,9 @@ describe('multi-shot generation', () => {
     expect(a!.request.multiShot).toEqual({ index: 0, of: 2, cut: 'detected' });
     expect(b!.request.multiShot).toEqual({ index: 1, of: 2, cut: 'detected' });
     expect(c!.request.multiShot).toBeNull();
+    // Each split is counted by how its cuts were placed
+    const metrics = await (await fetch(`${stack.url}/metrics`)).text();
+    expect(metrics).toMatch(/rideo_sequence_splits_total\{cut="detected"\} [1-9]/);
     for (const t of [a!, b!]) {
       expect(t.consistency.status).toBe('passed');
       expect(t.durationSec!).toBeGreaterThan(9);
