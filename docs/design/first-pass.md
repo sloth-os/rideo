@@ -739,6 +739,13 @@ finds to the planned times and fills only a missing one from the plan would have
 fewer cuts than shots should be made again, not split. Whole scenes made shot by shot from keyframes, which an earlier attempt produced by
 mistake, scored kite 7.07 and riding 6.53 (one scene each).
 
+**The split now takes the cuts it finds** ([splitting](multi-shot.md#splitting-and-verification)). Riding 1's render, split
+again that way (6 of its 7 cuts from the render, one at its planned time), was reviewed three times beside the old split
+at the same time (fp55): the scene 6.67 against 5.97 (continuity 5.3 against 4), its takes' watches 6.25 against 5.63,
+with 6 of 8 passing against 2. The same render and no new video: each take now holds one shot, and the review's strip of
+each shot shows that shot. A take that fails is made again alone, so the old split would have made six of the eight
+shots again and the new one two. With riding 1 at 6.67, fp53's four scenes average 6.83 against about 6.4 shot by shot.
+
 ## Scenes count what they heard
 
 A scene watched before the edit is heard by the audio-visual model ([scenes before the
@@ -807,6 +814,7 @@ cell is one run's first round; the scores of the same build and brief differ by 
 | fp49, fp50: a scene's frames read together and edited, with two wordings (storyboards only, plans of fp39) | – | – | 7.15, 7.03, 7.23 against 7.20 at the same time; [the reading finds the faults, the edit does not fix them](#a-scene-read-whole-tried-removed) |
 | fp52: the faulted frames edited by Qwen-Image 2.0 Pro (storyboards only, plans of fp39) | – | – | 6.75 against 7.00 at the same time, continuity 5.17 against 5.68; [7 of 7 faulted again](#a-scene-read-whole-edited-by-another-model-tried-not-merged) |
 | fp53: each scene rendered in one request (plans of fp39, one render, no remakes) | – | – | scene reviews 6.80, 6.00, 5.97, 7.83 (mean 6.65) against about 6.4 shot by shot; [the split decides it](#a-scene-rendered-in-one-request-measured-not-the-default) |
+| fp55: fp53's riding 1 render split again at the cuts found near the planned ones (same render, reviewed beside the old split) | – | – | scene 6.67 against 5.97; takes passing 6 of 8 against 2 |
 | fp54: HappyHorse 1.1 instead of Wan 3.0, from the same 13 approved frames | – | – | shots' watch 5.0 against 6.1, passed 5 against 7; kite scene 5.7 |
 | fp51: the faulted frames drawn twice more and one picked (storyboards only, plans of fp39) | – | – | 7.17 against 7.28 at the same time, continuity 5.9 against 5.5; [5 of 8 faulted again](#a-scene-read-whole-then-a-frame-picked-tried-not-merged) |
 | fp48: frames corrected by an edit of themselves; negatives merged into still prompts by the gateway (storyboards only, plans of fp39) | – | – | 7.23 ([edits](#frames-that-follow-their-shot)); 7.35 (merged, +0.01 against frames without them, 95% CI −0.08 to +0.10) |
@@ -917,9 +925,10 @@ model's; a take watch that finds it could have the take made again). Wan's own p
    (fp25: drift and wrong voices gone) and now told what to correct
    ([a take that fails](#a-take-that-fails-is-told-what-to-correct)). HappyHorse 1.1, the provider's other image-to-video
    model, scored lower from the same frames (fp54). A scene rendered in one request scored up to 7.83 where its cuts were
-   found ([one request](#a-scene-rendered-in-one-request-measured-not-the-default)). *Next:* a split that finds Wan's
-   cuts reliably, a render with too few cuts made again; then props the model handles badly (a kite in the wind) kept to
-   one state per short take, or out of the moving part of a shot.
+   found ([one request](#a-scene-rendered-in-one-request-measured-not-the-default)), and the split now takes the cuts it
+   finds (fp55: riding 1 from 5.97 to 6.67 on the same render). *Next:* whole scenes rendered in one request measured
+   again on fresh renders, a render with too few cuts made again; then props the model handles badly (a kite in the wind)
+   kept to one state per short take, or out of the moving part of a shot.
 6. **Close framings drawn whole** (fixed, fp7) and **the AI blocking**: its cameras now follow each shot's planned
    layout where its marks allow ([following the shot plan](director-desk.md#following-the-shot-plan)), yet with the
    desk on the storyboards scored 6.1 and 6.6 (fp27) against 7.2 and 6.8 without it: the image model does not draw
