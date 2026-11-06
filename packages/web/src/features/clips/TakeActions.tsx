@@ -25,12 +25,19 @@ export function LineageBadge({ take }: { take: Take }) {
 }
 
 /** A take cut from a multi-shot render (docs/design/multi-shot.md#splitting-and-verification). */
+/** How a multi-shot render was split (docs/design/multi-shot.md#splitting-and-verification). */
+const SPLIT_AT = {
+  detected: 'the cuts found in it',
+  aligned: 'the cuts found in it, and the planned lengths where none was found',
+  planned: 'the planned lengths',
+} as const;
+
 export function MultiShotBadge({ take }: { take: Take }) {
   const m = take.request.multiShot;
   if (!m) return null;
   return (
     <Badge
-      title={`Rendered with the group's other shots in one request; split at the ${m.cut === 'detected' ? 'detected cut' : 'planned length'}`}
+      title={`Rendered with the group's other shots in one request; split at ${SPLIT_AT[m.cut]}`}
       testid="take-multishot"
     >
       shot {m.index + 1} of {m.of}

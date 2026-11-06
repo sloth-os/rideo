@@ -76,17 +76,45 @@ describe('planning for sequences (docs/design/multi-shot.md#planning-for-sequenc
 });
 
 describe('splitting', () => {
-  it('uses the detected cuts when they match the shots, the planned lengths otherwise', () => {
+  it('uses the cuts found near the planned ones, and the planned lengths when there are none', () => {
     expect(multiShotBoundaries([5.02, 9.01], [5, 4, 6], 15)).toEqual({
       boundaries: [0, 5.02, 9.01, 15],
       cut: 'detected',
+      found: 2,
     });
-    // a flash detected as a cut: the planned durations, scaled to the render
+    // A flash far from any expected cut is not one: the cuts near 5.5 and 9.9 are
     expect(multiShotBoundaries([2, 5, 9], [5, 4, 6], 16.5)).toEqual({
-      boundaries: [0, 5.5, 9.9, 16.5],
-      cut: 'planned',
+      boundaries: [0, 5, 9, 16.5],
+      cut: 'detected',
+      found: 2,
     });
-    expect(multiShotBoundaries([], [10, 10], 20).cut).toBe('planned');
+    expect(multiShotBoundaries([], [10, 10], 20)).toEqual({
+      boundaries: [0, 10, 20],
+      cut: 'planned',
+      found: 0,
+    });
+  });
+
+  it('takes the cuts it finds and the planned time only for one it does not (docs/design/multi-shot.md#splitting-and-verification)', () => {
+    // fp53's riding scene: Wan's first cut too faint to find, the fourth 1.3 s off its planned time
+    const riding = multiShotBoundaries(
+      [8.99, 12.82, 15.59, 20.39, 23.76, 26.96],
+      [5, 4, 4, 3, 3, 4, 3, 4],
+      30.2,
+    );
+    expect(riding.cut).toBe('aligned');
+    expect(riding.found).toBe(6);
+    expect(riding.boundaries).toEqual([0, 5.033, 8.99, 12.82, 15.59, 20.39, 23.76, 26.96, 30.2]);
+    // As many cuts as expected, one of them a flash: the flash is left out and the missing cut planned
+    const flash = multiShotBoundaries([2, 9], [5, 4, 6], 16.5);
+    expect(flash).toEqual({ boundaries: [0, 5.5, 9, 16.5], cut: 'aligned', found: 1 });
+    // A render with fewer shots than its plan: few cuts found, the rest planned
+    const fewer = multiShotBoundaries([4.02, 16.73], [5, 2, 4, 5, 4], 20.1);
+    expect(fewer.found).toBe(1);
+    expect(fewer.boundaries[4]).toBe(16.73);
+    // Boundaries always rise
+    for (const b of [riding, flash, fewer].map((r) => r.boundaries))
+      expect(b.every((t, k) => k === 0 || t > b[k - 1]!)).toBe(true);
   });
 });
 

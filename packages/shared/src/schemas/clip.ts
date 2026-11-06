@@ -267,7 +267,8 @@ export const TakeSchema = z.object({
       .object({
         index: z.number().int().nonnegative(),
         of: z.number().int().min(2),
-        cut: z.enum(['detected', 'planned']),
+        /** `aligned`: some cuts were found and the others kept their planned times (docs/design/multi-shot.md#splitting-and-verification). */
+        cut: z.enum(['detected', 'aligned', 'planned']),
       })
       .nullable()
       .default(null),

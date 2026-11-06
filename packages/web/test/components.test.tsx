@@ -196,6 +196,14 @@ describe('take badges', () => {
     );
     expect(screen.getByTestId('take-multishot').textContent).toBe('shot 2 of 3');
     expect(screen.getByTestId('take-multishot').getAttribute('title')).toContain('planned length');
+    rerender(
+      <MultiShotBadge
+        take={{ ...take, request: { ...take.request, multiShot: { index: 1, of: 3, cut: 'aligned' } } }}
+      />,
+    );
+    expect(screen.getByTestId('take-multishot').getAttribute('title')).toContain(
+      'the cuts found in it, and the planned lengths where none was found',
+    );
     render(
       <LineageBadge
         take={{

@@ -406,10 +406,66 @@ Measured with references delivered (fp48, the frozen plans of fp39, four scenes,
 | Drawn again | 10 of 29 (34%) | 9 | 20 | 7.40 (7.27 in fp46) |
 | Edited | 12 of 19 (63%) | 2 | 12 | 7.23 (continuity 5.8, character 8.6) |
 
-An edit keeps the place, the light and the look and changes what it was told, as the earlier runs could not show. It fixes what the
-reading flags and the review does not reward it: −0.11 against the two runs drawn again (95% CI −0.38 to +0.11), continuity level.
+An edit keeps the place, the light and the look, as the earlier runs could not show, and sometimes changes what it was told; often it
+barely changes the picture ([below](#a-scene-read-whole-tried-removed)), so part of that fix rate is the reading changing its mind. It
+clears what the reading flags and the review does not reward it: −0.11 against the two runs drawn again (95% CI −0.38 to +0.11), continuity level.
 The reading looks at one frame; what the review still marks is mostly between frames (a handle that teleports, a string gone in the
 next shot). So it stays off.
+
+### A scene read whole (tried, removed)
+
+The reading above looks at one frame at a time, and what the storyboard review still marks is mostly between frames: a handle that
+teleports, a string gone in the next shot, a barn on the other side. So a scene's frames, once drawn and before the review, were read
+together (`scene.reconcile`: every frame in story order with every shot's plan), and the frame each contradiction named was edited, up to
+half of the scene, keeping a frame whose edit failed its checks. Measured with references delivered on the plans of fp39, four scenes:
+
+| Edit | Storyboard | Continuity | Edited frames flagged again when the scene is read again | Likeness before to after (SSIM, median) |
+|---|---|---|---|---|
+| None (control, same time) | 7.20 | 5.6 | – | – |
+| "Keep everything in it exactly as it is and change only this" | 7.15 and 7.03 | 5.5 and 5.0 | 4 of 7 | 0.73 |
+| "Change the first image so that this is true", the rest after it | 7.23 | 5.5 | 5 of 7 | 0.81 |
+
+The reading works: what it names is what the review goes on to mark ("stray kite handle ring", "the bucket floats at Rosie's waist", "the
+paw on Rosie, not Biscuit's neck"). The edit does not: side by side, most edited frames are the same picture with the fault still in it,
+with either wording, and frames nobody edited are flagged on the second reading too, so the reading itself varies. The image model
+re-renders rather than moves an object. Finding the faults is no longer the problem: what would make this worth having is an image model
+that can move things in a picture it is given.
+
+### A scene read whole, edited by another model (tried, not merged)
+
+The gateway's provider offers more image models than the one the frames are drawn with (November 2026): Seedream 4.5,
+Qwen-Image 2.0 Pro and Wan 2.7 Image Pro among them. On four frames the review had faulted, each asked for the same change
+with the same wording, Qwen-Image 2.0 Pro made three of the four changes and kept the rest of the picture (a scarf turned
+into the wind, a step block moved back to the barn door, a paw moved from Rosie to the pony), Seedream 5.0 Pro one,
+Seedream 4.5 two (one by reframing the shot) and Wan 2.7 Image Pro one; no model drew a missing kite string. So the scene
+check was measured with Qwen-Image making its edits, the frames still drawn by Seedream 5.0 Pro (fp52, plans of fp39,
+against frames drawn at the same time). It needed two gateway fixes first: a Qwen-Image request with input images goes to
+DashScope's generation surface and synchronously, and it takes at most three input images.
+
+| | Storyboard | Continuity |
+|---|---|---|
+| Control | 7.00 | 5.68 |
+| Faulted frames edited by Qwen-Image | 6.75 | 5.17 |
+
+The difference is −0.25 (95% CI −0.48 to −0.05), and all 7 edited frames were faulted again when the scene was read again.
+Changes that look right beside the original do not clear what the reading and the review hold against the frame. A first
+run whose edits all failed (the gateway took four input images, Qwen-Image three) was, in effect, two controls: 6.85
+against 7.00, which shows the noise between two drawings of the same plans.
+
+### A scene read whole, then a frame picked (tried, not merged)
+
+Since an edit cannot fix what the reading finds, a frame the reading faulted was drawn twice more instead, told what to correct, and
+the reading model chose among the three beside the scene's other frames (a candidate offered only when it passed the checks of any
+frame). Measured against a control drawn at the same time (fp51, the same four scenes):
+
+| | Storyboard | Continuity | Character | Composition | Coverage |
+|---|---|---|---|---|---|
+| Control | 7.28 | 5.5 | 8.1 | 7.35 | 7.75 |
+| Faulted frames picked again | 7.17 | 5.9 | 8.25 | 7.18 | 7.42 |
+
+The difference is −0.10 (95% CI −0.35 to +0.23); continuity rose in three scenes of four (+1.0, +0.3, +1.0, −0.7) and coverage
+fell, as a choice of the frame that agrees most with the others is also a choice of the frame most like them. A new candidate was
+chosen for 7 of 8 faulted frames, and 5 of the 8 were faulted again when the scene was read again, about as many as after an edit.
 
 ## Frames that agree with each other
 
@@ -658,6 +714,38 @@ shot "keeps the same distance and framing as it moves"; and the negative prompt 
 pulling back" for a static shot or a dolly-in). A multi-shot request keeps each segment's camera with its segment, and
 a move from the camera library keeps its own words.
 
+### A scene rendered in one request (measured, not the default)
+
+About half of the scene reviews' continuity issues are breaks across a cut (a prop that jumps, a second barn), which a
+scene rendered by the video model in one request could hold together ([multi-shot](multi-shot.md)). fp53 rendered each
+of the four scenes of fp39's plans that way from its opening frame, one render and no remakes, and reviewed each three
+times, against six runs that made every shot alone from its own approved frame:
+
+| Scene | One request | Its cuts | Shot by shot (six runs) |
+|---|---|---|---|
+| Kite 1 | 6.80 | detected | 5.87–6.87 |
+| Kite 2 | 6.00 | planned | 6.27–6.83 |
+| Riding 1 | 5.97 | planned | 5.53–6.17 |
+| Riding 2 | **7.83** | detected | 6.30–6.90 |
+| Mean | 6.65 | | about 6.4 |
+
+Where the render's cuts were found, the scene scored as well as the best run shot by shot or better (riding 2: 7.83,
+the best scene review of all these measurements); where they were not, the segments were cut at the planned times and
+each held parts of two shots (kite 2's segments watched 3, 6, 2, 3 and 2). Scanned again, Wan's cuts score 0.32 to 0.57,
+above the 0.3 the split scans at, but the split takes them only when it finds exactly one fewer than the shots: riding 1's
+render has 6 of its 7 cuts, each within 1.3 s of its planned time, and was split at the planned times instead; kite 2's has
+2 cuts where its plan has 4, so the model rendered fewer shots than it was asked for. A split that matches the cuts it
+finds to the planned times and fills only a missing one from the plan would have cut riding 1 right; a render with far
+fewer cuts than shots should be made again, not split. Whole scenes made shot by shot from keyframes, which an earlier attempt produced by
+mistake, scored kite 7.07 and riding 6.53 (one scene each).
+
+**The split now takes the cuts it finds** ([splitting](multi-shot.md#splitting-and-verification)). Riding 1's render, split
+again that way (6 of its 7 cuts from the render, one at its planned time), was reviewed three times beside the old split
+at the same time (fp55): the scene 6.67 against 5.97 (continuity 5.3 against 4), its takes' watches 6.25 against 5.63,
+with 6 of 8 passing against 2. The same render and no new video: each take now holds one shot, and the review's strip of
+each shot shows that shot. A take that fails is made again alone, so the old split would have made six of the eight
+shots again and the new one two. With riding 1 at 6.67, fp53's four scenes average 6.83 against about 6.4 shot by shot.
+
 ## Scenes count what they heard
 
 A scene watched before the edit is heard by the audio-visual model ([scenes before the
@@ -723,6 +811,12 @@ cell is one run's first round; the scores of the same build and brief differ by 
 | fp15: the opening frame kept as "the same moment" | riding 7.9; kite 7.4 | riding 8.9 (consistency 7.9); kite **9.0, every dimension 8 or more** | riding 6.9; kite 6.6 (continuity 5 and 4.5: later frames held to the opening frame's states and people) |
 | fp16: the screenplay read for the video model (removed since); the opening frame for the place only | riding 7.0; kite 6.8 | riding 8.7 (consistency 7.6); kite **8.9, every dimension 8 or more** | riding 6.5; kite 7.3; kite pilot scene 6.3 (temporal and physics 5: the kite launched a scene early), first takes 6.0 |
 | fp17: wrong-side landmarks and wind redrawn, nobody looks into the lens | riding 7.1; kite 7.4 | riding 8.9 (consistency 7.9); kite **9.0, every dimension 8 or more** | riding 6.7 (a frame lost to an empty image, fixed since); kite **7.4, one major issue** (storytelling and coverage 8, character 9) |
+| fp49, fp50: a scene's frames read together and edited, with two wordings (storyboards only, plans of fp39) | – | – | 7.15, 7.03, 7.23 against 7.20 at the same time; [the reading finds the faults, the edit does not fix them](#a-scene-read-whole-tried-removed) |
+| fp52: the faulted frames edited by Qwen-Image 2.0 Pro (storyboards only, plans of fp39) | – | – | 6.75 against 7.00 at the same time, continuity 5.17 against 5.68; [7 of 7 faulted again](#a-scene-read-whole-edited-by-another-model-tried-not-merged) |
+| fp53: each scene rendered in one request (plans of fp39, one render, no remakes) | – | – | scene reviews 6.80, 6.00, 5.97, 7.83 (mean 6.65) against about 6.4 shot by shot; [the split decides it](#a-scene-rendered-in-one-request-measured-not-the-default) |
+| fp55: fp53's riding 1 render split again at the cuts found near the planned ones (same render, reviewed beside the old split) | – | – | scene 6.67 against 5.97; takes passing 6 of 8 against 2 |
+| fp54: HappyHorse 1.1 instead of Wan 3.0, from the same 13 approved frames | – | – | shots' watch 5.0 against 6.1, passed 5 against 7; kite scene 5.7 |
+| fp51: the faulted frames drawn twice more and one picked (storyboards only, plans of fp39) | – | – | 7.17 against 7.28 at the same time, continuity 5.9 against 5.5; [5 of 8 faulted again](#a-scene-read-whole-then-a-frame-picked-tried-not-merged) |
 | fp48: frames corrected by an edit of themselves; negatives merged into still prompts by the gateway (storyboards only, plans of fp39) | – | – | 7.23 ([edits](#frames-that-follow-their-shot)); 7.35 (merged, +0.01 against frames without them, 95% CI −0.08 to +0.10) |
 | fp47: fresh runs, references delivered, new projects' settings (to the storyboard) | riding 8.1 (continuity 7.3, feasibility 7.7, pacing 7.7); kite 8.2 (continuity 7.3, feasibility 7) | riding **8.9, every dimension 8 or more** (likeness 8.5); kite **9.1, every dimension 8 or more** | riding 6.6 (continuity 5.3, feasibility 6); kite 7.0 (continuity 5.7, character 6.3) |
 | fp47: fp39's plans, takes with references delivered: frames alone; at full size from panels | – | – | shots' watches 6.50; 5.08; [above](#a-scene-drawn-on-one-sheet) |
@@ -814,7 +908,9 @@ What keeps each under 8, what was tried, and what to try next:
    the wind as reasons to redraw (fp17: one major issue left on the kite storyboard). Then: a scene drawn on one
    sheet ([a scene drawn on one sheet](#a-scene-drawn-on-one-sheet)): on eight scenes of frozen plans 7.14 → 7.59,
    continuity 5.5 → 6.2, character 7.2 → 8.0, every scene better, but takes from its panels scored 1.62 lower, so it is off
-   for new projects until a full-size frame can keep what the panel agreed on. *Next:* the staging check answers with
+   for new projects until a full-size frame can keep what the panel agreed on. Then: a scene's frames read together, and the
+   frames it faults edited or drawn again and picked (fp49–fp51): the reading finds what the review marks, and neither way
+   clears it (4 to 5 of 7 or 8 faulted again). *Next:* the staging check answers with
    the model's full reasoning (`frame.reconcile` is not in `REASONING_OFF_TASKS`; one panel's reading in fp29 took 217 s
    and wrote 9,069 tokens), and a sheet waits for its slowest panel: measure whether it reads frames as well without
    reasoning, as the identity judge did.
@@ -827,8 +923,12 @@ What keeps each under 8, what was tried, and what to try next:
 model's; a take watch that finds it could have the take made again). Wan's own prompt rewriter is already off
    (`enhance_prompt: false`, which the gateway sends as `prompt_extend`). A take whose watch fails is made again
    (fp25: drift and wrong voices gone) and now told what to correct
-   ([a take that fails](#a-take-that-fails-is-told-what-to-correct)). *Next:* props the model handles badly (a kite in
-   the wind) kept to one state per short take, or out of the moving part of a shot.
+   ([a take that fails](#a-take-that-fails-is-told-what-to-correct)). HappyHorse 1.1, the provider's other image-to-video
+   model, scored lower from the same frames (fp54). A scene rendered in one request scored up to 7.83 where its cuts were
+   found ([one request](#a-scene-rendered-in-one-request-measured-not-the-default)), and the split now takes the cuts it
+   finds (fp55: riding 1 from 5.97 to 6.67 on the same render). *Next:* whole scenes rendered in one request measured
+   again on fresh renders, a render with too few cuts made again; then props the model handles badly (a kite in the wind)
+   kept to one state per short take, or out of the moving part of a shot.
 6. **Close framings drawn whole** (fixed, fp7) and **the AI blocking**: its cameras now follow each shot's planned
    layout where its marks allow ([following the shot plan](director-desk.md#following-the-shot-plan)), yet with the
    desk on the storyboards scored 6.1 and 6.6 (fp27) against 7.2 and 6.8 without it: the image model does not draw

@@ -156,6 +156,12 @@ export class Metrics {
       'Temporal and physics checks of video attempts, by check and result',
     ),
   );
+  readonly sequenceSplits = this.add(
+    new Counter(
+      'rideo_sequence_splits_total',
+      'Multi-shot renders split, by how their cuts were placed (detected, aligned, planned)',
+    ),
+  );
   readonly sequenceSegments = this.add(
     new Counter(
       'rideo_sequence_segments_total',
