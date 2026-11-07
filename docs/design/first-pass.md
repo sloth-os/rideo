@@ -401,6 +401,24 @@ faults (kite 1's handle lying loose on the grass, in two frames) are not in the 
 wording of the reading that costs nothing: the check now sees what it passed in fp57, and what still leaves kite 2's
 string wrong is the image model.
 
+The storyboard review reads each shot as planned, while the video model gets the reading of a frame drawn unlike its
+plan. So fp59's frames were reviewed again with the reading in place of the plan's description and action for each
+frame whose reading lists conflicts (11 of 24), against the same frames reviewed as planned at the same time (fp60,
+November 7, 2026; a probe image, not built):
+
+| Scene | As planned | With the readings | Frames read |
+|---|---|---|---|
+| Kite 1 | 7.2 | 7.7 | 3 of 5 |
+| Kite 2 | 6.9 | 7.3 | 2 of 5 |
+| Riding 1 | 7.6 | 7.6 | 3 of 8 |
+| Riding 2 | 7.3 | 7.4 | 3 of 6 |
+
+The difference is +0.25 (95% CI −0.13 to +0.63), continuity +0.20 and feasibility +0.18: the kite scenes' composition and
+storytelling rose where the review stopped marking a frame for text the video never gets, and the riding scenes'
+majors stayed (the barn on the other side in Biscuit's close-up, the closing wide that undoes the touch on Biscuit's
+neck). What holds the storyboards down is the frames disagreeing with each other, not with their text. Cost: 24 review
+answers, $1.76.
+
 A redraw is told what to correct. A new seed alone drew the same mistake again: the image model draws a kite flying
 whatever the shot says, so after three attempts the kept frame still showed it flying. The reading answers `fix`, what
 the next drawing must show, said positively ("the red kite lies flat on the grass at Sammy's feet, its yellow tail to
@@ -888,6 +906,7 @@ cell is one run's first round; the scores of the same build and brief differ by 
 | fp57: the kite scenes' opener and every shot of the kite approved, the rest rendered in one request from them (plans of fp39, one render, no remakes) | – | – | scene reviews kite 1 7.07, kite 2 6.23 against 6.93 and 5.90 in one request (fp56) and 6.42 and 6.52 shot by shot; takes passing 9 of 10; kite 2's approved frames draw the string into the sky |
 | fp58: the frames a review faulted for a side flipped left to right (fp52's control storyboards, reviewed again) | – | – | kite 1 7.3 → 6.9, kite 2 7.0 → 7.1, unflipped riding scenes −0.2 and −0.4; [the place flips with the character](#a-mirrored-frame-flipped-tried-not-built) |
 | fp59: the frame check reads what each string or strap joins (storyboards only, plans of fp39) | – | – | 7.38 against 7.18 at the same time (+0.20, 95% CI −0.09 to +0.49), continuity 5.73 against 5.58; 5 frames drawn again for a string or strap against 1, [kite 2's opening frame never drawn right](#frames-that-follow-their-shot) |
+| fp60: fp59's frames reviewed with the readings of the frames drawn unlike their plan (storyboards only, a probe) | – | – | 7.50 against 7.25 reviewed as planned at the same time (+0.25, 95% CI −0.13 to +0.63), continuity +0.20; [the frames disagree with each other](#frames-that-follow-their-shot) |
 | fp55: fp53's riding 1 render split again at the cuts found near the planned ones (same render, reviewed beside the old split) | – | – | scene 6.67 against 5.97; takes passing 6 of 8 against 2 |
 | fp54: HappyHorse 1.1 instead of Wan 3.0, from the same 13 approved frames | – | – | shots' watch 5.0 against 6.1, passed 5 against 7; kite scene 5.7 |
 | fp51: the faulted frames drawn twice more and one picked (storyboards only, plans of fp39) | – | – | 7.17 against 7.28 at the same time, continuity 5.9 against 5.5; [5 of 8 faulted again](#a-scene-read-whole-then-a-frame-picked-tried-not-merged) |
