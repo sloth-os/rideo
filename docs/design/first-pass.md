@@ -371,7 +371,10 @@ contradicts what the shot needs (who is in it, where each stands and faces, what
 missing or shown twice, a framing a size off, a landmark on the other side of the frame than the shot puts it, the
 wind or the sun from the other side, the gesture the shot turns on missing or aimed elsewhere, a piece of an outfit
 missing, any letters or words: fp19's riding storyboard had a critical "PONY SCHOOL" sign and a Rosie without her
-trousers and boots in two frames). Details (the clouds, a texture) are listed as conflicts without a redraw. The
+trousers and boots in two frames; a string, rope, lead or strap that does not join what it should, or one too many: in
+fp57 two approved frames drew the kite's string from Sammy's handle up into empty sky while the kite lay on the grass,
+the check passed them and the scene review marked both). The reading says what each string or strap runs between.
+Details (the clouds, a texture) are listed as conflicts without a redraw. The
 sides came last: the planner writes into every shot what is behind the characters on which side and which way the
 wind blows, and the reviews still found a close-up with the lake on the wrong side and scarves and tails blowing
 against the scene's wind in nearly every storyboard (fp14, fp15). The first frame that needs no redraw is kept, else the one with the fewest conflicts; its reading is kept on
@@ -379,6 +382,24 @@ the board (`board.seen`) and the video pass uses it without reading the frame ag
 own keyframes are checked; a person's own prompt is not (`rideo_frame_reconciles_total{outcome: redraw}` counts the
 frames drawn again). This is part of drawing a frame, like the identity check that also draws a frame again: the
 storyboard the review sees is the first one presented, and no review round is spent on it.
+
+Reading what each string or strap joins was measured on the plans of fp39 against a control drawn at the same time
+(fp59, November 7, 2026, one run of four scenes):
+
+| | Storyboard | Continuity | Frames drawn again for a string or strap | Major issues in the reviews (a string or its handle) | Attempts | Cost |
+|---|---|---|---|---|---|---|
+| Control | 7.18 | 5.58 | 1 | 10 (2) | 50 | $5.75 |
+| Strings and straps read | 7.38 | 5.73 | 5 | 7 (0) | 45 | $5.25 |
+
+The difference is +0.20 (95% CI −0.09 to +0.49 over the four scenes: kite 1 +0.4, kite 2 0, riding +0.3 and +0.1),
+inside the noise between two drawings of the same plans (6.85 against 7.00 in fp52). Of the five frames it flagged, the
+next drawing fixed three (kite 1's handle hanging in mid-air from the kite Sammy holds, two bridles drawn with reins the
+plan does not have); kite 2's third frame passed its next reading with a string the review found stopping short of the
+handle (minor); and kite 2's opening frame was drawn three times, its string from the wrong paw, then from the handle
+into the sky beside a second string, and the one with the fewest conflicts was kept. The control's two major string
+faults (kite 1's handle lying loose on the grass, in two frames) are not in the new run, whose two are minor. Kept, as a
+wording of the reading that costs nothing: the check now sees what it passed in fp57, and what still leaves kite 2's
+string wrong is the image model.
 
 A redraw is told what to correct. A new seed alone drew the same mistake again: the image model draws a kite flying
 whatever the shot says, so after three attempts the kept frame still showed it flying. The reading answers `fix`, what
@@ -466,6 +487,25 @@ frame). Measured against a control drawn at the same time (fp51, the same four s
 The difference is −0.10 (95% CI −0.35 to +0.23); continuity rose in three scenes of four (+1.0, +0.3, +1.0, −0.7) and coverage
 fell, as a choice of the frame that agrees most with the others is also a choice of the frame most like them. A new candidate was
 chosen for 7 of 8 faulted frames, and 5 of the 8 were faulted again when the scene was read again, about as many as after an edit.
+
+### A mirrored frame flipped (tried, not built)
+
+About a quarter of the storyboards' continuity faults name a side: a barn or a tree on the other side, someone walking
+or looking the wrong way, a scarf against the wind. A frame flipped left to right moves everything at once, which no edit
+did, so the faulted frames of fp52's control storyboards were flipped by hand where today's review named a side
+(kite 1 shot 5: the scarf against the wind; kite 2 shot 5: Rosie looking and pointing the wrong way) and the four scenes
+reviewed again on the same frames otherwise (fp58, November 7, 2026):
+
+| Scene | As drawn | Flipped | Continuity |
+|---|---|---|---|
+| Kite 1 (shot 5 flipped) | 7.3 | 6.9 | 5.3 → 5.0 |
+| Kite 2 (shot 5 flipped) | 7.0 | 7.1 | 6.0 → 5.3 |
+| Riding 1, 2 (none flipped: the review's own spread) | 7.4, 7.7 | 7.2, 7.3 | 6.0, 5.7 → 5.3, 5.7 |
+
+Each flip turned Rosie the right way and put the lone tree and the lake on the wrong sides, and the raised paw on her
+other side; the review marked both critical ("the flip breaks the 180-degree line"). In today's frames the side is wrong
+for one character in a frame whose place is right, so a whole frame is not the unit to mirror; riding 2's pony, whose
+head was on the wrong side, would have faced the wrong way. Not built. Cost: 24 review answers, about $1.40.
 
 ## Frames that agree with each other
 
@@ -846,6 +886,8 @@ cell is one run's first round; the scores of the same build and brief differ by 
 | fp53: each scene rendered in one request (plans of fp39, one render, no remakes) | – | – | scene reviews 6.80, 6.00, 5.97, 7.83 (mean 6.65) against about 6.4 shot by shot; [the split decides it](#a-scene-rendered-in-one-request-measured-not-the-default) |
 | fp56: each scene drawn and rendered again in one request with the split (plans of fp39, one render, no remakes) | – | – | scene reviews 6.93, 5.90, 6.40, 7.23 (mean 6.62) against 6.16–6.49 for six runs shot by shot; takes passing 19 of 24 |
 | fp57: the kite scenes' opener and every shot of the kite approved, the rest rendered in one request from them (plans of fp39, one render, no remakes) | – | – | scene reviews kite 1 7.07, kite 2 6.23 against 6.93 and 5.90 in one request (fp56) and 6.42 and 6.52 shot by shot; takes passing 9 of 10; kite 2's approved frames draw the string into the sky |
+| fp58: the frames a review faulted for a side flipped left to right (fp52's control storyboards, reviewed again) | – | – | kite 1 7.3 → 6.9, kite 2 7.0 → 7.1, unflipped riding scenes −0.2 and −0.4; [the place flips with the character](#a-mirrored-frame-flipped-tried-not-built) |
+| fp59: the frame check reads what each string or strap joins (storyboards only, plans of fp39) | – | – | 7.38 against 7.18 at the same time (+0.20, 95% CI −0.09 to +0.49), continuity 5.73 against 5.58; 5 frames drawn again for a string or strap against 1, [kite 2's opening frame never drawn right](#frames-that-follow-their-shot) |
 | fp55: fp53's riding 1 render split again at the cuts found near the planned ones (same render, reviewed beside the old split) | – | – | scene 6.67 against 5.97; takes passing 6 of 8 against 2 |
 | fp54: HappyHorse 1.1 instead of Wan 3.0, from the same 13 approved frames | – | – | shots' watch 5.0 against 6.1, passed 5 against 7; kite scene 5.7 |
 | fp51: the faulted frames drawn twice more and one picked (storyboards only, plans of fp39) | – | – | 7.17 against 7.28 at the same time, continuity 5.9 against 5.5; [5 of 8 faulted again](#a-scene-read-whole-then-a-frame-picked-tried-not-merged) |
@@ -962,9 +1004,11 @@ model's; a take watch that finds it could have the take made again). Wan's own p
    6.49 shot by shot) except in the scene whose story is a prop (kite 2). Approving the prop's frames (fp57) kept kite 1's
    gain (7.07) but lifted kite 2 only to 6.23, under every run shot by shot: two of its approved frames drew the string
    into the sky, and the frame check passed them. *Decided* (November 7, 2026): a storyboarded scene stays shot by shot
-   from its approved frames; one request is a person's choice ([when](multi-shot.md#when)). *Next:* a frame check that
-   looks at what each string, strap or held thing joins; a render with too few cuts made again; then props the model
-   handles badly (a kite in the wind) kept to one state per short take, or out of the moving part of a shot.
+   from its approved frames; one request is a person's choice ([when](multi-shot.md#when)). The frame check now reads
+   what each string or strap joins (fp59): it flagged kite 2's opening frame and four others, and the image model drew
+   that frame's string wrong three times over ([measured](#frames-that-follow-their-shot)). *Next:* a render with too
+   few cuts made again; then props the model handles badly (a kite in the wind) kept to one state per short take, or
+   out of the moving part of a shot.
 6. **Close framings drawn whole** (fixed, fp7) and **the AI blocking**: its cameras now follow each shot's planned
    layout where its marks allow ([following the shot plan](director-desk.md#following-the-shot-plan)), yet with the
    desk on the storyboards scored 6.1 and 6.6 (fp27) against 7.2 and 6.8 without it: the image model does not draw

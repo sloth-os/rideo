@@ -94,6 +94,11 @@ describe('makers aim at what their reviewers score', () => {
     expect(reconcile).toContain('blowing against the wind the shot gives');
     expect(reconcile).toContain('the gesture the shot turns on missing or aimed elsewhere');
     expect(reconcile).toContain('a character missing a piece of their outfit');
+    // What a string or strap joins (fp57: a kite string drawn into empty sky while the kite lay on the grass)
+    expect(reconcile).toContain('what each string, rope or strap runs between');
+    expect(reconcile).toContain(
+      'a string, rope, lead or strap that does not join what it should or is one too many',
+    );
     expect(reconcile).toContain('any letters or words in the picture');
   });
 
