@@ -757,6 +757,25 @@ physics 4.0 against 5.0 to 6.7) and a close-up that puts the lone tree on the ot
 with an approved frame starts a new group ([when](multi-shot.md#when)), so approving the frames where a prop must be
 exactly right, and only those, would render the rest in one request from each of them (not measured).
 
+Two of kite 1's three review answers had lost their picture scores: an unreadable scores object read as none and never
+reached the repair call ([now it does](ai-gateway.md#structured-tasks)). Its 6.93 was the mean of 8, 5.7 and 7.1, the first
+two scored on the scene's dialogue and sound alone. Reviewed again on the same render, every score checked, it scored
+7.0, 7.1 and 6.7: 6.93 again, and the mean of the four scenes stays 6.62. Of every scene review recorded for these
+comparisons one other had lost its picture (fp47, full size, riding 2: 6.67 without it 6.65).
+
+**The prop's frames approved** (fp57, November 2026, the plans of fp39 drawn again with their checks; the opener and every
+shot of the Red Kite approved, so each starts a group and the shots between render in one request from it; one render,
+no remakes): kite 1 rendered as shots 1, 2–3, 4 and 5 (alone, from its own frame), kite 2 as 1–2, 3 and 4–5. Every cut
+was found and 9 of 10 takes passed their watch. Kite 1 reviewed 7.07 (7.1, 6.7, 7.4), its best on these plans (one request
+6.93; shot by shot 5.87 to 6.87). Kite 2 reviewed 6.23 (6.1, 6.5, 6.1): 0.33 above one request (5.90), short of the 0.5
+the rule asks for, and still under every run shot by shot (6.27 to 6.83). Its physics stayed at 4.0, and approving frames
+cannot help where the frames are wrong: in shots 1 and 3 Seedream drew the kite's string running from Sammy's handle up
+into the sky, as if the kite flew, while the kite lies on the grass (shot 3 has a second string down to it). The frame
+check passed both, and the scene review marked the string in both shots. Inside single takes the video model added the
+rest: a second kite popping in, the tail floating free, the kite sliding through Rosie. Over the two kite scenes, approved
+props 6.65, one request 6.42, shot by shot 6.47. A frame check that looks at what a string or a strap joins comes before
+any rule that trusts such frames.
+
 ## Scenes count what they heard
 
 A scene watched before the edit is heard by the audio-visual model ([scenes before the
@@ -826,6 +845,7 @@ cell is one run's first round; the scores of the same build and brief differ by 
 | fp52: the faulted frames edited by Qwen-Image 2.0 Pro (storyboards only, plans of fp39) | – | – | 6.75 against 7.00 at the same time, continuity 5.17 against 5.68; [7 of 7 faulted again](#a-scene-read-whole-edited-by-another-model-tried-not-merged) |
 | fp53: each scene rendered in one request (plans of fp39, one render, no remakes) | – | – | scene reviews 6.80, 6.00, 5.97, 7.83 (mean 6.65) against about 6.4 shot by shot; [the split decides it](#a-scene-rendered-in-one-request-measured-not-the-default) |
 | fp56: each scene drawn and rendered again in one request with the split (plans of fp39, one render, no remakes) | – | – | scene reviews 6.93, 5.90, 6.40, 7.23 (mean 6.62) against 6.16–6.49 for six runs shot by shot; takes passing 19 of 24 |
+| fp57: the kite scenes' opener and every shot of the kite approved, the rest rendered in one request from them (plans of fp39, one render, no remakes) | – | – | scene reviews kite 1 7.07, kite 2 6.23 against 6.93 and 5.90 in one request (fp56) and 6.42 and 6.52 shot by shot; takes passing 9 of 10; kite 2's approved frames draw the string into the sky |
 | fp55: fp53's riding 1 render split again at the cuts found near the planned ones (same render, reviewed beside the old split) | – | – | scene 6.67 against 5.97; takes passing 6 of 8 against 2 |
 | fp54: HappyHorse 1.1 instead of Wan 3.0, from the same 13 approved frames | – | – | shots' watch 5.0 against 6.1, passed 5 against 7; kite scene 5.7 |
 | fp51: the faulted frames drawn twice more and one picked (storyboards only, plans of fp39) | – | – | 7.17 against 7.28 at the same time, continuity 5.9 against 5.5; [5 of 8 faulted again](#a-scene-read-whole-then-a-frame-picked-tried-not-merged) |
@@ -939,9 +959,11 @@ model's; a take watch that finds it could have the take made again). Wan's own p
    model, scored lower from the same frames (fp54). A scene rendered in one request scored up to 7.83 where its cuts were
    found ([one request](#a-scene-rendered-in-one-request-measured-not-the-default)), and the split now takes the cuts it
    finds (fp55: riding 1 from 5.97 to 6.67 on the same render); fresh renders reproduced it (fp56: mean 6.62 against 6.16 to
-   6.49 shot by shot) except in the scene whose story is a prop (kite 2). *Next:* approved frames only where a prop must be
-   exact, the rest of the scene rendered in one request from them; a render with too few cuts made again; then props the
-   model handles badly (a kite in the wind) kept to one state per short take, or out of the moving part of a shot.
+   6.49 shot by shot) except in the scene whose story is a prop (kite 2). Approving the prop's frames (fp57) kept kite 1's
+   gain (7.07) but lifted kite 2 only to 6.23, under every run shot by shot: two of its approved frames drew the string
+   into the sky, and the frame check passed them. *Next:* a frame check that looks at what each string, strap or held
+   thing joins; a render with too few cuts made again; then props the model handles badly (a kite in the wind) kept to
+   one state per short take, or out of the moving part of a shot.
 6. **Close framings drawn whole** (fixed, fp7) and **the AI blocking**: its cameras now follow each shot's planned
    layout where its marks allow ([following the shot plan](director-desk.md#following-the-shot-plan)), yet with the
    desk on the storyboards scored 6.1 and 6.6 (fp27) against 7.2 and 6.8 without it: the image model does not draw
