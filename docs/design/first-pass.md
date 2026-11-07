@@ -383,6 +383,24 @@ own keyframes are checked; a person's own prompt is not (`rideo_frame_reconciles
 frames drawn again). This is part of drawing a frame, like the identity check that also draws a frame again: the
 storyboard the review sees is the first one presented, and no review round is spent on it.
 
+Reading what each string or strap joins was measured on the plans of fp39 against a control drawn at the same time
+(fp59, November 7, 2026, one run of four scenes):
+
+| | Storyboard | Continuity | Frames drawn again for a string or strap | Major issues in the reviews (a string or its handle) | Attempts | Cost |
+|---|---|---|---|---|---|---|
+| Control | 7.18 | 5.58 | 1 | 10 (2) | 50 | $5.75 |
+| Strings and straps read | 7.38 | 5.73 | 5 | 7 (0) | 45 | $5.25 |
+
+The difference is +0.20 (95% CI −0.09 to +0.49 over the four scenes: kite 1 +0.4, kite 2 0, riding +0.3 and +0.1),
+inside the noise between two drawings of the same plans (6.85 against 7.00 in fp52). Of the five frames it flagged, the
+next drawing fixed three (kite 1's handle hanging in mid-air from the kite Sammy holds, two bridles drawn with reins the
+plan does not have); kite 2's third frame passed its next reading with a string the review found stopping short of the
+handle (minor); and kite 2's opening frame was drawn three times, its string from the wrong paw, then from the handle
+into the sky beside a second string, and the one with the fewest conflicts was kept. The control's two major string
+faults (kite 1's handle lying loose on the grass, in two frames) are not in the new run, whose two are minor. Kept, as a
+wording of the reading that costs nothing: the check now sees what it passed in fp57, and what still leaves kite 2's
+string wrong is the image model.
+
 A redraw is told what to correct. A new seed alone drew the same mistake again: the image model draws a kite flying
 whatever the shot says, so after three attempts the kept frame still showed it flying. The reading answers `fix`, what
 the next drawing must show, said positively ("the red kite lies flat on the grass at Sammy's feet, its yellow tail to
@@ -869,6 +887,7 @@ cell is one run's first round; the scores of the same build and brief differ by 
 | fp56: each scene drawn and rendered again in one request with the split (plans of fp39, one render, no remakes) | – | – | scene reviews 6.93, 5.90, 6.40, 7.23 (mean 6.62) against 6.16–6.49 for six runs shot by shot; takes passing 19 of 24 |
 | fp57: the kite scenes' opener and every shot of the kite approved, the rest rendered in one request from them (plans of fp39, one render, no remakes) | – | – | scene reviews kite 1 7.07, kite 2 6.23 against 6.93 and 5.90 in one request (fp56) and 6.42 and 6.52 shot by shot; takes passing 9 of 10; kite 2's approved frames draw the string into the sky |
 | fp58: the frames a review faulted for a side flipped left to right (fp52's control storyboards, reviewed again) | – | – | kite 1 7.3 → 6.9, kite 2 7.0 → 7.1, unflipped riding scenes −0.2 and −0.4; [the place flips with the character](#a-mirrored-frame-flipped-tried-not-built) |
+| fp59: the frame check reads what each string or strap joins (storyboards only, plans of fp39) | – | – | 7.38 against 7.18 at the same time (+0.20, 95% CI −0.09 to +0.49), continuity 5.73 against 5.58; 5 frames drawn again for a string or strap against 1, [kite 2's opening frame never drawn right](#frames-that-follow-their-shot) |
 | fp55: fp53's riding 1 render split again at the cuts found near the planned ones (same render, reviewed beside the old split) | – | – | scene 6.67 against 5.97; takes passing 6 of 8 against 2 |
 | fp54: HappyHorse 1.1 instead of Wan 3.0, from the same 13 approved frames | – | – | shots' watch 5.0 against 6.1, passed 5 against 7; kite scene 5.7 |
 | fp51: the faulted frames drawn twice more and one picked (storyboards only, plans of fp39) | – | – | 7.17 against 7.28 at the same time, continuity 5.9 against 5.5; [5 of 8 faulted again](#a-scene-read-whole-then-a-frame-picked-tried-not-merged) |
@@ -985,9 +1004,11 @@ model's; a take watch that finds it could have the take made again). Wan's own p
    6.49 shot by shot) except in the scene whose story is a prop (kite 2). Approving the prop's frames (fp57) kept kite 1's
    gain (7.07) but lifted kite 2 only to 6.23, under every run shot by shot: two of its approved frames drew the string
    into the sky, and the frame check passed them. *Decided* (November 7, 2026): a storyboarded scene stays shot by shot
-   from its approved frames; one request is a person's choice ([when](multi-shot.md#when)). *Next:* a frame check that
-   looks at what each string, strap or held thing joins; a render with too few cuts made again; then props the model
-   handles badly (a kite in the wind) kept to one state per short take, or out of the moving part of a shot.
+   from its approved frames; one request is a person's choice ([when](multi-shot.md#when)). The frame check now reads
+   what each string or strap joins (fp59): it flagged kite 2's opening frame and four others, and the image model drew
+   that frame's string wrong three times over ([measured](#frames-that-follow-their-shot)). *Next:* a render with too
+   few cuts made again; then props the model handles badly (a kite in the wind) kept to one state per short take, or
+   out of the moving part of a shot.
 6. **Close framings drawn whole** (fixed, fp7) and **the AI blocking**: its cameras now follow each shot's planned
    layout where its marks allow ([following the shot plan](director-desk.md#following-the-shot-plan)), yet with the
    desk on the storyboards scored 6.1 and 6.6 (fp27) against 7.2 and 6.8 without it: the image model does not draw
