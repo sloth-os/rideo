@@ -1,4 +1,10 @@
-import { ClipPlanOutputSchema, newId, VIDEO_MODEL_FACTS } from '@rideo/shared';
+import {
+  ClipPlanOutputSchema,
+  FeedbackSceneOutputSchema,
+  newId,
+  VIDEO_MODEL_FACTS,
+  VISION_DIMENSION_IDS,
+} from '@rideo/shared';
 import * as f from '@rideo/shared/testing';
 import { describe, expect, it, vi } from 'vitest';
 import {
@@ -23,6 +29,9 @@ import { AppError } from '../../src/errors';
 import type { ProxyClient } from '../../src/gateway/proxy-client';
 import { screenplayReviewInput } from '../../src/jobs/handlers/ai-review';
 import { Metrics } from '../../src/metrics';
+
+/** Every picture score a scene's review must give (`REQUIRED_SCORES`). */
+const PICTURE = Object.fromEntries(VISION_DIMENSION_IDS.map((d) => [d, 7]));
 
 class FakeProxy {
   calls: { domain: string; path: string; body: any; headers: Headers; timeoutMs?: number }[] = [];
@@ -504,6 +513,55 @@ describe('structured tasks', () => {
     ).rejects.toMatchObject({ code: 'llm_invalid_output', retryable: true });
   });
 
+  it('repairs a review that leaves out a score it must give, and fails when the repair leaves it out too', async () => {
+    const picture = [
+      'storytelling',
+      'continuity',
+      'character',
+      'temporal',
+      'physics',
+      'realism',
+      'cinematography',
+      'editing',
+    ];
+    const full = JSON.stringify({ scores: Object.fromEntries(picture.map((d) => [d, 6])), summary: 'Seen.' });
+    // fp56: the picture's scores as a list read as none, and the scene was scored on its sound alone
+    const listed = JSON.stringify({
+      scores: picture.map((dimension) => ({ dimension, score: 6 })),
+      summary: 'Seen.',
+    });
+    const metrics = new Metrics();
+    const repaired = new ScriptedAdapter([listed, full]);
+    const out = await new LlmTasks(repaired, repaired, { metrics }).run(
+      'feedback.scene',
+      FeedbackSceneOutputSchema,
+      {},
+    );
+    expect(out.scores).toMatchObject({ storytelling: 6, editing: 6 });
+    expect(repaired.calls).toHaveLength(2);
+    const ask = (repaired.calls[1]!.parts.at(-1) as { text: string }).text;
+    expect(ask).toContain('did not match');
+    expect(ask).toContain('scores.storytelling: Required');
+
+    const partial = JSON.stringify({
+      scores: { ...Object.fromEntries(picture.map((d) => [d, 6])), physics: null },
+    });
+    const stillPartial = new ScriptedAdapter([partial, partial]);
+    await expect(
+      new LlmTasks(stillPartial, stillPartial, { metrics }).run(
+        'feedback.scene',
+        FeedbackSceneOutputSchema,
+        {},
+      ),
+    ).rejects.toMatchObject({
+      code: 'llm_invalid_output',
+      retryable: true,
+      message: expect.stringContaining('physics'),
+    });
+    expect(metrics.llmCalls.get({ task: 'feedback.scene', status: 'invalid' })).toBe(1);
+    expect(metrics.llmCalls.get({ task: 'feedback.scene', status: 'ok' })).toBe(1);
+  });
+
   it('makes a call again while the provider turns it away for load, and only then', async () => {
     const good = JSON.stringify({ shots: [{ description: 'Wide', durationSec: 5 }] });
     const problem = (code: string) =>
@@ -662,7 +720,7 @@ describe('structured tasks', () => {
   });
 
   it('watches videos with the audio-visual model and its listening prompt, and only with it', async () => {
-    const text = new ScriptedAdapter(['{}']);
+    const text = new ScriptedAdapter([JSON.stringify({ scores: PICTURE, summary: 's' })]);
     const omni = new ScriptedAdapter([
       JSON.stringify({ speech: [{ text: 'Hello', speaker: 'Rosie' }], music: 'no', score: 0.9 }),
       JSON.stringify({
@@ -845,7 +903,7 @@ describe('who watches video (docs/design/ai-review.md#takes-watched-whole)', () 
         calls.push({ model: 'vision-x', req });
         if (req.parts.some((p) => p.type === 'video'))
           throw new LlmError('400', 400, false, '{"error":"unsupported content type: video_url"}');
-        return { text: JSON.stringify({ scores: {}, summary: 'frames only' }) };
+        return { text: JSON.stringify({ scores: PICTURE, summary: 'frames only' }) };
       },
     };
     const tasks = new LlmTasks(refusing, refusing, { omni: answering('omni-x', watch, calls) });
@@ -867,7 +925,7 @@ describe('who watches video (docs/design/ai-review.md#takes-watched-whole)', () 
 
   it('watches a scene as one video with its strips', async () => {
     const calls: { model: string; req: LlmRequest }[] = [];
-    const vision = answering('vision-x', { scores: { continuity: 7 }, summary: 'ok' }, calls);
+    const vision = answering('vision-x', { scores: { ...PICTURE, continuity: 6 }, summary: 'ok' }, calls);
     const tasks = new LlmTasks(vision, vision);
     const out = await tasks.feedbackScene(
       { shots: [] } as never,

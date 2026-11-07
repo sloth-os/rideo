@@ -220,6 +220,47 @@ describe('a scene watched before the edit', () => {
     expect(log.some((c) => c.message.endsWith("now the shot's take"))).toBe(true);
   }, 400_000);
 
+  it('scores the picture again when its scores come back unreadable, never the sound alone', async () => {
+    const { projectId: pid, state } = await readyStoryProject(stack, {
+      storyboard: { enabled: false },
+      pilotDurationSec: 15,
+    });
+    const plan = await stack.api<Job>('POST', `/projects/${pid}/clips/plan`, {
+      sceneId: state.docs.screenplay.scenes[0].id,
+    });
+    expectSucceeded(await stack.waitJob(pid, plan.id));
+    let clip = Object.values<Clip>((await docsOf(pid)).clips)[0]!;
+    const first = [...clip.shots].sort((a, b) => a.index - b.index)[0]!;
+    // The mock reviewer gives this scene's picture scores as a list the first time (fp56)
+    await stack.api('PATCH', `/projects/${pid}/clips/${clip.id}/shots/${first.id}`, {
+      description: `${first.description} Unreadable scores.`,
+    });
+    const gen = await stack.api<Job>('POST', `/projects/${pid}/clips/${clip.id}/generate`);
+    expectSucceeded(await stack.waitJob(pid, gen.id, 300_000));
+    await stack.waitIdle(pid);
+    const job = await stack.api<Job>('POST', `/projects/${pid}/clips/${clip.id}/review`, { fix: false });
+    expectSucceeded(await stack.waitJob(pid, job.id, 300_000));
+    clip = (await docsOf(pid)).clips[clip.id];
+    // Repaired: every picture dimension is scored, so the overall is the picture's and not the sound's
+    expect(clip.review).toMatchObject({ status: 'succeeded', jobId: job.id });
+    const scores: Record<string, unknown> = clip.review!.scores;
+    for (const d of [
+      'storytelling',
+      'continuity',
+      'character',
+      'temporal',
+      'physics',
+      'realism',
+      'cinematography',
+      'editing',
+    ])
+      expect(typeof scores[d], d).toBe('number');
+    expect(clip.review!.overall).toBeGreaterThan(0);
+    const metrics = await (await fetch(`${stack.url}/metrics`)).text();
+    expect(metrics).toMatch(/^rideo_llm_calls_total\{status="ok",task="feedback.scene"\} [1-9]/m);
+    expect(metrics).not.toMatch(/^rideo_llm_calls_total\{status="invalid",task="feedback.scene"\}/m);
+  });
+
   it('needs a take for every shot, and stays off when the project turns it off', async () => {
     const { projectId: pid, state } = await readyStoryProject(stack, {
       storyboard: { enabled: false },

@@ -1,10 +1,12 @@
 import { z } from 'zod';
+import { REVIEW_DIMENSIONS } from './ai-review';
 import {
   FeedbackFramingSchema,
   FeedbackMovementSchema,
   FeedbackSettingsPatchSchema,
   HEARD_DIMENSION_IDS,
   RetrospectiveAreaSchema,
+  VISION_DIMENSION_IDS,
 } from './feedback';
 import { SCENE_CONTINUITY_MAX } from './screenplay';
 
@@ -447,6 +449,28 @@ export const LLM_TASKS = [
 ] as const;
 export type LlmTaskId = (typeof LLM_TASKS)[number];
 
+/**
+ * The scores an answer must give, by task (docs/design/ai-gateway.md#structured-tasks). The schemas keep the scores
+ * they can read and drop the rest, so an answer without one of these is invalid and repaired, never judged on what is
+ * left: a scene whose picture scores were dropped was scored on its sound alone (fp56).
+ */
+export const REQUIRED_SCORES: Partial<Record<LlmTaskId, readonly string[]>> = {
+  'feedback.scene': VISION_DIMENSION_IDS,
+  'feedback.film': VISION_DIMENSION_IDS,
+  'screenplay.review': REVIEW_DIMENSIONS.screenplay,
+  'cast.review': REVIEW_DIMENSIONS.cast,
+  // `blocking` is scored only while the director's desk is on
+  'storyboard.review': REVIEW_DIMENSIONS.storyboard.filter((d) => d !== 'blocking'),
+};
+
+/** The scores of `REQUIRED_SCORES[task]` a parsed answer lacks: empty when it gives them all or the task needs none. */
+export function missingScores(task: LlmTaskId, answer: unknown): string[] {
+  const required = REQUIRED_SCORES[task];
+  if (!required) return [];
+  const scores = (answer as { scores?: Record<string, unknown> } | null | undefined)?.scores ?? {};
+  return required.filter((d) => typeof scores[d] !== 'number' || !Number.isFinite(scores[d]));
+}
+
 export const TASK_MARKER_PATTERN = /rideo-task:\s*([a-z.]+)/;
 
 /**
@@ -705,7 +729,10 @@ export interface SoundCheckInput {
 }
 
 /** Feedback tasks (docs/design/feedback.md#how-a-film-is-watched): lenient, the server assembles the document. */
-const score10 = z.coerce.number().min(0).max(10).optional().catch(undefined);
+/** A 0–10 score; null, '' or anything unreadable is no score, never a 0 (docs/design/ai-gateway.md#structured-tasks). */
+const score10 = z
+  .preprocess((v) => (v === null || v === '' ? undefined : v), z.coerce.number().min(0).max(10).optional())
+  .catch(undefined);
 export const VisionScoresSchema = z
   .object({
     storytelling: score10,

@@ -4,8 +4,11 @@ import {
   autoApplicable,
   carriedFixes,
   evaluateWorkflow,
+  FeedbackSceneOutputSchema,
   mergeSceneReviews,
+  missingScores,
   ProjectSettingsSchema,
+  REQUIRED_SCORES,
   reviewRequirement,
   reviewState,
   reviseScenes,
@@ -104,6 +107,60 @@ describe('AI review verdict (docs/design/ai-review.md#the-verdict)', () => {
       stageVerdict('screenplay', all(9), [{ severity: 'critical', title: 'A crowd' }], 7).blocking,
     ).toEqual(['critical: A crowd']);
     expect(stageVerdict('storyboard', {}, [], 7)).toMatchObject({ passed: false, blocking: ['no scores'] });
+  });
+
+  it('needs every score a review is asked for, so none is judged on what is left', () => {
+    const picture = [
+      'storytelling',
+      'continuity',
+      'character',
+      'temporal',
+      'physics',
+      'realism',
+      'cinematography',
+      'editing',
+    ];
+    expect(REQUIRED_SCORES['feedback.scene']).toEqual(picture);
+    expect(REQUIRED_SCORES['feedback.film']).toEqual(picture);
+    const full = Object.fromEntries(picture.map((d) => [d, 7]));
+    const scene = (scores: unknown) => FeedbackSceneOutputSchema.parse({ scores, summary: 'A scene.' });
+    expect(missingScores('feedback.scene', scene(full))).toEqual([]);
+    // Scores given as a list read as none, and the sound's two scores do not stand in for the picture (fp56)
+    const listed = scene(picture.map((dimension) => ({ dimension, score: 7 })));
+    expect(listed.scores).toEqual({});
+    expect(missingScores('feedback.scene', listed)).toEqual(picture);
+    expect(missingScores('feedback.scene', scene({ dialogue: 8, sound: 8 }))).toEqual(picture);
+    // A score the schema cannot read is missing; a number in a string is read; a null is no score, never a 0
+    expect(missingScores('feedback.scene', scene({ ...full, physics: '6/10', editing: '7' }))).toEqual([
+      'physics',
+    ]);
+    expect(scene({ ...full, physics: null }).scores.physics).toBeUndefined();
+    expect(missingScores('feedback.scene', scene({ ...full, physics: null, realism: '' }))).toEqual([
+      'physics',
+      'realism',
+    ]);
+    // Each stage's own dimensions; the storyboard's blocking only while the desk is on, so never required
+    const stage = (scores: Record<string, unknown>) =>
+      StageReviewOutputSchema.parse({ scores, summary: 'x' });
+    const storyboard = [
+      'composition',
+      'continuity',
+      'character',
+      'coverage',
+      'storytelling',
+      'feasibility',
+      'pacing',
+    ];
+    expect(
+      missingScores('storyboard.review', stage(Object.fromEntries(storyboard.map((d) => [d, 7])))),
+    ).toEqual([]);
+    expect(
+      missingScores('cast.review', stage({ likeness: 8, consistency: 8, distinct: 8, clarity: 8 })),
+    ).toEqual(['style']);
+    expect(missingScores('screenplay.review', stage({}))).toHaveLength(8);
+    // Tasks that are not reviews need no scores
+    expect(missingScores('clip.plan', { shots: [] })).toEqual([]);
+    expect(missingScores('feedback.listen', scene({ dialogue: 8 }))).toEqual([]);
   });
 });
 

@@ -28,6 +28,8 @@ type Scores = Record<(typeof DIMENSIONS)[number], number>;
 const MUMBLES = /\bmumbl/i;
 /** A shot whose description says so breaks the scene's continuity (docs/design/ai-review.md#mock-gateway). */
 const CONTINUITY_BREAK = /\s*continuity break\.?/i;
+/** A scene whose first answer gives its scores as a list, which reads as none (docs/design/ai-review.md#mock-gateway). */
+const UNREADABLE_SCORES = /\bunreadable scores\b/i;
 
 /**
  * `sound.check`: hears the shot's lines in their speakers' voices (none when the description says the speaker mumbles,
@@ -53,6 +55,7 @@ export function feedbackScene(
   input: FeedbackSceneInput,
   strips: number,
   watched = false,
+  repair = false,
 ): FeedbackSceneOutput {
   // A scene without problems passes the bar new projects gate every score at (docs/design/first-pass.md#the-gate-at-8)
   const scores: Scores = {
@@ -118,8 +121,12 @@ export function feedbackScene(
   // Before the edit, a regeneration is urgent only for a shot with a problem, and keeps the shot's cast
   const takes = input.stage === 'takes';
   const troubled = !!worst && worst[1] < 8;
+  const unreadable = !repair && input.shots.some((s) => UNREADABLE_SCORES.test(s.description));
   return {
-    scores,
+    // A list where an object belongs: the lenient schema reads no scores from it
+    scores: unreadable
+      ? (Object.entries(scores).map(([dimension, score]) => ({ dimension, score })) as unknown as Scores)
+      : scores,
     transcript: [],
     summary: `${watched ? 'Watched: s' : 'S'}cene ${input.scene.number} (${input.scene.heading}) seen in ${strips} strip(s)${watched ? ' and as one video' : ''}: ${input.shots.length} shot(s).`,
     strengths: ['The cast stays recognisable from shot to shot.'],
