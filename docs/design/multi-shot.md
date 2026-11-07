@@ -22,6 +22,12 @@ Groups take consecutive shots while the group has at most `max_shots` shots and 
 `max_duration_seconds`. A shot that cannot join a group is generated alone. `shot.group` jobs run like `shot.generate`
 jobs (lane `video`).
 
+A storyboarded scene whose frames are all approved is therefore made shot by shot, each take from its own checked frame,
+and that stays the default. *Decided* (November 7, 2026): rendering a scene in one request is a person's choice: leave
+unapproved the frames that should follow on from the shot before, or turn the storyboard off. On the plans of fp39 it
+gained 0.5 to 0.7 on the three scenes that no prop carries and lost 0.3 to 0.6 on the one a kite carries, even with the
+kite's frames approved ([measured](first-pass.md#a-scene-rendered-in-one-request-measured-not-the-default)).
+
 ## Planning for sequences
 
 A sequence can only form from shots that can join it, so when the project's video model renders sequences from a

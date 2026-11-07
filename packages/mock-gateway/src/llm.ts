@@ -216,6 +216,10 @@ export function answer(req: ChatRequest, opts: ChatOptions = {}): string {
   if (task) opts.onInput?.(task, input);
   const imageCount = req.parts.filter((p) => p.kind === 'image').length;
   const videoCount = req.parts.filter((p) => p.kind === 'video').length;
+  // The repair call after an invalid answer (docs/design/ai-gateway.md#structured-tasks)
+  const repairing = req.parts.some(
+    (p) => p.kind === 'text' && p.text.includes('did not match the required JSON shape'),
+  );
   let out: unknown;
   switch (task) {
     case 'screenplay.generate':
@@ -270,7 +274,7 @@ export function answer(req: ChatRequest, opts: ChatOptions = {}): string {
       out = briefAdapt(input);
       break;
     case 'feedback.scene':
-      out = feedbackScene(input, imagesOf(req.parts).length, videoCount > 0);
+      out = feedbackScene(input, imagesOf(req.parts).length, videoCount > 0, repairing);
       break;
     case 'feedback.listen':
       out = feedbackListen(input, videoCount > 0);

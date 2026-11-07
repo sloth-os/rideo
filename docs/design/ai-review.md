@@ -117,8 +117,11 @@ type StageAction =
 
 `stageVerdict(scores, issues, threshold, minDimension)` (shared, deterministic) decides, not the model: the score is
 the mean of the dimensions the model scored, and the review **passes** when the score reaches the threshold, no issue
-is critical and no dimension is below `review.minDimension` (4 in the schema, 8 for new projects). `blocking` names
-what failed ("critical: the chairlift boarding cannot be generated", "pacing 3/10, below 8", "score 6.4 of 7").
+is critical and no dimension is below `review.minDimension` (4 in the schema, 8 for new projects). The model must score
+every dimension: an answer that leaves one out is repaired, and fails as `llm_invalid_output` if it still does
+([structured tasks](ai-gateway.md#structured-tasks)). A dimension left out can never pass a gate it would have failed,
+and a scene is never scored on its sound alone. `blocking` names what failed ("critical: the chairlift boarding cannot
+be generated", "pacing 3/10, below 8", "score 6.4 of 7").
 
 **Judge samples.** One judge answer is noisy: the same build and brief moved by up to a point between runs, and with
 every dimension held at a floor, a minimum over many noisy dimensions fails work that truly clears it (a storyboard truly
@@ -458,6 +461,8 @@ recommends redrawing the weakest frame. Tests drive generate → review → revi
 that failed its quality checks or did not pass, or a description that says "continuity break", which it reports as a
 major continuity issue and revises away; every other recommendation is priority 2. Tests drive generate → scene
 review → fix → watched again on it. With `watching: true` it says it saw the video (`summary` starts with "Watched").
+A scene with a shot whose description says "unreadable scores" gets its picture scores back once as a list, which
+reads as no scores; the repair call that names them gets the scores (tests: a scene is never scored on its sound alone).
 `take.watch` passes a take unless its shot's description says "motion glitch" (a critical morphing issue and motion
 0.2; the shot's revised description without it passes), and `cast.review` passes a cast whose characters each have an
 approved or generated reference and recommends drawing again the references of a character whose identity says

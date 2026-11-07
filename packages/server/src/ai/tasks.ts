@@ -43,6 +43,7 @@ import {
   type MediaDescribeOutput,
   MediaDescribeOutputSchema,
   makerRubric,
+  missingScores,
   RECONCILE_FRAME_LABEL,
   RECONCILE_OPENING_LABEL,
   REFERENCE_CHECK_EARLIER_LABEL,
@@ -506,6 +507,17 @@ function tryParse<T>(
   }
 }
 
+/** A parsed answer without a score its task must give is invalid (docs/design/ai-gateway.md#structured-tasks). */
+function scored<T>(
+  task: LlmTaskId,
+  parsed: { ok: true; value: T } | { ok: false; error: string },
+): { ok: true; value: T } | { ok: false; error: string } {
+  if (!parsed.ok) return parsed;
+  const missing = missingScores(task, parsed.value);
+  if (!missing.length) return parsed;
+  return { ok: false, error: missing.map((d) => `scores.${d}: Required (a number from 0 to 10)`).join('; ') };
+}
+
 /** How a call the provider turned away for load is made again (docs/design/ai-gateway.md#structured-tasks). */
 export interface LlmRetryPolicy {
   /** Calls after the first one. */
@@ -847,7 +859,7 @@ export class LlmTasks {
     let res = first.res;
     tokens.in += res.usage?.input ?? 0;
     tokens.out += res.usage?.output ?? 0;
-    let parsed = tryParse(schema, res.text);
+    let parsed = scored(task, tryParse(schema, res.text));
     if (!parsed.ok) {
       this.deps.log?.info({ task, error: parsed.error }, 'LLM output invalid, repairing');
       res = await this.complete(
@@ -872,7 +884,7 @@ export class LlmTasks {
       );
       tokens.in += res.usage?.input ?? 0;
       tokens.out += res.usage?.output ?? 0;
-      parsed = tryParse(schema, res.text);
+      parsed = scored(task, tryParse(schema, res.text));
       if (!parsed.ok) {
         this.deps.metrics?.llmCalls.inc({ task, status: 'invalid' });
         meter();
