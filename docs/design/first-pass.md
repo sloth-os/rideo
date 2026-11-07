@@ -371,7 +371,10 @@ contradicts what the shot needs (who is in it, where each stands and faces, what
 missing or shown twice, a framing a size off, a landmark on the other side of the frame than the shot puts it, the
 wind or the sun from the other side, the gesture the shot turns on missing or aimed elsewhere, a piece of an outfit
 missing, any letters or words: fp19's riding storyboard had a critical "PONY SCHOOL" sign and a Rosie without her
-trousers and boots in two frames). Details (the clouds, a texture) are listed as conflicts without a redraw. The
+trousers and boots in two frames; a string, rope, lead or strap that does not join what it should, or one too many: in
+fp57 two approved frames drew the kite's string from Sammy's handle up into empty sky while the kite lay on the grass,
+the check passed them and the scene review marked both). The reading says what each string or strap runs between.
+Details (the clouds, a texture) are listed as conflicts without a redraw. The
 sides came last: the planner writes into every shot what is behind the characters on which side and which way the
 wind blows, and the reviews still found a close-up with the lake on the wrong side and scarves and tails blowing
 against the scene's wind in nearly every storyboard (fp14, fp15). The first frame that needs no redraw is kept, else the one with the fewest conflicts; its reading is kept on
