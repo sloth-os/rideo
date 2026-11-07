@@ -470,6 +470,25 @@ The difference is −0.10 (95% CI −0.35 to +0.23); continuity rose in three sc
 fell, as a choice of the frame that agrees most with the others is also a choice of the frame most like them. A new candidate was
 chosen for 7 of 8 faulted frames, and 5 of the 8 were faulted again when the scene was read again, about as many as after an edit.
 
+### A mirrored frame flipped (tried, not built)
+
+About a quarter of the storyboards' continuity faults name a side: a barn or a tree on the other side, someone walking
+or looking the wrong way, a scarf against the wind. A frame flipped left to right moves everything at once, which no edit
+did, so the faulted frames of fp52's control storyboards were flipped by hand where today's review named a side
+(kite 1 shot 5: the scarf against the wind; kite 2 shot 5: Rosie looking and pointing the wrong way) and the four scenes
+reviewed again on the same frames otherwise (fp58, November 7, 2026):
+
+| Scene | As drawn | Flipped | Continuity |
+|---|---|---|---|
+| Kite 1 (shot 5 flipped) | 7.3 | 6.9 | 5.3 → 5.0 |
+| Kite 2 (shot 5 flipped) | 7.0 | 7.1 | 6.0 → 5.3 |
+| Riding 1, 2 (none flipped: the review's own spread) | 7.4, 7.7 | 7.2, 7.3 | 6.0, 5.7 → 5.3, 5.7 |
+
+Each flip turned Rosie the right way and put the lone tree and the lake on the wrong sides, and the raised paw on her
+other side; the review marked both critical ("the flip breaks the 180-degree line"). In today's frames the side is wrong
+for one character in a frame whose place is right, so a whole frame is not the unit to mirror; riding 2's pony, whose
+head was on the wrong side, would have faced the wrong way. Not built. Cost: 24 review answers, about $1.40.
+
 ## Frames that agree with each other
 
 Each frame followed its own shot and the storyboards' continuity stayed at 5–6: the frames disagreed with each other.
@@ -849,6 +868,7 @@ cell is one run's first round; the scores of the same build and brief differ by 
 | fp53: each scene rendered in one request (plans of fp39, one render, no remakes) | – | – | scene reviews 6.80, 6.00, 5.97, 7.83 (mean 6.65) against about 6.4 shot by shot; [the split decides it](#a-scene-rendered-in-one-request-measured-not-the-default) |
 | fp56: each scene drawn and rendered again in one request with the split (plans of fp39, one render, no remakes) | – | – | scene reviews 6.93, 5.90, 6.40, 7.23 (mean 6.62) against 6.16–6.49 for six runs shot by shot; takes passing 19 of 24 |
 | fp57: the kite scenes' opener and every shot of the kite approved, the rest rendered in one request from them (plans of fp39, one render, no remakes) | – | – | scene reviews kite 1 7.07, kite 2 6.23 against 6.93 and 5.90 in one request (fp56) and 6.42 and 6.52 shot by shot; takes passing 9 of 10; kite 2's approved frames draw the string into the sky |
+| fp58: the frames a review faulted for a side flipped left to right (fp52's control storyboards, reviewed again) | – | – | kite 1 7.3 → 6.9, kite 2 7.0 → 7.1, unflipped riding scenes −0.2 and −0.4; [the place flips with the character](#a-mirrored-frame-flipped-tried-not-built) |
 | fp55: fp53's riding 1 render split again at the cuts found near the planned ones (same render, reviewed beside the old split) | – | – | scene 6.67 against 5.97; takes passing 6 of 8 against 2 |
 | fp54: HappyHorse 1.1 instead of Wan 3.0, from the same 13 approved frames | – | – | shots' watch 5.0 against 6.1, passed 5 against 7; kite scene 5.7 |
 | fp51: the faulted frames drawn twice more and one picked (storyboards only, plans of fp39) | – | – | 7.17 against 7.28 at the same time, continuity 5.9 against 5.5; [5 of 8 faulted again](#a-scene-read-whole-then-a-frame-picked-tried-not-merged) |
