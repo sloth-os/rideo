@@ -961,9 +961,10 @@ model's; a take watch that finds it could have the take made again). Wan's own p
    finds (fp55: riding 1 from 5.97 to 6.67 on the same render); fresh renders reproduced it (fp56: mean 6.62 against 6.16 to
    6.49 shot by shot) except in the scene whose story is a prop (kite 2). Approving the prop's frames (fp57) kept kite 1's
    gain (7.07) but lifted kite 2 only to 6.23, under every run shot by shot: two of its approved frames drew the string
-   into the sky, and the frame check passed them. *Next:* a frame check that looks at what each string, strap or held
-   thing joins; a render with too few cuts made again; then props the model handles badly (a kite in the wind) kept to
-   one state per short take, or out of the moving part of a shot.
+   into the sky, and the frame check passed them. *Decided* (November 7, 2026): a storyboarded scene stays shot by shot
+   from its approved frames; one request is a person's choice ([when](multi-shot.md#when)). *Next:* a frame check that
+   looks at what each string, strap or held thing joins; a render with too few cuts made again; then props the model
+   handles badly (a kite in the wind) kept to one state per short take, or out of the moving part of a shot.
 6. **Close framings drawn whole** (fixed, fp7) and **the AI blocking**: its cameras now follow each shot's planned
    layout where its marks allow ([following the shot plan](director-desk.md#following-the-shot-plan)), yet with the
    desk on the storyboards scored 6.1 and 6.6 (fp27) against 7.2 and 6.8 without it: the image model does not draw
