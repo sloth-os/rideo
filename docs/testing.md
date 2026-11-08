@@ -590,3 +590,8 @@ and `--until pilot` adds the pilot's video.
 | `real-ai-check` | on pushes to `main` and manual runs (never pull requests): whether the suite's variables and secrets are set (repository or organization); a notice names what is missing |
 | `real-ai` | when they are: the real-model suite (`playwright.real.config.ts`); the keys reach that step only, not `npm ci`; the report, the studio's log and the gateway's (redacted) log are uploaded |
 | `docker` | builds the production image (pushed to GHCR on `main`) |
+
+Every job that installs uses `.github/actions/npm-ci`: `npm ci` with c2pa-node's native binary fetched with the job's
+token and cached by its version. c2pa-node's own postinstall fetches the binary from a GitHub release without a token,
+and falls back to a Rust build that cannot build the published package. On November 8, 2026, while GitHub timed out
+some unauthenticated requests, that failed the install of most jobs, one of them on five runs in a row.

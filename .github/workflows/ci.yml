@@ -26,7 +26,7 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
-      - run: npm ci
+      - uses: ./.github/actions/npm-ci
       - run: npm run lint
       - run: npm run typecheck
 
@@ -39,7 +39,7 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
-      - run: npm ci
+      - uses: ./.github/actions/npm-ci
       - run: npm run test:coverage
       - uses: actions/upload-artifact@v4
         if: always()
@@ -60,7 +60,7 @@ jobs:
           cache: npm
       - name: Install ffmpeg
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
-      - run: npm ci
+      - uses: ./.github/actions/npm-ci
       - run: npm run test:integration
 
   webdav-compat:
@@ -72,7 +72,7 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
-      - run: npm ci
+      - uses: ./.github/actions/npm-ci
       - name: Start Apache httpd with mod_dav
         run: scripts/webdav/run.sh
       - name: Storage conformance against Apache
@@ -92,7 +92,7 @@ jobs:
           cache: npm
       - name: Install ffmpeg
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
-      - run: npm ci
+      - uses: ./.github/actions/npm-ci
       - name: Install Chromium
         run: npx playwright install --with-deps chromium
       - run: npm run test:e2e
@@ -168,7 +168,7 @@ jobs:
           cache: npm
       - name: Install ffmpeg
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
-      - run: npm ci
+      - uses: ./.github/actions/npm-ci
       - name: Install Chromium
         run: npx playwright install --with-deps chromium
       - run: npm run build -w @rideo/web

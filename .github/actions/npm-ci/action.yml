@@ -1,0 +1,46 @@
+name: npm ci
+description: >-
+  npm ci with c2pa-node's native binary fetched with the job's token and cached by its version. c2pa-node's
+  postinstall fetches it from a GitHub release without a token, and its fallback Rust build cannot build the published
+  package, so a timeout there fails the install (docs/testing.md#ci-githubworkflowsciyml).
+runs:
+  using: composite
+  steps:
+    - id: c2pa
+      shell: bash
+      run: |
+        version=$(node -p "require('./package-lock.json').packages['node_modules/@contentauth/c2pa-node'].version")
+        case "${{ runner.arch }}" in
+          X64) target=x86_64-unknown-linux-gnu ;;
+          ARM64) target=aarch64-unknown-linux-gnu ;;
+          *) echo "::error::no c2pa-node binary for ${{ runner.arch }}"; exit 1 ;;
+        esac
+        echo "version=$version" >> "$GITHUB_OUTPUT"
+        echo "target=$target" >> "$GITHUB_OUTPUT"
+    - uses: actions/cache@v4
+      with:
+        path: ~/.cache/c2pa-node
+        key: c2pa-node-${{ steps.c2pa.outputs.target }}-${{ steps.c2pa.outputs.version }}
+    - shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        VERSION: ${{ steps.c2pa.outputs.version }}
+        TARGET: ${{ steps.c2pa.outputs.target }}
+      run: |
+        dir="$HOME/.cache/c2pa-node"
+        zip="c2pa-node_$TARGET-v$VERSION.zip"
+        if [ ! -s "$dir/index.node" ]; then
+          mkdir -p "$dir"
+          for attempt in 1 2 3; do
+            rm -f "$dir/$zip"
+            gh release download "@contentauth/c2pa-node@$VERSION" --repo contentauth/c2pa-js \
+              --pattern "$zip" --dir "$dir" && break
+            [ "$attempt" = 3 ] && exit 1
+            sleep 30
+          done
+          unzip -p "$dir/$zip" > "$dir/index.node.part"
+          mv "$dir/index.node.part" "$dir/index.node"
+          rm "$dir/$zip"
+        fi
+        SKIP_RUST_BUILD=1 npm ci
+        cp "$dir/index.node" node_modules/@contentauth/c2pa-node/dist/index.node
