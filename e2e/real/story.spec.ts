@@ -161,6 +161,13 @@ test('a brief with a picture and a video → screenplay → locked cast → pilo
     "the vision model's verdicts on the characters",
   ).toBeGreaterThan(0);
   expect(await newCalls('consistency.judge')).toBeGreaterThan(0);
+  // A scene of two shots or more is watched once by the vision model before the edit, and the suite's project applies
+  // none of its fixes (docs/design/ai-review.md#scenes-before-the-edit)
+  if (clip.shots.length >= 2) {
+    expect(clip.review).toMatchObject({ status: 'succeeded', round: 1, fixes: [] });
+    expect(clip.review.overall).toBeGreaterThan(0);
+    expect(await newCalls('feedback.scene')).toBeGreaterThanOrEqual(1);
+  }
   const filmed = takes.filter((t: any) => t.video);
   expect(filmed.length, 'a take with a video from the video model').toBeGreaterThan(0);
   for (const take of filmed) {

@@ -80,13 +80,16 @@ export const REAL_PROJECT_SETTINGS = {
   // The director's desk blocks storyboarded scenes only; the suite has none
   blocking: { enabled: false },
   consistency: { threshold: 0.5, maxAttempts: 2 },
-  // One draft, one review of the screenplay with one judge answer, and no automatic revisions: the suite checks the
-  // review runs, not the story. The reviews of the cast, the takes and the cut, and the drafts and answers of new
-  // projects, have their own tests on the mock gateway (autopilot.test.ts, first-pass.test.ts).
+  // One draft, one review of the screenplay with one judge answer, one watch of the scene, and no automatic revisions
+  // or fixes: the suite checks the reviews run, not the story. The reviews of the cast, the takes and the cut, the
+  // scene review's fixes (two shots made again and the scene watched again: 16-20 minutes on the real models), and
+  // the drafts and answers of new projects, have their own tests on the mock gateway (autopilot.test.ts,
+  // first-pass.test.ts, clip-review.test.ts).
   review: {
     maxRounds: 0,
     screenplayDrafts: 1,
     judgeSamples: 1,
+    sceneFixes: 0,
     cast: false,
     cut: false,
     watchTakes: false,

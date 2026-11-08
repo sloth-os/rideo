@@ -549,19 +549,22 @@ hosts, the duration override, the missing variables and the redacted log.
 | Spec | Real calls | Flow |
 |---|---|---|
 | `gateway.spec.ts` | vision: the text model's one-word `settings.test` | readiness asks the gateway's `/health`; `/api/config` lists the pinned image and video models through the SDK, the video model with the lengths of the gateway's catalog, and the vision model as the language and vision model; Settings tests the connection, and the text model's card answers its test with one real word through the proxy |
-| `story.spec.ts` | vision: `media.describe`, `screenplay.generate`, `clip.plan`, `consistency.judge`; image: references and keyframes; video: the pilot's shots | a brief with an image and a video attached → screenplay → one front reference per character and one view per element in use → cast locked (storyboard off) → the pilot clip planned in shots of the catalog's length: every shot gets a take with a keyframe from the image model and the vision model's verdict on it; at least one take has a video from the video model, started from its keyframe and judged on its frames (a shot whose keyframe fails the gate twice gets none) |
+| `story.spec.ts` | vision: `media.describe`, `screenplay.generate`, `clip.plan`, `consistency.judge`, `feedback.scene`; image: references and keyframes; video: the pilot's shots | a brief with an image and a video attached → screenplay → one front reference per character and one view per element in use → cast locked (storyboard off) → the pilot clip planned in shots of the catalog's length: every shot gets a take with a keyframe from the image model and the vision model's verdict on it; at least one take has a video from the video model, started from its keyframe and judged on its frames (a shot whose keyframe fails the gate twice gets none); a scene of two shots or more is watched once by the vision model before the edit, and none of the watch's fixes is applied |
 | `footage.spec.ts` | vision: `footage.analyze` | footage uploaded → analysis → the model's summary and suggestions next to the rules' → accept all → auto edit |
 
-The suite checks the plumbing, not the quality, so its project asks for one screenplay draft and one judge answer per review
-(`REAL_PROJECT_SETTINGS`), whatever new projects default to: more of them cost minutes on the real text model, and have their own
-tests on the mock gateway (`first-pass.test.ts`, `review-samples.test.ts`). It keeps the checks of each frame
-against its shot (`frame.reconcile`, about 3 minutes a call) and of each reference (`reference.check`, about 2), the only place
-they run on real models in CI, so `story.spec.ts` takes close to an hour: its limit is 60 minutes and the job's 75.
+The suite checks the plumbing, not the quality, so its project asks for one screenplay draft and one judge answer per
+review, and watches its scene once without applying the watch's fixes (`REAL_PROJECT_SETTINGS`, `review.sceneFixes` 0),
+whatever new projects default to: more of them cost minutes on the real models, and have their own tests on the mock
+gateway (`first-pass.test.ts`, `review-samples.test.ts`, `clip-review.test.ts`). The fixes, two shots made again and the
+scene watched a second time, took 16 to 20 of `story.spec.ts`'s minutes, and with them it ran past its hour (November
+2026). It keeps the checks of each frame against its shot (`frame.reconcile`, about 3 minutes a call) and of each
+reference (`reference.check`, about 2), the only place they run on real models in CI, so `story.spec.ts` takes about 45
+minutes: its limit is 60 minutes and the job's 75.
 
 Each spec also reads the studio's `/metrics` (`rideo_llm_calls_total`, `rideo_gateway_tasks_total`) to check that the
 calls it expects were made and succeeded. The suite's projects judge with a threshold of 0.5 and two attempts per
 keyframe and per video: the cost stays bounded, and a strict verdict on a good picture does not keep the video model
-from being exercised. A run takes about an hour and costs a dozen or so images, a few short videos and a few dozen vision
+from being exercised. A run takes under an hour and costs a dozen or so images, a few short videos and a few dozen vision
 calls. Retries are off: a failure is reported, not paid for twice.
 
 ### Measuring the first pass (`scripts/first-pass.mjs`)
