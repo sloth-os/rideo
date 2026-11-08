@@ -899,6 +899,35 @@ take watch names but does not fail. The storyboards reviewed 7.1 and 7.7 (fp59's
 plans $0.65, the first wording's included; frames and storyboard reviews $2.36; takes, watches and scene reviews
 $12.35).
 
+### A take with a major fault made again (tried, not built)
+
+A take fails its watch on a critical issue or a low score, and passes with a major one: five of fp62's 11 passing takes
+had a major fault in the kite named by their own watch. So the verdict was given a way to fail a take on a major issue
+too (a project setting), the watch wrote its `fix` for a major issue as for a failure, and of two attempts the checks
+rank alike the one whose watch names fewer critical, then major issues was kept. fp62's renders were kept as they were,
+and its five takes with a major fault were made again under that rule with up to two attempts each: the first was told
+what the old take's watch had found, the second what its own watch found (fp64, November 8, 2026). Two of the five old
+watches had written no fix, because a passing take's watch wrote none then, and a take already watched is not watched
+again, so those two first attempts were made without a correction. Both scenes were reviewed three times, and fp62's
+renders, unchanged, three more times at the same time:
+
+| Scene | fp62's renders, unchanged (six reviews) | Its five major-fault takes made again | Physics | Continuity | Temporal |
+|---|---|---|---|---|---|
+| Kite 1 | 6.58 (6.8, 6.1, 6.6; 6.8, 6.8, 6.4) | 6.97 (7.0, 6.9, 7.0) | 5.83 → 6.00 | 4.67 → 5.00 | 5.83 → 6.67 |
+| Kite 2 | 6.88 (7.1, 6.8, 6.4; 6.7, 7.2, 7.1) | 7.23 (7.5, 7.3, 6.9) | 4.67 → 6.33 | 5.67 → 6.00 | 6.50 → 6.33 |
+
+The remakes removed the two faults that every review of the unchanged renders named: kite 1's red handle doubling and
+popping onto the grass (named in six reviews of six, then in none of three, although the new take's own watch still
+names it), and kite 2's kite hanging in the air like a balloon (six of six, then none). Only one of the five takes ended
+passing: kite 2's lift, whose string had doubled, passed at physics 0.9. Two more kept a new take, one with fewer major
+faults and one with as many. Two kept the old take because their new attempts had as many faults: in kite 2's fourth
+shot the string came loose from the fallen kite in both attempts, although both were told to keep it joined. A new take brought a new fault (two reviews of three named Rosie's muzzle
+smearing in kite 2). Over the two scenes the gain was +0.37 (95% CI +0.16 to +0.58), under the 0.5 the rule asks for:
+not built. Built, it would make about four in ten passing takes again (72 of 180 passing takes in the measured runs had
+a major fault named by their own watch), and most of them twice: four of the five here still had one after both
+attempts. Cost: $10.47 for the 10 takes, their watches and six scene reviews, and $0.50 for the unchanged renders'
+reviews.
+
 ## Scenes count what they heard
 
 A scene watched before the edit is heard by the audio-visual model ([scenes before the
@@ -920,7 +949,8 @@ first pass also asks for less, and waits less:
   demo). They run three at a time now (`CAST_REVIEW_CONCURRENCY`, `SCENE_REVIEW_CONCURRENCY`), and the review keeps
   the cast's and the scenes' order.
 - **A shorter staging check.** New projects cap the reasoning of the check that reads each frame against its shot:
-  the same decisions in a third of the time ([below](#the-staging-checks-reasoning-capped)).
+  the same decisions in a third of the time, and storyboards that score the same in 43% less time
+  ([below](#the-staging-checks-reasoning-capped)).
 
 ### The staging check's reasoning capped
 
@@ -950,8 +980,28 @@ in the middle of the frame and a fence rail across its foreground where the plan
 hanging still in the wind. One is wrong (a barn behind a character, where the place has one), and on one frame (riding
 1, shot 1: Rosie in the middle rather than on the left) both capped readings named the conflict and kept the frame
 where both full readings sent it back. At 1,024 tokens the check sends back more frames, for small things (a calm smile
-where the shot has a worried look, a backpack's flap). The storyboards were not drawn again: a check that decides the
-same draws the same. Cost: 96 readings, $3.03.
+where the shot has a worried look, a backpack's flap). Cost: 96 readings, $3.03.
+
+Then drawn: the four scenes of fp39's plans were drawn again with their checks, one project with the check capped at
+2,048 tokens and one with it in full, on the same build at the same time, and each storyboard was reviewed with three
+judge answers (fp65, November 8, 2026):
+
+| Scene | Full reasoning | Capped at 2,048 tokens | Continuity | Frames drawn | Storyboard job |
+|---|---|---|---|---|---|
+| Kite 1 | 7.3 | 7.5 | 5.0 → 6.3 | 11 → 10 | 45 → 37 min |
+| Kite 2 | 6.7 | 7.3 | 5.0 → 6.0 | 9 → 10 | 63 → 30 min |
+| Riding 1 | 7.5 | 6.7 | 6.3 → 5.7 | 16 → 14 | 107 → 57 min |
+| Riding 2 | 7.1 | 7.4 | 5.7 → 5.3 | 10 → 12 | 132 → 73 min |
+
+The capped storyboards scored 7.22 against 7.15 (+0.08, 95% CI −0.89 to +1.04): no loss measured. The storyboard jobs
+took 43% less time (3.3 hours against 5.8) and cost 30% less ($3.75 against $5.34). The capped check read a frame in a
+median 63 s against 199 s, writing 2,372 tokens against 7,789, and both projects drew 46 frames. Riding 1 lost 0.8. Its
+fifth frame was drawn once and kept with four conflicts the capped check had named, among them Sammy seen from behind
+where the medium close shot has him facing the camera, and its review found his deciding line "played to the back of
+his head". fp63 saw the same once: a conflict named and the frame kept, where both full readings sent it back. A rule
+that sends back a frame whose capped reading names three conflicts or more would have sent back 9 of fp63's 24 frames
+instead of 6, and agreed with each full reading once less (20 and 21 times in 24): not built. New projects keep the
+cap. Cost: $9.09.
 
 ## Measuring the first pass
 
@@ -1007,7 +1057,9 @@ cell is one run's first round; the scores of the same build and brief differ by 
 | fp60: fp59's frames reviewed with the readings of the frames drawn unlike their plan (storyboards only, a probe) | – | – | 7.50 against 7.25 reviewed as planned at the same time (+0.25, 95% CI −0.13 to +0.63), continuity +0.20; [the frames disagree with each other](#frames-that-follow-their-shot) |
 | fp61: a prop that moves kept to one motion a shot, the kite scenes planned again (one plan, one render, shot by shot from approved frames) | – | – | scene reviews kite 1 6.97, kite 2 6.13 against 6.42 and 6.52 for six runs of fp39's plans (+0.08); takes passing 12 of 13 against 49 of 60; [the cuts skip the prop's states](#a-moving-prop-kept-to-one-motion-a-shot-tried-not-built) |
 | fp62: fp61's rule with a prop kept where the last shot left it, the kite scenes planned again (one plan, one render, shot by shot from approved frames) | – | – | scene reviews kite 1 6.50, kite 2 6.77 against 6.42 and 6.52 for six runs of fp39's plans (+0.16); takes passing 11 of 12; [no cut skips a state, the lift is drawn as a hover](#a-prop-kept-where-the-last-shot-left-it-tried-not-built) |
+| fp64: fp62's 5 takes that passed with a major fault made again, told what their watch found, up to two attempts each (fp62's renders, the rest unchanged) | – | – | scene reviews kite 1 6.97, kite 2 7.23 against 6.58 and 6.88 for the same renders unchanged (+0.37, 95% CI +0.16 to +0.58); 1 of 5 ended passing; [the doubled handle and the hover gone](#a-take-with-a-major-fault-made-again-tried-not-built) |
 | fp63: the staging check's reasoning capped at 2,048 and 1,024 tokens (fp59's 24 frames read again, four readings each) | – | – | not drawn again: at 2,048 tokens the same redraws as a full reading 21 and 22 of 24 times (two full readings agree 21 times), 56 s a reading against 174 s; [new projects cap it](#the-staging-checks-reasoning-capped) |
+| fp65: the four scenes of fp39's plans drawn again with the staging check capped at 2,048 tokens and in full (storyboards only, at the same time) | – | – | 7.22 against 7.15 (+0.08, 95% CI −0.89 to +1.04), continuity 5.83 against 5.50; storyboard jobs 43% shorter, 30% cheaper; riding 1 −0.8 from a frame kept with four conflicts named; [the cap stays](#the-staging-checks-reasoning-capped) |
 | fp55: fp53's riding 1 render split again at the cuts found near the planned ones (same render, reviewed beside the old split) | – | – | scene 6.67 against 5.97; takes passing 6 of 8 against 2 |
 | fp54: HappyHorse 1.1 instead of Wan 3.0, from the same 13 approved frames | – | – | shots' watch 5.0 against 6.1, passed 5 against 7; kite scene 5.7 |
 | fp51: the faulted frames drawn twice more and one picked (storyboards only, plans of fp39) | – | – | 7.17 against 7.28 at the same time, continuity 5.9 against 5.5; [5 of 8 faulted again](#a-scene-read-whole-then-a-frame-picked-tried-not-merged) |
@@ -1106,7 +1158,8 @@ What keeps each under 8, what was tried, and what to try next:
    frames it faults edited or drawn again and picked (fp49–fp51): the reading finds what the review marks, and neither way
    clears it (4 to 5 of 7 or 8 faulted again). The staging check, which reasoned in full (one panel's reading in fp29
    took 217 s and wrote 9,069 tokens), is capped at 2,048 tokens of reasoning for new projects: the same decisions in a
-   third of the time ([fp63](#the-staging-checks-reasoning-capped)).
+   third of the time ([fp63](#the-staging-checks-reasoning-capped)), and storyboards drawn with it scored 7.22 against
+   7.15 (fp65).
 4. **Stills that tell the beat** (storytelling 6–8): a frame is the start of its shot, so a beat inside the take was
    missing from the storyboard; the planner now starts a shot on its beat's pose (fp18, being measured).
 5. **The video** (scene 6.0–7.3, first takes 5.8–7.4): the video model adds its own failures (a kite that morphs and
@@ -1131,8 +1184,11 @@ model's; a take watch that finds it could have the take made again). Wan's own p
    it (fp62), the kite skipped no state, and the video model drew its lift as a hover: +0.16
    ([tried, not built](#a-prop-kept-where-the-last-shot-left-it-tried-not-built)). Five of fp62's 11 passing takes passed
    with a major fault in the kite named by their own watch (a string doubled or cut loose, the kite through a leg).
-   *Next:* a take whose watch names a major fault in its physics made again, as a failed take is; a render with too few
-   cuts made again.
+   Made again with what their watch found (fp64), they lost the doubled handle and the hover, but only one ended passing,
+   and the scenes gained +0.37 for about four in ten takes made again
+   ([tried, not built](#a-take-with-a-major-fault-made-again-tried-not-built)). What the remakes kept (a string coming
+   loose from the kite, a handle doubled, the kite propped up off the grass) the video model drew wrong even when told
+   what to show. *Next:* a render with too few cuts made again.
 6. **Close framings drawn whole** (fixed, fp7) and **the AI blocking**: its cameras now follow each shot's planned
    layout where its marks allow ([following the shot plan](director-desk.md#following-the-shot-plan)), yet with the
    desk on the storyboards scored 6.1 and 6.6 (fp27) against 7.2 and 6.8 without it: the image model does not draw
