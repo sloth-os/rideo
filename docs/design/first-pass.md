@@ -949,7 +949,8 @@ first pass also asks for less, and waits less:
   demo). They run three at a time now (`CAST_REVIEW_CONCURRENCY`, `SCENE_REVIEW_CONCURRENCY`), and the review keeps
   the cast's and the scenes' order.
 - **A shorter staging check.** New projects cap the reasoning of the check that reads each frame against its shot:
-  the same decisions in a third of the time ([below](#the-staging-checks-reasoning-capped)).
+  the same decisions in a third of the time, and storyboards that score the same in 43% less time
+  ([below](#the-staging-checks-reasoning-capped)).
 
 ### The staging check's reasoning capped
 
@@ -979,8 +980,28 @@ in the middle of the frame and a fence rail across its foreground where the plan
 hanging still in the wind. One is wrong (a barn behind a character, where the place has one), and on one frame (riding
 1, shot 1: Rosie in the middle rather than on the left) both capped readings named the conflict and kept the frame
 where both full readings sent it back. At 1,024 tokens the check sends back more frames, for small things (a calm smile
-where the shot has a worried look, a backpack's flap). The storyboards were not drawn again: a check that decides the
-same draws the same. Cost: 96 readings, $3.03.
+where the shot has a worried look, a backpack's flap). Cost: 96 readings, $3.03.
+
+Then drawn: the four scenes of fp39's plans were drawn again with their checks, one project with the check capped at
+2,048 tokens and one with it in full, on the same build at the same time, and each storyboard was reviewed with three
+judge answers (fp65, November 8, 2026):
+
+| Scene | Full reasoning | Capped at 2,048 tokens | Continuity | Frames drawn | Storyboard job |
+|---|---|---|---|---|---|
+| Kite 1 | 7.3 | 7.5 | 5.0 → 6.3 | 11 → 10 | 45 → 37 min |
+| Kite 2 | 6.7 | 7.3 | 5.0 → 6.0 | 9 → 10 | 63 → 30 min |
+| Riding 1 | 7.5 | 6.7 | 6.3 → 5.7 | 16 → 14 | 107 → 57 min |
+| Riding 2 | 7.1 | 7.4 | 5.7 → 5.3 | 10 → 12 | 132 → 73 min |
+
+The capped storyboards scored 7.22 against 7.15 (+0.08, 95% CI −0.89 to +1.04): no loss measured. The storyboard jobs
+took 43% less time (3.3 hours against 5.8) and cost 30% less ($3.75 against $5.34). The capped check read a frame in a
+median 63 s against 199 s, writing 2,372 tokens against 7,789, and both projects drew 46 frames. Riding 1 lost 0.8. Its
+fifth frame was drawn once and kept with four conflicts the capped check had named, among them Sammy seen from behind
+where the medium close shot has him facing the camera, and its review found his deciding line "played to the back of
+his head". fp63 saw the same once: a conflict named and the frame kept, where both full readings sent it back. A rule
+that sends back a frame whose capped reading names three conflicts or more would have sent back 9 of fp63's 24 frames
+instead of 6, and agreed with each full reading once less (20 and 21 times in 24): not built. New projects keep the
+cap. Cost: $9.09.
 
 ## Measuring the first pass
 
@@ -1038,6 +1059,7 @@ cell is one run's first round; the scores of the same build and brief differ by 
 | fp62: fp61's rule with a prop kept where the last shot left it, the kite scenes planned again (one plan, one render, shot by shot from approved frames) | – | – | scene reviews kite 1 6.50, kite 2 6.77 against 6.42 and 6.52 for six runs of fp39's plans (+0.16); takes passing 11 of 12; [no cut skips a state, the lift is drawn as a hover](#a-prop-kept-where-the-last-shot-left-it-tried-not-built) |
 | fp64: fp62's 5 takes that passed with a major fault made again, told what their watch found, up to two attempts each (fp62's renders, the rest unchanged) | – | – | scene reviews kite 1 6.97, kite 2 7.23 against 6.58 and 6.88 for the same renders unchanged (+0.37, 95% CI +0.16 to +0.58); 1 of 5 ended passing; [the doubled handle and the hover gone](#a-take-with-a-major-fault-made-again-tried-not-built) |
 | fp63: the staging check's reasoning capped at 2,048 and 1,024 tokens (fp59's 24 frames read again, four readings each) | – | – | not drawn again: at 2,048 tokens the same redraws as a full reading 21 and 22 of 24 times (two full readings agree 21 times), 56 s a reading against 174 s; [new projects cap it](#the-staging-checks-reasoning-capped) |
+| fp65: the four scenes of fp39's plans drawn again with the staging check capped at 2,048 tokens and in full (storyboards only, at the same time) | – | – | 7.22 against 7.15 (+0.08, 95% CI −0.89 to +1.04), continuity 5.83 against 5.50; storyboard jobs 43% shorter, 30% cheaper; riding 1 −0.8 from a frame kept with four conflicts named; [the cap stays](#the-staging-checks-reasoning-capped) |
 | fp55: fp53's riding 1 render split again at the cuts found near the planned ones (same render, reviewed beside the old split) | – | – | scene 6.67 against 5.97; takes passing 6 of 8 against 2 |
 | fp54: HappyHorse 1.1 instead of Wan 3.0, from the same 13 approved frames | – | – | shots' watch 5.0 against 6.1, passed 5 against 7; kite scene 5.7 |
 | fp51: the faulted frames drawn twice more and one picked (storyboards only, plans of fp39) | – | – | 7.17 against 7.28 at the same time, continuity 5.9 against 5.5; [5 of 8 faulted again](#a-scene-read-whole-then-a-frame-picked-tried-not-merged) |
@@ -1136,7 +1158,8 @@ What keeps each under 8, what was tried, and what to try next:
    frames it faults edited or drawn again and picked (fp49–fp51): the reading finds what the review marks, and neither way
    clears it (4 to 5 of 7 or 8 faulted again). The staging check, which reasoned in full (one panel's reading in fp29
    took 217 s and wrote 9,069 tokens), is capped at 2,048 tokens of reasoning for new projects: the same decisions in a
-   third of the time ([fp63](#the-staging-checks-reasoning-capped)).
+   third of the time ([fp63](#the-staging-checks-reasoning-capped)), and storyboards drawn with it scored 7.22 against
+   7.15 (fp65).
 4. **Stills that tell the beat** (storytelling 6–8): a frame is the start of its shot, so a beat inside the take was
    missing from the storyboard; the planner now starts a shot on its beat's pose (fp18, being measured).
 5. **The video** (scene 6.0–7.3, first takes 5.8–7.4): the video model adds its own failures (a kite that morphs and
