@@ -834,6 +834,38 @@ rest: a second kite popping in, the tail floating free, the kite sliding through
 props 6.65, one request 6.42, shot by shot 6.47. A frame check that looks at what a string or a strap joins comes before
 any rule that trusts such frames.
 
+### A moving prop kept to one motion a shot (tried, not built)
+
+In every shot-by-shot render of fp39's kite scenes the scene reviews named the kite hovering unsupported, sliding upwind
+on its own and changing shape (kite 2's third and fourth shots, where Sammy walks while the kite lifts and falls, then
+turns and slides to his boots), and a handle popping into a paw or doubling (kite 1's first two shots, where Sammy
+reaches for the kite and draws it from under Rosie's arm: their takes passed their watch 3 and 4 times in 6, the scene's
+other three 5 or 6 times). So the shot planner was told that a prop that moves on its own or in the wind is **the shot's
+mover**: everyone else in its shot stands still or takes one slow step, and the prop makes one motion (it lifts, or it
+falls, or it slides), never two in one shot; its next motion is the next shot, and between its motions it rests where
+the last shot left it. Every attempt the scene asks for keeps its shots (a first wording cut kite 2's two failed
+launches to one), each motion in its own short shot or a fall shown by its before and after across a cut, and a prop
+**changes paws only across a cut**. The kite scenes were planned again with the rule, 6 and 7 shots for the same 20
+seconds instead of 5 and 5, then drawn, checked, approved and rendered shot by shot with one attempt a take, as fp39's
+plans were six times (fp61, November 8, 2026):
+
+| Scene | fp39's plans, six runs | One motion a shot | Physics | Continuity | Takes passing |
+|---|---|---|---|---|---|
+| Kite 1 | 6.42 (5.87 to 6.87) | 6.97 (7.3, 6.9, 6.7) | 5.67 → 6.33 | 4.61 → 5.33 | 24 of 30 → 6 of 6 |
+| Kite 2 | 6.52 (6.27 to 6.83) | 6.13 (6.0, 6.1, 6.3) | 6.00 → 5.00 | 4.89 → 4.33 | 25 of 30 → 6 of 7 |
+
+The takes held: 12 of 13 passed their watch against 49 of 60 (watched 7.4 against 6.5, physics 0.84 against 0.79), and
+kite 1, where the kite stays in paws, rose 0.54 (temporal 5.67 → 7.00). Kite 2, whose story is the kite's two failed
+launches, fell 0.39 because its cuts skipped the kite's states: shot 4 ends with the kite flat on the grass at frame
+right, and shot 6 opens with it in the air at frame left, upwind of Sammy, before it slides to his boots: the second
+launch is never shown. All three reviews named a jump across that cut ("kite teleports from ground-right to
+airborne-left", once critical) and the kite or its tail against the wind, and two the two-second lift hovering "like a
+pasted decal". All three also heard Sammy's opening line while Rosie, nearer, moved her mouth: a new plan brings its own
+faults. Over the two scenes +0.08 from one plan each, under the 0.5 the rule asks for: not built. Splitting a prop's
+motions moves its faults from inside the takes to the cuts, unless every state between two motions is on screen. The
+storyboards reviewed 7.5 and 6.8 (fp59's: 7.5 and 6.9). Cost: $16.02 (the plans $0.71, frames and storyboard reviews
+$2.93, takes, watches and scene reviews $12.38).
+
 ## Scenes count what they heard
 
 A scene watched before the edit is heard by the audio-visual model ([scenes before the
@@ -907,6 +939,7 @@ cell is one run's first round; the scores of the same build and brief differ by 
 | fp58: the frames a review faulted for a side flipped left to right (fp52's control storyboards, reviewed again) | – | – | kite 1 7.3 → 6.9, kite 2 7.0 → 7.1, unflipped riding scenes −0.2 and −0.4; [the place flips with the character](#a-mirrored-frame-flipped-tried-not-built) |
 | fp59: the frame check reads what each string or strap joins (storyboards only, plans of fp39) | – | – | 7.38 against 7.18 at the same time (+0.20, 95% CI −0.09 to +0.49), continuity 5.73 against 5.58; 5 frames drawn again for a string or strap against 1, [kite 2's opening frame never drawn right](#frames-that-follow-their-shot) |
 | fp60: fp59's frames reviewed with the readings of the frames drawn unlike their plan (storyboards only, a probe) | – | – | 7.50 against 7.25 reviewed as planned at the same time (+0.25, 95% CI −0.13 to +0.63), continuity +0.20; [the frames disagree with each other](#frames-that-follow-their-shot) |
+| fp61: a prop that moves kept to one motion a shot, the kite scenes planned again (one plan, one render, shot by shot from approved frames) | – | – | scene reviews kite 1 6.97, kite 2 6.13 against 6.42 and 6.52 for six runs of fp39's plans (+0.08); takes passing 12 of 13 against 49 of 60; [the cuts skip the prop's states](#a-moving-prop-kept-to-one-motion-a-shot-tried-not-built) |
 | fp55: fp53's riding 1 render split again at the cuts found near the planned ones (same render, reviewed beside the old split) | – | – | scene 6.67 against 5.97; takes passing 6 of 8 against 2 |
 | fp54: HappyHorse 1.1 instead of Wan 3.0, from the same 13 approved frames | – | – | shots' watch 5.0 against 6.1, passed 5 against 7; kite scene 5.7 |
 | fp51: the faulted frames drawn twice more and one picked (storyboards only, plans of fp39) | – | – | 7.17 against 7.28 at the same time, continuity 5.9 against 5.5; [5 of 8 faulted again](#a-scene-read-whole-then-a-frame-picked-tried-not-merged) |
@@ -1025,9 +1058,10 @@ model's; a take watch that finds it could have the take made again). Wan's own p
    into the sky, and the frame check passed them. *Decided* (November 7, 2026): a storyboarded scene stays shot by shot
    from its approved frames; one request is a person's choice ([when](multi-shot.md#when)). The frame check now reads
    what each string or strap joins (fp59): it flagged kite 2's opening frame and four others, and the image model drew
-   that frame's string wrong three times over ([measured](#frames-that-follow-their-shot)). *Next:* a render with too
-   few cuts made again; then props the model handles badly (a kite in the wind) kept to one state per short take, or
-   out of the moving part of a shot.
+   that frame's string wrong three times over ([measured](#frames-that-follow-their-shot)). A prop kept to one motion a
+   shot (fp61) held its takes (12 of 13 passing) but its cuts skipped the kite's states: +0.08 over the two kite scenes
+   ([tried, not built](#a-moving-prop-kept-to-one-motion-a-shot-tried-not-built)). *Next:* a render with too few cuts
+   made again; a prop's state carried from each shot's end to the next one's start.
 6. **Close framings drawn whole** (fixed, fp7) and **the AI blocking**: its cameras now follow each shot's planned
    layout where its marks allow ([following the shot plan](director-desk.md#following-the-shot-plan)), yet with the
    desk on the storyboards scored 6.1 and 6.6 (fp27) against 7.2 and 6.8 without it: the image model does not draw
