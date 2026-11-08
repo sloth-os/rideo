@@ -297,6 +297,12 @@ export async function storyboardGenerate(deps: HandlerDeps, ctx: JobContext) {
         .filter((shot) => boardNeedsGeneration(boardState(shot, docs)))
         .map((shot) => ({ clip, shot })),
     );
+  // Every frame needs its cast locked (rule R1): one failure naming who, before any frame is drawn, instead of one a frame
+  assertCastReady(
+    targets.map((t) => t.shot),
+    docs.characters,
+    docs.elements,
+  );
   ctx.progress(0.2, 1, `drawing ${targets.length} frame(s)`);
   const done = await drawBoards(ctx, targets, { sheets: docs.project.settings.storyboard.sheet });
   // The frames are reviewed before any video (docs/design/ai-review.md#how-a-review-runs)

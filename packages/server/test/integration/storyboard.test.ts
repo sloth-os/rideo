@@ -264,6 +264,25 @@ describe('storyboard', () => {
     expect(detect).toMatchObject({ found: true, id: done.watermarkId });
   }, 300_000);
 
+  it("fails once, naming who to lock, when a frame's cast is not locked, and draws nothing (rule R1)", async () => {
+    const { projectId: pid, state: ready } = await readyStoryProject(stack, { storyboard: { scenes: 1 } });
+    const character = Object.values<any>(ready.docs.characters)[0];
+    await stack.api('POST', `/projects/${pid}/characters/${character.id}/unlock`);
+    const job = await stack.api<Job>('POST', `/projects/${pid}/storyboard/generate`, {});
+    const done = await stack.waitJob(pid, job.id, 180_000);
+    expect(done.status).toBe('failed');
+    expect(done.error).toMatchObject({ code: 'character_not_locked' });
+    expect(done.error!.message).toContain(`${character.name} is not locked`);
+    await stack.waitIdle(pid);
+    // The scene is planned and kept; no frame was drawn or tried, and no review followed
+    const clips = await clipsOf(pid);
+    expect(clips).toHaveLength(1);
+    expect(clips[0]!.shots.length).toBeGreaterThan(0);
+    expect(clips[0]!.shots.every((shot) => !shot.board)).toBe(true);
+    const jobs = await stack.api<Job[]>('GET', `/projects/${pid}/jobs`);
+    expect(jobs.filter((j) => j.kind === 'shot.board' || j.kind === 'storyboard.review')).toEqual([]);
+  }, 300_000);
+
   it('passes the gate without frames when the storyboard is off', async () => {
     const { projectId: pid } = await readyStoryProject(stack, { storyboard: { enabled: false } });
     const wf = await stack.api<any>('GET', `/projects/${pid}/workflow`);
