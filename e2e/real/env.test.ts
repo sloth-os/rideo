@@ -208,6 +208,6 @@ describe("the suite's project", () => {
     // A setting the patch schema does not list is dropped silently, and the project runs on new projects' defaults
     const parsed = ProjectSettingsPatchSchema.parse(REAL_PROJECT_SETTINGS);
     expect(parsed).toMatchObject(REAL_PROJECT_SETTINGS);
-    expect(parsed.review).toMatchObject({ screenplayDrafts: 1, judgeSamples: 1 });
+    expect(parsed.review).toMatchObject({ screenplayDrafts: 1, judgeSamples: 1, sceneFixes: 0 });
   });
 });
