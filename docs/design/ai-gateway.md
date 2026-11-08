@@ -174,7 +174,12 @@ wrote 231 tokens instead of 2,304. Its scores run higher without reasoning (iden
 0.85–0.9), so a threshold near the top would separate less. `RIDEO_CHECK_REASONING=model` keeps the model's default.
 The staging check (`frame.reconcile`) keeps its reasoning: without it (fp36) a scene's sheet took about five minutes
 instead of fifteen, but the same eight frozen scenes scored 0.3 lower, seven of eight worse
-([first pass](first-pass.md#a-scene-drawn-on-one-sheet)).
+([first pass](first-pass.md#a-scene-drawn-on-one-sheet)). A project caps it instead (`consistency.stagingReasoning`
+`short`, new projects' default): the call asks for at most 2,048 tokens of reasoning, `enable_thinking: true` with
+`thinking_budget` on OpenAI-compatible calls (Qwen's fields) and `thinkingConfig.thinkingBudget` on Gemini, and an
+upstream that refuses the field is asked again without it, as above. On 24 frames the capped check decided as a full
+reading does, in 56 s a reading instead of 174 s ([first pass](first-pass.md#the-staging-checks-reasoning-capped)).
+The log line of a capped call (`LLM task completed`) names its `reasoningBudget`.
 
 ### Refusals
 

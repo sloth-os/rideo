@@ -68,6 +68,7 @@ settings.storyboard.production: boolean;  // off in the schema, on for new proje
 settings.storyboard.sheet: boolean;       // off by default: draw a scene on one sheet (storyboard.md#scene-sheets)
 settings.consistency.frameEdits: boolean; // off by default: correct a frame by an edit of itself (first-pass.md#frames-that-follow-their-shot)
 settings.consistency.turnaround: boolean; // off in the schema, on for new projects: a character's views on one sheet (first-pass.md)
+settings.consistency.stagingReasoning: 'full' | 'short'; // full in the schema, short for new projects: the staging check's reasoning capped (first-pass.md#the-staging-checks-reasoning-capped)
 ```
 
 The settings that are new since a project was made are off for it, so an older project's gates and jobs stay as they

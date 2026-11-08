@@ -29,8 +29,24 @@ export const ConsistencySettingsSchema = z.object({
   turnaround: z.boolean().default(false),
   /** Correct a frame by an edit of itself rather than a new drawing (docs/design/first-pass.md#frames-that-follow-their-shot). */
   frameEdits: z.boolean().default(false),
+  /**
+   * How long the staging check reasons before it reads a frame against its shot (`frame.reconcile`): `short` caps its
+   * reasoning at STAGING_SHORT_REASONING_TOKENS, about three times faster with the same decisions
+   * (docs/design/first-pass.md#the-staging-checks-reasoning-capped).
+   */
+  stagingReasoning: z.enum(['full', 'short']).default('full'),
 });
 export type ConsistencySettings = z.infer<typeof ConsistencySettingsSchema>;
+
+/** The staging check's reasoning when `consistency.stagingReasoning` is `short` (fp63: 2,048 tokens). */
+export const STAGING_SHORT_REASONING_TOKENS = 2048;
+
+/** The reasoning budget of a project's staging check: none (the model's own) when it reasons in full. */
+export function stagingReasoningBudget(
+  settings: Pick<ConsistencySettings, 'stagingReasoning'>,
+): number | undefined {
+  return settings.stagingReasoning === 'short' ? STAGING_SHORT_REASONING_TOKENS : undefined;
+}
 
 /** How screenplay lines become audio (docs/design/dialogue.md#from-lines-to-audio). */
 export const DialogueModeSchema = z.enum(['tts', 'native', 'off']);
@@ -128,6 +144,7 @@ export const ProjectSettingsSchema = z.object({
     rejectMusic: false,
     turnaround: false,
     frameEdits: false,
+    stagingReasoning: 'full',
   }),
   dialogue: DialogueSettingsSchema.default({ mode: 'off', lipSync: true, level: 'any' }),
   storyboard: StoryboardSettingsSchema.default({

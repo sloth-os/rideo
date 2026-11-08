@@ -32,6 +32,8 @@ describe('the first pass', () => {
     // and draw each character's views on one sheet (docs/design/first-pass.md#a-characters-views-drawn-on-one-sheet),
     // but not a scene's frames: takes from panels score lower (docs/design/first-pass.md#a-scene-drawn-on-one-sheet)
     expect(created.settings.consistency).toMatchObject({ turnaround: true });
+    // and their staging check reasons briefly (docs/design/first-pass.md#the-staging-checks-reasoning-capped)
+    expect(created.settings.consistency).toMatchObject({ stagingReasoning: 'short' });
     expect(created.settings.storyboard).toMatchObject({ sheet: false });
     const reviewCalls = async () => {
       const line = (await (await fetch(`${stack.url}/metrics`)).text())
@@ -242,6 +244,19 @@ describe('frames that follow their shot (docs/design/first-pass.md#frames-that-f
       .split('\n')
       .filter((l) => l.startsWith('rideo_frame_reconciles_total{') && l.includes('outcome="redraw"'));
     expect(redraws.some((l) => l.includes('source="storyboard"'))).toBe(true);
+    // A new project's staging check reasons briefly (docs/design/first-pass.md#the-staging-checks-reasoning-capped),
+    // and in full when its settings ask for it
+    expect(stack.gw.counters.lastReasoning['frame.reconcile']).toEqual({
+      enable_thinking: true,
+      thinking_budget: 2048,
+    });
+    await stack.api('PATCH', `/projects/${pid}`, { settings: { consistency: { stagingReasoning: 'full' } } });
+    const again = await stack.api<Job>(
+      'POST',
+      `/projects/${pid}/clips/${clip.id}/shots/${second!.id}/board/generate`,
+    );
+    expectSucceeded(await stack.waitJob(pid, again.id));
+    expect(stack.gw.counters.lastReasoning['frame.reconcile']).toEqual({});
   }, 300_000);
 });
 

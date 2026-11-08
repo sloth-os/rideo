@@ -240,6 +240,24 @@ function SettingsDialog({
               (v) => setS({ ...s, consistency: { ...s.consistency, frameEdits: v } }),
               'frameEdits',
             )}
+            <Field label="Checking each frame against its shot">
+              <Select
+                value={s.consistency.stagingReasoning}
+                onChange={(e) =>
+                  setS({
+                    ...s,
+                    consistency: {
+                      ...s.consistency,
+                      stagingReasoning: e.target.value as 'full' | 'short',
+                    },
+                  })
+                }
+                data-testid="staging-reasoning"
+              >
+                <option value="short">Brief reasoning: about three times faster, the same decisions</option>
+                <option value="full">Full reasoning: slowest</option>
+              </Select>
+            </Field>
             {toggle(
               'Music in a take fails it: generate it again (each retry is a paid take)',
               s.consistency.rejectMusic,

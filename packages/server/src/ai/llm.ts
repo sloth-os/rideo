@@ -19,6 +19,8 @@ export interface LlmRequest {
   signal?: AbortSignal;
   /** `off`: answer without reasoning (checks and captions; docs/design/ai-gateway.md#reasoning). */
   reasoning?: 'off';
+  /** At most this many tokens of reasoning before the answer (docs/design/ai-gateway.md#reasoning); unset: the model's own. */
+  reasoningBudget?: number;
 }
 
 export interface LlmResponse {
@@ -82,8 +84,9 @@ const OPTIONAL_FIELDS: Record<string, RegExp> = {
   temperature: /\btemperature\b/,
   response_format: /\bresponse_format\b/,
   max_tokens: /\bmax_tokens\b/,
-  // Qwen's switch for its reasoning (docs/design/ai-gateway.md#reasoning)
+  // Qwen's switch for its reasoning and its length (docs/design/ai-gateway.md#reasoning)
   enable_thinking: /\benable_thinking\b/,
+  thinking_budget: /\bthinking_budget\b/,
   // Omni models' text-only answer; a vision model that watches video may not know it (docs/design/ai-review.md)
   modalities: /\bmodalities\b/,
 };
@@ -204,6 +207,9 @@ export class OpenAiAdapter implements LlmAdapter {
       ...(req.json ? { response_format: { type: 'json_object' } } : {}),
       ...(req.maxTokens ? { max_tokens: req.maxTokens } : {}),
       ...(req.reasoning === 'off' ? { enable_thinking: false } : {}),
+      ...(req.reasoning !== 'off' && req.reasoningBudget !== undefined
+        ? { enable_thinking: true, thinking_budget: req.reasoningBudget }
+        : {}),
       stream: true,
       stream_options: { include_usage: true },
     };
@@ -348,7 +354,12 @@ export class GeminiAdapter implements LlmAdapter {
       // without it
       for (let tries = 0; !res.ok && tries < 2; tries++) {
         const text = await res.clone().text();
-        if (res.status === 400 && req.reasoning === 'off' && !this.noThinkingBudget && /thinking/i.test(text))
+        if (
+          res.status === 400 &&
+          (req.reasoning === 'off' || req.reasoningBudget !== undefined) &&
+          !this.noThinkingBudget &&
+          /thinking/i.test(text)
+        )
           this.noThinkingBudget = true;
         else if (!this.noStream && (res.status === 404 || res.status === 405)) this.noStream = true;
         else break;
@@ -397,10 +408,13 @@ export class GeminiAdapter implements LlmAdapter {
           temperature: req.temperature,
           ...(req.json ? { responseMimeType: 'application/json' } : {}),
           ...(req.maxTokens ? { maxOutputTokens: req.maxTokens } : {}),
-          // No reasoning for checks (docs/design/ai-gateway.md#reasoning); a model that refuses it is asked without
+          // No reasoning for checks, or a capped one (docs/design/ai-gateway.md#reasoning); a model that refuses it is
+          // asked without
           ...(req.reasoning === 'off' && !this.noThinkingBudget
             ? { thinkingConfig: { thinkingBudget: 0 } }
-            : {}),
+            : req.reasoningBudget !== undefined && !this.noThinkingBudget
+              ? { thinkingConfig: { thinkingBudget: req.reasoningBudget } }
+              : {}),
         },
       }),
       signal,

@@ -794,6 +794,8 @@ export class LlmTasks {
       version?: 1 | 2;
       /** Who watches the video: the audio-visual model (default) or the vision model (docs/design/ai-review.md). */
       watcher?: 'vision' | 'omni';
+      /** At most this many tokens of reasoning (docs/design/ai-gateway.md#reasoning); unset: the model's own. */
+      reasoningBudget?: number;
     } = {},
   ): Promise<T> {
     const watching = !!opts.video?.length;
@@ -839,7 +841,9 @@ export class LlmTasks {
     const reasoning =
       this.deps.checkReasoning !== 'model' && REASONING_OFF_TASKS.has(task)
         ? ({ reasoning: 'off' } as const)
-        : {};
+        : opts.reasoningBudget !== undefined
+          ? { reasoningBudget: opts.reasoningBudget }
+          : {};
     const first = await this.completeOrFallBack(
       task,
       adapter,
@@ -900,6 +904,7 @@ export class LlmTasks {
         model: adapter.model,
         ms: Math.round(performance.now() - started),
         usage: res.usage,
+        ...(opts.reasoningBudget !== undefined ? { reasoningBudget: opts.reasoningBudget } : {}),
       },
       'LLM task completed',
     );
@@ -1277,6 +1282,8 @@ export class LlmTasks {
     frame: Buffer,
     signal?: AbortSignal,
     opening?: Buffer,
+    /** At most this many tokens of reasoning (docs/design/ai-gateway.md#reasoning); unset: the model's own. */
+    reasoningBudget?: number,
   ): Promise<FrameReconcileOutput> {
     return this.run('frame.reconcile', FrameReconcileOutputSchema, input, {
       images: [
@@ -1285,6 +1292,7 @@ export class LlmTasks {
       ],
       temperature: 0,
       signal,
+      ...(reasoningBudget !== undefined ? { reasoningBudget } : {}),
     });
   }
 

@@ -70,6 +70,8 @@ export interface MockGatewayApp {
     proxyCalls: Record<string, number>;
     /** The input of the last call of each structured task (`screenplay.generate`, `clip.plan`…). */
     lastInputs: Record<string, unknown>;
+    /** The reasoning fields of the last call of each structured task (`enable_thinking`, `thinking_budget`). */
+    lastReasoning: Record<string, { enable_thinking?: unknown; thinking_budget?: unknown }>;
     /** The account and gateway key of the last call to each registered proxy. */
     proxyAccounts: Record<string, { account: string; key: string; headers: Record<string, string> }>;
   };
@@ -107,6 +109,7 @@ export async function buildMockGateway(opts: MockGatewayOptions = {}): Promise<M
     refused: 0,
     proxyCalls: {},
     lastInputs: {},
+    lastReasoning: {},
     proxyAccounts: {},
   };
   let overloads = 0;
@@ -502,6 +505,14 @@ export async function buildMockGateway(opts: MockGatewayOptions = {}): Promise<M
       },
       onInput: (task, input) => {
         counters.lastInputs[task] = input;
+        const b = (body && typeof body === 'object' ? body : {}) as {
+          enable_thinking?: unknown;
+          thinking_budget?: unknown;
+        };
+        counters.lastReasoning[task] = {
+          ...('enable_thinking' in b ? { enable_thinking: b.enable_thinking } : {}),
+          ...('thinking_budget' in b ? { thinking_budget: b.thinking_budget } : {}),
+        };
       },
     });
     return reply.code(res.status).headers(res.headers).send(res.body);
