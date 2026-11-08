@@ -74,6 +74,8 @@ export const ProjectSettingsPatchSchema = z
         /** docs/design/first-pass.md#a-characters-views-drawn-on-one-sheet */
         turnaround: z.boolean(),
         frameEdits: z.boolean(),
+        /** docs/design/first-pass.md#the-staging-checks-reasoning-capped */
+        stagingReasoning: z.enum(['full', 'short']),
       })
       .partial(),
     /** Dialogue audio (docs/design/dialogue.md#from-lines-to-audio) and its level (docs/design/continuity.md). */

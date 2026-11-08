@@ -84,6 +84,9 @@ export class ProjectService extends Service {
         qualityChecks: true,
         // and draw a character's views on one sheet (docs/design/first-pass.md#a-characters-views-drawn-on-one-sheet)
         turnaround: true,
+        // Their staging check reasons briefly: three times faster, the same decisions
+        // (docs/design/first-pass.md#the-staging-checks-reasoning-capped)
+        stagingReasoning: 'short',
       },
       // New projects speak their dialogue when the server has a TTS provider (docs/design/dialogue.md).
       dialogue: { mode: c.tts ? 'tts' : 'off', lipSync: true },

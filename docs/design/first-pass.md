@@ -886,6 +886,39 @@ first pass also asks for less, and waits less:
   review one per scene; they ran one after another (13 calls of 1–3.5 minutes each, about 25 minutes, on the riding
   demo). They run three at a time now (`CAST_REVIEW_CONCURRENCY`, `SCENE_REVIEW_CONCURRENCY`), and the review keeps
   the cast's and the scenes' order.
+- **A shorter staging check.** New projects cap the reasoning of the check that reads each frame against its shot:
+  the same decisions in a third of the time ([below](#the-staging-checks-reasoning-capped)).
+
+### The staging check's reasoning capped
+
+The staging check (`frame.reconcile`) reads every attempt of every frame against its shot, and it reasoned in full:
+2,000 to 12,000 tokens and one to eight minutes a reading on `qwen3.8-max`, about 45% of a scene's time in the
+real-model suite. Without any reasoning (fp36) the storyboards scored 0.3 lower. A project now caps it
+(`consistency.stagingReasoning`, *Checking each frame against its shot* in the project settings): `short` asks for at
+most 2,048 tokens of reasoning (`STAGING_SHORT_REASONING_TOKENS`; [how the call says it](ai-gateway.md#reasoning)), and
+the reading of a keyframe for its video's text takes the same cap. New projects use it; the schema's default, and so
+every older project, keeps `full`.
+
+Measured on the 24 frames fp59 drew for the four scenes of fp39's plans, each read four times by the check at the same
+time, the readings of a frame in random order (fp63, November 8, 2026):
+
+| Reading | Median time | Tokens written (median) | Frames sent back to be drawn again | Same decision as a full reading |
+|---|---|---|---|---|
+| Full reasoning | 174 s | 7,725 | 7 of 24 | 21 of 24 (the other full reading) |
+| Full reasoning, again | 171 s | 8,185 | 8 of 24 | 21 of 24 |
+| Capped at 2,048 tokens | 56 s | 2,350 | 6 of 24 | 21 and 22 of 24 |
+| Capped at 1,024 tokens | 36 s | 1,342 | 10 of 24 | 19 and 20 of 24 |
+
+At 2,048 tokens the check sends back the same frames as a full reading as often as two full readings agree with each
+other, in a third of the time and for a third of the cost ($0.017 a reading against $0.050). It names more conflicts
+(1.6 a frame against 0.7 to 0.9), and where the readings disagreed the frames bear most of them out: a kite string
+running down to a handle lying on the grass, which one full reading and the reading kept since fp59 missed; a bucket
+in the middle of the frame and a fence rail across its foreground where the plan has them aside and behind; a scarf
+hanging still in the wind. One is wrong (a barn behind a character, where the place has one), and on one frame (riding
+1, shot 1: Rosie in the middle rather than on the left) both capped readings named the conflict and kept the frame
+where both full readings sent it back. At 1,024 tokens the check sends back more frames, for small things (a calm smile
+where the shot has a worried look, a backpack's flap). The storyboards were not drawn again: a check that decides the
+same draws the same. Cost: 96 readings, $3.03.
 
 ## Measuring the first pass
 
@@ -940,6 +973,7 @@ cell is one run's first round; the scores of the same build and brief differ by 
 | fp59: the frame check reads what each string or strap joins (storyboards only, plans of fp39) | – | – | 7.38 against 7.18 at the same time (+0.20, 95% CI −0.09 to +0.49), continuity 5.73 against 5.58; 5 frames drawn again for a string or strap against 1, [kite 2's opening frame never drawn right](#frames-that-follow-their-shot) |
 | fp60: fp59's frames reviewed with the readings of the frames drawn unlike their plan (storyboards only, a probe) | – | – | 7.50 against 7.25 reviewed as planned at the same time (+0.25, 95% CI −0.13 to +0.63), continuity +0.20; [the frames disagree with each other](#frames-that-follow-their-shot) |
 | fp61: a prop that moves kept to one motion a shot, the kite scenes planned again (one plan, one render, shot by shot from approved frames) | – | – | scene reviews kite 1 6.97, kite 2 6.13 against 6.42 and 6.52 for six runs of fp39's plans (+0.08); takes passing 12 of 13 against 49 of 60; [the cuts skip the prop's states](#a-moving-prop-kept-to-one-motion-a-shot-tried-not-built) |
+| fp63: the staging check's reasoning capped at 2,048 and 1,024 tokens (fp59's 24 frames read again, four readings each) | – | – | not drawn again: at 2,048 tokens the same redraws as a full reading 21 and 22 of 24 times (two full readings agree 21 times), 56 s a reading against 174 s; [new projects cap it](#the-staging-checks-reasoning-capped) |
 | fp55: fp53's riding 1 render split again at the cuts found near the planned ones (same render, reviewed beside the old split) | – | – | scene 6.67 against 5.97; takes passing 6 of 8 against 2 |
 | fp54: HappyHorse 1.1 instead of Wan 3.0, from the same 13 approved frames | – | – | shots' watch 5.0 against 6.1, passed 5 against 7; kite scene 5.7 |
 | fp51: the faulted frames drawn twice more and one picked (storyboards only, plans of fp39) | – | – | 7.17 against 7.28 at the same time, continuity 5.9 against 5.5; [5 of 8 faulted again](#a-scene-read-whole-then-a-frame-picked-tried-not-merged) |
@@ -1036,10 +1070,9 @@ What keeps each under 8, what was tried, and what to try next:
    continuity 5.5 → 6.2, character 7.2 → 8.0, every scene better, but takes from its panels scored 1.62 lower, so it is off
    for new projects until a full-size frame can keep what the panel agreed on. Then: a scene's frames read together, and the
    frames it faults edited or drawn again and picked (fp49–fp51): the reading finds what the review marks, and neither way
-   clears it (4 to 5 of 7 or 8 faulted again). *Next:* the staging check answers with
-   the model's full reasoning (`frame.reconcile` is not in `REASONING_OFF_TASKS`; one panel's reading in fp29 took 217 s
-   and wrote 9,069 tokens), and a sheet waits for its slowest panel: measure whether it reads frames as well without
-   reasoning, as the identity judge did.
+   clears it (4 to 5 of 7 or 8 faulted again). The staging check, which reasoned in full (one panel's reading in fp29
+   took 217 s and wrote 9,069 tokens), is capped at 2,048 tokens of reasoning for new projects: the same decisions in a
+   third of the time ([fp63](#the-staging-checks-reasoning-capped)).
 4. **Stills that tell the beat** (storytelling 6–8): a frame is the start of its shot, so a beat inside the take was
    missing from the storyboard; the planner now starts a shot on its beat's pose (fp18, being measured).
 5. **The video** (scene 6.0–7.3, first takes 5.8–7.4): the video model adds its own failures (a kite that morphs and

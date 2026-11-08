@@ -152,6 +152,57 @@ describe('LLM adapters speak each upstream through the gateway proxy', () => {
     expect(writer.calls[0]!.body).not.toHaveProperty('enable_thinking');
   });
 
+  it('caps a task’s reasoning when asked, and stops asking an upstream that refuses the cap', async () => {
+    const json = () =>
+      new Response(JSON.stringify({ choices: [{ message: { content: '{}' } }] }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    const qwen = new FakeProxy(json);
+    const adapter = new OpenAiAdapter(qwen as unknown as ProxyClient, 'api.openai.com', 'qwen-x');
+    await adapter.complete({ ...req, reasoningBudget: 2048 });
+    expect(qwen.calls[0]!.body).toMatchObject({ enable_thinking: true, thinking_budget: 2048 });
+    // A check without reasoning never sends a budget
+    await adapter.complete({ ...req, reasoning: 'off', reasoningBudget: 2048 });
+    expect(qwen.calls[1]!.body.enable_thinking).toBe(false);
+    expect(qwen.calls[1]!.body).not.toHaveProperty('thinking_budget');
+    const other = new FakeProxy((i: number) =>
+      i === 0
+        ? new Response('{"error":{"message":"Unrecognized request argument: thinking_budget"}}', {
+            status: 400,
+          })
+        : json(),
+    );
+    const strict = new OpenAiAdapter(other as unknown as ProxyClient, 'api.openai.com', 'gpt-x');
+    await strict.complete({ ...req, reasoningBudget: 2048 });
+    expect(other.calls[1]!.body).not.toHaveProperty('thinking_budget');
+    await strict.complete({ ...req, reasoningBudget: 2048 });
+    expect(other.calls).toHaveLength(3);
+    expect(other.calls[2]!.body).not.toHaveProperty('thinking_budget');
+    // Gemini's own field
+    const gemini = new FakeProxy({ candidates: [{ content: { parts: [{ text: '{}' }] } }] });
+    await new GeminiAdapter(gemini as unknown as ProxyClient, 'x', 'g').complete({
+      ...req,
+      reasoningBudget: 1024,
+    });
+    expect(gemini.calls[0]!.body.generationConfig.thinkingConfig).toEqual({ thinkingBudget: 1024 });
+    // The staging check passes its cap through
+    const seen: LlmRequest[] = [];
+    const fake = {
+      provider: 'fake',
+      model: 'm',
+      complete: async (r: LlmRequest) => {
+        seen.push(r);
+        return { text: '{"description":"d","action":"a","conflicts":[],"redraw":false,"fix":""}' };
+      },
+    };
+    const tasks = new LlmTasks(fake, fake);
+    await tasks.reconcileFrame({ shot: {} } as never, Buffer.from('png'), undefined, undefined, 1500);
+    await tasks.reconcileFrame({ shot: {} } as never, Buffer.from('png'));
+    expect(seen[0]!.reasoningBudget).toBe(1500);
+    expect(seen[1]).not.toHaveProperty('reasoningBudget');
+  });
+
   it('turns reasoning off for the checks and captions only, unless the studio keeps the model’s default', async () => {
     const seen: LlmRequest[] = [];
     const fake = {

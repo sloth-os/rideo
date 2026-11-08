@@ -21,6 +21,7 @@ import {
   type Shot,
   type ShotContext,
   shotContextOf,
+  stagingReasoningBudget,
   type Take,
   type TakeAudio,
   takePassesChecks,
@@ -392,6 +393,7 @@ export async function shotGenerate(deps: HandlerDeps, ctx: JobContext) {
                 characters,
                 keyframe: keyframeRef,
                 source: firstFrame.source,
+                reasoningBudget: stagingReasoningBudget(shotCtx.settings.consistency),
               })
           : null;
       const videoCtx: ShotContext = frameSeen ? { ...shotCtx, frameSeen } : shotCtx;
@@ -782,6 +784,8 @@ async function seeFirstFrame(
     characters: Character[];
     keyframe: MediaRef;
     source: 'storyboard' | 'keyframe';
+    /** consistency.stagingReasoning (docs/design/first-pass.md#the-staging-checks-reasoning-capped) */
+    reasoningBudget?: number;
   },
 ): Promise<{ description: string; action: string } | null> {
   const { shot, keyframe, source } = opts;
@@ -794,6 +798,8 @@ async function seeFirstFrame(
       { shot: reconcileShot(shot, opts.characters) },
       await deps.media.pngBuffer(ctx.job.projectId, keyframe, 1024),
       ctx.signal,
+      undefined,
+      opts.reasoningBudget,
     );
     deps.metrics.frameReconciles.inc({
       source,

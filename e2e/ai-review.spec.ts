@@ -93,6 +93,27 @@ test('the project settings turn on correcting a flagged frame by editing it', as
     .toMatchObject({ frameEdits: true });
 });
 
+/** How long the staging check reasons (docs/design/first-pass.md#the-staging-checks-reasoning-capped), desktop and phone. */
+test('the project settings choose how long each frame is checked against its shot', async ({
+  page,
+  request,
+}, testInfo) => {
+  const api = new Api(request);
+  const pid = await api.storyProject(`Staging reasoning (${testInfo.project.name})`);
+  await page.goto(`/p/${pid}/overview`);
+  await page.getByTestId('open-settings').click();
+  const reasoning = page.getByTestId('staging-reasoning');
+  // A new project's check reasons briefly
+  await expect(reasoning).toHaveValue('short');
+  await reasoning.selectOption('full');
+  await page.getByTestId('settings-save').click();
+  await expect
+    .poll(
+      async () => (await api.call<any>('GET', `/projects/${pid}/state`)).docs.project.settings.consistency,
+    )
+    .toMatchObject({ stagingReasoning: 'full' });
+});
+
 /** How many screenplay drafts a project writes (docs/design/first-pass.md#two-drafts-the-better-kept), desktop and phone. */
 test('a project writes one screenplay draft until its settings ask for more', async ({
   page,

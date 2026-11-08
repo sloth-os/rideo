@@ -40,11 +40,13 @@ import {
   SceneSchema,
   ScreenplayGenerateOutputSchema,
   type ShotContext,
+  STAGING_SHORT_REASONING_TOKENS,
   StageReviewSchema,
   screenplayFromLlm,
   selectReferences,
   shotContextOf,
   stageVerdict,
+  stagingReasoningBudget,
   VIDEO_MODEL_FACTS,
   videoFacts,
   withoutSentencesNaming,
@@ -790,5 +792,22 @@ describe('a frame corrected by an edit of itself (docs/design/first-pass.md#fram
     expect(ProjectSettingsPatchSchema.parse({ consistency: { frameEdits: true } }).consistency).toEqual({
       frameEdits: true,
     });
+  });
+});
+
+describe("the staging check's reasoning capped (docs/design/first-pass.md#the-staging-checks-reasoning-capped)", () => {
+  it('reasons in full unless a project asks for brief reasoning, which caps it at 2,048 tokens', () => {
+    const settings = ProjectSettingsSchema.parse({});
+    expect(settings.consistency.stagingReasoning).toBe('full');
+    expect(stagingReasoningBudget(settings.consistency)).toBeUndefined();
+    expect(stagingReasoningBudget({ stagingReasoning: 'short' })).toBe(STAGING_SHORT_REASONING_TOKENS);
+    expect(STAGING_SHORT_REASONING_TOKENS).toBe(2048);
+    // A person or an agent sets it (REST, MCP)
+    expect(
+      ProjectSettingsPatchSchema.parse({ consistency: { stagingReasoning: 'short' } }).consistency,
+    ).toEqual({
+      stagingReasoning: 'short',
+    });
+    expect(() => ProjectSettingsPatchSchema.parse({ consistency: { stagingReasoning: 'none' } })).toThrow();
   });
 });

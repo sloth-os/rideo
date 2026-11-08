@@ -20,6 +20,7 @@ import {
   type Shot,
   type ShotContext,
   selectReferences,
+  stagingReasoningBudget,
 } from '@rideo/shared';
 import { verifyFrames } from '../../consistency/gate';
 import type { ConsistencyJudge } from '../../consistency/judge';
@@ -151,7 +152,13 @@ export async function generateKeyframe(
      * The staging check (docs/design/first-pass.md#frames-that-follow-their-shot): a frame that passes is read against
      * its shot (`frame.reconcile`), and drawn again while it contradicts what the shot needs.
      */
-    staging?: { shot: FrameReconcileInput['shot']; source: 'storyboard' | 'keyframe'; opening?: MediaRef };
+    staging?: {
+      shot: FrameReconcileInput['shot'];
+      source: 'storyboard' | 'keyframe';
+      opening?: MediaRef;
+      /** Its reasoning capped (consistency.stagingReasoning, docs/design/first-pass.md#the-staging-checks-reasoning-capped). */
+      reasoningBudget?: number;
+    };
     /**
      * A frame already drawn, its first attempt: a panel of the scene's sheet
      * (docs/design/storyboard.md#scene-sheets), checked like any frame and drawn again alone only if it fails.
@@ -313,9 +320,22 @@ export function stagingFor(
   source: 'storyboard' | 'keyframe',
   /** The scene's opening frame, which this frame must agree with (docs/design/first-pass.md#frames-that-agree-with-each-other). */
   opening?: MediaRef | null,
-): { shot: FrameReconcileInput['shot']; source: 'storyboard' | 'keyframe'; opening?: MediaRef } | undefined {
+):
+  | {
+      shot: FrameReconcileInput['shot'];
+      source: 'storyboard' | 'keyframe';
+      opening?: MediaRef;
+      reasoningBudget?: number;
+    }
+  | undefined {
   if (promptVersionOf(shotCtx.settings) < 3 || shotCtx.shot.promptOverride?.trim()) return undefined;
-  return { shot: reconcileShot(shotCtx.shot, shotCtx.characters), source, ...(opening ? { opening } : {}) };
+  const reasoningBudget = stagingReasoningBudget(shotCtx.settings.consistency);
+  return {
+    shot: reconcileShot(shotCtx.shot, shotCtx.characters),
+    source,
+    ...(opening ? { opening } : {}),
+    ...(reasoningBudget !== undefined ? { reasoningBudget } : {}),
+  };
 }
 
 /** What a frame shows against its shot (`frame.reconcile`): null when the model cannot say. */
@@ -337,6 +357,7 @@ export async function readFrame(
       await deps.media.pngBuffer(ctx.job.projectId, keyframe, 1024),
       ctx.signal,
       opening,
+      staging.reasoningBudget,
     );
     deps.metrics.frameReconciles.inc({
       source: staging.source,
