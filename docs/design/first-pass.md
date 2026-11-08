@@ -203,6 +203,36 @@ Measured: 7.92 (fp40) against 7.80 for one draft (fp35, fp39), within the runs' 
 losing a draft's review to a paused model. It costs about $1.60 more a screenplay ($0.63–1.01 to $2.14–2.70) and about ten
 minutes. Its gain is not established, so new projects write one draft, and a project that wants more asks for it in its settings.
 
+### Paws that hold, never handle (tried, not built)
+
+The storyboard reviews of fp39's plans mark fine paw work in nearly every run: the pink brush picked out of a crowded
+bucket, held up and put back (riding 1, three shots in a row), and the kite drawn out from under Rosie's arm by its
+handle (kite 1); each of fp65's two runs had three such majors. The planner was already told "no hands handling small
+objects", and its shots kept those moments because the scene's action has them. fp77 (November 8, 2026) added a rule:
+hands and paws hold, they do not handle. A paw grips one object in the whole paw and moves it with the whole arm, and
+the fine work of taking, giving or putting away an object (out of a bucket, a bag or a pocket, from under an arm, back
+again, paw to paw) is never filmed: the shot starts with the object already in the paw that uses it, and a change of
+paws or a putting away is cut around, the object held out at the end of one shot and already there at the start of the
+next. Planned again with it, riding 1's brush starts in Rosie's paw for one slow sweep and is gone from it in the next
+shot, and kite 1's kite is held out by Rosie at the end of the first shot and in Sammy's paw at the start of the second
+(six shots for the scene's 20 seconds instead of five; the other scenes kept their counts). Drawn and reviewed like
+fp65's two runs of the same code:
+
+| Scene | fp65, check capped | fp65, check in full | Paws hold | Feasibility (capped, full → rule) |
+|---|---|---|---|---|
+| Kite 1 | 7.5 | 7.3 | 7.5 | 6.3, 6.7 → 7.3 |
+| Kite 2 | 7.3 | 6.7 | 7.5 | 7.0, 6.7 → 7.0 |
+| Riding 1 | 6.7 | 7.5 | 7.3 | 5.3, 6.0 → 6.7 |
+| Riding 2 | 7.4 | 7.1 | 7.1 | 7.3, 7.0 → 7.3 |
+| Mean | 7.22 | 7.15 | 7.35 | 6.54 → 7.08 |
+
++0.12 against the capped run (95% CI −0.48 to +0.73) and +0.20 against the full one: under the 0.5 a rule needs, not
+built. The rule did what it says: no review marked fine paw work, and feasibility rose 0.54. The moments it cuts around
+cost about what they saved: storytelling fell 0.36 (7.17 against 7.54), kite 1's reviews calling the hand-off "never
+staged" and marking Sammy holding the handle from the first frame, as
+[fp61's cuts](#a-moving-prop-kept-to-one-motion-a-shot-tried-not-built) moved a prop's faults from the takes to the cuts. The new plans brought their own faults too (riding 1's sun on the
+barn's side, the hay pile across the axis; continuity 5.60 against 5.66). Cost $4.58, of which the four plans $0.76.
+
 ## The brief, adapted for the video model
 
 A brief can ask for what the video model renders badly: the riding brief's two riders side by side over a pole are four
@@ -569,7 +599,8 @@ more than panels drawn beside fixed neighbours ([IC-LoRA](https://arxiv.org/abs/
 Seedream's multi-image output to "global planning and in-context consistency" and pitches it for storyboards
 ([Seedream 4.0](https://arxiv.org/abs/2509.20427)). Seedream 5.0 Pro, the gateway's only image model, has no group mode
 ([BytePlus](https://docs.byteplus.com/en/docs/ModelArk/1541523)), so one canvas is the only way its frames can see each
-other, and its own showcase is a storyboard of panels in a single picture.
+other, and its own showcase is a storyboard of panels in a single picture. (Seedream 4.5 has a group mode:
+[a scene drawn as a group of frames](#a-scene-drawn-as-a-group-of-frames-tried-not-built) did not score higher.)
 
 So with `storyboard.sheet` a scene drawn whole is drawn as one sheet and cut into its panels, and each panel is checked
 as its shot's first attempt ([scene sheets](storyboard.md#scene-sheets)). The gateway caps the canvas at 4,624,220
@@ -700,6 +731,40 @@ so on the camera it is the composition and not the size, which retires the panel
 full size recovers what panels lost there (5.40 to 6.50), in action and motion and not in the camera. Why riding's panels break and
 kite's do not is not known. The prompts do not explain it: the same shot's two prompts differ only in how the frame was read, with
 the same camera line.
+
+### A scene drawn as a group of frames (tried, not built)
+
+Seedream 5.0 Pro draws one image a request. The provider's Seedream 4.5 also draws a group: up to 15 images in one
+request, the references counted with them, each at least 2,560×1,440 pixels, the multi-image output ByteDance credits
+with "in-context consistency" ([Seedream 4.0](https://arxiv.org/abs/2509.20427)). A group's frames are full size,
+which a sheet's panels are not ([takes from panels lost](#a-scene-drawn-on-one-sheet)). So fp76 (November 8, 2026)
+drew fp39's four scenes again with each scene asked for as one Seedream 4.5 group: its shots in order, each said as its
+frame would be, and the cast's and the props' references once (five to seven). Each image was its shot's first
+attempt, read and judged like any frame, and a frame that failed was drawn again alone by Seedream 5.0 Pro, up to
+three attempts, as now. The gateway passes `parameters.extra` to the model only on a local branch (`image-extra`, run
+as an eval gateway), and Volcengine's SDK takes the group options only as raw body fields (`extra_body`). The controls
+are fp65's two runs of the same code on the same plans:
+
+| Scene | fp65, check capped | fp65, check in full | Group | Group frames kept |
+|---|---|---|---|---|
+| Kite 1 | 7.5 | 7.3 | 7.0 | 2 of 5 |
+| Kite 2 | 7.3 | 6.7 | 7.0 | 2 of 5 |
+| Riding 1 | 6.7 | 7.5 | 7.2 | 1 of 8 |
+| Riding 2 | 7.4 | 7.1 | 7.0 | 1 of 6 |
+| Mean | 7.22 (continuity 5.83) | 7.15 (continuity 5.50) | 7.05 (continuity 5.00) | 6 of 24 |
+
+Against the capped run, the one new projects get, the group scored −0.18 (95% CI −0.90 to +0.55); against the full run
+−0.10. Continuity fell (5.00 against 5.66 for the two runs), and so did character (7.25 against 7.88): not built. A
+group keeps the place for most of its frames (the lake, the path and the tree kept their sides through both kite
+groups). What it breaks is what the checks look for: a kite drawn twice in kite 1's opening frame (one in Rosie's arms,
+one in the sky), a second Rosie at the edge of that group's last frame, which also lost the hill to a white backdrop,
+the kite's handle grown to the size of a life ring, and riding 2's last wide on a pale studio floor. The checks drew
+18 of the 24 group frames again alone, so the boards were mostly frames drawn alone after all. Of the six group frames
+kept, one passed its checks; five were kept as the best of three attempts with their faults named, three of them their
+scenes' opening frames, the reference every later frame of a scene is drawn against. The reviews marked both faults
+that stayed: kite 1's second kite and riding 2's studio floor (critical). Cost $3.46 as counted, plus the 24 group
+images the gateway has no price for (about $1.10 at Seedream 5.0 Pro's $0.045 an image), against $3.75; 3.9 hours
+against 3.3: each group took 3.5 to 5 minutes, and an instance draws two images at a time.
 
 ## The video reads its first frame
 
@@ -1060,6 +1125,8 @@ cell is one run's first round; the scores of the same build and brief differ by 
 | fp64: fp62's 5 takes that passed with a major fault made again, told what their watch found, up to two attempts each (fp62's renders, the rest unchanged) | – | – | scene reviews kite 1 6.97, kite 2 7.23 against 6.58 and 6.88 for the same renders unchanged (+0.37, 95% CI +0.16 to +0.58); 1 of 5 ended passing; [the doubled handle and the hover gone](#a-take-with-a-major-fault-made-again-tried-not-built) |
 | fp63: the staging check's reasoning capped at 2,048 and 1,024 tokens (fp59's 24 frames read again, four readings each) | – | – | not drawn again: at 2,048 tokens the same redraws as a full reading 21 and 22 of 24 times (two full readings agree 21 times), 56 s a reading against 174 s; [new projects cap it](#the-staging-checks-reasoning-capped) |
 | fp65: the four scenes of fp39's plans drawn again with the staging check capped at 2,048 tokens and in full (storyboards only, at the same time) | – | – | 7.22 against 7.15 (+0.08, 95% CI −0.89 to +1.04), continuity 5.83 against 5.50; storyboard jobs 43% shorter, 30% cheaper; riding 1 −0.8 from a frame kept with four conflicts named; [the cap stays](#the-staging-checks-reasoning-capped) |
+| fp76: each scene of fp39's plans drawn as one Seedream 4.5 group, every image its shot's first attempt, failed frames drawn again alone (storyboards only) | – | – | 7.05 against 7.22 and 7.15 for fp65's two runs (−0.18, 95% CI −0.90 to +0.55), continuity 5.00 against 5.66; 6 of 24 group frames kept, 5 of them as the best of three; [doubled props, the place lost in late frames](#a-scene-drawn-as-a-group-of-frames-tried-not-built) |
+| fp77: the planner told that paws hold and never handle, fp39's scenes planned again (storyboards only) | – | – | 7.35 against 7.22 and 7.15 (+0.12, 95% CI −0.48 to +0.73); feasibility 7.08 against 6.54, no fine paw work marked, storytelling −0.36; [the hand-off never staged](#paws-that-hold-never-handle-tried-not-built) |
 | fp55: fp53's riding 1 render split again at the cuts found near the planned ones (same render, reviewed beside the old split) | – | – | scene 6.67 against 5.97; takes passing 6 of 8 against 2 |
 | fp54: HappyHorse 1.1 instead of Wan 3.0, from the same 13 approved frames | – | – | shots' watch 5.0 against 6.1, passed 5 against 7; kite scene 5.7 |
 | fp51: the faulted frames drawn twice more and one picked (storyboards only, plans of fp39) | – | – | 7.17 against 7.28 at the same time, continuity 5.9 against 5.5; [5 of 8 faulted again](#a-scene-read-whole-then-a-frame-picked-tried-not-merged) |
@@ -1159,7 +1226,12 @@ What keeps each under 8, what was tried, and what to try next:
    clears it (4 to 5 of 7 or 8 faulted again). The staging check, which reasoned in full (one panel's reading in fp29
    took 217 s and wrote 9,069 tokens), is capped at 2,048 tokens of reasoning for new projects: the same decisions in a
    third of the time ([fp63](#the-staging-checks-reasoning-capped)), and storyboards drawn with it scored 7.22 against
-   7.15 (fp65).
+   7.15 (fp65). A scene's frames drawn together as separate full-size images by Seedream 4.5's group mode scored 7.05
+   (fp76): the group keeps the place but doubles props and loses it in late frames, and the checks drew three in four of
+   its frames again alone ([tried, not built](#a-scene-drawn-as-a-group-of-frames-tried-not-built)). The storyboards'
+   other low score, feasibility (6.5), is the plans' fine paw work; a planner rule that cuts around it (fp77) raised
+   feasibility to 7.1 and lost storytelling for it, 7.35 overall
+   ([tried, not built](#paws-that-hold-never-handle-tried-not-built)).
 4. **Stills that tell the beat** (storytelling 6–8): a frame is the start of its shot, so a beat inside the take was
    missing from the storyboard; the planner now starts a shot on its beat's pose (fp18, being measured).
 5. **The video** (scene 6.0–7.3, first takes 5.8–7.4): the video model adds its own failures (a kite that morphs and
