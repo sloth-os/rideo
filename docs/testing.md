@@ -559,7 +559,9 @@ gateway (`first-pass.test.ts`, `review-samples.test.ts`, `clip-review.test.ts`).
 scene watched a second time, took 16 to 20 of `story.spec.ts`'s minutes, and with them it ran past its hour (November
 2026). It keeps the checks of each frame against its shot (`frame.reconcile`, about 3 minutes a call) and of each
 reference (`reference.check`, about 2), the only place they run on real models in CI, so `story.spec.ts` takes about 45
-minutes: its limit is 60 minutes and the job's 75.
+minutes: its limit is 60 minutes and the job's 75. It waits up to 30 minutes for the cast's views: the image lane draws
+two at a time, a view whose check finds a difference is drawn and checked again, and a check can reason for over four
+minutes (four did on November 9, 2026, and the 15 minutes the test then allowed ran out).
 
 Each spec also reads the studio's `/metrics` (`rideo_llm_calls_total`, `rideo_gateway_tasks_total`) to check that the
 calls it expects were made and succeeded. The suite's projects judge with a threshold of 0.5 and two attempts per
