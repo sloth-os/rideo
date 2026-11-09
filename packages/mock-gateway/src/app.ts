@@ -88,6 +88,11 @@ export interface MockGatewayApp {
   busyCreates(times: number): void;
   /** The next `times` video generations jump inside the shot (a flash cut), like MOCK_JUMP_EVERY. */
   jumpVideos(times: number): void;
+  /**
+   * The next `times` multi-shot sequences join their shots without a cut, as a render whose shots dissolve into each
+   * other looks to the split (docs/design/multi-shot.md#mock-gateway).
+   */
+  blendCuts(times: number): void;
   /** The next `times` image or video tasks fail as a provider's moderation refusing what it generated. */
   refuseOutputs(times: number): void;
   /** The next `times` sound checks hear no speech, as when the video model does not voice its lines. */
@@ -116,6 +121,7 @@ export async function buildMockGateway(opts: MockGatewayOptions = {}): Promise<M
   const holds: { marker: string; waiting: number; released: Promise<void>; release(): void }[] = [];
   let busyLeft = 0;
   let jumpsLeft = 0;
+  let blendsLeft = 0;
   let refusalsLeft = 0;
   let mufflesLeft = 0;
   const management = new MockManagement({ apiKey: opts.apiKey, managementKey: opts.managementKey });
@@ -302,6 +308,15 @@ export async function buildMockGateway(opts: MockGatewayOptions = {}): Promise<M
         }
       }
       if (jump) counters.jumps++;
+      // A multi-shot sequence whose shots dissolve into each other: no cut for the split to find
+      let blend = body.metadata?.mock_blend === true;
+      const sequence = (body.input as { type: string; text?: string }[]).some(
+        (p) => p.type === 'text' && /A multi-shot sequence of \d+ shots/.test(p.text ?? ''),
+      );
+      if (!replay && route.modality === 'video' && sequence && blendsLeft > 0) {
+        blend = true;
+        blendsLeft--;
+      }
       const failCode = typeof body.metadata?.mock_fail === 'string' ? body.metadata.mock_fail : null;
       // A provider's moderation refusing what it generated (docs/design/ai-gateway.md#mock-gateway)
       let refused = false;
@@ -332,7 +347,7 @@ export async function buildMockGateway(opts: MockGatewayOptions = {}): Promise<M
                 `mock ${route.modality} failed: Error code: 400 - {'error': {'message': 'The request failed because the output ${route.modality} may contain sensitive information.', 'code': 'Output${route.modality === 'image' ? 'Image' : 'Video'}SensitiveContentDetected'}}`,
               );
             }
-            return route.run(body, { dir, fileUrl: (name) => `${base}/files/${name}`, flaky, jump });
+            return route.run(body, { dir, fileUrl: (name) => `${base}/files/${name}`, flaky, jump, blend });
           },
         });
       const self = `${base}/v1/${route.path}/${task.id}`;
@@ -550,6 +565,9 @@ export async function buildMockGateway(opts: MockGatewayOptions = {}): Promise<M
     },
     jumpVideos(times) {
       jumpsLeft = times;
+    },
+    blendCuts(times) {
+      blendsLeft = times;
     },
     refuseOutputs(times) {
       refusalsLeft = times;

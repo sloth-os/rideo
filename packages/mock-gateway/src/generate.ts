@@ -18,6 +18,11 @@ export interface GenerateContext {
   flaky: boolean;
   /** True when this video should jump inside the shot (a flash cut) — MOCK_JUMP_EVERY / metadata.mock_jump. */
   jump?: boolean;
+  /**
+   * True when a multi-shot sequence should join its shots without a cut (one continuous picture), as a render whose
+   * shots dissolve into each other looks to the split — blendCuts() / metadata.mock_blend.
+   */
+  blend?: boolean;
 }
 
 export interface ValidationIssue {
@@ -325,6 +330,33 @@ async function multiShot(
   const sigs = ctx.flaky ? [] : await signaturesFromImages(parts);
   // A drifting generation also loses the voices, as a single take does
   const sound = !!params.include_audio && !ctx.flaky;
+  const total = durations.reduce((n, d) => n + d, 0);
+  // Shots that dissolve into each other: one continuous picture, so the split finds no cut
+  if (ctx.blend) {
+    await synthesizeVideo({
+      dir: ctx.dir,
+      name,
+      width,
+      height,
+      durationSec: total,
+      includeAudio: sound,
+      ...(first?.uri && !ctx.flaky
+        ? { firstFrame: await loadUri(first.uri) }
+        : {
+            frame: synthesizeFrame(
+              width - (width % 2),
+              height - (height % 2),
+              hash(prompt) ^ Number(params.seed ?? 0) ^ 7919,
+              sigs,
+              30,
+            ),
+          }),
+    });
+    return {
+      outputs: [{ uri: ctx.fileUrl(`${name}.mp4`), mime_type: 'video/mp4' }],
+      usage: { output_count: 1, duration_seconds: total },
+    };
+  }
   const files: string[] = [];
   for (const [k, d] of durations.entries()) {
     const seg = `${name}-seg${k}`;
@@ -368,7 +400,6 @@ async function multiShot(
     '+faststart',
     join(ctx.dir, `${name}.mp4`),
   ]);
-  const total = durations.reduce((n, d) => n + d, 0);
   return {
     outputs: [{ uri: ctx.fileUrl(`${name}.mp4`), mime_type: 'video/mp4' }],
     usage: { output_count: 1, duration_seconds: total },

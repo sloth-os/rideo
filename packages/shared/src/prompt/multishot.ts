@@ -255,6 +255,15 @@ export function compileMultiShotRequest(
   };
 }
 
+/**
+ * Whether a render's split missed its cuts: it found at most half of those its plan expects, so most of its segments
+ * would hold parts of two shots (a dissolve, which the scene filter does not see, or shots left out). Such a render is
+ * rendered again when `generation.rerenderMissedCuts` is on (docs/design/multi-shot.md#splitting-and-verification).
+ */
+export function missedCuts(found: number, expected: number): boolean {
+  return expected > 0 && found * 2 <= expected;
+}
+
 /** How far a found cut may be from its expected time: this share of the shorter of its two shots, up to the cap. */
 export const CUT_TOLERANCE_SHARE = 0.45;
 export const CUT_TOLERANCE_MAX_SEC = 1.5;

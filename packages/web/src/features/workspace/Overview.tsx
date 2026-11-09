@@ -209,6 +209,12 @@ function SettingsDialog({
           (v) => setS({ ...s, generation: { ...s.generation, multiShot: v ? 'auto' : 'off' } }),
           'multiShot',
         )}
+        {toggle(
+          'Render a sequence again when the split misses its cuts',
+          s.generation.rerenderMissedCuts,
+          (v) => setS({ ...s, generation: { ...s.generation, rerenderMissedCuts: v } }),
+          'rerenderMissedCuts',
+        )}
         <div
           className="rounded-[var(--radius-control)] border border-border p-3"
           data-testid="continuity-settings"

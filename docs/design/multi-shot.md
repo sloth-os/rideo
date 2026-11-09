@@ -73,12 +73,22 @@ some were, `planned` when none. The model keeps its own timing: Wan 3.0 cut a 3/
 14.2 s, and cut riding's 5/4/4/3/3/4/3/4 s plan 1.3 s off its fourth planned cut; each take keeps its segment's length.
 Until November 2026 the cuts split the video only when there was exactly one fewer than shots, and the planned times
 otherwise: a render with one cut too faint to find was split at the planned times throughout, and a flash counted as a
-cut threw every segment off ([one request](first-pass.md#a-scene-rendered-in-one-request-measured-not-the-default)). A
-render with far fewer cuts than shots (Wan rendered three shots for a plan of five) is logged
-(`the render has fewer cuts than its plan`); its segments' checks find what it left out.
+cut threw every segment off ([one request](first-pass.md#a-scene-rendered-in-one-request-measured-not-the-default)).
 `rideo_sequence_splits_total{cut}` counts the splits. A detected cut is its new shot's first frame, rounded to the
 millisecond (10.042 for 10.0417), so a segment ends, and the next begins, half a frame before it: cut at the rounded
 time, a take ended on one frame of the next shot, which the jump check saw.
+
+**A render that missed its cuts is rendered again.** A render in which the split finds at most half the cuts its plan
+expects (`missedCuts`) cannot be split into its shots: most of its segments would hold parts of two. Wan now and then
+joins two shots with a dissolve, a second of double exposure that the scene filter does not see: fp53's kite 2 found
+one of its four cuts (two dissolves, and a cut a second earlier than its tolerance allows). With
+`settings.generation.rerenderMissedCuts` (on for new projects, off in the schema; *Render a sequence again when the
+split misses its cuts* in the project settings) such a render is rendered again from the same first frame and prompt,
+with the next attempt's seed, while the group's renders stay within `consistency.maxAttempts`, and the render that found
+the most cuts is split. Made again, that scene found all its cuts and reviewed 6.77 and 6.97 against 6.03
+([measured](first-pass.md#a-render-that-missed-its-cuts-made-again)). A render that still misses them is logged
+(`the render has fewer cuts than its plan`) and split as found; its segments' checks find what is wrong.
+`rideo_sequence_rerenders_total` counts the renders made again.
 
 Each segment is cut with its sound and checked like a single take
 ([quality checks](continuity.md#quality-checks-in-the-gate)): its identity against its own shot's characters and
@@ -88,7 +98,8 @@ shot's lines heard (`sound.check`). A render whose every segment passes is used 
 
 - An identity-only group (silent, without the quality checks) is generated again (seed offset per attempt) up to
   `maxAttempts`; then every shot keeps its best segment (a failed one stays failed, for review or override).
-- A voiced or checked group is rendered once. Every segment must pass, so a whole render passes less often than one
+- A voiced or checked group is rendered once (again only when it missed its cuts, above). Every segment must pass, so a
+  whole render passes less often than one
   shot does (at the swimming film's 94 % first-attempt rate, eight shots pass together 61 % of the time), and another
   render costs the whole sequence again. A shot whose segment fails keeps it as a failed take and is made again
   alone (`shot.generate`, with its own attempts and the scene's reference frame), starting from the segment's first
@@ -112,10 +123,13 @@ shot and attached as `take.audio` (lip sync `none`); the Dialogue track plays it
 ## Surfaces
 
 Nothing new to call: `POST …/clips/:clipId/generate` (and the batch) choose groups. `settings.generation.multiShot`
-(`auto` | `off`) turns it off per project; the clip review marks multi-shot takes (`shot 2 of 3`).
+(`auto` | `off`) turns it off per project, and `settings.generation.rerenderMissedCuts` renders again a render whose cuts
+the split misses; the clip review marks multi-shot takes (`shot 2 of 3`).
 
 ## Mock gateway
 
 `mock-multishot-v1` (`max_shots: 4`, up to 20 s) renders the shots of a multi-shot prompt as segments with different
 textures and the same identity signatures, separated by hard cuts at the planned durations, with sound when asked
-(`include_audio`), so the sound check hears each segment's lines.
+(`include_audio`), so the sound check hears each segment's lines. `blendCuts(n)` (or `metadata.mock_blend`) makes the
+next `n` sequences one continuous picture with no cut, as a render whose shots dissolve into each other looks to the
+split.

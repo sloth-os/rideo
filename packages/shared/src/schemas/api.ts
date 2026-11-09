@@ -100,6 +100,8 @@ export const ProjectSettingsPatchSchema = z
         includeAudio: z.boolean(),
         keyframes: z.boolean(),
         multiShot: z.enum(['auto', 'off']),
+        /** docs/design/multi-shot.md#splitting-and-verification */
+        rerenderMissedCuts: z.boolean(),
         /** docs/design/continuity.md#prompt-version */
         promptVersion: PromptVersionSchema,
         enhancePrompt: z.boolean().nullable(),

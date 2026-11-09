@@ -90,8 +90,9 @@ export class ProjectService extends Service {
       },
       // New projects speak their dialogue when the server has a TTS provider (docs/design/dialogue.md).
       dialogue: { mode: c.tts ? 'tts' : 'off', lipSync: true },
-      // and use continuity-aware prompts with every framing spelled out (docs/design/continuity.md#prompt-version).
-      generation: { promptVersion: LATEST_PROMPT_VERSION },
+      // and use continuity-aware prompts with every framing spelled out (docs/design/continuity.md#prompt-version);
+      // a sequence whose split missed its cuts is rendered again (docs/design/multi-shot.md#splitting-and-verification).
+      generation: { promptVersion: LATEST_PROMPT_VERSION, rerenderMissedCuts: true },
       // Every production scene storyboarded, and every step reviewed: the cast, the extensions, every take watched
       // whole, the cut before export (docs/design/ai-review.md#autopilot-every-step-reviewed-and-approved), every score
       // of every review held at 8 (docs/design/first-pass.md#the-gate-at-8). The director's desk is a person's tool
