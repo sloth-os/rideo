@@ -106,7 +106,9 @@ test('a brief with a picture and a video → screenplay → locked cast → pilo
       ),
     )),
   ];
-  await Promise.all(refJobs.map((j) => api.waitJob(pid, j.id, 15 * MINUTES, POLL)));
+  // Two image lanes draw the views two at a time, and a view whose check finds a difference is drawn and checked again:
+  // a check reasons for up to 4.5 minutes, so four views took over 15 minutes on d30db14 (run 42570081069)
+  await Promise.all(refJobs.map((j) => api.waitJob(pid, j.id, 30 * MINUTES, POLL)));
   ({ docs } = await api.call('GET', `/projects/${pid}/state`));
   for (const c of Object.values<any>(docs.characters)) {
     expect(c.references).toHaveLength(1);
