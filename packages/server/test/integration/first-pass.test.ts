@@ -34,6 +34,8 @@ describe('the first pass', () => {
     expect(created.settings.consistency).toMatchObject({ turnaround: true });
     // and their staging check reasons briefly (docs/design/first-pass.md#the-staging-checks-reasoning-capped)
     expect(created.settings.consistency).toMatchObject({ stagingReasoning: 'short' });
+    // and render again a sequence whose split missed its cuts (docs/design/multi-shot.md#splitting-and-verification)
+    expect(created.settings.generation).toMatchObject({ rerenderMissedCuts: true });
     expect(created.settings.storyboard).toMatchObject({ sheet: false });
     const reviewCalls = async () => {
       const line = (await (await fetch(`${stack.url}/metrics`)).text())

@@ -167,6 +167,54 @@ describe('multi-shot generation', () => {
     await stack.api('POST', `/projects/${pid}/clips/${clip.id}/approve`);
   }, 300_000);
 
+  it('renders again a sequence whose split missed its cuts and splits the render that found them; off, splits it as found', async () => {
+    const metric = async () =>
+      Number(
+        /^rideo_sequence_rerenders_total (\d+)$/m.exec(
+          await (await fetch(`${stack.url}/metrics`)).text(),
+        )?.[1] ?? 0,
+      );
+    const sequenceRequests = async (pid: string) => {
+      const group = (await jobsOf(pid)).find((j) => j.kind === 'shot.group')!;
+      return [...stack.gw.store.requests.values()].filter(
+        (r: any) => r.metadata?.rideo_job === group.id && r.metadata?.rideo_step === 'sequence',
+      ) as any[];
+    };
+    const before = await metric();
+    // The first render joins its two shots without a cut, as a dissolve looks to the split: rendered again with the
+    // next attempt's seed (docs/design/multi-shot.md#splitting-and-verification)
+    const on = await threeShotClip({
+      generation: { rerenderMissedCuts: true },
+      consistency: { qualityChecks: false, maxAttempts: 2 },
+    });
+    stack.gw.blendCuts(1);
+    await generate(on.pid, on.clip.id);
+    const renders = await sequenceRequests(on.pid);
+    expect(renders).toHaveLength(2);
+    expect(renders[1].parameters.seed).toBe((renders[0].parameters.seed + 7919) % 2147483647);
+    const [a, b] = [...(await clipNow(on.pid, on.clip.id)).shots]
+      .sort((x, y) => x.index - y.index)
+      .map((s) => s.takes.at(-1)!);
+    // both shots from the render that found its cut
+    expect(a!.request.multiShot).toEqual({ index: 0, of: 2, cut: 'detected' });
+    expect(b!.request.multiShot).toEqual({ index: 1, of: 2, cut: 'detected' });
+    expect(a!.gatewayTaskIds.at(-1)).toBe(b!.gatewayTaskIds[0]);
+    expect(requestOf(b!.gatewayTaskIds[0]!).parameters.seed).toBe(renders[1].parameters.seed);
+    expect(await metric()).toBe(before + 1);
+
+    // Turned off, the same render is split as found: at the planned time
+    const off = await threeShotClip({
+      generation: { rerenderMissedCuts: false },
+      consistency: { qualityChecks: false, maxAttempts: 2 },
+    });
+    stack.gw.blendCuts(1);
+    await generate(off.pid, off.clip.id);
+    expect(await sequenceRequests(off.pid)).toHaveLength(1);
+    const first = [...(await clipNow(off.pid, off.clip.id)).shots].sort((x, y) => x.index - y.index)[0]!;
+    expect(first.takes.at(-1)!.request.multiShot).toEqual({ index: 0, of: 2, cut: 'planned' });
+    expect(await metric()).toBe(before + 1);
+  }, 300_000);
+
   it('starts a sequence from an approved storyboard frame, and keeps one off a shot that would join', async () => {
     const approveBoard = async (pid: string, clipId: string, shotId: string) => {
       const job = await stack.api<Job>(

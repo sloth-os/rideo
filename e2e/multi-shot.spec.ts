@@ -1,6 +1,33 @@
 import { expect, test } from '@playwright/test';
 import { Api } from './support/api';
 
+/**
+ * A sequence whose split misses its cuts rendered again (docs/design/multi-shot.md#splitting-and-verification): on for
+ * new projects, a toggle in the project settings, desktop and phone.
+ */
+test('the project settings render a sequence again when its split misses its cuts', async ({
+  page,
+  request,
+}, testInfo) => {
+  const api = new Api(request);
+  const pid = await api.storyProject(`Missed cuts (${testInfo.project.name})`);
+  const setting = async () =>
+    (await api.call<any>('GET', `/projects/${pid}/state`)).docs.project.settings.generation
+      .rerenderMissedCuts;
+  await page.goto(`/p/${pid}/overview`);
+  await page.getByTestId('open-settings').click();
+  const rerender = page.locator('input[name="rerenderMissedCuts"]');
+  await expect(rerender).toBeChecked();
+  await rerender.uncheck();
+  await page.getByTestId('settings-save').click();
+  await expect.poll(setting).toBe(false);
+  await page.getByTestId('open-settings').click();
+  await expect(rerender).not.toBeChecked();
+  await rerender.check();
+  await page.getByTestId('settings-save').click();
+  await expect.poll(setting).toBe(true);
+});
+
 /** Multi-shot generation (docs/design/multi-shot.md) through the clip review, desktop and phone. */
 test('consecutive shots render in one request and come back as takes of their own shots', async ({
   page,

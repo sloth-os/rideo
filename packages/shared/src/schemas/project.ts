@@ -163,6 +163,11 @@ export const ProjectSettingsSchema = z.object({
       /** Groups of shots in one request on multi-shot models (docs/design/multi-shot.md). */
       multiShot: z.enum(['auto', 'off']).default('auto'),
       /**
+       * A sequence whose split missed most of its cuts rendered again, within `consistency.maxAttempts`
+       * (docs/design/multi-shot.md#splitting-and-verification). Off in the schema, on for new projects.
+       */
+      rerenderMissedCuts: z.boolean().default(false),
+      /**
        * 1: prompts as before; 2: continuity-aware prompts (docs/design/continuity.md#prompt-version); 3: and every frame's
        * framing spelled out (docs/design/first-pass.md#framings-spelled-out).
        */
@@ -176,6 +181,7 @@ export const ProjectSettingsSchema = z.object({
       includeAudio: false,
       keyframes: true,
       multiShot: 'auto',
+      rerenderMissedCuts: false,
       promptVersion: 1,
       enhancePrompt: null,
       modelMusic: false,

@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
   compileMultiShotRequest,
+  missedCuts,
   multiShotBoundaries,
   needsOwnRequest,
+  ProjectSettingsPatchSchema,
   ProjectSettingsSchema,
   planShotGroups,
   plansForSequences,
@@ -108,13 +110,37 @@ describe('splitting', () => {
     // As many cuts as expected, one of them a flash: the flash is left out and the missing cut planned
     const flash = multiShotBoundaries([2, 9], [5, 4, 6], 16.5);
     expect(flash).toEqual({ boundaries: [0, 5.5, 9, 16.5], cut: 'aligned', found: 1 });
-    // A render with fewer shots than its plan: few cuts found, the rest planned
+    // fp53's kite 2: two of its joins dissolves the scene filter does not see, a hard cut a second early: one found
     const fewer = multiShotBoundaries([4.02, 16.73], [5, 2, 4, 5, 4], 20.1);
     expect(fewer.found).toBe(1);
     expect(fewer.boundaries[4]).toBe(16.73);
+    expect(missedCuts(fewer.found, 4)).toBe(true);
+    expect(missedCuts(riding.found, 7)).toBe(false);
     // Boundaries always rise
     for (const b of [riding, flash, fewer].map((r) => r.boundaries))
       expect(b.every((t, k) => k === 0 || t > b[k - 1]!)).toBe(true);
+  });
+});
+
+describe('a render that missed its cuts (docs/design/multi-shot.md#splitting-and-verification)', () => {
+  it('misses them when its split finds at most half the cuts its plan expects', () => {
+    expect(missedCuts(0, 1)).toBe(true);
+    expect(missedCuts(1, 1)).toBe(false);
+    expect(missedCuts(1, 4)).toBe(true);
+    expect(missedCuts(2, 4)).toBe(true);
+    expect(missedCuts(3, 4)).toBe(false);
+    expect(missedCuts(3, 7)).toBe(true);
+    expect(missedCuts(4, 7)).toBe(false);
+    // a single shot has no cut to miss
+    expect(missedCuts(0, 0)).toBe(false);
+  });
+
+  it('is rendered again only when a project asks: off in the schema, carried by the patch schema', () => {
+    expect(ProjectSettingsSchema.parse({}).generation.rerenderMissedCuts).toBe(false);
+    expect(ProjectSettingsPatchSchema.parse({ generation: { rerenderMissedCuts: true } }).generation).toEqual(
+      { rerenderMissedCuts: true },
+    );
+    expect(() => ProjectSettingsPatchSchema.parse({ generation: { rerenderMissedCuts: 'yes' } })).toThrow();
   });
 });
 

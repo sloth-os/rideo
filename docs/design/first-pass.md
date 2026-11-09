@@ -887,9 +887,10 @@ the best scene review of all these measurements); where they were not, the segme
 each held parts of two shots (kite 2's segments watched 3, 6, 2, 3 and 2). Scanned again, Wan's cuts score 0.32 to 0.57,
 above the 0.3 the split scans at, but the split takes them only when it finds exactly one fewer than the shots: riding 1's
 render has 6 of its 7 cuts, each within 1.3 s of its planned time, and was split at the planned times instead; kite 2's has
-2 cuts where its plan has 4, so the model rendered fewer shots than it was asked for. A split that matches the cuts it
-finds to the planned times and fills only a missing one from the plan would have cut riding 1 right; a render with far
-fewer cuts than shots should be made again, not split. Whole scenes made shot by shot from keyframes, which an earlier attempt produced by
+2 hard cuts where its plan has 4: its other two shots are joined by dissolves, which the split does not see
+([made again](#a-render-that-missed-its-cuts-made-again)). A split that matches the cuts it finds to the planned times
+and fills only a missing one from the plan would have cut riding 1 right; a render with far fewer cuts than shots should
+be made again, not split. Whole scenes made shot by shot from keyframes, which an earlier attempt produced by
 mistake, scored kite 7.07 and riding 6.53 (one scene each).
 
 **The split now takes the cuts it finds** ([splitting](multi-shot.md#splitting-and-verification)). Riding 1's render, split
@@ -1022,6 +1023,47 @@ not built. Built, it would make about four in ten passing takes again (72 of 180
 a major fault named by their own watch), and most of them twice: four of the five here still had one after both
 attempts. Cost: $10.47 for the 10 takes, their watches and six scene reviews, and $0.50 for the unchanged renders'
 reviews.
+
+### A render that missed its cuts made again
+
+A scene rendered in one request is split at the cuts found near the planned ones, and an expected cut that finds none
+is placed at its planned time ([splitting](multi-shot.md#splitting-and-verification)). Of the 14 renders made in one
+request on fp39's plans (fp53, fp56 and fp57), one found at most half its cuts: fp53's kite 2, split then at the planned
+times throughout (6.00). Looked at again, it holds all five shots. Two of its four joins are dissolves of about a
+second, a double exposure of the two shots that the scene filter does not see (no frame of either scores above 0.12,
+against the 0.3 the split scans at), and the third is a hard cut a second before its planned time, outside the 0.9 s
+its two-second shot allows. Split as the code splits now, it finds one of its four cuts, and three of its five segments
+hold parts of two shots.
+
+So the split was given a way to render such a scene again (a probe first): a render that finds at most half its cuts is
+rendered again from the same approved first frame and prompt with the next attempt's seed, up to two more times, and
+the render that found the most cuts is kept. fp53's render was handed to it as the first render, and beside it an
+instance without the rule split the same render as the code does now. Each version's segments were checked as takes,
+one render kept and no failed segment made again (as fp53 and fp56 measured), and each scene reviewed three times
+(fp79, November 9, 2026). A second sample started from the seed after the first remake's; its first render found two
+cuts of four, so it was rendered once more:
+
+| Kite 2 | Old render, split as now | Made again | Made again, second sample |
+|---|---|---|---|
+| Renders (cuts found) | 1 (1 of 4) | 2 (1, then 4 of 4) | 3 (1, 2, then 4 of 4) |
+| Segments passing their checks | 1 of 5 | 3 of 5 | 2 of 5 |
+| Scene review | 6.03 (6.1, 6.2, 5.8) | 6.77 (7.1, 6.7, 6.5) | 6.97 (7.0, 7.3, 6.6) |
+| Temporal | 3.0 | 5.3 | 6.0 |
+| Editing | 4.3 | 6.3 | 6.3 |
+| Realism | 4.7 | 7.3 | 7.7 |
+
+All three reviews of the old render named its dissolves ("double-exposure ghosting over most of the take", "Sammy
+appears twice at the head of the shot", "cross-dissolves with long ghost tails instead of cuts"); none of the six
+reviews of the renders made again raised one as a major or critical issue. Both samples gained 0.7 or more (+0.84 on
+average), past the 0.5 the rule asks for. Found cuts alone do not make this scene good: fp56's fresh render of kite 2 found all four and reviewed 5.90, its
+kite drawn wrong ([fresh renders](#a-scene-rendered-in-one-request-measured-not-the-default)). What the renders made
+again removed is the double exposure. The first one lost a line instead (one review of three heard Sammy's opening
+line missing: dialogue 6.3 against 9).
+
+**Built**: new projects render again a render that missed its cuts, within `consistency.maxAttempts`
+(`generation.rerenderMissedCuts`, [splitting](multi-shot.md#splitting-and-verification)). One render in 14 on fp39's
+plans missed its cuts, and one of the three new renders of this scene did, so it costs a render now and then: about
+$5.80 for a 20-second scene. Cost: $18.42 (three renders and the three versions' checks and reviews).
 
 ## Scenes count what they heard
 
@@ -1158,6 +1200,7 @@ cell is one run's first round; the scores of the same build and brief differ by 
 | fp76: each scene of fp39's plans drawn as one Seedream 4.5 group, every image its shot's first attempt, failed frames drawn again alone (storyboards only) | – | – | 7.05 against 7.22 and 7.15 for fp65's two runs (−0.18, 95% CI −0.90 to +0.55), continuity 5.00 against 5.66; 6 of 24 group frames kept, 5 of them as the best of three; [doubled props, the place lost in late frames](#a-scene-drawn-as-a-group-of-frames-tried-not-built) |
 | fp77: the planner told that paws hold and never handle, fp39's scenes planned again (storyboards only) | – | – | 7.35 against 7.22 and 7.15 (+0.12, 95% CI −0.48 to +0.73); feasibility 7.08 against 6.54, no fine paw work marked, storytelling −0.36; [the hand-off never staged](#paws-that-hold-never-handle-tried-not-built) |
 | fp78: fp39's four scenes drawn by Qwen-Image 2.0 Pro, which takes three input images and so no opening frame (storyboards only) | – | – | 6.60 against 7.22 and 7.15 for fp65's two runs (−0.63, 95% CI −1.42 to +0.17), continuity 4.42 against 5.66; 14 continuity majors against 5, [the place and the wind turned around](#frames-drawn-by-qwen-image-tried-not-built) |
+| fp79: fp53's kite 2 render, which missed three of its four cuts (two dissolves), rendered again until its cuts were found (two samples) | – | – | scene reviews 6.77 and 6.97 against 6.03 for the old render split as now (+0.84); segments passing 3 and 2 of 5 against 1; [built for new projects](#a-render-that-missed-its-cuts-made-again) |
 | fp55: fp53's riding 1 render split again at the cuts found near the planned ones (same render, reviewed beside the old split) | – | – | scene 6.67 against 5.97; takes passing 6 of 8 against 2 |
 | fp54: HappyHorse 1.1 instead of Wan 3.0, from the same 13 approved frames | – | – | shots' watch 5.0 against 6.1, passed 5 against 7; kite scene 5.7 |
 | fp51: the faulted frames drawn twice more and one picked (storyboards only, plans of fp39) | – | – | 7.17 against 7.28 at the same time, continuity 5.9 against 5.5; [5 of 8 faulted again](#a-scene-read-whole-then-a-frame-picked-tried-not-merged) |
@@ -1293,7 +1336,9 @@ model's; a take watch that finds it could have the take made again). Wan's own p
    and the scenes gained +0.37 for about four in ten takes made again
    ([tried, not built](#a-take-with-a-major-fault-made-again-tried-not-built)). What the remakes kept (a string coming
    loose from the kite, a handle doubled, the kite propped up off the grass) the video model drew wrong even when told
-   what to show. *Next:* a render with too few cuts made again.
+   what to show. A scene rendered in one request whose split missed most of its cuts (two of them dissolves, a double
+   exposure the split does not see) is now rendered again: on the one scene that had one, 6.03 against 6.77 and 6.97
+   ([made again](#a-render-that-missed-its-cuts-made-again)).
 6. **Close framings drawn whole** (fixed, fp7) and **the AI blocking**: its cameras now follow each shot's planned
    layout where its marks allow ([following the shot plan](director-desk.md#following-the-shot-plan)), yet with the
    desk on the storyboards scored 6.1 and 6.6 (fp27) against 7.2 and 6.8 without it: the image model does not draw

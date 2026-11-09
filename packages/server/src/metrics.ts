@@ -162,6 +162,12 @@ export class Metrics {
       'Multi-shot renders split, by how their cuts were placed (detected, aligned, planned)',
     ),
   );
+  readonly sequenceRerenders = this.add(
+    new Counter(
+      'rideo_sequence_rerenders_total',
+      'Multi-shot renders made again because their split missed most of their cuts',
+    ),
+  );
   readonly sequenceSegments = this.add(
     new Counter(
       'rideo_sequence_segments_total',

@@ -11,6 +11,7 @@ import {
   compileMultiShotRequest,
   docPath,
   type Job,
+  missedCuts,
   multiShotBoundaries,
   orderedShotCharacters,
   orderedShotElements,
@@ -200,38 +201,64 @@ export async function shotGroup(deps: HandlerDeps, ctx: JobContext) {
       // its best segment over the attempts.
       const best: (Segment | null)[] = shots.map(() => null);
       let chosen: Segment[] | null = null;
-      for (let attempt = 0; attempt < renders; attempt++) {
-        throwIfAborted(ctx.signal);
-        ctx.progress(0.3 + (0.5 * attempt) / renders, 1, `sequence attempt ${attempt + 1}/${renders}`);
+      const expected = shots.length - 1;
+      // Each render takes the next attempt's seed: a render whose split missed its cuts is rendered again, and the
+      // group's renders stay within the attempts (docs/design/multi-shot.md#splitting-and-verification)
+      const rerender = settings.generation.rerenderMissedCuts === true;
+      const budget = Math.max(1, maxAttempts);
+      let rendered = 0;
+      const renderSequence = async (index: number) => {
         const req = compileMultiShotRequest(ctxs, {
           firstFrameUri,
           referenceUris: refs.referenceUris,
-          attempt,
+          attempt: index,
           model: settings.models.video,
           limits: videoLimits.limits,
           includeAudio: voiced,
         });
-        const task = await deps.gateway.generateVideo(req, gatewayOptions(ctx, 'video', 'sequence', attempt));
+        const task = await deps.gateway.generateVideo(req, gatewayOptions(ctx, 'video', 'sequence', index));
         taskIds.push(task.id);
-        const raw = join(dir, `sequence-${attempt}.mp4`);
+        const raw = join(dir, `sequence-${index}.mp4`);
         await deps.media.downloadTo(task.outputs![0]!.uri, raw, ctx.signal);
         const rawProbe = await deps.ff.probe(raw);
         const total = rawProbe.durationSec || planned.reduce((n, d) => n + d, 0);
+        const split = multiShotBoundaries(await detectCuts(deps, raw, total, ctx.signal), planned, total);
+        ctx.log.info(
+          {
+            clipId,
+            cut: split.cut,
+            found: split.found,
+            expected,
+            boundaries: split.boundaries,
+            render: index,
+          },
+          'split the render',
+        );
+        return { req, task, raw, rawProbe, split };
+      };
+      for (let attempt = 0; attempt < renders && rendered < budget; attempt++) {
+        throwIfAborted(ctx.signal);
+        ctx.progress(0.3 + (0.5 * attempt) / renders, 1, `sequence attempt ${attempt + 1}/${renders}`);
+        let pick: Awaited<ReturnType<typeof renderSequence>> | null = null;
+        for (;;) {
+          const made = await renderSequence(rendered++);
+          if (!pick || made.split.found > pick.split.found) pick = made;
+          if (!rerender || !missedCuts(pick.split.found, expected) || rendered >= budget) break;
+          deps.metrics.sequenceRerenders.inc();
+          ctx.log.warn(
+            { clipId, found: made.split.found, expected, renders: rendered },
+            'the render missed its cuts; rendering it again',
+          );
+          ctx.progress(0.3, 1, `the render missed its cuts; render ${rendered + 1}/${budget}`);
+        }
+        const { req, task, raw, rawProbe } = pick;
+        const { boundaries, cut, found } = pick.split;
         // Each segment keeps its part of the sound
         const sound = voiced && rawProbe.hasAudio;
-        const { boundaries, cut, found } = multiShotBoundaries(
-          await detectCuts(deps, raw, total, ctx.signal),
-          planned,
-          total,
-        );
         deps.metrics.sequenceSplits.inc({ cut });
-        ctx.log.info({ clipId, cut, found, expected: shots.length - 1, boundaries }, 'split the render');
-        // A render that left out shots cannot be split into them; its segments' checks find what is missing
-        if (found * 2 < shots.length - 1)
-          ctx.log.warn(
-            { clipId, found, expected: shots.length - 1 },
-            'the render has fewer cuts than its plan',
-          );
+        // A render that still misses its cuts is split as found; its segments' checks find what is wrong
+        if (missedCuts(found, expected))
+          ctx.log.warn({ clipId, found, expected }, 'the render has fewer cuts than its plan');
         // A cut's time is its new shot's first frame, rounded to the millisecond (10.042 for 10.0417): a segment
         // ends, and the next begins, half a frame earlier, so neither holds a frame of the other shot
         const half = 0.5 / (rawProbe.fps || 30);
