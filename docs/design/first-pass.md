@@ -766,6 +766,36 @@ that stayed: kite 1's second kite and riding 2's studio floor (critical). Cost $
 images the gateway has no price for (about $1.10 at Seedream 5.0 Pro's $0.045 an image), against $3.75; 3.9 hours
 against 3.3: each group took 3.5 to 5 minutes, and an instance draws two images at a time.
 
+### Frames drawn by Qwen-Image (tried, not built)
+
+Qwen-Image 2.0 Pro is the provider's other image model, the one whose edits moved objects where Seedream's kept the
+picture as it was (it was tried for correcting frames, fp52, never for drawing them). The storyboards' continuity faults
+are where things are and which paw holds what, which a model that follows a layout closely might draw right. So fp78
+(November 9, 2026) drew fp39's four scenes with it: the projects' image model pinned to `qwen-image-2.0-pro` on an eval
+gateway that serves it (the demo server's gateway offers Seedream 5.0 Pro alone for images), every check and redraw as in
+fp65's capped run, each storyboard reviewed by three judge answers. Qwen-Image takes at most three input images, so
+Rideo gives it one image of each character and one of the place or a prop, and leaves out the scene's opening frame,
+which every later frame of a scene is drawn against when the model takes more ([jobs](storyboard.md#jobs)):
+
+| Scene | fp65, check capped | fp65, check in full | Qwen-Image |
+|---|---|---|---|
+| Kite 1 | 7.5 | 7.3 | 6.8 |
+| Kite 2 | 7.3 | 6.7 | 6.3 |
+| Riding 1 | 6.7 | 7.5 | 6.8 |
+| Riding 2 | 7.4 | 7.1 | 6.5 |
+| Mean | 7.22 (continuity 5.83) | 7.15 (continuity 5.50) | 6.60 (continuity 4.42) |
+
+Against the capped run −0.63 (95% CI −1.42 to +0.17), against the full one −0.55 (−0.76 to −0.34): not built. Every
+dimension fell, continuity most. The reviews marked 14 continuity faults as major against 5 in each control, nearly all
+of them the place turned around (the barn and the hay pile on swapped sides between two matching two-shots, the hill and
+its tree moved to frame left, a close-up's background turned 180°) or the wind reversed (a kite's tail streaming upwind
+in three frames, a scarf blowing against the wind): what a scene's opening frame carries to its later frames. One
+frame drawn as a test from Seedream's prompt, two character images and the opening frame looked, by eye, as true to its
+shot as Seedream's frame of it. The checks drew 53 images for the 24 frames, against 46 in each control. Cost $1.89 as
+counted plus the 53 images the gateway has no price for (about $2.40 at Seedream 5.0 Pro's $0.045 an image), against
+$3.75; 3.0 hours against 3.3. What this leaves untried is Qwen-Image given the opening frame, with the cast on one sheet
+in a single slot.
+
 ## The video reads its first frame
 
 A take starts from a picture, its approved storyboard frame or its keyframe, and its prompt restated the shot as
@@ -1127,6 +1157,7 @@ cell is one run's first round; the scores of the same build and brief differ by 
 | fp65: the four scenes of fp39's plans drawn again with the staging check capped at 2,048 tokens and in full (storyboards only, at the same time) | – | – | 7.22 against 7.15 (+0.08, 95% CI −0.89 to +1.04), continuity 5.83 against 5.50; storyboard jobs 43% shorter, 30% cheaper; riding 1 −0.8 from a frame kept with four conflicts named; [the cap stays](#the-staging-checks-reasoning-capped) |
 | fp76: each scene of fp39's plans drawn as one Seedream 4.5 group, every image its shot's first attempt, failed frames drawn again alone (storyboards only) | – | – | 7.05 against 7.22 and 7.15 for fp65's two runs (−0.18, 95% CI −0.90 to +0.55), continuity 5.00 against 5.66; 6 of 24 group frames kept, 5 of them as the best of three; [doubled props, the place lost in late frames](#a-scene-drawn-as-a-group-of-frames-tried-not-built) |
 | fp77: the planner told that paws hold and never handle, fp39's scenes planned again (storyboards only) | – | – | 7.35 against 7.22 and 7.15 (+0.12, 95% CI −0.48 to +0.73); feasibility 7.08 against 6.54, no fine paw work marked, storytelling −0.36; [the hand-off never staged](#paws-that-hold-never-handle-tried-not-built) |
+| fp78: fp39's four scenes drawn by Qwen-Image 2.0 Pro, which takes three input images and so no opening frame (storyboards only) | – | – | 6.60 against 7.22 and 7.15 for fp65's two runs (−0.63, 95% CI −1.42 to +0.17), continuity 4.42 against 5.66; 14 continuity majors against 5, [the place and the wind turned around](#frames-drawn-by-qwen-image-tried-not-built) |
 | fp55: fp53's riding 1 render split again at the cuts found near the planned ones (same render, reviewed beside the old split) | – | – | scene 6.67 against 5.97; takes passing 6 of 8 against 2 |
 | fp54: HappyHorse 1.1 instead of Wan 3.0, from the same 13 approved frames | – | – | shots' watch 5.0 against 6.1, passed 5 against 7; kite scene 5.7 |
 | fp51: the faulted frames drawn twice more and one picked (storyboards only, plans of fp39) | – | – | 7.17 against 7.28 at the same time, continuity 5.9 against 5.5; [5 of 8 faulted again](#a-scene-read-whole-then-a-frame-picked-tried-not-merged) |
@@ -1231,7 +1262,9 @@ What keeps each under 8, what was tried, and what to try next:
    its frames again alone ([tried, not built](#a-scene-drawn-as-a-group-of-frames-tried-not-built)). The storyboards'
    other low score, feasibility (6.5), is the plans' fine paw work; a planner rule that cuts around it (fp77) raised
    feasibility to 7.1 and lost storytelling for it, 7.35 overall
-   ([tried, not built](#paws-that-hold-never-handle-tried-not-built)).
+   ([tried, not built](#paws-that-hold-never-handle-tried-not-built)). Frames drawn by Qwen-Image 2.0 Pro (fp78), which
+   takes three input images and so not the scene's opening frame, turned the place and the wind around from frame to
+   frame: 6.60 ([tried, not built](#frames-drawn-by-qwen-image-tried-not-built)).
 4. **Stills that tell the beat** (storytelling 6–8): a frame is the start of its shot, so a beat inside the take was
    missing from the storyboard; the planner now starts a shot on its beat's pose (fp18, being measured).
 5. **The video** (scene 6.0–7.3, first takes 5.8–7.4): the video model adds its own failures (a kite that morphs and
