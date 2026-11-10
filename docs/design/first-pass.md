@@ -590,6 +590,37 @@ the shot does not show, one that is not among its elements (`ShotContext.hiddenP
 description and elements say what it shows. The checks and the reviewers still read the whole continuity, so a frame
 that shows the hidden prop is still a conflict.
 
+### A scene's opening frame drawn until it passes (tried, not built)
+
+Every later frame of a scene is drawn with the scene's opening frame as a reference and read beside it (above), so a
+fault in the opener can travel. The opener is drawn like any frame: up to three attempts, kept once its reading asks
+for no redraw, so it can be kept with faults named. In fp65's two runs seven of the eight openers were kept with one
+to three conflicts named: Sammy's paws already at his helmet where the shot has them beginning to rise, the kite
+handle in the wrong paw, a mounting block of the wrong colour. So fp81 (November 9, 2026) drew fp39's four scenes
+again with each opener drawn again while its reading named any conflict, up to six attempts, the best kept (a probe
+on an eval instance, not a setting); every other frame and check as in fp65's capped run, each storyboard reviewed by
+three judge answers:
+
+| Scene | fp65, check capped | fp65, check in full | Opener until it passes | Opener's attempts, conflicts kept |
+|---|---|---|---|---|
+| Kite 1 | 7.5 | 7.3 | 7.6 | 6, 1 |
+| Kite 2 | 7.3 | 6.7 | 7.1 | 2, 0 |
+| Riding 1 | 6.7 | 7.5 | 7.3 | 6, 1 |
+| Riding 2 | 7.4 | 7.1 | 7.4 | 6, 1 |
+| Mean | 7.22 (continuity 5.83) | 7.15 (continuity 5.50) | 7.35 (continuity 5.83) | |
+
++0.16 against the two runs (95% CI +0.09 to +0.24), +0.12 against the capped one alone: consistent, but under the half
+point a change must win, so not built. The reviews marked 6 majors against 9 and 10; character rose 0.55 and feasibility
+0.49, storytelling fell 0.36. Three openers of four used all six attempts and still had a fault named, each a pose the
+image model would not draw from its plan's words: riding 1's Sammy had his paws already on his helmet in attempt after
+attempt ("both paws beginning to rise toward his blue helmet" is a motion, and a still draws it risen), riding 2's
+Biscuit stood out on the grass in the first two attempts and in the frame kept, where the plan has him "far in the wide
+barn doorway", and kite 1's kite was in Rosie's paw or behind her back in five attempts of six, not "under her left
+arm"; the one that had it there drew her backpack flap closed, and was kept. More attempts, each told what the last got
+wrong, do not find those. They cost what attempts cost: $4.74 against $3.75, and since every later frame of a scene
+waits for its opener, the storyboard jobs took 5.6 hours against 3.3. What it points at is the plan: a frame's
+description that asks a still for a motion or a placement the image model does not draw.
+
 ## A scene drawn on one sheet
 
 Each frame drawn alone followed its shot, and the frames still disagreed with each other: the storyboards' continuity
@@ -793,8 +824,31 @@ in three frames, a scarf blowing against the wind): what a scene's opening frame
 frame drawn as a test from Seedream's prompt, two character images and the opening frame looked, by eye, as true to its
 shot as Seedream's frame of it. The checks drew 53 images for the 24 frames, against 46 in each control. Cost $1.89 as
 counted plus the 53 images the gateway has no price for (about $2.40 at Seedream 5.0 Pro's $0.045 an image), against
-$3.75; 3.0 hours against 3.3. What this leaves untried is Qwen-Image given the opening frame, with the cast on one sheet
-in a single slot.
+$3.75; 3.0 hours against 3.3.
+
+Then Qwen-Image was given the opening frame (fp80, the same day): each frame after a scene's first kept the opener as
+one of its three images, with the cast on one sheet when a shot has two or more characters and the places and props on
+another (a probe on an eval instance, not a setting); the opener itself was drawn as in fp78, and the staging check read
+each later frame beside it. The place held better: riding 1's barn, fence and hay pile stand where its opener put them
+in all eight frames, and no major issue was the wind. What the reviews marked instead was the light (the sun's bearing
+flipping between consecutive shots, a closing wide in flat midday light), the props (a carrot bucket empty where the
+plan fills it, two buckets in one frame, the kite handle in the wrong paw) and storytelling (6.50 against 7.54: a point
+or a gaze aimed away from what the shot is about):
+
+| Scene | fp65, check capped | fp65, check in full | Qwen-Image (fp78) | Qwen-Image with the opener (fp80) |
+|---|---|---|---|---|
+| Kite 1 | 7.5 | 7.3 | 6.8 | 7.0 |
+| Kite 2 | 7.3 | 6.7 | 6.3 | 6.5 |
+| Riding 1 | 6.7 | 7.5 | 6.8 | 6.9 |
+| Riding 2 | 7.4 | 7.1 | 6.5 | 6.8 |
+| Mean | 7.22 (continuity 5.83) | 7.15 (continuity 5.50) | 6.60 (continuity 4.42) | 6.80 (continuity 4.92) |
+
++0.20 over Qwen-Image without the opener (95% CI +0.07 to +0.33) and −0.39 against the two Seedream runs (−0.60 to
+−0.18): not built. Of its ten continuity majors (fourteen in fp78, five in each Seedream run) two are the place
+(kite 2's lone tree moved to the lake shore, riding 2's paddock floor dirt in some frames and grass in others, after
+an opener kept with its ground named as dirt) and two the light. Seedream 5.0 Pro stays the image model, and with it
+the opener always has its slot; keeping one for it matters only on a model that takes three images. Cost $1.97 as
+counted plus 54 images the gateway has no price for (about $2.40); 3.3 hours of storyboard jobs.
 
 ## The video reads its first frame
 
@@ -1201,6 +1255,8 @@ cell is one run's first round; the scores of the same build and brief differ by 
 | fp77: the planner told that paws hold and never handle, fp39's scenes planned again (storyboards only) | – | – | 7.35 against 7.22 and 7.15 (+0.12, 95% CI −0.48 to +0.73); feasibility 7.08 against 6.54, no fine paw work marked, storytelling −0.36; [the hand-off never staged](#paws-that-hold-never-handle-tried-not-built) |
 | fp78: fp39's four scenes drawn by Qwen-Image 2.0 Pro, which takes three input images and so no opening frame (storyboards only) | – | – | 6.60 against 7.22 and 7.15 for fp65's two runs (−0.63, 95% CI −1.42 to +0.17), continuity 4.42 against 5.66; 14 continuity majors against 5, [the place and the wind turned around](#frames-drawn-by-qwen-image-tried-not-built) |
 | fp79: fp53's kite 2 render, which missed three of its four cuts (two dissolves), rendered again until its cuts were found (two samples) | – | – | scene reviews 6.77 and 6.97 against 6.03 for the old render split as now (+0.84); segments passing 3 and 2 of 5 against 1; [built for new projects](#a-render-that-missed-its-cuts-made-again) |
+| fp80: fp39's four scenes drawn by Qwen-Image 2.0 Pro with the scene's opening frame as one of its three images, the cast on one sheet (storyboards only) | – | – | 6.80 against 7.22 and 7.15 for fp65's two runs (−0.39, 95% CI −0.60 to −0.18) and 6.60 without the opener (+0.20, +0.07 to +0.33); continuity 4.92; [the place held, the light and the props did not](#frames-drawn-by-qwen-image-tried-not-built) |
+| fp81: each scene's opening frame drawn again while its reading named any conflict, up to six attempts (storyboards only, fp39's plans) | – | – | 7.35 against 7.22 and 7.15 (+0.16, 95% CI +0.09 to +0.24), continuity 5.83; three of four openers used six attempts and kept a fault; [a pose the plan words as a motion](#a-scenes-opening-frame-drawn-until-it-passes-tried-not-built) |
 | fp55: fp53's riding 1 render split again at the cuts found near the planned ones (same render, reviewed beside the old split) | – | – | scene 6.67 against 5.97; takes passing 6 of 8 against 2 |
 | fp54: HappyHorse 1.1 instead of Wan 3.0, from the same 13 approved frames | – | – | shots' watch 5.0 against 6.1, passed 5 against 7; kite scene 5.7 |
 | fp51: the faulted frames drawn twice more and one picked (storyboards only, plans of fp39) | – | – | 7.17 against 7.28 at the same time, continuity 5.9 against 5.5; [5 of 8 faulted again](#a-scene-read-whole-then-a-frame-picked-tried-not-merged) |
@@ -1307,7 +1363,12 @@ What keeps each under 8, what was tried, and what to try next:
    feasibility to 7.1 and lost storytelling for it, 7.35 overall
    ([tried, not built](#paws-that-hold-never-handle-tried-not-built)). Frames drawn by Qwen-Image 2.0 Pro (fp78), which
    takes three input images and so not the scene's opening frame, turned the place and the wind around from frame to
-   frame: 6.60 ([tried, not built](#frames-drawn-by-qwen-image-tried-not-built)).
+   frame: 6.60 ([tried, not built](#frames-drawn-by-qwen-image-tried-not-built)); given the opener in one of its three
+   slots (fp80) it kept the place but not the light or the props: 6.80. A scene's opener drawn again until its reading
+   names nothing (fp81, up to six attempts) scored 7.35 (+0.16): three openers of four kept a fault no attempt fixed,
+   a pose the plan words as a motion or a placement ("paws beginning to rise", "far in the doorway")
+   ([tried, not built](#a-scenes-opening-frame-drawn-until-it-passes-tried-not-built)). *Next:* a frame's description
+   says the pose a still can show, and leaves the motion to the shot's action.
 4. **Stills that tell the beat** (storytelling 6–8): a frame is the start of its shot, so a beat inside the take was
    missing from the storyboard; the planner now starts a shot on its beat's pose (fp18, being measured).
 5. **The video** (scene 6.0–7.3, first takes 5.8–7.4): the video model adds its own failures (a kite that morphs and
