@@ -621,6 +621,36 @@ wrong, do not find those. They cost what attempts cost: $4.74 against $3.75, and
 waits for its opener, the storyboard jobs took 5.6 hours against 3.3. What it points at is the plan: a frame's
 description that asks a still for a motion or a placement the image model does not draw.
 
+### Descriptions written as stills (tried, not built)
+
+fp81's openers kept the faults their plans' words asked for: told "both paws beginning to rise toward his blue
+helmet", a still draws them risen. The planner's own rules invite such words: a shot that moves someone starts
+"already in that motion", and the shot before a gesture "ends with that pose begun (her paw already rising toward the
+grass)". So fp82 (November 11, 2026) planned fp39's four scenes again with one more rule (a probe on an eval instance,
+not a setting): a description and an end state are each one still picture, every pose given as the position the
+picture shows ("both paws at his sides", "her right paw raised to shoulder height") and never as a motion under way or
+about to happen, the motion left to the action; each character in the open, not deep in a doorway, and a held prop in
+a paw or on the ground, not tucked under an arm. The gesture rule's example became "her paw already raised to her
+chest". The scenes were then drawn and checked as in fp65's capped run, each storyboard reviewed by three judge
+answers:
+
+| Scene | fp65, check capped | fp65, check in full | Stills | Shots, before → after |
+|---|---|---|---|---|
+| Kite 1 | 7.5 | 7.3 | 7.5 | 5 → 6 |
+| Kite 2 | 7.3 | 6.7 | 7.2 | 5 → 6 |
+| Riding 1 | 6.7 | 7.5 | 7.1 | 8 → 8 |
+| Riding 2 | 7.4 | 7.1 | 7.2 | 6 → 5 |
+| Mean | 7.22 (continuity 5.83) | 7.15 (continuity 5.50) | 7.25 (continuity 5.75) | |
+
+The rule did what it says. The plans' descriptions and end states named a motion under way 16 times before ("beginning
+to rise", "lifting", "reaching for") and never after, and the frames agreed with their plans more: the capped staging
+check kept 0.68 conflicts a frame against 1.25 in fp65's capped run and 1.48 in fp77's plans, with as many images drawn
+(47 for 25 frames against 46 for 24). The reviews barely moved: +0.06 against the two runs (95% CI −0.11 to +0.24),
+−0.10 against fp77's plans, 7 majors against 9 and 10; feasibility +0.56 and character +0.30, storytelling −0.36 as in
+fp77 and fp81. Not built. What the frames gained in agreeing with their plans, the storyboard review does not see; a
+take starts from its frame and reads its text, so whether the takes gain was not measured. Cost $4.63 with the two
+plans, against $3.75.
+
 ## A scene drawn on one sheet
 
 Each frame drawn alone followed its shot, and the frames still disagreed with each other: the storyboards' continuity
@@ -1194,6 +1224,35 @@ that sends back a frame whose capped reading names three conflicts or more would
 instead of 6, and agreed with each full reading once less (20 and 21 times in 24): not built. New projects keep the
 cap. Cost: $9.09.
 
+### The reference check's reasoning capped (tried, not built)
+
+The reference check (`reference.check`, [references that match their subject](#references-that-match-their-subject))
+reads every view of the cast as it is drawn, and it reasons in full: in the real-model suite four of its readings took
+187 to 265 s each on November 9, 2026, and the test's wait for the views ran out (two image lanes draw the views two
+at a time, and a view the check refuses is drawn and checked again). So fp83 (November 10 and 11, 2026) made the check
+again on 30 of fp39's stored views, each beside the earlier views the job had compared it with: the attempts of six
+places and props drawn more than once (15) and the panels of five turnaround sheets, kept or not (15). Each was read
+twice in full, twice capped at 4,096 tokens of reasoning and once at 2,048, through a probe on an eval instance:
+
+| Reading | Views refused | Same decision as both full readings, where they agree | Median time | Longest | Cost of 30 |
+|---|---|---|---|---|---|
+| Full reasoning | 17 of 30 | – (the two agree on 27 of 30) | 77 s | 265 s | $0.58 |
+| Full reasoning, again | 16 of 30 | – | 85 s | 196 s | $0.58 |
+| Capped at 4,096 tokens | 16 of 30 | 23 of 27 | 72 s | 112 s | $0.51 |
+| Capped at 4,096 tokens, again | 14 of 30 | 21 of 27 | 76 s | 119 s | $0.51 |
+| Capped at 2,048 tokens | 11 of 30 | 23 of 27 | 52 s | 64 s | $0.33 |
+
+Unlike the staging check, the reference check does not keep its decisions when capped. At 2,048 tokens it refuses a
+third fewer views, and each of its four misses among the 27 views both full readings agree on lets through a
+difference both of them named: four yellow bows added along the kite's tail, a path, boulders and bushes added to the
+hill of Lone Tree Summit, the chain loop under Clover's muzzle gone, a button on Rosie's backpack flap. At 4,096 tokens
+it refuses as many views as a full reading, but a capped and a full reading of a view agree 94 times in 120 (78%),
+where two readings of the same kind agree 27 and 26 times in 30 (88%): it lets some of those differences through (the
+hill's path, the chain loop) and refuses views both full readings passed (brown eyes, a strap worn like an armband).
+Its time barely moves at the median (72 and 76 s against 77 and 85 s); only the longest readings are halved. Not
+built: a reference is drawn into every frame of the film, so what its check lets through is in every shot. The
+real-model suite waits 30 minutes for the views instead ([testing](testing.md)). Cost: 150 readings, $2.51.
+
 ## Measuring the first pass
 
 `scripts/first-pass.mjs` measures a build on real models. It creates a project from a brief with every automatic
@@ -1257,6 +1316,8 @@ cell is one run's first round; the scores of the same build and brief differ by 
 | fp79: fp53's kite 2 render, which missed three of its four cuts (two dissolves), rendered again until its cuts were found (two samples) | – | – | scene reviews 6.77 and 6.97 against 6.03 for the old render split as now (+0.84); segments passing 3 and 2 of 5 against 1; [built for new projects](#a-render-that-missed-its-cuts-made-again) |
 | fp80: fp39's four scenes drawn by Qwen-Image 2.0 Pro with the scene's opening frame as one of its three images, the cast on one sheet (storyboards only) | – | – | 6.80 against 7.22 and 7.15 for fp65's two runs (−0.39, 95% CI −0.60 to −0.18) and 6.60 without the opener (+0.20, +0.07 to +0.33); continuity 4.92; [the place held, the light and the props did not](#frames-drawn-by-qwen-image-tried-not-built) |
 | fp81: each scene's opening frame drawn again while its reading named any conflict, up to six attempts (storyboards only, fp39's plans) | – | – | 7.35 against 7.22 and 7.15 (+0.16, 95% CI +0.09 to +0.24), continuity 5.83; three of four openers used six attempts and kept a fault; [a pose the plan words as a motion](#a-scenes-opening-frame-drawn-until-it-passes-tried-not-built) |
+| fp82: fp39's scenes planned again with descriptions and end states written as stills, the motion left to the action (storyboards only) | – | – | 7.25 against 7.22 and 7.15 (+0.06, 95% CI −0.11 to +0.24); no motion under way left in the plans (16 before), conflicts kept 0.68 a frame against 1.25; [the review does not see it](#descriptions-written-as-stills-tried-not-built) |
+| fp83: the reference check made again on 30 of fp39's stored views, twice in full, twice capped at 4,096 tokens of reasoning, once at 2,048 (nothing drawn) | – | at 2,048 tokens 11 views refused against 16 and 17, four differences both full readings named let through; at 4,096 a capped and a full reading agree 78% of the time against 88% for two of a kind; [not built](#the-reference-checks-reasoning-capped-tried-not-built) | – |
 | fp55: fp53's riding 1 render split again at the cuts found near the planned ones (same render, reviewed beside the old split) | – | – | scene 6.67 against 5.97; takes passing 6 of 8 against 2 |
 | fp54: HappyHorse 1.1 instead of Wan 3.0, from the same 13 approved frames | – | – | shots' watch 5.0 against 6.1, passed 5 against 7; kite scene 5.7 |
 | fp51: the faulted frames drawn twice more and one picked (storyboards only, plans of fp39) | – | – | 7.17 against 7.28 at the same time, continuity 5.9 against 5.5; [5 of 8 faulted again](#a-scene-read-whole-then-a-frame-picked-tried-not-merged) |
@@ -1367,8 +1428,10 @@ What keeps each under 8, what was tried, and what to try next:
    slots (fp80) it kept the place but not the light or the props: 6.80. A scene's opener drawn again until its reading
    names nothing (fp81, up to six attempts) scored 7.35 (+0.16): three openers of four kept a fault no attempt fixed,
    a pose the plan words as a motion or a placement ("paws beginning to rise", "far in the doorway")
-   ([tried, not built](#a-scenes-opening-frame-drawn-until-it-passes-tried-not-built)). *Next:* a frame's description
-   says the pose a still can show, and leaves the motion to the shot's action.
+   ([tried, not built](#a-scenes-opening-frame-drawn-until-it-passes-tried-not-built)). Descriptions written as stills
+   (fp82) took every motion out of them and nearly halved the conflicts the check keeps, at 7.25 (+0.06)
+   ([tried, not built](#descriptions-written-as-stills-tried-not-built)). *Next:* whether takes gain from frames that
+   agree with their plans.
 4. **Stills that tell the beat** (storytelling 6–8): a frame is the start of its shot, so a beat inside the take was
    missing from the storyboard; the planner now starts a shot on its beat's pose (fp18, being measured).
 5. **The video** (scene 6.0–7.3, first takes 5.8–7.4): the video model adds its own failures (a kite that morphs and
