@@ -15,6 +15,7 @@ import {
   LlmError,
   type LlmRequest,
   OpenAiAdapter,
+  outputLimit,
   retryAfterOf,
 } from '../../src/ai/llm';
 import { DEFAULT_PAUSES, EndpointPauses } from '../../src/ai/pauses';
@@ -201,6 +202,104 @@ describe('LLM adapters speak each upstream through the gateway proxy', () => {
     await tasks.reconcileFrame({ shot: {} } as never, Buffer.from('png'));
     expect(seen[0]!.reasoningBudget).toBe(1500);
     expect(seen[1]).not.toHaveProperty('reasoningBudget');
+  });
+
+  it('gives a call that may reason room for its reasoning on top of its answer’s limit (docs/design/ai-gateway.md#reasoning)', async () => {
+    // fp84: qwen3.8-max counts its reasoning against max_tokens; a review's 8,000 cut most of its answers
+    expect(outputLimit({ maxTokens: 8000 })).toBe(32_000);
+    expect(outputLimit({})).toBe(32_000);
+    expect(outputLimit({ maxTokens: 16_000 })).toBe(32_000);
+    // A capped reasoning gets twice its budget (a capped model overruns it a little)
+    expect(outputLimit({ maxTokens: 6000, reasoningBudget: 2048 })).toBe(10_096);
+    expect(outputLimit({ reasoningBudget: 2048 })).toBe(12_096);
+    // No reasoning: the answer's limit alone, or none
+    expect(outputLimit({ maxTokens: 300, reasoning: 'off' })).toBe(300);
+    expect(outputLimit({ reasoning: 'off' })).toBeUndefined();
+    // Up to the ceiling (RIDEO_LLM_MAX_OUTPUT_TOKENS), never under the answer's own limit
+    expect(outputLimit({ maxTokens: 8000 }, 20_000)).toBe(20_000);
+    expect(outputLimit({ maxTokens: 16_000 }, 10_000)).toBe(16_000);
+
+    const json = () =>
+      new Response(JSON.stringify({ choices: [{ message: { content: '{}' } }] }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    const qwen = new FakeProxy(json);
+    const adapter = new OpenAiAdapter(qwen as unknown as ProxyClient, 'api.openai.com', 'qwen-x');
+    await adapter.complete({ ...req, maxTokens: 8000 });
+    await adapter.complete({ ...req, maxTokens: 300, reasoning: 'off' });
+    await adapter.complete(req);
+    expect(qwen.calls.map((c) => c.body.max_tokens)).toEqual([32_000, 300, 32_000]);
+    const lower = new FakeProxy(json);
+    await new OpenAiAdapter(
+      lower as unknown as ProxyClient,
+      'api.openai.com',
+      'qwen-x',
+      undefined,
+      20_000,
+    ).complete({ ...req, maxTokens: 8000 });
+    expect(lower.calls[0]!.body.max_tokens).toBe(20_000);
+    const gemini = new FakeProxy({ candidates: [{ content: { parts: [{ text: '{}' }] } }] });
+    const g = new GeminiAdapter(gemini as unknown as ProxyClient, 'x', 'g');
+    await g.complete({ ...req, maxTokens: 8000 });
+    await g.complete({ ...req, maxTokens: 300, reasoning: 'off' });
+    expect(gemini.calls.map((c) => c.body.generationConfig.maxOutputTokens)).toEqual([32_000, 300]);
+    // Anthropic's models do not reason unless asked: the answer's limit as it was
+    const claude = new FakeProxy({ content: [{ type: 'text', text: '}' }], usage: {} });
+    await new AnthropicAdapter(claude as unknown as ProxyClient, 'api.anthropic.com', 'claude-x').complete({
+      ...req,
+      maxTokens: 8000,
+    });
+    expect(claude.calls[0]!.body.max_tokens).toBe(8000);
+  });
+
+  it('says when the token limit cut an answer, for every provider', async () => {
+    const openai = new FakeProxy((_i: number, signal: AbortSignal) =>
+      eventStream(
+        [
+          'data: {"choices":[{"delta":{"content":"{\\"shots\\":["}}]}\n\n',
+          'data: {"choices":[{"delta":{},"finish_reason":"length"}]}\n\ndata: [DONE]\n\n',
+        ],
+        signal,
+      ),
+    );
+    const cut = await new OpenAiAdapter(
+      openai as unknown as ProxyClient,
+      'api.openai.com',
+      'qwen-x',
+    ).complete(req);
+    expect(cut).toMatchObject({ text: '{"shots":[', cut: true });
+    const whole = new FakeProxy((_i: number, signal: AbortSignal) =>
+      eventStream(['data: {"choices":[{"delta":{"content":"{}"},"finish_reason":"stop"}]}\n\n'], signal),
+    );
+    expect(
+      await new OpenAiAdapter(whole as unknown as ProxyClient, 'api.openai.com', 'qwen-x').complete(req),
+    ).not.toHaveProperty('cut');
+    const plain = new FakeProxy({ choices: [{ message: { content: '{' }, finish_reason: 'length' }] });
+    expect(
+      (await new OpenAiAdapter(plain as unknown as ProxyClient, 'api.openai.com', 'qwen-x').complete(req))
+        .cut,
+    ).toBe(true);
+    const gemini = new FakeProxy({
+      candidates: [{ content: { parts: [{ text: '{' }] }, finishReason: 'MAX_TOKENS' }],
+    });
+    expect((await new GeminiAdapter(gemini as unknown as ProxyClient, 'x', 'g').complete(req)).cut).toBe(
+      true,
+    );
+    const claude = new FakeProxy((_i: number, signal: AbortSignal) =>
+      eventStream(
+        [
+          'event: content_block_delta\ndata: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"\\"a\\""}}\n\n',
+          'event: message_delta\ndata: {"type":"message_delta","delta":{"stop_reason":"max_tokens"},"usage":{"output_tokens":8000}}\n\n',
+        ],
+        signal,
+      ),
+    );
+    expect(
+      await new AnthropicAdapter(claude as unknown as ProxyClient, 'api.anthropic.com', 'claude-x').complete(
+        req,
+      ),
+    ).toMatchObject({ text: '{"a"', cut: true });
   });
 
   it('turns reasoning off for the checks and captions only, unless the studio keeps the model’s default', async () => {
@@ -562,6 +661,34 @@ describe('structured tasks', () => {
     await expect(
       new LlmTasks(broken, broken).run('clip.plan', ClipPlanOutputSchema, {}),
     ).rejects.toMatchObject({ code: 'llm_invalid_output', retryable: true });
+  });
+
+  it('logs and counts an answer its token limit cut, then repairs it (docs/design/ai-gateway.md#reasoning)', async () => {
+    const good = JSON.stringify({ shots: [{ description: 'Wide', durationSec: 5 }] });
+    const calls: LlmRequest[] = [];
+    const answers = [{ text: '{"shots": [{"description": "Wi', cut: true }, { text: good }];
+    const adapter: LlmAdapter = {
+      provider: 'fake',
+      model: 'fake-1',
+      complete: async (r: LlmRequest) => {
+        calls.push(r);
+        return answers[calls.length - 1]!;
+      },
+    };
+    const metrics = new Metrics();
+    const warn = vi.fn();
+    const out = await new LlmTasks(adapter, adapter, { metrics, log: { info: vi.fn(), warn } }).run(
+      'clip.plan',
+      ClipPlanOutputSchema,
+      { scene: {} },
+    );
+    expect(out.shots[0]!.description).toBe('Wide');
+    expect(calls).toHaveLength(2);
+    expect(metrics.llmCutAnswers.get({ task: 'clip.plan' })).toBe(1);
+    expect(warn).toHaveBeenCalledWith(
+      expect.objectContaining({ task: 'clip.plan', model: 'fake-1' }),
+      'LLM answer cut at its token limit',
+    );
   });
 
   it('repairs a review that leaves out a score it must give, and fails when the repair leaves it out too', async () => {

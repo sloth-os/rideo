@@ -309,6 +309,29 @@ export function answer(req: ChatRequest, opts: ChatOptions = {}): string {
   return JSON.stringify(out);
 }
 
+/** What the mock "reasons" before it answers when reasoning is on and no `thinking_budget` caps it: a long review's. */
+export const MOCK_REASONING_TOKENS = 9_000;
+
+/**
+ * An OpenAI-style answer within the call's `max_tokens`, which counts the model's reasoning too, as `qwen3.8-max` does
+ * from November 12, 2026 (docs/design/ai-gateway.md#reasoning): a call that names a limit gets `limit - reasoning`
+ * tokens (4 characters each) of answer, and an answer longer than that is cut (`finish_reason: length`). Reasoning is
+ * none when `enable_thinking` is false, else `thinking_budget`, else `MOCK_REASONING_TOKENS`. A call without a limit
+ * is answered whole.
+ */
+export function withinLimit(body: any, answer: string): { content: string; cut: boolean; reasoning: number } {
+  const reasoning =
+    body?.enable_thinking === false
+      ? 0
+      : typeof body?.thinking_budget === 'number'
+        ? body.thinking_budget
+        : MOCK_REASONING_TOKENS;
+  if (typeof body?.max_tokens !== 'number') return { content: answer, cut: false, reasoning };
+  const room = Math.max(0, body.max_tokens - reasoning) * 4;
+  if (answer.length <= room) return { content: answer, cut: false, reasoning };
+  return { content: answer.slice(0, room), cut: true, reasoning: Math.min(reasoning, body.max_tokens) };
+}
+
 function usage(req: ChatRequest, out: string) {
   const inTokens =
     Math.ceil(JSON.stringify(req.parts.filter((p) => p.kind === 'text')).length / 4) +
@@ -321,7 +344,12 @@ function usage(req: ChatRequest, out: string) {
  * A streamed chat completion as OpenAI sends it (docs/design/ai-gateway.md#proxy-usage-llm-vision-stt-embeddings): the
  * content in three deltas, the usage in a last event when `stream_options.include_usage` asks for it, then `[DONE]`.
  */
-function chatStream(body: any, content: string, u: { input: number; output: number }): ProxyResponse {
+function chatStream(
+  body: any,
+  content: string,
+  u: { input: number; output: number },
+  finish: 'stop' | 'length' = 'stop',
+): ProxyResponse {
   const id = `chatcmpl-mock-${Date.now()}`;
   const event = (payload: object) =>
     `data: ${JSON.stringify({ id, object: 'chat.completion.chunk', model: body.model ?? 'mock-llm', ...payload })}\n\n`;
@@ -332,7 +360,7 @@ function chatStream(body: any, content: string, u: { input: number; output: numb
   });
   for (const piece of pieces)
     out += event({ choices: [{ index: 0, delta: { content: piece }, finish_reason: null }] });
-  out += event({ choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] });
+  out += event({ choices: [{ index: 0, delta: {}, finish_reason: finish }] });
   if (body.stream_options?.include_usage)
     out += event({
       choices: [],
@@ -353,15 +381,17 @@ export function handleChat(path: string, body: any, opts: ChatOptions = {}): Pro
   });
   if (/chat\/completions$/.test(path)) {
     const req = parseOpenAi(body);
-    const content = answer(req, opts);
+    const { content, cut, reasoning } = withinLimit(body, answer(req, opts));
     const u = usage(req, content);
-    if (body.stream === true) return chatStream(body, content, u);
+    u.output += reasoning;
+    const finish = cut ? 'length' : 'stop';
+    if (body.stream === true) return chatStream(body, content, u, finish);
     return json({
       id: `chatcmpl-mock-${Date.now()}`,
       object: 'chat.completion',
       created: Math.floor(Date.now() / 1000),
       model: body.model ?? 'mock-llm',
-      choices: [{ index: 0, message: { role: 'assistant', content }, finish_reason: 'stop' }],
+      choices: [{ index: 0, message: { role: 'assistant', content }, finish_reason: finish }],
       usage: { prompt_tokens: u.input, completion_tokens: u.output, total_tokens: u.input + u.output },
     });
   }

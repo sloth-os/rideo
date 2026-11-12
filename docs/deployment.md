@@ -111,6 +111,7 @@ that is set in the environment wins and shows locked there; one that is not can 
 | `RIDEO_LLM_API_KEY` | – | the LLM's API key: registered in mm-gateway as a proxy account; empty: the gateway's own account for the domain |
 | `RIDEO_LLM_MODEL` | `gpt-4.1-mini` | text model |
 | `RIDEO_LLM_TIMEOUT_SEC` | `600` | how long a text or vision model call may go without receiving anything; streamed answers (every provider) may take four times that in all, since the screenplay of a long film takes minutes on slower models |
+| `RIDEO_LLM_MAX_OUTPUT_TOKENS` | `32000` | the most a text or vision model call may write, its reasoning included: a call that may reason asks for its answer's limit plus room for its reasoning, up to this ([reasoning](design/ai-gateway.md#reasoning)) |
 | `RIDEO_CHECK_REASONING` | `off` | `model` lets checks and captions reason as the model does by default ([reasoning](design/ai-gateway.md#reasoning)) |
 | `RIDEO_LLM_PAUSE_SEC` | `30` | the first pause of a model that fails 6 calls in a row; it doubles after each new failure, up to 5 min, and its jobs wait instead of failing; `0` never pauses ([outages](design/ai-gateway.md#outages)) |
 | `RIDEO_VISION_PROVIDER` / `_PROXY_DOMAIN` / `_API_KEY` / `_MODEL` | LLM values (the key of an endpoint with the same origin) | vision model for the judge and descriptions |

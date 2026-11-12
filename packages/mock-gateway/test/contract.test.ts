@@ -360,6 +360,34 @@ describe('proxy LLM formats', () => {
     );
   });
 
+  it('counts the reasoning against max_tokens, as qwen3.8-max does (docs/design/ai-gateway.md#reasoning)', async () => {
+    const ask = async (extra: object) => {
+      const { json } = await post('/proxy/api.openai.com/v1/chat/completions', {
+        model: 'gpt-test',
+        messages: [
+          { role: 'system', content: 'rideo-task: screenplay.generate\nReturn JSON.' },
+          { role: 'user', content: [{ type: 'text', text: `${INPUT_PREFIX}${JSON.stringify(input)}` }] },
+        ],
+        ...extra,
+      });
+      return json.choices[0] as { message: { content: string }; finish_reason: string };
+    };
+    const whole = await ask({});
+    expect(whole.finish_reason).toBe('stop');
+    // 9,000 tokens of reasoning leave 50 tokens (200 characters) of a 9,050-token limit to the answer
+    const cut = await ask({ max_tokens: 9_050 });
+    expect(cut.finish_reason).toBe('length');
+    expect(cut.message.content).toBe(whole.message.content.slice(0, 200));
+    expect(() => JSON.parse(cut.message.content)).toThrow();
+    // No reasoning, or a capped one, leaves the limit to the answer
+    expect((await ask({ max_tokens: 9_050, enable_thinking: false })).message.content).toBe(
+      whole.message.content,
+    );
+    expect(
+      (await ask({ max_tokens: 9_050, enable_thinking: true, thinking_budget: 1_000 })).finish_reason,
+    ).toBe('stop');
+  });
+
   it('turns chat calls away like an overloaded upstream when asked (docs/design/ai-gateway.md#mock-gateway)', async () => {
     gw.overloadChat(2);
     const body = {

@@ -153,6 +153,7 @@ export const EnvSchema = z
     RIDEO_LLM_API_KEY: str(),
     RIDEO_LLM_MODEL: str(),
     RIDEO_LLM_TIMEOUT_SEC: num(600),
+    RIDEO_LLM_MAX_OUTPUT_TOKENS: num(32_000),
     RIDEO_CHECK_REASONING: z.enum(['off', 'model']).optional().default('off'),
     RIDEO_LLM_PAUSE_SEC: num(30),
     RIDEO_VISION_PROVIDER: z.enum(['openai', 'gemini', 'anthropic']).optional(),
@@ -389,6 +390,12 @@ export interface Config {
    * answer may take four times that in all (docs/design/ai-gateway.md#proxy-usage-llm-vision-stt-embeddings).
    */
   llmTimeoutMs: number;
+  /**
+   * The most a text or vision model call may write, its reasoning included (`RIDEO_LLM_MAX_OUTPUT_TOKENS`): a call
+   * that may reason asks for its answer's limit plus room for its reasoning, up to this
+   * (docs/design/ai-gateway.md#reasoning).
+   */
+  llmMaxOutputTokens: number;
   /** Whether checks and captions answer with the model's reasoning (`RIDEO_CHECK_REASONING`). */
   checkReasoning: 'off' | 'model';
   /** The first pause of a model endpoint that keeps failing; 0 never pauses (`RIDEO_LLM_PAUSE_SEC`). */
@@ -573,6 +580,7 @@ export function loadConfig(
     llm: api(endpoints.llm!),
     vision: api(endpoints.vision!),
     llmTimeoutMs: Math.max(10, e.RIDEO_LLM_TIMEOUT_SEC) * 1000,
+    llmMaxOutputTokens: Math.max(1_000, Math.round(e.RIDEO_LLM_MAX_OUTPUT_TOKENS)),
     checkReasoning: e.RIDEO_CHECK_REASONING,
     llmPauseMs: Math.max(0, e.RIDEO_LLM_PAUSE_SEC) * 1000,
     stt: endpoints.stt ? api(endpoints.stt) : undefined,
