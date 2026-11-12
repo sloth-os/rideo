@@ -1127,6 +1127,58 @@ a major fault named by their own watch), and most of them twice: four of the fiv
 attempts. Cost: $10.47 for the 10 takes, their watches and six scene reviews, and $0.50 for the unchanged renders'
 reviews.
 
+### A failed take made again, as a new project does
+
+Every scene review of the kite renders above made each take once (`consistency.maxAttempts` 1), as the six runs of
+fp39's plans did. A new project gives a take three attempts (the default): a take whose checks fail is made again, told
+what its watch found. fp85's renders were given those attempts: its four takes that failed their watch (kite 1's
+fifth, kite 2's first, second and fourth) were made again with up to two more attempts each (fp86, November 12, 2026).
+A regenerate cannot be told what the old take got wrong, so the first new attempt went without that correction; a
+second had its own. Each scene was then reviewed three times:
+
+| Scene | One attempt a take (fp85) | Three (fp86) | Temporal | Physics | Continuity |
+|---|---|---|---|---|---|
+| Kite 1 | 6.70 (6.4, 6.7, 7.0) | 7.03 (6.7, 7.5, 6.9) | 5.33 → 7.00 | 5.67 → 6.00 | 4.67 → 5.00 |
+| Kite 2 | 6.27 (6.1, 6.3, 6.4) | 6.73 (6.6, 6.9, 6.7) | 5.00 → 5.33 | 5.00 → 6.00 | 4.00 → 5.00 |
+
++0.40 over the two scenes: a new project's first pass scores about four tenths above the one-attempt runs every change
+has been measured with. Three of the four shots ended passing, but not by losing the faults that failed them. Kite 2's
+fourth passed with a tree popping into the set and a doubled kite, both named major by its own watch, and its first with
+the kite doubled and then popping out. Kite 1's fifth, made twice more, kept its second kite behind Rosie and failed
+again; all three of the scene's reviews still named it. What rose was the rest of the new takes: their motion, their
+cast and their camera (kite 1's temporal 5.33 → 7.00, kite 2's character 7.33 → 8.33, cinematography +0.67 in both).
+Cost $6.71 for the takes made again, their watches and the six scene reviews.
+
+### A prop doubled where the scene's continuity puts it (found, not yet tried)
+
+Every prompt of a scene's shots carries the scene line: the place and the scene's continuity, which the writer wrote for
+the start of the scene: who wears what, who carries what, where a prop lies ("Rosie carries the red kite under her left
+arm, with the yellow tail hanging behind her. Sammy carries nothing."). A shot that has moved the prop since still
+carries that sentence, and its own text says otherwise. Kite 1's fifth take in fp85 was told both that Sammy holds the
+handle with the kite in the sky and that Rosie carries the kite under her left arm. Frame by frame, at about 1.5 seconds
+a second red kite appears at Rosie's back, its yellow tail hanging below it, about where the continuity puts it; all
+three of the scene's reviews named it. Kite 2's first take was told that the kite "lies low on the grass" while its shot
+starts with the kite flying, and its watch named a second kite that appears and pops.
+
+Across every stored take with a watch (360, each counted once although the data was copied between runs), 49 had
+something named doubled. Sixteen were a prop being handed over or put back in a shot whose continuity says the paws are
+empty or the prop is elsewhere: the handle or the kite (10), with the handle in Sammy's paw while "Sammy carries
+nothing" or the kite flying while it "lies low on the grass", and the brush in Rosie's paw while "she carries nothing"
+(4) or the bucket it goes back into (2). They gather on two of fp39's shots: kite 1's second, where Sammy reaches for
+the handle (doubled in 4 takes of 12), and riding 1's seventh, where Rosie puts the brush back (the brush or the bucket
+doubled in 4 of 11). The other 33 were Rosie's helmet flower (13), characters ghosted double (10), the kite's tail or
+string (5), landmarks such as the barn and the mounting block (4) and one handle that agreed with its continuity. The
+first frame already shows who holds what, and the shot's description and action say what happens to it; a video prompt
+already leaves the continuity out when someone of the scene is out of frame (`sceneLine`, `placeOnly`). Made again
+([fp86](#a-failed-take-made-again-as-a-new-project-does)), kite 1's fifth take still doubled its kite and kite 2's
+fourth still grew its tree: attempts do not undo what the prompt asks for. *Next:* those two shots rendered with the
+continuity left out of their video prompts, four takes each, against 8 of 23 doubled.
+
+The tree that grew into kite 2's fourth take has another source. The staging check read the frame as "Rosie stands
+frame right facing left, near the tree side", meaning the side of the frame where the tree stands far up on the ridge,
+and the video model grew a large tree next to her. That is one take, but a reading that places a character near a
+landmark the frame shows far away may draw the landmark near.
+
 ### A render that missed its cuts made again
 
 A scene rendered in one request is split at the cuts found near the planned ones, and an expected cut that finds none
@@ -1372,6 +1424,7 @@ cell is one run's first round; the scores of the same build and brief differ by 
 | fp83: the reference check made again on 30 of fp39's stored views, twice in full, twice capped at 4,096 tokens of reasoning, once at 2,048 (nothing drawn) | – | at 2,048 tokens 11 views refused against 16 and 17, four differences both full readings named let through; at 4,096 a capped and a full reading agree 78% of the time against 88% for two of a kind; [not built](#the-reference-checks-reasoning-capped-tried-not-built) | – |
 | fp84: fp65's eight control storyboards reviewed again with three fresh answers each (nothing drawn; [the controls reviewed again](#the-controls-reviewed-again)) | – | – | 7.25 against the first answers' 7.19 (a storyboard moved 0.19 on average); storytelling 7.44 against 7.54, feasibility 6.96 against 6.54; against all six answers fp77, fp81 and fp82 score +0.13, +0.13 and +0.03, storytelling −0.31 |
 | fp85: fp82's kite scenes (descriptions and end states as stills) rendered shot by shot from their approved frames, one attempt a take | – | – | scene reviews kite 1 6.70, kite 2 6.27 against 6.42 and 6.52 for six runs of fp39's plans (+0.01); takes passing 8 of 12 against 49 of 60; [a second kite and a tree popping into the frame](#descriptions-written-as-stills-tried-not-built) |
+| fp86: fp85's four failed takes made again with the attempts a new project gives (three in all) | – | – | scene reviews kite 1 7.03, kite 2 6.73 against 6.70 and 6.27 with one attempt (+0.40); three of four ended passing, the doubled kite and the tree still there ([made again as a new project does](#a-failed-take-made-again-as-a-new-project-does)) |
 | fp55: fp53's riding 1 render split again at the cuts found near the planned ones (same render, reviewed beside the old split) | – | – | scene 6.67 against 5.97; takes passing 6 of 8 against 2 |
 | fp54: HappyHorse 1.1 instead of Wan 3.0, from the same 13 approved frames | – | – | shots' watch 5.0 against 6.1, passed 5 against 7; kite scene 5.7 |
 | fp51: the faulted frames drawn twice more and one picked (storyboards only, plans of fp39) | – | – | 7.17 against 7.28 at the same time, continuity 5.9 against 5.5; [5 of 8 faulted again](#a-scene-read-whole-then-a-frame-picked-tried-not-merged) |
@@ -1485,8 +1538,10 @@ What keeps each under 8, what was tried, and what to try next:
    ([tried, not built](#a-scenes-opening-frame-drawn-until-it-passes-tried-not-built)). Descriptions written as stills
    (fp82) took every motion out of them and nearly halved the conflicts the check keeps, at 7.25 (+0.06)
    ([tried, not built](#descriptions-written-as-stills-tried-not-built)); its kite scenes rendered scored as fp39's
-   plans do (+0.01, fp85): what fails a take now is the video model's own, a prop doubled or a tree popping into the
-   frame, not a frame that disagrees with its plan. *Next:* those faults in the takes.
+   plans do (+0.01, fp85): what fails a take now is a prop doubled or a tree popping into the frame, not a frame
+   that disagrees with its plan, and the doubled props come from the prompt
+   ([a prop doubled where the scene's continuity puts it](#a-prop-doubled-where-the-scenes-continuity-puts-it-found-not-yet-tried)).
+   *Next:* the continuity left out of video prompts.
 4. **Stills that tell the beat** (storytelling 6–8): a frame is the start of its shot, so a beat inside the take was
    missing from the storyboard; the planner now starts a shot on its beat's pose (fp18, being measured).
 5. **The video** (scene 6.0–7.3, first takes 5.8–7.4): the video model adds its own failures (a kite that morphs and
@@ -1517,7 +1572,10 @@ model's; a take watch that finds it could have the take made again). Wan's own p
    loose from the kite, a handle doubled, the kite propped up off the grass) the video model drew wrong even when told
    what to show. A scene rendered in one request whose split missed most of its cuts (two of them dissolves, a double
    exposure the split does not see) is now rendered again: on the one scene that had one, 6.03 against 6.77 and 6.97
-   ([made again](#a-render-that-missed-its-cuts-made-again)).
+   ([made again](#a-render-that-missed-its-cuts-made-again)). Every take of these runs was made once; with the three
+   attempts a new project gives a failed take, fp85's kite scenes rose from 6.70 and 6.27 to 7.03 and 6.73 (fp86,
+   [made again as a new project does](#a-failed-take-made-again-as-a-new-project-does)), while the doubled kite and
+   the tree that failed them stayed.
 6. **Close framings drawn whole** (fixed, fp7) and **the AI blocking**: its cameras now follow each shot's planned
    layout where its marks allow ([following the shot plan](director-desk.md#following-the-shot-plan)), yet with the
    desk on the storyboards scored 6.1 and 6.6 (fp27) against 7.2 and 6.8 without it: the image model does not draw

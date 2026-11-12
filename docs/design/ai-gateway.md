@@ -196,7 +196,11 @@ as `max_tokens` and Gemini as `maxOutputTokens`. Anthropic's models do not reaso
 answer's limit. An answer the limit ended (`finish_reason: length`, Gemini's `MAX_TOKENS`, Anthropic's `max_tokens`)
 is logged (`LLM answer cut at its token limit`, with the task, the limit and the usage) and counted in
 `rideo_llm_cut_answers_total{task}`; the repair then asks again, as for any invalid answer. The settings dialog's
-connection test asks without reasoning, so its 16 tokens are the answer's.
+connection test asks without reasoning, so its 16 tokens are the answer's. The same day ctaigw also stopped honouring
+`enable_thinking: false` and `thinking_budget` for `qwen3.8-max`: in the real-model suite the identity checks reasoned
+(46 to 141 s and up to 5,463 tokens a call, against 6 to 12 s and about 300 tokens on November 10) and the staging check
+went past its 2,048 tokens (7,144 to 10,396). newapi, the demo server's provider, still answers checks without
+reasoning (a sound check: 59 to 65 tokens in 4 to 6 s).
 
 ### Refusals
 
