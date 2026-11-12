@@ -232,6 +232,8 @@ cost about what they saved: storytelling fell 0.36 (7.17 against 7.54), kite 1's
 staged" and marking Sammy holding the handle from the first frame, as
 [fp61's cuts](#a-moving-prop-kept-to-one-motion-a-shot-tried-not-built) moved a prop's faults from the takes to the cuts. The new plans brought their own faults too (riding 1's sun on the
 barn's side, the hay pile across the axis; continuity 5.60 against 5.66). Cost $4.58, of which the four plans $0.76.
+Reviewed again with fresh answers ([fp84](#the-controls-reviewed-again)), the controls gave feasibility 6.96 and
+storytelling 7.44: against those the rule raised feasibility 0.11 and lost 0.26 of storytelling.
 
 ## The brief, adapted for the video model
 
@@ -611,14 +613,15 @@ three judge answers:
 
 +0.16 against the two runs (95% CI +0.09 to +0.24), +0.12 against the capped one alone: consistent, but under the half
 point a change must win, so not built. The reviews marked 6 majors against 9 and 10; character rose 0.55 and feasibility
-0.49, storytelling fell 0.36. Three openers of four used all six attempts and still had a fault named, each a pose the
-image model would not draw from its plan's words: riding 1's Sammy had his paws already on his helmet in attempt after
-attempt ("both paws beginning to rise toward his blue helmet" is a motion, and a still draws it risen), riding 2's
-Biscuit stood out on the grass in the first two attempts and in the frame kept, where the plan has him "far in the wide
-barn doorway", and kite 1's kite was in Rosie's paw or behind her back in five attempts of six, not "under her left
-arm"; the one that had it there drew her backpack flap closed, and was kept. More attempts, each told what the last got
-wrong, do not find those. They cost what attempts cost: $4.74 against $3.75, and since every later frame of a scene
-waits for its opener, the storyboard jobs took 5.6 hours against 3.3. What it points at is the plan: a frame's
+0.49, storytelling fell 0.36 (against the controls reviewed again, [fp84](#the-controls-reviewed-again), feasibility
+rose 0.06 and storytelling fell 0.26). Three openers of four used all six attempts and still had a fault named, each a
+pose the image model would not draw from its plan's words: riding 1's Sammy had his paws already on his helmet in
+attempt after attempt ("both paws beginning to rise toward his blue helmet" is a motion, and a still draws it risen),
+riding 2's Biscuit stood out on the grass in the first two attempts and in the frame kept, where the plan has him "far
+in the wide barn doorway", and kite 1's kite was in Rosie's paw or behind her back in five attempts of six, not "under
+her left arm"; the one that had it there drew her backpack flap closed, and was kept. More attempts, each told what the
+last got wrong, do not find those. They cost what attempts cost: $4.74 against $3.75, and since every later frame of a
+scene waits for its opener, the storyboard jobs took 5.6 hours against 3.3. What it points at is the plan: a frame's
 description that asks a still for a motion or a placement the image model does not draw.
 
 ### Descriptions written as stills (tried, not built)
@@ -647,9 +650,25 @@ to rise", "lifting", "reaching for") and never after, and the frames agreed with
 check kept 0.68 conflicts a frame against 1.25 in fp65's capped run and 1.48 in fp77's plans, with as many images drawn
 (47 for 25 frames against 46 for 24). The reviews barely moved: +0.06 against the two runs (95% CI −0.11 to +0.24),
 −0.10 against fp77's plans, 7 majors against 9 and 10; feasibility +0.56 and character +0.30, storytelling −0.36 as in
-fp77 and fp81. Not built. What the frames gained in agreeing with their plans, the storyboard review does not see; a
-take starts from its frame and reads its text, so whether the takes gain was not measured. Cost $4.63 with the two
-plans, against $3.75.
+fp77 and fp81 (against the controls reviewed again, [fp84](#the-controls-reviewed-again): feasibility +0.14,
+storytelling −0.26). Not built. What the frames gained in agreeing with their plans, the storyboard review does not
+see; a take starts from its frame and reads its text, so the takes were measured too. Cost $4.63 with the two plans,
+against $3.75.
+
+The kite scenes were rendered from these frames as fp61's and fp62's were: every frame approved, shot by shot, one
+attempt a take, each take watched and each scene reviewed three times (fp85, November 12, 2026):
+
+| Scene | fp39's plans, six runs | Stills | Physics | Continuity | Takes passing |
+|---|---|---|---|---|---|
+| Kite 1 | 6.42 (5.87 to 6.87) | 6.70 (6.4, 6.7, 7.0) | 5.67 → 5.67 | 4.61 → 4.67 | 24 of 30 → 5 of 6 |
+| Kite 2 | 6.52 (6.27 to 6.83) | 6.27 (6.1, 6.3, 6.4) | 6.00 → 5.00 | 4.89 → 4.00 | 25 of 30 → 3 of 6 |
+
+Over the two scenes +0.01: frames that agree with their plans did not make better takes. The takes kept their camera
+and their cast better (watched camera 0.89 against 0.84, identity 0.91 against 0.87), but what failed them was the video
+model's own: a second kite appearing behind Rosie (kite 1's fifth take, named by all three of its scene's reviews,
+once as critical; kite 2's first take had one too, by its own watch), a tree popping into the frame mid-take (kite 2's
+fourth, named by two of its three reviews), and the kite hanging weightless in the air. Kite 2 passed 3 takes of 6.
+Cost $12.56 for the 12 takes, their watches and the scene reviews.
 
 ## A scene drawn on one sheet
 
@@ -1272,6 +1291,39 @@ node scripts/first-pass.mjs --base http://127.0.0.1:8790 --brief brief.txt --tar
 reviewed: the first stage that pays for video). `RIDEO_API_TOKEN` is read from the environment. The report is JSON
 (`--out`) and a table on standard output.
 
+### The controls reviewed again
+
+Every storyboard change since November 8 (fp76 to fp82) was scored against fp65's two runs of fp39's four scenes: 7.22
+with the staging check capped and 7.15 in full, each scene's review the mean of three judge answers. Three of those
+changes (fp77, fp81 and fp82) lost 0.36 on storytelling against them, so the eight storyboards were reviewed again on
+the same frames, nothing drawn, three fresh answers each (fp84, November 12, 2026):
+
+| Scene | Capped: first / again | In full: first / again |
+|---|---|---|
+| Kite 1 | 7.5 / 7.8 | 7.3 / 7.5 |
+| Kite 2 | 7.3 / 7.2 | 6.7 / 6.9 |
+| Riding 1 | 6.7 / 7.0 | 7.5 / 7.3 |
+| Riding 2 | 7.4 / 7.3 | 7.1 / 7.0 |
+| Mean | 7.22 / 7.33 | 7.15 / 7.18 |
+
+A second review moved a storyboard 0.19 on average (0.3 at most; +0.06 overall), about as much as the one earlier pair
+of reviews of the same frames did (fp59's frames reviewed again for fp60: 0.13). By dimension the fresh answers gave
+feasibility 0.43 more (6.54 → 6.96), composition and coverage 0.16 more, continuity 0.16 less and storytelling 0.10
+less (7.54 → 7.44). So the controls' storytelling was a little high, and most of the three changes' loss stands:
+against all six answers each, fp77, fp81 and fp82 lost 0.31 of it. Their feasibility gains were mostly the first
+answers' low feasibility: +0.49 to +0.56 against those, +0.06 to +0.14 against the fresh ones. Their overall scores
+move little. Against all six answers fp76 scores −0.17, fp77 +0.13, fp78 −0.62, fp80 −0.42, fp81 +0.13 (95% CI +0.03
+to +0.24) and fp82 +0.03. None reaches the half point a change needs, so no decision changes. The judge's own spread
+on a four-scene mean is about a tenth of a point, well under that half point; drawing the frames again moves a run by
+more.
+
+The first run of these reviews went wrong. That morning `qwen3.8-max` began to count its reasoning against the
+review's 8,000-token limit, most answers came back cut short or empty, and jobs failed after three attempts. Its two
+finished reviews are left out, because only answers short enough to fit had passed. The studio now gives a call that
+may reason room for its reasoning ([reasoning](ai-gateway.md#reasoning)), and the eight reviews above ran on that
+build: 24 answers of 7,152 to 15,115 tokens, none cut or repaired. Cost: $1.62 for the eight reviews, $2.05 for the
+first run's cut answers, $0.22 for the probe that found the cause.
+
 ## Measured
 
 Every build below ran on the demo server's models (`qwen3.8-max` writing and reviewing, Seedream frames and
@@ -1318,6 +1370,8 @@ cell is one run's first round; the scores of the same build and brief differ by 
 | fp81: each scene's opening frame drawn again while its reading named any conflict, up to six attempts (storyboards only, fp39's plans) | – | – | 7.35 against 7.22 and 7.15 (+0.16, 95% CI +0.09 to +0.24), continuity 5.83; three of four openers used six attempts and kept a fault; [a pose the plan words as a motion](#a-scenes-opening-frame-drawn-until-it-passes-tried-not-built) |
 | fp82: fp39's scenes planned again with descriptions and end states written as stills, the motion left to the action (storyboards only) | – | – | 7.25 against 7.22 and 7.15 (+0.06, 95% CI −0.11 to +0.24); no motion under way left in the plans (16 before), conflicts kept 0.68 a frame against 1.25; [the review does not see it](#descriptions-written-as-stills-tried-not-built) |
 | fp83: the reference check made again on 30 of fp39's stored views, twice in full, twice capped at 4,096 tokens of reasoning, once at 2,048 (nothing drawn) | – | at 2,048 tokens 11 views refused against 16 and 17, four differences both full readings named let through; at 4,096 a capped and a full reading agree 78% of the time against 88% for two of a kind; [not built](#the-reference-checks-reasoning-capped-tried-not-built) | – |
+| fp84: fp65's eight control storyboards reviewed again with three fresh answers each (nothing drawn; [the controls reviewed again](#the-controls-reviewed-again)) | – | – | 7.25 against the first answers' 7.19 (a storyboard moved 0.19 on average); storytelling 7.44 against 7.54, feasibility 6.96 against 6.54; against all six answers fp77, fp81 and fp82 score +0.13, +0.13 and +0.03, storytelling −0.31 |
+| fp85: fp82's kite scenes (descriptions and end states as stills) rendered shot by shot from their approved frames, one attempt a take | – | – | scene reviews kite 1 6.70, kite 2 6.27 against 6.42 and 6.52 for six runs of fp39's plans (+0.01); takes passing 8 of 12 against 49 of 60; [a second kite and a tree popping into the frame](#descriptions-written-as-stills-tried-not-built) |
 | fp55: fp53's riding 1 render split again at the cuts found near the planned ones (same render, reviewed beside the old split) | – | – | scene 6.67 against 5.97; takes passing 6 of 8 against 2 |
 | fp54: HappyHorse 1.1 instead of Wan 3.0, from the same 13 approved frames | – | – | shots' watch 5.0 against 6.1, passed 5 against 7; kite scene 5.7 |
 | fp51: the faulted frames drawn twice more and one picked (storyboards only, plans of fp39) | – | – | 7.17 against 7.28 at the same time, continuity 5.9 against 5.5; [5 of 8 faulted again](#a-scene-read-whole-then-a-frame-picked-tried-not-merged) |
@@ -1430,8 +1484,9 @@ What keeps each under 8, what was tried, and what to try next:
    a pose the plan words as a motion or a placement ("paws beginning to rise", "far in the doorway")
    ([tried, not built](#a-scenes-opening-frame-drawn-until-it-passes-tried-not-built)). Descriptions written as stills
    (fp82) took every motion out of them and nearly halved the conflicts the check keeps, at 7.25 (+0.06)
-   ([tried, not built](#descriptions-written-as-stills-tried-not-built)). *Next:* whether takes gain from frames that
-   agree with their plans.
+   ([tried, not built](#descriptions-written-as-stills-tried-not-built)); its kite scenes rendered scored as fp39's
+   plans do (+0.01, fp85): what fails a take now is the video model's own, a prop doubled or a tree popping into the
+   frame, not a frame that disagrees with its plan. *Next:* those faults in the takes.
 4. **Stills that tell the beat** (storytelling 6–8): a frame is the start of its shot, so a beat inside the take was
    missing from the storyboard; the planner now starts a shot on its beat's pose (fp18, being measured).
 5. **The video** (scene 6.0–7.3, first takes 5.8–7.4): the video model adds its own failures (a kite that morphs and
