@@ -199,8 +199,8 @@ export function createStudio(
     },
   });
   const llm = new LlmTasks(
-    createAdapter(proxy, config.llm, config.llmTimeoutMs),
-    createAdapter(proxy, config.vision, config.llmTimeoutMs),
+    createAdapter(proxy, config.llm, config.llmTimeoutMs, config.llmMaxOutputTokens),
+    createAdapter(proxy, config.vision, config.llmTimeoutMs, config.llmMaxOutputTokens),
     {
       metrics,
       meter,
@@ -214,17 +214,40 @@ export function createStudio(
       ),
       ...(config.voiceJudge ? { audio: createAdapter(proxy, config.voiceJudge) } : {}),
       // The audio-visual model (docs/design/continuity.md#quality-checks-in-the-gate)
-      ...(config.omni ? { omni: createAdapter(proxy, config.omni, config.llmTimeoutMs) } : {}),
+      ...(config.omni
+        ? { omni: createAdapter(proxy, config.omni, config.llmTimeoutMs, config.llmMaxOutputTokens) }
+        : {}),
       // Each family's fallback on another provider (docs/design/ai-gateway.md#outages)
       fallbacks: {
         ...(config.fallbacks.text
-          ? { text: createAdapter(proxy, config.fallbacks.text, config.llmTimeoutMs) }
+          ? {
+              text: createAdapter(
+                proxy,
+                config.fallbacks.text,
+                config.llmTimeoutMs,
+                config.llmMaxOutputTokens,
+              ),
+            }
           : {}),
         ...(config.fallbacks.vision
-          ? { vision: createAdapter(proxy, config.fallbacks.vision, config.llmTimeoutMs) }
+          ? {
+              vision: createAdapter(
+                proxy,
+                config.fallbacks.vision,
+                config.llmTimeoutMs,
+                config.llmMaxOutputTokens,
+              ),
+            }
           : {}),
         ...(config.fallbacks.omni
-          ? { omni: createAdapter(proxy, config.fallbacks.omni, config.llmTimeoutMs) }
+          ? {
+              omni: createAdapter(
+                proxy,
+                config.fallbacks.omni,
+                config.llmTimeoutMs,
+                config.llmMaxOutputTokens,
+              ),
+            }
           : {}),
       },
     },

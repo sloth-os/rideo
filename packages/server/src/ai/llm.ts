@@ -26,6 +26,11 @@ export interface LlmRequest {
 export interface LlmResponse {
   text: string;
   usage?: { input?: number; output?: number };
+  /**
+   * The upstream's token limit ended the answer (OpenAI's `finish_reason: length`, Gemini's `MAX_TOKENS`, Anthropic's
+   * `max_tokens`): its JSON is likely cut short (docs/design/ai-gateway.md#reasoning).
+   */
+  cut?: boolean;
 }
 
 export interface LlmAdapter {
@@ -91,6 +96,29 @@ const OPTIONAL_FIELDS: Record<string, RegExp> = {
   modalities: /\bmodalities\b/,
 };
 
+/** The most a call may write, its reasoning included (`RIDEO_LLM_MAX_OUTPUT_TOKENS`). */
+export const DEFAULT_MAX_OUTPUT_TOKENS = 32_000;
+/** What a call that reasons may spend on its reasoning when no budget caps it. */
+const REASONING_ROOM_TOKENS = 24_000;
+/** A task's answer when the task names no limit. */
+const ANSWER_TOKENS = 8_000;
+
+/**
+ * The token limit a call asks for (docs/design/ai-gateway.md#reasoning). A task's `maxTokens` is its answer's; a model
+ * that reasons counts its reasoning against the limit too (`qwen3.8-max` did from November 12, 2026, and a storyboard
+ * review's 8,000 tokens cut most of its answers), so a call that may reason asks for room for it on top: twice its
+ * budget when one caps it (a capped model overruns its budget a little), else 24,000 tokens, up to `ceiling` but never
+ * under the answer's own limit. A call without reasoning asks for its answer's limit alone.
+ */
+export function outputLimit(
+  req: Pick<LlmRequest, 'maxTokens' | 'reasoning' | 'reasoningBudget'>,
+  ceiling = DEFAULT_MAX_OUTPUT_TOKENS,
+): number | undefined {
+  if (req.reasoning === 'off') return req.maxTokens;
+  const room = req.reasoningBudget !== undefined ? 2 * req.reasoningBudget : REASONING_ROOM_TOKENS;
+  return Math.min(Math.max(ceiling, req.maxTokens ?? 0), (req.maxTokens ?? ANSWER_TOKENS) + room);
+}
+
 /**
  * Aborts when nothing arrives for `ms`: before the first byte, then between chunks
  * (docs/design/ai-gateway.md#proxy-usage-llm-vision-stt-embeddings).
@@ -130,13 +158,18 @@ export async function readChatStream(res: Response, onChunk: () => void = () => 
   let buffer = '';
   let text = '';
   let usage: LlmResponse['usage'];
+  let cut = false;
   const take = (line: string) => {
     if (!line.startsWith('data:')) return;
     const data = line.slice(5).trim();
     if (!data || data === '[DONE]') return;
     let event: {
       error?: unknown;
-      choices?: { delta?: { content?: string | null }; message?: { content?: string | null } }[];
+      choices?: {
+        delta?: { content?: string | null };
+        message?: { content?: string | null };
+        finish_reason?: string | null;
+      }[];
       usage?: { prompt_tokens?: number; completion_tokens?: number } | null;
     };
     try {
@@ -151,6 +184,7 @@ export async function readChatStream(res: Response, onChunk: () => void = () => 
     const choice = event.choices?.[0];
     const piece = choice?.delta?.content ?? choice?.message?.content;
     if (typeof piece === 'string') text += piece;
+    if (choice?.finish_reason === 'length') cut = true;
     if (event.usage) usage = { input: event.usage.prompt_tokens, output: event.usage.completion_tokens };
   };
   for (;;) {
@@ -164,7 +198,7 @@ export async function readChatStream(res: Response, onChunk: () => void = () => 
     }
   }
   take((buffer + decoder.decode()).trim());
-  return { text, usage };
+  return { text, usage, ...(cut ? { cut } : {}) };
 }
 
 /** OpenAI Chat Completions (and any OpenAI-compatible upstream) through the gateway proxy, streamed. */
@@ -176,6 +210,8 @@ export class OpenAiAdapter implements LlmAdapter {
     readonly model: string,
     /** How long one call may take (`RIDEO_LLM_TIMEOUT_SEC`); else the proxy client's default. */
     private readonly timeoutMs?: number,
+    /** The most a call may write, its reasoning included (`RIDEO_LLM_MAX_OUTPUT_TOKENS`). */
+    private readonly maxOutputTokens = DEFAULT_MAX_OUTPUT_TOKENS,
   ) {}
 
   /** Fields the upstream refused once: never sent again by this adapter. */
@@ -195,6 +231,7 @@ export class OpenAiAdapter implements LlmAdapter {
             ? { type: 'video_url', video_url: { url: `data:${p.mime};base64,${p.data.toString('base64')}` } }
             : { type: 'image_url', image_url: { url: `data:${p.mime};base64,${p.data.toString('base64')}` } },
     );
+    const limit = outputLimit(req, this.maxOutputTokens);
     const body: Record<string, unknown> = {
       model: this.model,
       messages: [
@@ -205,7 +242,8 @@ export class OpenAiAdapter implements LlmAdapter {
       ...(req.parts.some((p) => p.type === 'video') ? { modalities: ['text'] } : {}),
       temperature: req.temperature,
       ...(req.json ? { response_format: { type: 'json_object' } } : {}),
-      ...(req.maxTokens ? { max_tokens: req.maxTokens } : {}),
+      // The answer's limit, with room for the model's reasoning (docs/design/ai-gateway.md#reasoning)
+      ...(limit ? { max_tokens: limit } : {}),
       ...(req.reasoning === 'off' ? { enable_thinking: false } : {}),
       ...(req.reasoning !== 'off' && req.reasoningBudget !== undefined
         ? { enable_thinking: true, thinking_budget: req.reasoningBudget }
@@ -241,12 +279,13 @@ export class OpenAiAdapter implements LlmAdapter {
       if (res.headers.get('content-type')?.includes('text/event-stream'))
         return await readChatStream(res, () => idle.touch());
       const json = (await res.json()) as {
-        choices?: { message?: { content?: string } }[];
+        choices?: { message?: { content?: string }; finish_reason?: string | null }[];
         usage?: { prompt_tokens?: number; completion_tokens?: number };
       };
       return {
         text: json.choices?.[0]?.message?.content ?? '',
         usage: { input: json.usage?.prompt_tokens, output: json.usage?.completion_tokens },
+        ...(json.choices?.[0]?.finish_reason === 'length' ? { cut: true } : {}),
       };
     } catch (err) {
       // The idle timer's reason, not a bare AbortError, so the call is retried as a timeout.
@@ -310,7 +349,7 @@ function eventJson<T>(data: string): T | undefined {
 }
 
 type GeminiChunk = {
-  candidates?: { content?: { parts?: { text?: string }[] } }[];
+  candidates?: { content?: { parts?: { text?: string }[] }; finishReason?: string }[];
   usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number };
   error?: { message?: string };
 };
@@ -328,6 +367,8 @@ export class GeminiAdapter implements LlmAdapter {
     readonly model: string,
     /** How long one call may take (`RIDEO_LLM_TIMEOUT_SEC`); else the proxy client's default. */
     private readonly timeoutMs?: number,
+    /** The most a call may write, its reasoning included (`RIDEO_LLM_MAX_OUTPUT_TOKENS`). */
+    private readonly maxOutputTokens = DEFAULT_MAX_OUTPUT_TOKENS,
   ) {}
 
   get endpoint(): string {
@@ -370,12 +411,14 @@ export class GeminiAdapter implements LlmAdapter {
       idle.touch();
       let text = '';
       let usage: GeminiChunk['usageMetadata'];
+      let cut = false;
       const take = (c: GeminiChunk | undefined) => {
         if (c?.error) {
           const body = JSON.stringify(c.error).slice(0, 600);
           throw new LlmError(`gemini via mm-gateway proxy streamed an error: ${body}`, undefined, true, body);
         }
         text += (c?.candidates?.[0]?.content?.parts ?? []).map((p) => p.text ?? '').join('');
+        if (c?.candidates?.[0]?.finishReason === 'MAX_TOKENS') cut = true;
         if (c?.usageMetadata) usage = c.usageMetadata;
       };
       if (res.headers.get('content-type')?.includes('text/event-stream')) {
@@ -385,7 +428,11 @@ export class GeminiAdapter implements LlmAdapter {
         const json = (await res.json()) as GeminiChunk | GeminiChunk[];
         for (const c of Array.isArray(json) ? json : [json]) take(c);
       }
-      return { text, usage: { input: usage?.promptTokenCount, output: usage?.candidatesTokenCount } };
+      return {
+        text,
+        usage: { input: usage?.promptTokenCount, output: usage?.candidatesTokenCount },
+        ...(cut ? { cut } : {}),
+      };
     } catch (err) {
       // The idle timer's reason, not a bare AbortError, so the call is retried as a timeout.
       if (idle.signal.aborted && !req.signal?.aborted) throw idle.signal.reason;
@@ -397,6 +444,7 @@ export class GeminiAdapter implements LlmAdapter {
 
   private post(req: LlmRequest, parts: unknown[], signal: AbortSignal, idleMs: number): Promise<Response> {
     const method = this.noStream ? 'generateContent' : 'streamGenerateContent?alt=sse';
+    const limit = outputLimit(req, this.maxOutputTokens);
     return this.proxy.fetch(this.api, `v1beta/models/${encodeURIComponent(this.model)}:${method}`, {
       method: 'POST',
       timeoutMs: this.noStream ? idleMs : idleMs * STREAM_TOTAL_FACTOR,
@@ -407,7 +455,8 @@ export class GeminiAdapter implements LlmAdapter {
         generationConfig: {
           temperature: req.temperature,
           ...(req.json ? { responseMimeType: 'application/json' } : {}),
-          ...(req.maxTokens ? { maxOutputTokens: req.maxTokens } : {}),
+          // The answer's limit, with room for the model's thinking (docs/design/ai-gateway.md#reasoning)
+          ...(limit ? { maxOutputTokens: limit } : {}),
           // No reasoning for checks, or a capped one (docs/design/ai-gateway.md#reasoning); a model that refuses it is
           // asked without
           ...(req.reasoning === 'off' && !this.noThinkingBudget
@@ -424,7 +473,7 @@ export class GeminiAdapter implements LlmAdapter {
 
 type AnthropicEvent = {
   type?: string;
-  delta?: { type?: string; text?: string };
+  delta?: { type?: string; text?: string; stop_reason?: string | null };
   message?: { usage?: { input_tokens?: number } };
   usage?: { output_tokens?: number };
   error?: { type?: string; message?: string };
@@ -475,6 +524,7 @@ export class AnthropicAdapter implements LlmAdapter {
       if (!res.ok) throw await failure(res, this.provider);
       idle.touch();
       let text = '';
+      let cut = false;
       const usage: { input?: number; output?: number } = {};
       if (res.headers.get('content-type')?.includes('text/event-stream')) {
         for await (const e of sseEvents(res, () => idle.touch())) {
@@ -492,12 +542,15 @@ export class AnthropicAdapter implements LlmAdapter {
           if (d?.type === 'content_block_delta' && d.delta?.type === 'text_delta') text += d.delta.text ?? '';
           if (d?.type === 'message_delta' && d.usage?.output_tokens !== undefined)
             usage.output = d.usage.output_tokens;
+          if (d?.type === 'message_delta' && d.delta?.stop_reason === 'max_tokens') cut = true;
         }
       } else {
         const json = (await res.json()) as {
           content?: { type: string; text?: string }[];
           usage?: { input_tokens?: number; output_tokens?: number };
+          stop_reason?: string | null;
         };
+        cut = json.stop_reason === 'max_tokens';
         text = (json.content ?? [])
           .filter((c) => c.type === 'text')
           .map((c) => c.text ?? '')
@@ -505,7 +558,7 @@ export class AnthropicAdapter implements LlmAdapter {
         usage.input = json.usage?.input_tokens;
         usage.output = json.usage?.output_tokens;
       }
-      return { text: req.json ? `{${text}` : text, usage };
+      return { text: req.json ? `{${text}` : text, usage, ...(cut ? { cut } : {}) };
     } catch (err) {
       // The idle timer's reason, not a bare AbortError, so the call is retried as a timeout.
       if (idle.signal.aborted && !req.signal?.aborted) throw idle.signal.reason;
@@ -537,11 +590,14 @@ export function createAdapter(
   proxy: ProxyClient,
   endpoint: ProxyApi & { provider: 'openai' | 'gemini' | 'anthropic'; model: string },
   timeoutMs?: number,
+  /** The most a call may write, its reasoning included (`RIDEO_LLM_MAX_OUTPUT_TOKENS`); Anthropic's models do not reason unasked. */
+  maxOutputTokens?: number,
 ): LlmAdapter {
   const api = { domain: endpoint.domain, prefix: endpoint.prefix };
-  if (endpoint.provider === 'gemini') return new GeminiAdapter(proxy, api, endpoint.model, timeoutMs);
+  if (endpoint.provider === 'gemini')
+    return new GeminiAdapter(proxy, api, endpoint.model, timeoutMs, maxOutputTokens);
   if (endpoint.provider === 'anthropic') return new AnthropicAdapter(proxy, api, endpoint.model, timeoutMs);
-  return new OpenAiAdapter(proxy, api, endpoint.model, timeoutMs);
+  return new OpenAiAdapter(proxy, api, endpoint.model, timeoutMs, maxOutputTokens);
 }
 
 /** OpenAI-style speech-to-text through the proxy (optional; footage analysis). */

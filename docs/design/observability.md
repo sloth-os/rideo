@@ -76,6 +76,7 @@ cost), as does a take replaced by a regeneration: the cost of quality, which the
 | `rideo_llm_call_seconds` | histogram | `task`, `model` | one task, repairs and retries included |
 | `rideo_llm_tokens_total` | counter | `task`, `model`, `direction` (`in`, `out`) | tokens reported by the provider |
 | `rideo_llm_retries_total` | counter | `task`, `status` | calls made again after 429/5xx |
+| `rideo_llm_cut_answers_total` | counter | `task` | answers the upstream's token limit ended ([reasoning](ai-gateway.md#reasoning)) |
 | `rideo_llm_paused` | gauge | `endpoint` | 1 while a model endpoint is paused after failing calls in a row ([outages](ai-gateway.md#outages)) |
 | `rideo_llm_pauses_total` | counter | `endpoint` | times an endpoint was paused (a failed probe pauses it again) |
 | `rideo_cost_usd_total` | counter | `modality`, `model` | estimated cost of priced usage |
@@ -163,5 +164,5 @@ the client off.
 | Where does a film's time go? | Insights → Time; `rideo_shot_step_seconds`, `rideo_job_wait_seconds`, `rideo_lane_jobs` |
 | What does a film cost, and what is wasted? | Insights → Cost; `rideo_cost_usd_total`, `rideo_gateway_usage_total`, waste in the ledger |
 | Is quality getting better? | Insights → Quality; `rideo_take_attempts`, `rideo_consistency_score`, `rideo_quality_checks_total`, `rideo_feedback_score` |
-| Is a provider struggling? | `rideo_llm_retries_total`, `rideo_llm_paused`, `rideo_llm_pauses_total`, `rideo_gateway_tasks_total{status}`, `rideo_gateway_task_seconds` |
+| Is a provider struggling? | `rideo_llm_retries_total`, `rideo_llm_cut_answers_total`, `rideo_llm_paused`, `rideo_llm_pauses_total`, `rideo_gateway_tasks_total{status}`, `rideo_gateway_task_seconds` |
 | What should change next time? | the retrospective of each project's feedback, and [improvements](../improvements.md) |

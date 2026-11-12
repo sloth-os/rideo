@@ -153,6 +153,8 @@ export async function probeEndpoint(
           parts: [{ type: 'text', text: 'Reply with OK.' }],
           json: false,
           temperature: 0,
+          // A connection test: no reasoning, so the 16 tokens are the answer's (docs/design/ai-gateway.md#reasoning)
+          reasoning: 'off',
           maxTokens: 16,
           signal: AbortSignal.timeout(60_000),
         });

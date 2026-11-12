@@ -252,6 +252,9 @@ describe('frames that follow their shot (docs/design/first-pass.md#frames-that-f
       enable_thinking: true,
       thinking_budget: 2048,
     });
+    // Its token limit leaves room for its reasoning: twice the budget on top of an answer's 8,000
+    // (docs/design/ai-gateway.md#reasoning)
+    expect(stack.gw.counters.lastMaxTokens['frame.reconcile']).toBe(12_096);
     await stack.api('PATCH', `/projects/${pid}`, { settings: { consistency: { stagingReasoning: 'full' } } });
     const again = await stack.api<Job>(
       'POST',
@@ -259,6 +262,7 @@ describe('frames that follow their shot (docs/design/first-pass.md#frames-that-f
     );
     expectSucceeded(await stack.waitJob(pid, again.id));
     expect(stack.gw.counters.lastReasoning['frame.reconcile']).toEqual({});
+    expect(stack.gw.counters.lastMaxTokens['frame.reconcile']).toBe(32_000);
   }, 300_000);
 });
 

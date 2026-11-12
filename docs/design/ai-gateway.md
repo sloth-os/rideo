@@ -181,6 +181,23 @@ upstream that refuses the field is asked again without it, as above. On 24 frame
 reading does, in 56 s a reading instead of 174 s ([first pass](first-pass.md#the-staging-checks-reasoning-capped)).
 The log line of a capped call (`LLM task completed`) names its `reasoningBudget`.
 
+**Room for the reasoning.** A model that reasons may count its reasoning against the call's token limit, and
+`qwen3.8-max` began to on November 12, 2026, through both of the studio's providers. A storyboard review asks for an
+answer of at most 8,000 tokens. That day most of its answers came back cut: a JSON array left open, or no JSON at all
+when the reasoning used the whole limit. Their repairs were cut too, and jobs failed after three attempts. The
+real-model suite's shot planner, which named no limit, answered twice without JSON. The same review asked for 32,000
+tokens finished all three of its answers in 8,368 to 11,804 tokens, 6,117 to 9,645 of them reasoning (fp84). On
+November 8 the same reviews had written about 11,000 tokens each under the same 8,000 and none was cut. So a call that may reason asks for its answer's limit plus
+room for its reasoning (`outputLimit`). That room is twice the budget when one caps the reasoning (the staging check's
+2,048 becomes 4,096, since a capped model overruns its budget a little), else 24,000 tokens. The total is at most
+`RIDEO_LLM_MAX_OUTPUT_TOKENS` (32,000) but never less than the answer's own limit, and a task that names no limit
+counts as 8,000. A call without reasoning asks for its answer's limit alone. OpenAI-compatible calls send the result
+as `max_tokens` and Gemini as `maxOutputTokens`. Anthropic's models do not reason unless asked, so they keep the
+answer's limit. An answer the limit ended (`finish_reason: length`, Gemini's `MAX_TOKENS`, Anthropic's `max_tokens`)
+is logged (`LLM answer cut at its token limit`, with the task, the limit and the usage) and counted in
+`rideo_llm_cut_answers_total{task}`; the repair then asks again, as for any invalid answer. The settings dialog's
+connection test asks without reasoning, so its 16 tokens are the answer's.
+
 ### Refusals
 
 A provider's moderation sometimes refuses a harmless answer (`data_inspection_failed`, "output data may
@@ -334,6 +351,10 @@ images they receive, as a real model copies identity. The mock judge decodes the
 bands. `MOCK_FLAKY_EVERY=n` drops the bands from every n-th generation, so tests can prove that the gate
 retries and recovers. `overloadChat(n)` makes the next n chat calls through the proxy answer
 `503 system cpu overloaded`, as an overloaded upstream does, so tests can prove that LLM calls are made again.
+Chat answers count their reasoning against `max_tokens`, as `qwen3.8-max` does ([reasoning](#reasoning)): a call that
+names a limit gets `limit − reasoning` tokens of answer, and a longer answer is cut (`finish_reason: length`). The
+reasoning is none with `enable_thinking: false`, else `thinking_budget`, else 9,000 tokens. A call without a limit is
+answered whole, and `counters.lastMaxTokens[task]` records each task's limit.
 `holdChat(marker)` holds every chat call that mentions the marker (a task's `rideo-task: <id>` line) until its
 `release()`, as a model still answering does, and `held()` counts the calls it holds, so tests can change documents
 while a review is waiting for its model. `metadata.mock_fail: "<code>"` fails a task with that code. `refuseOutputs(n)` fails the next n image or video tasks as a provider's moderation refusing its output does (`provider_error`, `OutputImageSensitiveContentDetected`).

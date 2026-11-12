@@ -359,6 +359,10 @@ export class Metrics {
     new Counter('rideo_gateway_tasks_total', 'mm-gateway tasks by modality and status'),
   );
   readonly llmCalls = this.add(new Counter('rideo_llm_calls_total', 'LLM task calls by task and status'));
+  /** Answers an upstream's token limit ended, by task (docs/design/ai-gateway.md#reasoning). */
+  readonly llmCutAnswers = this.add(
+    new Counter('rideo_llm_cut_answers_total', 'LLM answers cut at their token limit, by task'),
+  );
   /** LLM calls made again after the provider turned them away for load (docs/design/ai-gateway.md#structured-tasks). */
   readonly llmRetries = this.add(
     new Counter('rideo_llm_retries_total', 'LLM calls made again after 429/5xx, by task and status'),

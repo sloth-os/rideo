@@ -626,7 +626,7 @@ export class LlmTasks {
     readonly vision: LlmAdapter,
     private readonly deps: {
       metrics?: Metrics;
-      log?: { info: (o: unknown, m?: string) => void };
+      log?: { info: (o: unknown, m?: string) => void; warn?: (o: unknown, m?: string) => void };
       /** An audio-capable model for the speaker check (rule V4); absent when none is configured. */
       audio?: LlmAdapter;
       /** The audio-visual model, which watches video with its sound; absent when none is configured. */
@@ -750,6 +750,20 @@ export class LlmTasks {
       try {
         const res = await adapter.complete(req);
         pauses?.answered(endpoint);
+        // An answer the upstream's token limit ended (docs/design/ai-gateway.md#reasoning): its JSON is likely cut
+        // short, and the repair asks again
+        if (res.cut) {
+          this.deps.metrics?.llmCutAnswers.inc({ task });
+          const at = {
+            task,
+            provider: adapter.provider,
+            model: adapter.model,
+            maxTokens: req.maxTokens,
+            usage: res.usage,
+          };
+          if (this.deps.log?.warn) this.deps.log.warn(at, 'LLM answer cut at its token limit');
+          else this.deps.log?.info(at, 'LLM answer cut at its token limit');
+        }
         return res;
       } catch (err) {
         const status = turnedAway(err);

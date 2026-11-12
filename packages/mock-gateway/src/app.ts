@@ -72,6 +72,8 @@ export interface MockGatewayApp {
     lastInputs: Record<string, unknown>;
     /** The reasoning fields of the last call of each structured task (`enable_thinking`, `thinking_budget`). */
     lastReasoning: Record<string, { enable_thinking?: unknown; thinking_budget?: unknown }>;
+    /** The `max_tokens` of the last call of each structured task (undefined when it named none). */
+    lastMaxTokens: Record<string, number | undefined>;
     /** The account and gateway key of the last call to each registered proxy. */
     proxyAccounts: Record<string, { account: string; key: string; headers: Record<string, string> }>;
   };
@@ -115,6 +117,7 @@ export async function buildMockGateway(opts: MockGatewayOptions = {}): Promise<M
     proxyCalls: {},
     lastInputs: {},
     lastReasoning: {},
+    lastMaxTokens: {},
     proxyAccounts: {},
   };
   let overloads = 0;
@@ -524,6 +527,10 @@ export async function buildMockGateway(opts: MockGatewayOptions = {}): Promise<M
           enable_thinking?: unknown;
           thinking_budget?: unknown;
         };
+        counters.lastMaxTokens[task] =
+          typeof (b as { max_tokens?: unknown }).max_tokens === 'number'
+            ? (b as { max_tokens: number }).max_tokens
+            : undefined;
         counters.lastReasoning[task] = {
           ...('enable_thinking' in b ? { enable_thinking: b.enable_thinking } : {}),
           ...('thinking_budget' in b ? { thinking_budget: b.thinking_budget } : {}),
