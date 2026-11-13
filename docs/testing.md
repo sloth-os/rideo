@@ -558,21 +558,22 @@ whatever new projects default to: more of them cost minutes on the real models, 
 gateway (`first-pass.test.ts`, `review-samples.test.ts`, `clip-review.test.ts`). The fixes, two shots made again and the
 scene watched a second time, took 16 to 20 of `story.spec.ts`'s minutes, and with them it ran past its hour (November
 2026). It keeps the checks of each frame against its shot (`frame.reconcile`, about 3 minutes a call) and of each
-reference (`reference.check`, about 2), the only place they run on real models in CI, so `story.spec.ts` takes about 45
-minutes: its limit is 60 minutes and the job's 75. It waits up to 30 minutes for the cast's views: the image lane draws
-two at a time, a view whose check finds a difference is drawn and checked again, and a check can reason for over four
-minutes (four did on November 9, 2026, and the 15 minutes the test then allowed ran out). On November 12 its shot plan
-answered twice without JSON and the 10 minutes it waits for the plan ran out: the model had begun to count its reasoning
-against the answer's token limit, and the plan, which named no limit, got the provider's default ([room for the
-reasoning](design/ai-gateway.md#reasoning)). A plan took 5.8 minutes on November 10. With the fix the suite passed again
-the same day, but `story.spec.ts` took 55.2 minutes: ctaigw, the provider behind the suite's models, had also stopped
-honouring `enable_thinking: false` and `thinking_budget`, so the identity checks reasoned (46 to 141 s a call instead of
-6 to 12) and the staging check reasoned past its 2,048 tokens (206 to 284 s instead of about 63).
+reference (`reference.check`, about 2), the only place they run on real models in CI, so `story.spec.ts` took about 45
+minutes. It waits up to 30 minutes for the cast's views: the image lane draws two at a time, a view whose check finds a
+difference is drawn and checked again, and a check can reason for over four minutes (four did on November 9, 2026, and
+the 15 minutes the test then allowed ran out). On November 12 its shot plan answered twice without JSON and the 10
+minutes it waits for the plan ran out: the model had begun to count its reasoning against the answer's token limit, and
+the plan, which named no limit, got the provider's default ([room for the reasoning](design/ai-gateway.md#reasoning)). A
+plan took 5.8 minutes on November 10. With the fix the suite passed again the same day, but `story.spec.ts` took 55.2
+minutes: ctaigw, the provider behind the suite's models, had also stopped honouring `enable_thinking: false` and
+`thinking_budget`, so the identity checks reasoned (46 to 141 s a call instead of 6 to 12) and the staging check
+reasoned past its 2,048 tokens (206 to 284 s instead of about 63). So its limit is now 75 minutes instead of 60, and the
+job's 90 instead of 75, while the provider reasons through every check.
 
 Each spec also reads the studio's `/metrics` (`rideo_llm_calls_total`, `rideo_gateway_tasks_total`) to check that the
 calls it expects were made and succeeded. The suite's projects judge with a threshold of 0.5 and two attempts per
 keyframe and per video: the cost stays bounded, and a strict verdict on a good picture does not keep the video model
-from being exercised. A run takes under an hour and costs a dozen or so images, a few short videos and a few dozen vision
+from being exercised. A run takes about an hour and costs a dozen or so images, a few short videos and a few dozen vision
 calls. Retries are off: a failure is reported, not paid for twice.
 
 ### Measuring the first pass (`scripts/first-pass.mjs`)
