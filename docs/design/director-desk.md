@@ -466,29 +466,29 @@ the browser's console (`[desk] …`, at the debug level).
   (connecting again, then the timeout), `open` after `ready` with the brief, a copy of the stored state and the options,
   a second `hello` before the desk's first state (the stored state again) and after it (the newest state), a stored
   state that cannot be loaded (an error, a network failure, unknown headers): the panel failed with Retry, nothing
-  opened or stored, Retry opening the desk, Start over clearing the stored state and opening the desk without it, a
-  desk page that has not said hello keeping its 15 seconds; states of another scene ignored, the newest state stored at
-  most every 10 minutes while the desk is open and only when its bytes are not the stored ones (with the real sha256
-  against the `ETag` that `api.deskState` reads), every write naming the state it replaces (`If-Match` with the loaded
-  or stored `ETag`, the loaded bytes' sha256 without one, `If-None-Match: *` when none is stored), a write before a
-  result starting the 10 minutes again, a state that comes while a write is stored waiting 10 minutes from that write,
-  a failing write tried again after 30 seconds, then 1, 2, 4, 8 and 10 minutes with one toast until it succeeds, Close
+  opened or stored, Retry opening the desk, Start over clearing the stored state and opening the desk without it, a desk
+  page that has not said hello keeping its 15 seconds; states of another scene ignored, the newest state stored at most
+  every 10 minutes while the desk is open and only when its bytes are not the stored ones (with the real sha256 against
+  the `ETag` that `api.deskState` reads), every write naming the state it replaces (`If-Match` with the loaded or stored
+  `ETag`, the loaded bytes' sha256 without one, `If-None-Match: *` when none is stored), a write before a result
+  starting the 10 minutes again, a state that comes while a write is stored waiting 10 minutes from that write, a
+  failing write tried again after 30 seconds, then 1, 2, 4, 8 and 10 minutes with one toast until it succeeds, Close
   storing the answer to `save` (or, after 5 seconds without one, the newest state) without waiting for a result's
   uploads and at most 10 seconds for the write, the desk's own `close` (after a state, or alone), the newest state
   stored when the panel goes away without Close; a stored state kept: after `state_unreadable` for the state handed over
   (and the old desk's state sent at once after it) nothing stored on Close, on the way out or after 10 minutes until
-  Replace, which stores the newest state (a desk that sent none asked for it with `save`) and later ones as usual;
-  after a `412` no write tried again, a Close held open
-  with the notice and Close again closing without a write, Replace naming the `ETag` the conflict gave and a third
-  session's state refused again, a conflict on the way out said in a toast; `bad_message` for an invalid message with an
-  `id`, unknown types ignored, the state stored before a result and `result-ack` with the summary's toast, export
-  unavailable, progress, the desk's errors as toasts only when meant for the person (`not_open` for Close's `save` in
-  the status line only), and a disposed bridge that reports no status; the panel (`desk-panel.test.tsx`): its store,
-  load and clear on the desk-state routes with the precondition, the close timeout's `AbortSignal` reaching `fetch`, a
-  `412` made a conflict with the stored `ETag`, the bridge flushed and disposed when the panel goes away, the iframe
-  mounted anew for another clip, Replace and Start over only after their confirmations; a result applied (`desk-results.test.ts`): each clip uploaded with its probe and JPEG
-  poster and its shot patched, an approved clip refused without an upload, a failing shot not stopping the others, the
-  buffers let go; the Settings page's desk URL and its help (`settings.test.tsx`).
+  Replace, which stores the newest state (a desk that sent none asked for it with `save`) and later ones as usual; after
+  a `412` no write tried again, a Close held open with the notice and Close again closing without a write, Replace
+  naming the `ETag` the conflict gave and a third session's state refused again, a conflict on the way out said in a
+  toast; `bad_message` for an invalid message with an `id`, unknown types ignored, the state stored before a result and
+  `result-ack` with the summary's toast, export unavailable, progress, the desk's errors as toasts only when meant for
+  the person (`not_open` for Close's `save` in the status line only), and a disposed bridge that reports no status; the
+  panel (`desk-panel.test.tsx`): its store, load and clear on the desk-state routes with the precondition, the close
+  timeout's `AbortSignal` reaching `fetch`, a `412` made a conflict with the stored `ETag`, the bridge flushed and
+  disposed when the panel goes away, the iframe mounted anew for another clip, Replace and Start over only after their
+  confirmations; a result applied (`desk-results.test.ts`): each clip uploaded with its probe and JPEG poster and its
+  shot patched, an approved clip refused without an upload, a failing shot not stopping the others, the buffers let go;
+  the Settings page's desk URL and its help (`settings.test.tsx`).
 - **End to end (desktop and mobile):** a fake desk (`e2e/fixtures/desk/`, served by `e2e/support/desk-page.ts` on its
   own origin, `localhost` against the studio's `127.0.0.1`, with `Cross-Origin-Embedder-Policy: require-corp`,
   `Cross-Origin-Resource-Policy: cross-origin` and `Content-Security-Policy: frame-ancestors` naming the studio)
