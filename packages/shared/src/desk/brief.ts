@@ -104,17 +104,17 @@ const WEIGHT_AFTER = String.raw`\s*(?:kg|kilos?|kilograms?|lbs?|pounds?|st|stone
 
 /** Measures a height may be written in, to metres; the first that matches reads it. */
 const HEIGHT_UNITS: readonly { re: RegExp; metres: (m: RegExpExecArray) => number }[] = [
-  // metres and centimetres: "1 m 70", "1m70", "1 m 75 cm"
+  // metres and centimetres: "1 m 70", "1m70", "1 m 75 cm", "1 metre 70"
   {
     re: new RegExp(
-      String.raw`(?<![\d.])(\d)\s*m\s*(\d{2})(?:\s*(?:cm|centimet(?:er|re)s?)\b)?(?!\d|${WEIGHT_AFTER})`,
+      String.raw`(?<![\d.])(\d)\s*(?:met(?:er|re)s?|m)\s*(\d{2})(?:\s*(?:cm|centimet(?:er|re)s?)\b)?(?!\d|${WEIGHT_AFTER})`,
     ),
     metres: (m) => Number(m[1]) + Number(m[2]) / 100,
   },
   { re: /(\d+(?:\.\d+)?)\s*(?:cm|centimet(?:er|re)s?)\b/, metres: (m) => Number(m[1]) / 100 },
   { re: /(\d+(?:\.\d+)?)\s*(?:mm|millimet(?:er|re)s?)\b/, metres: (m) => Number(m[1]) / 1000 },
   { re: /(\d+(?:\.\d+)?)\s*(?:m|met(?:er|re)s?)\b/, metres: (m) => Number(m[1]) },
-  // feet, then inches: a number after the feet counts as inches only up to 11 ("6 ft 180 lbs" is 6 ft)
+  // feet, then inches: a number after the feet counts as inches only below 12 ("6 ft 180 lbs" is 6 ft)
   {
     re: /(\d+(?:\.\d+)?)\s*(?:ft|feet|foot|'|′)\s*(?:(\d{1,2}(?:\.\d+)?)(?![\d.])\s*(?:in\b|inch(?:es)?\b|"|″)?)?/,
     metres: (m) => {
@@ -137,13 +137,15 @@ function readHeight(t: string): number | null {
 
 /**
  * The height an identity names ("170 cm", "1.2 m", "1 m 70", "5 ft 8 in"), in metres to the centimetre, 0.1–4; else
- * null. A comma before three digits is a thousands separator ("1,700 mm") or a decimal comma ("1,750 m"): the reading
- * that gives a height in range is the one (both cannot, their values are a thousand times apart).
+ * null. A comma or a space before three digits is read as a thousands separator first ("1,700 mm", "1 700 mm"); when
+ * that reading gives no height in range, the comma is a decimal comma ("1,750 m") and the space parts two numbers ("a
+ * girl of 8 120 cm" is 1.2 m).
  */
 export function heightInMetres(text: string | null | undefined): number | null {
   const t = (text ?? '').toLowerCase();
   const decimal = (s: string) => s.replace(/(\d),(\d)/g, '$1.$2');
-  const thousands = decimal(t.replace(/(\d),(\d{3})(?!\d)/g, '$1$2'));
+  // a no-break or thin space too, as typesetters separate thousands
+  const thousands = decimal(t.replace(/(\d)[, \u00a0\u2009\u202f](\d{3})(?!\d)/g, '$1$2'));
   return readHeight(thousands) ?? (thousands === decimal(t) ? null : readHeight(decimal(t)));
 }
 

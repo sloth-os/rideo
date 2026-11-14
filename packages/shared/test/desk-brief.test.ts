@@ -283,19 +283,32 @@ describe('deskBrief', () => {
   });
 
   it.each([
-    // millimetres, with and without a thousands separator
+    // millimetres, with and without a thousands separator (a comma, a space, a no-break or thin space)
     ['1700 mm', 1.7],
     ['1,700 mm', 1.7],
+    ['1 700 mm', 1.7],
+    ['1 750 mm', 1.75],
+    ['1 650 millimetres', 1.65],
     // a comma read as a decimal mark when the thousands reading is out of range
     ['1,70 m', 1.7],
     ['1,750 m', 1.75],
-    // metres and centimetres written together
+    // a space that parts two numbers when the thousands reading is out of range
+    ['a girl of 8 120 cm', 1.2],
+    ['aged 30 175 cm', 1.75],
+    ['1 700 m', null],
+    // metres and centimetres written together, the unit spelled out too
     ['1 m 70', 1.7],
     ['1m70', 1.7],
     ['1 m 75 cm', 1.75],
     ['1 m 70 tall', 1.7],
+    ['1 metre 70', 1.7],
+    ['1 meter 70', 1.7],
+    ['1 metres 75 cm', 1.75],
+    ['1 meters 80 centimetres', 1.8],
     // a weight after the metres is not centimetres
     ['1 m 80 kg', 1],
+    ['1 metre 80 kg', 1],
+    ['1 meter 75 lbs', 1],
     ['1.8 m 80 kg', 1.8],
     ['175cm, 70 kg', 1.75],
     // feet and inches, the inches optional or with decimals; a weight in pounds is not inches

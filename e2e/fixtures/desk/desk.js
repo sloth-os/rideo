@@ -4,7 +4,8 @@
 // every shot (a real H.264 clip per mode and a PNG still of the brief's size, as bytes) whose frames, size and rate
 // come from the brief. Its Send part leaves the last shot out and names it in an `error` `export_failed` after the
 // result, the way the real desk reports a shot it could not render; a given state that starts with `unreadable` is
-// one it cannot read (`error` `state_unreadable`, then `opened` from the brief).
+// one it cannot read (`error` `state_unreadable`, then `opened` from the brief, and no `state` until an edit or a
+// `save`: opening cannot replace the host's copy).
 (() => {
   const $ = (id) => document.querySelector(`[data-testid="${id}"]`);
   const encode = (text) => new TextEncoder().encode(text).buffer;
@@ -76,7 +77,8 @@
         source: given && !unreadable ? 'state' : 'brief',
         changes: null,
       });
-      port.postMessage(stateOf());
+      // after a state it could not read, the brief's staging is not sent on its own
+      if (!unreadable) port.postMessage(stateOf());
     } else if (m.type === 'save') {
       port.postMessage(stateOf(m.id));
     } else if (m.type === 'result-ack') {

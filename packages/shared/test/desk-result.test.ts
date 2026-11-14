@@ -222,6 +222,68 @@ describe('planDeskResult', () => {
     ]);
   });
 
+  it('tells a length or format the desk changed from a shot or project changed since the brief', () => {
+    const { s0, s1, project, clip, result } = setup();
+    const reasons = (plans: ReturnType<typeof planDeskResult>) => plans.map((p) => (p.ok ? 'ok' : p.reason));
+    // the brief the desk was opened with: the clip as it is now
+    const brief = {
+      id: clip.id,
+      fps: 24,
+      width: 1280,
+      height: 720,
+      shots: [
+        { id: s0.id, durationSec: 3 },
+        { id: s1.id, durationSec: 2.5 },
+      ],
+    } as Parameters<typeof planDeskResult>[0]['brief'];
+    // the person made shot 2 half a second longer in the desk: rideo's shot is still the brief's
+    const longer = {
+      ...result,
+      shots: [result.shots[0]!, { ...result.shots[1]!, frames: 72, durationSec: 3 }],
+    };
+    expect(reasons(planDeskResult({ result: longer, project, clip, mode: 'camera', brief }))).toEqual([
+      'ok',
+      "the clip has 72 frames and the shot 60 (2.5 s at 24 fps): set its length back in the desk, or change the shot's duration in the studio",
+    ]);
+    expect(DESK_REFUSALS.length(84, 72, 3, 24)).toBe(
+      "the clip has 84 frames and the shot 72 (3 s at 24 fps): set its length back in the desk, or change the shot's duration in the studio",
+    );
+    expect(DESK_REFUSALS.length(10, 8, 1 / 3, 24)).toContain('(0.33 s at 24 fps)');
+    // the shot's duration changed in rideo since the brief: render it again
+    const retimed = { ...clip, shots: [s0, { ...s1, durationSec: 3 }] };
+    expect(reasons(planDeskResult({ result, project, clip: retimed, mode: 'camera', brief }))).toEqual([
+      'ok',
+      DESK_REFUSALS.changed,
+    ]);
+    // a shot the brief did not have, or no brief at all: changed
+    const unknown = { ...brief!, shots: [brief!.shots[0]!] };
+    expect(
+      reasons(planDeskResult({ result: longer, project, clip, mode: 'camera', brief: unknown })),
+    ).toEqual(['ok', DESK_REFUSALS.changed]);
+    expect(reasons(planDeskResult({ result: longer, project, clip, mode: 'camera' }))).toEqual([
+      'ok',
+      DESK_REFUSALS.changed,
+    ]);
+    // the project's frame rate changed since the brief: changed, whatever the shots
+    const faster = f.project({ settings: ProjectSettingsSchema.parse({ fps: 30 }) });
+    expect(reasons(planDeskResult({ result, project: faster, clip, mode: 'camera', brief }))).toEqual([
+      DESK_REFUSALS.changed,
+      DESK_REFUSALS.changed,
+    ]);
+    // the project is still the brief's, the desk sent another size: said with the numbers
+    const smaller = { ...result, width: 640, height: 360 };
+    expect(reasons(planDeskResult({ result: smaller, project, clip, mode: 'camera', brief }))).toEqual([
+      'the clip is 640×360 at 24 fps, the scene 1280×720 at 24 fps',
+      'the clip is 640×360 at 24 fps, the scene 1280×720 at 24 fps',
+    ]);
+    // a brief of another clip says nothing about this one
+    expect(
+      reasons(
+        planDeskResult({ result: longer, project, clip, mode: 'camera', brief: { ...brief!, id: 'clp_x' } }),
+      ),
+    ).toEqual(['ok', DESK_REFUSALS.changed]);
+  });
+
   it('compares against the even size an odd resolution is rounded down to', () => {
     const { clip, result } = setup();
     const odd = f.project({

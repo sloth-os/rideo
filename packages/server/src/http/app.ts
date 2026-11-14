@@ -172,7 +172,7 @@ export async function buildServer(
       reply.header('access-control-allow-methods', 'GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS');
       reply.header(
         'access-control-allow-headers',
-        'authorization, content-type, range, x-rideo-workspace, x-rideo-coalesce, x-rideo-size, x-rideo-range, x-desk-state-format, x-desk-state-version',
+        'authorization, content-type, range, x-rideo-workspace, x-rideo-coalesce, x-rideo-size, x-rideo-range, x-desk-state-format, x-desk-state-version, if-match, if-none-match',
       );
       reply.header('access-control-max-age', '600');
       return reply.code(204).send();

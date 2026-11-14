@@ -141,6 +141,8 @@ export const ERROR_CODES = [
   'gateway_not_configured',
   /** docs/design/browser-storage.md */
   'storage_offline',
+  /** docs/design/director-desk.md#when-rideo-stores-it */
+  'desk_state_conflict',
   'internal_error',
 ] as const;
 export const ErrorCodeSchema = z.enum(ERROR_CODES);

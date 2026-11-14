@@ -41,6 +41,39 @@ async function storedState(request: APIRequestContext, pid: string, clipId: stri
   return res.text();
 }
 
+/** The stored state's text, or null while none is stored (for polling). */
+async function storedNow(request: APIRequestContext, pid: string, clipId: string): Promise<string | null> {
+  const res = await request.get(`/api/projects/${pid}/clips/${clipId}/desk-state`);
+  return res.status() === 200 ? res.text() : null;
+}
+
+/** A desk state stored as another session would (a write without a precondition replaces whatever is stored). */
+async function storeAsAnotherSession(request: APIRequestContext, pid: string, clipId: string, text: string) {
+  const res = await request.put(`/api/projects/${pid}/clips/${clipId}/desk-state`, {
+    headers: {
+      'content-type': 'application/octet-stream',
+      'x-desk-state-format': '3d-editor.desk-state',
+      'x-desk-state-version': '1',
+    },
+    data: Buffer.from(text),
+  });
+  expect(res.status()).toBe(200);
+}
+
+/**
+ * The Storyboard view reached from the project's overview inside the studio (a navigation of the page, not a load),
+ * so the browser's back leaves it for the overview.
+ */
+async function storyboardFromOverview(page: Page, pid: string, mobile: boolean) {
+  await page.goto(`/p/${pid}`);
+  await expect(page.getByTestId('view-overview')).toBeVisible();
+  if (mobile) {
+    await page.getByTestId('mnav-more').click();
+    await page.getByTestId('mnav-storyboard').click();
+  } else await page.getByTestId('nav-storyboard').click();
+  await expect(page.getByTestId('view-storyboard')).toBeVisible();
+}
+
 /** The commits that stored a desk state of the clip. */
 async function deskCommits(api: Api, pid: string, clipId: string): Promise<number> {
   const commits = await api.call<{ message: string }[]>(
@@ -54,7 +87,7 @@ test('the desk connects, its Send attaches every shot’s clip and camera, and i
   page,
   request,
 }, testInfo) => {
-  test.setTimeout(180_000);
+  test.setTimeout(240_000);
   const api = new Api(request);
   const { pid, clip } = await planned(api, `Desk (${testInfo.project.name})`);
   const shots = [...clip.shots].sort((a: any, b: any) => a.index - b.index);
@@ -150,6 +183,40 @@ test('the desk connects, its Send attaches every shot’s clip and camera, and i
   await desk(page).getByTestId('desk-done').click();
   await expect(page.getByTestId('desk-panel')).toBeHidden();
   expect(await storedState(request, pid, clip.id)).toBe(done);
+
+  // leaving the Storyboard view without Close (the browser's back): the edit is stored on the way out
+  await storyboardFromOverview(page, pid, testInfo.project.name === 'mobile');
+  await page.getByTestId('storyboard-scene').first().getByTestId('open-desk').click();
+  await expect(desk(page).getByTestId('desk-given')).toHaveText(done);
+  await desk(page).getByTestId('desk-edit').click();
+  const left = (await desk(page).getByTestId('desk-current').textContent())!;
+  // the edit's state crosses to the studio over the desk's port
+  await page.waitForTimeout(500);
+  await page.goBack();
+  await expect(page.getByTestId('view-overview')).toBeVisible();
+  await expect(page.getByTestId('desk-panel')).toHaveCount(0);
+  await expect.poll(() => storedNow(request, pid, clip.id), { timeout: 15_000 }).toBe(left);
+
+  // another session stores a state while the desk is open: Close keeps it and says so; Close again closes
+  await openDesk(page, pid);
+  await expect(desk(page).getByTestId('desk-given')).toHaveText(left);
+  await storeAsAnotherSession(request, pid, clip.id, 'stored by another session');
+  await desk(page).getByTestId('desk-edit').click();
+  await page.getByTestId('desk-close').click();
+  await expect(page.getByTestId('desk-kept-notice')).toHaveText(
+    'Another session stored a newer desk state for this clip; it was kept',
+  );
+  await expect(page.getByTestId('desk-kept')).toHaveAttribute('data-reason', 'conflict');
+  await expect(page.getByTestId('desk-panel')).toBeVisible();
+  await expect(page.getByTestId('desk-status')).toContainText('The desk was not stored');
+  await expect(
+    page.getByTestId('toast').filter({ hasText: 'Another session stored a newer desk state' }).first(),
+  ).toBeVisible();
+  await noSidewaysScroll(page);
+  expect(await storedState(request, pid, clip.id)).toBe('stored by another session');
+  await page.getByTestId('desk-close').click();
+  await expect(page.getByTestId('desk-panel')).toBeHidden();
+  expect(await storedState(request, pid, clip.id)).toBe('stored by another session');
 });
 
 test('a partial result attaches the shots it has, and the desk says which shot it left out', async ({
@@ -184,36 +251,51 @@ test('a partial result attaches the shots it has, and the desk says which shot i
   await expect(page.getByTestId('desk-panel')).toBeHidden();
 });
 
-test('a stored state the desk cannot read is said; one the server cannot read fails the panel until Retry', async ({
+test('a stored state the desk cannot read is kept until the person replaces it; one the server cannot read fails the panel until Retry or Start over', async ({
   page,
   request,
 }, testInfo) => {
-  test.setTimeout(180_000);
+  test.setTimeout(240_000);
   const api = new Api(request);
   const { pid, clip } = await planned(api, `Desk unreadable (${testInfo.project.name})`);
-  const put = await request.put(`/api/projects/${pid}/clips/${clip.id}/desk-state`, {
-    headers: {
-      'content-type': 'application/octet-stream',
-      'x-desk-state-format': '3d-editor.desk-state',
-      'x-desk-state-version': '1',
-    },
-    data: Buffer.from('unreadable: saved by another desk'),
-  });
-  expect(put.status()).toBe(200);
-  // the desk cannot read it: it stages the brief, and the toast says why
+  const unreadable = 'unreadable: saved by another desk';
+  await storeAsAnotherSession(request, pid, clip.id, unreadable);
+  // the desk cannot read it: it stages the brief and sends nothing; the panel keeps the stored state and says why
   await openDesk(page, pid);
   const d = desk(page);
   await expect(d.getByTestId('desk-connected')).toHaveText('open');
-  await expect(
-    page.getByTestId('toast').filter({ hasText: 'The stored desk could not be read' }),
-  ).toContainText('the state was saved by a desk this one does not read');
   await expect(page.getByTestId('desk-status')).toContainText('Opened from the brief');
+  await expect(page.getByTestId('desk-kept')).toHaveAttribute('data-reason', 'unreadable');
+  const notice =
+    'The stored desk state was kept: the desk could not read it (the state was saved by a desk this one does not read)';
+  await expect(page.getByTestId('desk-kept-notice')).toHaveText(notice);
+  await expect(page.getByTestId('toast').filter({ hasText: notice }).first()).toBeVisible();
+  await noSidewaysScroll(page);
+  // an edit is not stored, on Close either: the stored state stays as it was
+  await d.getByTestId('desk-edit').click();
   await page.getByTestId('desk-close').click();
   await expect(page.getByTestId('desk-panel')).toBeHidden();
-  const staged = `staged ${clip.id}`;
-  expect(await storedState(request, pid, clip.id)).toBe(staged);
+  expect(await storedState(request, pid, clip.id)).toBe(unreadable);
 
-  // the server cannot read the stored state (503): the panel fails with Retry, the desk is connected but not opened
+  // Replace the stored desk state, once confirmed: what the desk holds now replaces it, later edits are stored
+  await page.getByTestId('storyboard-scene').first().getByTestId('open-desk').click();
+  await expect(page.getByTestId('desk-kept')).toBeVisible();
+  await page.getByTestId('desk-replace').click();
+  await expect(page.getByTestId('desk-replace-what')).toContainText(
+    'replaces the stored desk state, which this desk could not read',
+  );
+  await noSidewaysScroll(page);
+  await page.getByTestId('desk-replace-confirm').click();
+  await expect(page.getByTestId('desk-kept')).toBeHidden();
+  const staged = `staged ${clip.id}`;
+  await expect.poll(() => storedNow(request, pid, clip.id), { timeout: 15_000 }).toBe(staged);
+  await d.getByTestId('desk-edit').click();
+  const edited = (await d.getByTestId('desk-current').textContent())!;
+  await page.getByTestId('desk-close').click();
+  await expect(page.getByTestId('desk-panel')).toBeHidden();
+  expect(await storedState(request, pid, clip.id)).toBe(edited);
+
+  // the server cannot read the stored state (503): the panel fails with Retry and Start over, the desk not opened
   let failing = true;
   await page.route(`**/api/projects/${pid}/clips/${clip.id}/desk-state`, (route) =>
     failing && route.request().method() === 'GET'
@@ -234,13 +316,33 @@ test('a stored state the desk cannot read is said; one the server cannot read fa
   await expect(page.getByTestId('desk-failure')).toContainText(
     'The stored desk could not be loaded: the stored desk state of scene 1 could not be read: storage answered 404',
   );
+  await expect(page.getByTestId('desk-start-over')).toBeVisible();
   await expect(d.getByTestId('desk-connected')).toHaveText('connected');
   await noSidewaysScroll(page);
   failing = false;
   await page.getByTestId('desk-retry').click();
   await expect(d.getByTestId('desk-connected')).toHaveText('open');
-  await expect(d.getByTestId('desk-given')).toHaveText(staged);
+  await expect(d.getByTestId('desk-given')).toHaveText(edited);
   await expect(page.getByTestId('desk-status')).toContainText('Opened from the stored desk');
+  await page.getByTestId('desk-close').click();
+  await expect(page.getByTestId('desk-panel')).toBeHidden();
+  expect(await storedState(request, pid, clip.id)).toBe(edited);
+
+  // a state gone for good: Start over, once confirmed, clears it and opens the desk from the brief
+  failing = true;
+  await page.getByTestId('storyboard-scene').first().getByTestId('open-desk').click();
+  await expect(page.getByTestId('desk-failure')).toBeVisible();
+  await page.getByTestId('desk-start-over').click();
+  await expect(page.getByTestId('desk-start-over-what')).toContainText(
+    'What was staged only in the stored desk state is lost',
+  );
+  await noSidewaysScroll(page);
+  await page.getByTestId('desk-start-over-confirm').click();
+  await expect(d.getByTestId('desk-connected')).toHaveText('open');
+  await expect(d.getByTestId('desk-given')).toHaveText('none');
+  await expect(page.getByTestId('desk-status')).toContainText('Opened from the brief');
+  expect(await storedNow(request, pid, clip.id)).toBeNull();
+  // the desk's state is stored as the first one again
   await page.getByTestId('desk-close').click();
   await expect(page.getByTestId('desk-panel')).toBeHidden();
   expect(await storedState(request, pid, clip.id)).toBe(staged);

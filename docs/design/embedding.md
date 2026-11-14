@@ -81,8 +81,8 @@ for), and the desk's iframe (another host, sandboxed without top navigation) goe
 The server answers cross-origin calls from the origins in `RIDEO_CORS_ORIGINS` (comma-separated, or `*`; a setting in
 the [Settings](settings.md) page): `Access-Control-Allow-Origin` for that origin, the methods the API uses, the headers
 it reads (`authorization`, `content-type`, `range`, `x-rideo-workspace`, `x-rideo-coalesce`, `x-rideo-size`,
-`x-rideo-range`, and the [desk state](director-desk.md#the-desk-state)'s `x-desk-state-format` and
-`x-desk-state-version`) and exposes (`content-range`, `accept-ranges`, `content-length`, `content-disposition`,
+`x-rideo-range`, and the [desk state](director-desk.md#the-desk-state)'s `x-desk-state-format`,
+`x-desk-state-version`, `if-match` and `if-none-match`) and exposes (`content-range`, `accept-ranges`, `content-length`, `content-disposition`,
 `x-rideo-source`, `etag`, `x-desk-state-format`, `x-desk-state-version`), and `Cross-Origin-Resource-Policy:
 cross-origin` on media so a cross-origin-isolated host can play it. Cookies are not sent cross-origin; such hosts pass a
 `token`. The live channel accepts the same origins (the `Origin` header is checked on the upgrade).

@@ -1,5 +1,6 @@
 import {
   type Clip,
+  type DeskBrief,
   type DeskMode,
   type DeskResultMessage,
   type DeskShotOutcome,
@@ -30,7 +31,8 @@ export interface DeskResultDeps {
  * Applies a desk's result (docs/design/director-desk.md#the-result): the shots in order, one at a time, each refused
  * with its reason or uploaded as `desk-c<clip>-s<shot>-<mode>.mp4` with the probe made from the result and the still
  * as its poster, then the shot's PATCH. A shot that fails does not stop the others. The files' bytes are let go once
- * the shots are done.
+ * the shots are done. `brief` is the brief the desk was opened with: a refusal tells a length the person changed in
+ * the desk from a shot changed in the studio since.
  */
 export async function applyDeskResult(
   result: DeskResultMessage,
@@ -38,6 +40,7 @@ export async function applyDeskResult(
     project: Pick<Project, 'settings'>;
     clip: Pick<Clip, 'id' | 'index' | 'status' | 'shots'> | null | undefined;
     mode: DeskMode;
+    brief?: DeskBrief | null;
   },
   deps: DeskResultDeps,
 ): Promise<DeskAck> {

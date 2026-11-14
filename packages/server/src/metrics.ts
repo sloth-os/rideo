@@ -310,7 +310,7 @@ export class Metrics {
   readonly deskStateSaves = this.add(
     new Counter(
       'rideo_desk_state_saves_total',
-      'Desk states sent to the server, by outcome (saved: a new state stored, unchanged: the stored one again, refused: too large, another format or version, without its headers, or not application/octet-stream)',
+      'Desk states sent to the server, by outcome (saved: a new state stored, unchanged: the stored one again, conflict: refused with 412, the stored state not the one If-Match or If-None-Match named, refused: too large, another format or version, without its headers, or not application/octet-stream)',
     ),
   );
   readonly deskBriefs = this.add(

@@ -41,6 +41,12 @@ describe('embedding origins (docs/design/embedding.md#talking-to-a-server-on-ano
     expect(pre.headers.get('access-control-allow-origin')).toBe(HOST);
     expect(pre.headers.get('access-control-allow-headers')).toContain('x-rideo-workspace');
     expect(pre.headers.get('access-control-allow-methods')).toContain('PATCH');
+    // a desk state's write names the state it replaces (docs/design/director-desk.md#when-rideo-stores-it)
+    const desk = (pre.headers.get('access-control-allow-headers') ?? '').split(/,\s*/);
+    expect(desk).toEqual(
+      expect.arrayContaining(['x-desk-state-format', 'x-desk-state-version', 'if-match', 'if-none-match']),
+    );
+    expect(pre.headers.get('access-control-allow-methods')).toContain('PUT');
 
     const config = await fetch(`${stack.url}/api/config`, { headers: { origin: HOST } });
     expect(config.status).toBe(200);

@@ -362,10 +362,122 @@ describe('the desk state (docs/design/director-desk.md#the-routes)', () => {
       { actor: SYSTEM_ACTOR, message: 'Name a state whose file is gone' },
     );
     await rejects(stack.api('GET', `/projects/${pid}/clips/${clip.id}/desk-state`), 'storage_error', 503);
-    // a new state replaces it
-    expect((await put(stack, pid, clip.id, bytes('a state that is there'))).status).toBe(200);
+    // a file that is gone for good: DELETE clears the state (the panel's Start over), and the next open has none
+    expect((await fetch(deskUrl(stack, pid, clip.id), { method: 'DELETE' })).status).toBe(204);
+    await rejects(stack.api('GET', `/projects/${pid}/clips/${clip.id}/desk-state`), 'not_found', 404);
+    // a new state, stored where none is
+    expect(
+      (await put(stack, pid, clip.id, bytes('a state that is there'), { 'if-none-match': '*' })).status,
+    ).toBe(200);
     expect(new TextDecoder().decode(await (await fetch(deskUrl(stack, pid, clip.id))).arrayBuffer())).toBe(
       'a state that is there',
+    );
+  });
+
+  it('stores a state only over the one its precondition names, else answers 412 desk_state_conflict', async () => {
+    const { pid, clip } = await seeded(stack);
+    const conflicts = await metric('rideo_desk_state_saves_total', '{outcome="conflict"}');
+    const logged = vi.spyOn(stack.server.studio.deps.log, 'info');
+    const stored = async () =>
+      new TextDecoder().decode(await (await fetch(deskUrl(stack, pid, clip.id))).arrayBuffer());
+    const problem = async (res: Response) => ({
+      status: res.status,
+      code: ((await res.json()) as { code: string }).code,
+      etag: res.headers.get('etag'),
+    });
+    const one = bytes('session one');
+    const two = bytes('session two');
+    const three = bytes('session three');
+
+    // none stored: If-None-Match: * stores the first state, and the answer's ETag names it
+    const first = await put(stack, pid, clip.id, one, { 'if-none-match': '*' });
+    expect(first.status).toBe(200);
+    expect(first.headers.get('etag')).toBe(`"${sha(one)}"`);
+    // a session that also saw none stored is refused, with the stored state's ETag
+    expect(await problem(await put(stack, pid, clip.id, two, { 'if-none-match': '*' }))).toEqual({
+      status: 412,
+      code: 'desk_state_conflict',
+      etag: `"${sha(one)}"`,
+    });
+    // If-Match with the ETag the PUT answered stores the next state
+    const next = await put(stack, pid, clip.id, two, { 'if-match': first.headers.get('etag')! });
+    expect(next.status).toBe(200);
+    expect(next.headers.get('etag')).toBe(`"${sha(two)}"`);
+    expect(((await next.json()) as { deskState: { media: { hash: string } } }).deskState.media.hash).toBe(
+      sha(two),
+    );
+    // a stale ETag (a weak one never matches) is refused, and the newer state kept
+    expect(await problem(await put(stack, pid, clip.id, three, { 'if-match': `"${sha(one)}"` }))).toEqual({
+      status: 412,
+      code: 'desk_state_conflict',
+      etag: `"${sha(two)}"`,
+    });
+    expect((await put(stack, pid, clip.id, three, { 'if-match': `W/"${sha(two)}"` })).status).toBe(412);
+    expect(await stored()).toBe('session two');
+    // a list that names the stored state, or *, holds while a state is stored
+    expect(
+      (await put(stack, pid, clip.id, three, { 'if-match': `"${sha(one)}", "${sha(two)}"` })).status,
+    ).toBe(200);
+    expect((await put(stack, pid, clip.id, two, { 'if-match': '*' })).status).toBe(200);
+    // the bytes already stored: accepted whatever the precondition (what it asks for is done), nothing committed
+    const head = (await stack.api<any>('GET', `/projects/${pid}/state`)).head.commit;
+    const again = await put(stack, pid, clip.id, two, { 'if-match': `"${sha(one)}"` });
+    expect(again.status).toBe(200);
+    expect(again.headers.get('etag')).toBe(`"${sha(two)}"`);
+    expect((await stack.api<any>('GET', `/projects/${pid}/state`)).head.commit).toBe(head);
+    // cleared by another session: If-Match (even *) is refused, and the answer names no state
+    expect((await fetch(deskUrl(stack, pid, clip.id), { method: 'DELETE' })).status).toBe(204);
+    expect(await problem(await put(stack, pid, clip.id, three, { 'if-match': `"${sha(two)}"` }))).toEqual({
+      status: 412,
+      code: 'desk_state_conflict',
+      etag: null,
+    });
+    expect((await put(stack, pid, clip.id, three, { 'if-match': '*' })).status).toBe(412);
+    // a PUT without a precondition replaces whatever is stored, a state or none
+    expect((await put(stack, pid, clip.id, one)).status).toBe(200);
+    expect((await put(stack, pid, clip.id, three)).status).toBe(200);
+    expect(await stored()).toBe('session three');
+
+    // each conflict counted and logged with what the PUT named and what is stored
+    expect(await metric('rideo_desk_state_saves_total', '{outcome="conflict"}')).toBe(conflicts + 5);
+    const logs = logged.mock.calls.filter((c) => c[1] === 'desk state conflict').map((c) => c[0]);
+    expect(logs).toHaveLength(5);
+    expect(logs[0]).toEqual({
+      projectId: pid,
+      clipId: clip.id,
+      ifMatch: null,
+      ifNoneMatch: '*',
+      stored: sha(one),
+    });
+    expect(logs[3]).toMatchObject({ ifMatch: `"${sha(two)}"`, ifNoneMatch: null, stored: null });
+    logged.mockRestore();
+  });
+
+  it('checks the precondition again once the body has arrived: a state stored meanwhile is kept', async () => {
+    const { pid, clip } = await seeded(stack);
+    let release!: () => void;
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    const slow = new ReadableStream<Uint8Array>({
+      async start(c) {
+        c.enqueue(bytes('a slow '));
+        await gate;
+        c.enqueue(bytes('state'));
+        c.close();
+      },
+    });
+    // the slow write has read the clip (none stored) and waits for the rest of its body
+    const pending = put(stack, pid, clip.id, slow, { 'if-none-match': '*' });
+    await new Promise((r) => setTimeout(r, 500));
+    const quick = await put(stack, pid, clip.id, bytes('a quick state'), { 'if-none-match': '*' });
+    expect(quick.status).toBe(200);
+    release();
+    const late = await pending;
+    expect(late.status).toBe(412);
+    expect(late.headers.get('etag')).toBe(`"${sha(bytes('a quick state'))}"`);
+    expect(new TextDecoder().decode(await (await fetch(deskUrl(stack, pid, clip.id))).arrayBuffer())).toBe(
+      'a quick state',
     );
   });
 

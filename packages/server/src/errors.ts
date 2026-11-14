@@ -36,6 +36,7 @@ const STATUS: Record<ErrorCode, number> = {
   setting_locked: 409,
   gateway_not_configured: 409,
   storage_offline: 503,
+  desk_state_conflict: 412,
   internal_error: 500,
 };
 

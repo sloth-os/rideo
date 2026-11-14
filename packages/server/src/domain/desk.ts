@@ -24,7 +24,61 @@ export interface DeskStateUpload {
   contentType: string | undefined;
   /** `Content-Length`, when the body declares it. */
   contentLength: number | undefined;
+  /**
+   * `If-Match` and `If-None-Match` as sent: the state the write replaces (its ETag, or `*` for none stored). Without
+   * either the write replaces whatever is stored (docs/design/director-desk.md#the-routes).
+   */
+  ifMatch?: string | undefined;
+  ifNoneMatch?: string | undefined;
   body: Readable;
+}
+
+/**
+ * A desk state write refused because the stored state is not the one its precondition named (`412`
+ * `desk_state_conflict`): another session stored a newer state, or cleared it. `stored` is the stored state's sha256,
+ * its ETag (null when the clip names none), so the client can replace that one on purpose.
+ */
+export class DeskStateConflictError extends AppError {
+  constructor(
+    readonly stored: string | null,
+    clip: number,
+  ) {
+    super(
+      'desk_state_conflict',
+      stored
+        ? `the stored desk state of scene ${clip} is not the one this write replaces: another session stored a newer one (ETag "${stored}")`
+        : `scene ${clip} has no stored desk state any more: another session cleared it`,
+    );
+  }
+}
+
+/** The entity tags of a precondition header, trimmed (`*`, `"…"`, `W/"…"`). */
+const entityTags = (header: string) =>
+  header
+    .split(',')
+    .map((t) => t.trim())
+    .filter(Boolean);
+const unquoted = (tag: string) => tag.replace(/^W\//, '').replace(/^"(.*)"$/, '$1');
+
+/**
+ * Whether a desk state write's precondition holds for the stored state's sha256 (null: none stored), evaluated as RFC
+ * 9110 does: `If-Match` first (strong comparison, a weak tag never matches; `*` for any stored state), then
+ * `If-None-Match` (`*` for none stored). A write without either holds: it replaces whatever is stored.
+ */
+export function deskPreconditionHolds(
+  stored: string | null,
+  ifMatch: string | undefined,
+  ifNoneMatch: string | undefined,
+): boolean {
+  if (ifMatch?.trim()) {
+    const tags = entityTags(ifMatch);
+    if (stored === null) return false;
+    if (!tags.some((t) => t === '*' || (!t.startsWith('W/') && unquoted(t) === stored))) return false;
+  }
+  if (ifNoneMatch?.trim() && stored !== null) {
+    if (entityTags(ifNoneMatch).some((t) => t === '*' || unquoted(t) === stored)) return false;
+  }
+  return true;
 }
 
 /**
@@ -86,8 +140,10 @@ export class DeskService extends Service {
   /**
    * Stores a state as it is given (docs/design/director-desk.md#the-desk-state): the bytes of the desk's format and
    * version, at most 64 MiB (the declared length is checked first, the body counted as it arrives and never held in
-   * memory), as `media/desk/<scene-slug>-<hash12>.bin`. The bytes stored already change nothing: no new file, no
-   * commit. Each write is a commit, coalesced per clip and author.
+   * memory), as `media/desk/<scene-slug>-<hash12>.bin`. The bytes stored already change nothing, whatever the
+   * precondition (the change it asks for is made): no new file, no commit. Otherwise a precondition (`If-Match`,
+   * `If-None-Match`) that does not name the stored state is a `412` `desk_state_conflict`, checked again in the
+   * transaction; a write without one replaces whatever is stored. Each write is a commit, coalesced per clip and author.
    */
   async saveState(
     actor: Actor,
@@ -141,6 +197,26 @@ export class DeskService extends Service {
         this.deps.metrics.deskStateSaves.inc({ outcome: 'unchanged' });
         return clip.deskState!;
       }
+      // the state this write replaces must still be the stored one: another session's newer state is never replaced
+      // unseen
+      const conflict = (stored: ClipDeskState | null | undefined): DeskStateConflictError | null => {
+        const sha = stored?.media.hash ?? null;
+        if (deskPreconditionHolds(sha, upload.ifMatch, upload.ifNoneMatch)) return null;
+        this.deps.metrics.deskStateSaves.inc({ outcome: 'conflict' });
+        this.deps.log.info(
+          {
+            projectId,
+            clipId,
+            ifMatch: upload.ifMatch ?? null,
+            ifNoneMatch: upload.ifNoneMatch ?? null,
+            stored: sha,
+          },
+          'desk state conflict',
+        );
+        return new DeskStateConflictError(sha, clip.index + 1);
+      };
+      const refused = conflict(clip.deskState);
+      if (refused) throw refused;
       const media = await this.deps.media.putFile(projectId, tmp, {
         kind: 'desk',
         name: clip.title.trim() || `scene ${clip.index + 1}`,
@@ -153,6 +229,9 @@ export class DeskService extends Service {
         (tx) => {
           const current = structuredClone(tx.require<Clip>(docPath.clip(clipId), `clip ${clipId}`));
           if (same(current.deskState)) return { deskState: current.deskState!, changed: false };
+          // another write may have landed while this one was read and stored
+          const late = conflict(current.deskState);
+          if (late) throw late;
           current.deskState = {
             format: DESK_STATE_FORMAT,
             version: DESK_STATE_VERSION,

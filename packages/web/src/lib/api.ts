@@ -76,6 +76,8 @@ export class ApiError extends Error {
   constructor(
     readonly status: number,
     readonly problem: ProblemDetails,
+    /** The answer's headers, when it had some (a desk state's `412` names the stored state's `ETag`). */
+    readonly headers: Headers | null = null,
   ) {
     super(problem.detail || problem.title || `HTTP ${status}`);
     this.name = 'ApiError';
@@ -233,14 +235,24 @@ async function send(
 /** The problem of a failed answer, after the 401 and 5xx hooks. */
 function problemOf(res: Response, json: unknown): ApiError {
   const problem = (json ?? {}) as Partial<ProblemDetails>;
-  return new ApiError(res.status, {
-    type: problem.type ?? 'about:blank',
-    title: problem.title ?? res.statusText,
-    status: res.status,
-    detail: problem.detail ?? res.statusText,
-    code: problem.code ?? 'internal_error',
-    errors: problem.errors,
-  });
+  return new ApiError(
+    res.status,
+    {
+      type: problem.type ?? 'about:blank',
+      title: problem.title ?? res.statusText,
+      status: res.status,
+      detail: problem.detail ?? res.statusText,
+      code: problem.code ?? 'internal_error',
+      errors: problem.errors,
+    },
+    res.headers ?? null,
+  );
+}
+
+/** The sha256 an `ETag` names, without a weak prefix and the quotes; null for none. */
+export function etagValue(etag: string | null | undefined): string | null {
+  const value = (etag ?? '').trim().replace(/^W\//, '').replace(/"/g, '');
+  return value || null;
 }
 
 function observe(res: Response, path: string): void {
@@ -294,9 +306,40 @@ async function deskState(
   return {
     format: res.headers.get('x-desk-state-format') ?? '',
     version: Number(res.headers.get('x-desk-state-version') ?? 0),
-    sha256: (res.headers.get('etag') ?? '').replace(/^W\//, '').replace(/"/g, ''),
+    sha256: etagValue(res.headers.get('etag')) ?? '',
     data: await res.arrayBuffer(),
   };
+}
+
+/**
+ * The state a desk state write replaces (docs/design/director-desk.md#when-rideo-stores-it): `If-Match` with its
+ * sha256 (`*` for whatever is stored), or `If-None-Match: *` when none is stored.
+ */
+export type DeskStatePrecondition = { ifMatch: string } | { ifNoneMatch: '*' };
+
+/**
+ * Stores a clip's desk state (`PUT …/desk-state`) over the state the precondition names. A `412`
+ * `desk_state_conflict` (another session stored a newer state, or cleared it) is an ApiError whose headers carry the
+ * stored state's `ETag`. `signal` aborts the upload (closing the desk waits for it at most 10 seconds).
+ */
+function saveDeskState(
+  id: string,
+  clipId: string,
+  state: DeskState,
+  precondition: DeskStatePrecondition,
+  signal?: AbortSignal,
+): Promise<{ deskState: ClipDeskState }> {
+  const named: Record<string, string> =
+    'ifMatch' in precondition
+      ? { 'if-match': precondition.ifMatch === '*' ? '*' : `"${precondition.ifMatch}"` }
+      : { 'if-none-match': '*' };
+  return request<{ deskState: ClipDeskState }>(
+    'PUT',
+    `/projects/${id}/clips/${clipId}/desk-state`,
+    new Uint8Array(state.data),
+    { 'x-desk-state-format': state.format, 'x-desk-state-version': String(state.version), ...named },
+    signal,
+  );
 }
 
 /** A download of the shot list (the token rides in the query like media URLs). */
@@ -501,15 +544,10 @@ export const api = {
     request<Clip>('PATCH', `${p(id)}/clips/${clipId}/shots/${shotId}`, body),
   // The 3D-Editor's director's desk (docs/design/director-desk.md#the-routes)
   deskState,
-  /** `signal` aborts the upload (closing the desk waits for it at most 10 seconds). */
-  saveDeskState: (id: string, clipId: string, state: DeskState, signal?: AbortSignal) =>
-    request<{ deskState: ClipDeskState }>(
-      'PUT',
-      `${p(id)}/clips/${clipId}/desk-state`,
-      new Uint8Array(state.data),
-      { 'x-desk-state-format': state.format, 'x-desk-state-version': String(state.version) },
-      signal,
-    ),
+  saveDeskState,
+  /** The clip names no desk state any more (the desk panel's Start over). */
+  clearDeskState: (id: string, clipId: string) =>
+    request<void>('DELETE', `${p(id)}/clips/${clipId}/desk-state`),
   // Take edits and extensions (docs/design/take-editing.md)
   editTake: (
     id: string,

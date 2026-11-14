@@ -8,7 +8,15 @@ import {
   type DeskState,
 } from '@rideo/shared';
 import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
-import { DeskBridge, type DeskStatus, type StoredDeskState, sha256Hex } from '../src/features/desk/bridge';
+import {
+  DESK_CONFLICT_NOTICE,
+  DeskBridge,
+  DeskStateConflict,
+  type DeskStatus,
+  type DeskStorePrecondition,
+  type StoredDeskState,
+  sha256Hex,
+} from '../src/features/desk/bridge';
 import type { DeskAck } from '../src/features/desk/results';
 import { ApiError, api } from '../src/lib/api';
 
@@ -126,8 +134,10 @@ function harness(
     /** null: the bridge's own sha256 (crypto.subtle); by default the fake states' "hash" is their text */
     sha256?: ((data: ArrayBuffer) => Promise<string>) | null;
     /** what a write does after it was counted; by default it succeeds with the text as the sha256 */
-    store?: (state: DeskState, signal?: AbortSignal) => Promise<string>;
-    applyResult?: (result: DeskResultMessage) => Promise<DeskAck>;
+    store?: (state: DeskState, signal?: AbortSignal, precondition?: DeskStorePrecondition) => Promise<string>;
+    /** what Start over's DELETE does; by default it succeeds */
+    clear?: () => Promise<void>;
+    applyResult?: (result: DeskResultMessage, brief: DeskBrief | null) => Promise<DeskAck>;
   } = {},
 ) {
   let listener: ((e: MessageEvent) => void) | null = null;
@@ -148,6 +158,8 @@ function harness(
   /** Every write attempt's state, in order (successful or not). */
   const stores: string[] = [];
   const signals: (AbortSignal | undefined)[] = [];
+  /** The state each write named as the one it replaces. */
+  const preconditions: DeskStorePrecondition[] = [];
   const toasts: [string, string][] = [];
   let closed = 0;
   const bridge = new DeskBridge({
@@ -162,11 +174,16 @@ function harness(
       readOnly: false,
     }),
     load: opts.load ?? (async () => opts.stored ?? null),
-    store: async (s, signal) => {
+    store: async (s, precondition, signal) => {
       events.push(`store ${text(s.data)}`);
       stores.push(text(s.data));
       signals.push(signal);
-      return opts.store ? opts.store(s, signal) : text(s.data);
+      preconditions.push(precondition);
+      return opts.store ? opts.store(s, signal, precondition) : text(s.data);
+    },
+    clear: async () => {
+      events.push('clear');
+      return opts.clear?.();
     },
     applyResult:
       opts.applyResult ??
@@ -201,6 +218,7 @@ function harness(
     events,
     stores,
     signals,
+    preconditions,
     toasts,
     closed: () => closed,
     last: () => statuses.at(-1) as DeskStatus,
@@ -899,13 +917,16 @@ describe('the desk bridge: messages', () => {
     });
     await flush();
     expect(h.last().exportUnavailable).toBe('This browser cannot render the reference clips: No WebCodecs.');
-    // the stored state the desk could not read: the line until opened follows at once, the toast stays
+    // state_unreadable when rideo handed over no state: nothing stored to keep, the line until opened, the toast stays
+    expect(h.opens()[0]?.message.state).toBeNull();
     h.desk({ type: 'error', code: 'state_unreadable', message: 'the state is of another scene' });
-    expect(h.last().line).toBe('The stored desk could not be read: the state is of another scene');
+    expect(h.last()).toMatchObject({
+      line: 'The desk could not read the state: the state is of another scene',
+    });
     h.desk(OPENED);
-    expect(h.last()).toMatchObject({ phase: 'open', line: 'Opened from the brief' });
+    expect(h.last()).toMatchObject({ phase: 'open', line: 'Opened from the brief', kept: null });
     expect(h.toasts).toEqual([
-      ['The stored desk could not be read: the state is of another scene', 'warning'],
+      ['The desk could not read the state: the state is of another scene', 'warning'],
     ]);
     h.desk({ type: 'progress', id: 'desk-2', phase: 'encode', done: 12, total: 72 });
     expect(h.last().line).toBe('Rendering the clips: encoding 12 of 72');
@@ -948,5 +969,370 @@ describe('the desk bridge: messages', () => {
     h.desk({ type: 'close', reason: 'done' });
     await flush();
     expect(h.stores).toEqual([]);
+  });
+});
+
+describe('the desk bridge: a stored state that is kept (docs/design/director-desk.md#when-rideo-stores-it)', () => {
+  const UNREADABLE = 'The stored desk state was kept: the desk could not read it (saved by a newer desk)';
+
+  /**
+   * A desk that cannot read the state handed over: `state_unreadable`, `opened` from the brief, and (an older desk)
+   * its staging at once; the desk of the fix round sends no state until the person edits (`staging: false`).
+   */
+  async function unreadable(opts: Parameters<typeof harness>[0] = {}, staging = true) {
+    const h = harness({ stored: stored('S-newer-desk-format'), ...opts });
+    h.bridge.start();
+    h.bridge.frameLoaded();
+    h.hello();
+    h.desk(READY);
+    await flush();
+    expect(text(h.opens()[0]?.message.state?.data as ArrayBuffer)).toBe('S-newer-desk-format');
+    h.desk({ type: 'error', code: 'state_unreadable', message: 'saved by a newer desk' });
+    h.desk(OPENED);
+    if (staging) h.desk(state('staged from the brief'));
+    return h;
+  }
+
+  it('says the stored state was kept, and stores nothing after 10 minutes, before a result or on the way out', async () => {
+    const h = await unreadable();
+    expect(h.last()).toMatchObject({
+      phase: 'open',
+      line: 'Opened from the brief',
+      kept: { reason: 'unreadable', notice: UNREADABLE },
+    });
+    expect(h.toasts).toEqual([[UNREADABLE, 'warning']]);
+    h.desk(state('edited'));
+    await vi.advanceTimersByTimeAsync(DESK_STATE_WRITE_INTERVAL_MS * 3);
+    // a result is applied all the same, without the write before it
+    h.desk(RESULT());
+    await flush();
+    expect(h.events).toEqual(['apply desk-1']);
+    h.bridge.flush();
+    h.bridge.dispose();
+    await flush();
+    expect(h.stores).toEqual([]);
+  });
+
+  it('Close closes without asking the desk for its state and without a write; so does the desk own close', async () => {
+    const h = await unreadable();
+    h.desk(state('edited'));
+    await h.bridge.close();
+    expect(h.posted().map((m) => m.type)).not.toContain('save');
+    expect(h.stores).toEqual([]);
+    expect(h.closed()).toBe(1);
+    const done = await unreadable();
+    done.desk(state('edited'));
+    done.desk({ type: 'close', reason: 'done' });
+    await flush();
+    expect(done.stores).toEqual([]);
+    expect(done.closed()).toBe(1);
+  });
+
+  it('Replace stores the newest state over the loaded one, and later states as usual', async () => {
+    const h = await unreadable();
+    h.desk(state('edited'));
+    h.bridge.replace();
+    await flush();
+    expect(h.last().kept).toBeNull();
+    expect(h.stores).toEqual(['edited']);
+    // the write names the state it replaces: the one the panel loaded
+    expect(h.preconditions).toEqual([{ ifMatch: 'S-newer-desk-format' }]);
+    h.desk(state('later'));
+    await vi.advanceTimersByTimeAsync(DESK_STATE_WRITE_INTERVAL_MS);
+    expect(h.stores).toEqual(['edited', 'later']);
+    const closing = h.bridge.close();
+    h.desk(state('final', 'save-1'));
+    await closing;
+    expect(h.stores).toEqual(['edited', 'later', 'final']);
+    expect(h.preconditions.slice(1)).toEqual([{ ifMatch: 'edited' }, { ifMatch: 'later' }]);
+  });
+
+  it('Replace asks a desk that sent no state yet for the one it holds, and stores that', async () => {
+    const h = await unreadable({}, false);
+    expect(h.last().kept).toMatchObject({ reason: 'unreadable' });
+    // nothing to store yet: the desk sends no state after it could not read the one handed over
+    await vi.advanceTimersByTimeAsync(DESK_STATE_WRITE_INTERVAL_MS);
+    expect(h.stores).toEqual([]);
+    h.bridge.replace();
+    expect(h.posted().at(-1)).toEqual({ type: 'save', id: 'save-1' });
+    await flush();
+    expect(h.stores).toEqual([]);
+    h.desk(state('staged from the brief', 'save-1'));
+    await flush();
+    expect(h.stores).toEqual(['staged from the brief']);
+    expect(h.preconditions).toEqual([{ ifMatch: 'S-newer-desk-format' }]);
+    expect(h.last().kept).toBeNull();
+    // a desk that answers Replace's save with an error: nothing stored, the next state stored as usual
+    const refused = await unreadable({}, false);
+    refused.bridge.replace();
+    refused.desk({ type: 'error', id: 'save-1', code: 'not_open', message: 'No scene is open yet' });
+    await flush();
+    expect(refused.stores).toEqual([]);
+    expect(refused.toasts.map(([t]) => t)).not.toContain('No scene is open yet');
+    refused.desk(state('edited'));
+    const closing = refused.bridge.close();
+    expect(refused.posted().at(-1)).toEqual({ type: 'save', id: 'save-2' });
+    refused.desk(state('edited', 'save-2'));
+    await closing;
+    expect(refused.stores).toEqual(['edited']);
+  });
+
+  it('keeps nothing for state_unreadable after an open that handed over no state', async () => {
+    const h = await opened();
+    h.desk({ type: 'error', code: 'state_unreadable', message: 'odd' });
+    h.desk(state('staged'));
+    h.desk({ type: 'close', reason: 'done' });
+    await flush();
+    expect(h.last().kept).toBeNull();
+    expect(h.stores).toEqual(['staged']);
+  });
+
+  it('names the state each write replaces: none stored, the ETag loaded or stored, the bytes when the ETag is missing', async () => {
+    const none = await opened();
+    none.desk(state('a'));
+    none.desk({ type: 'close', reason: 'done' });
+    await flush();
+    expect(none.preconditions).toEqual([{ ifNoneMatch: '*' }]);
+    const loaded = await opened({ stored: stored('b') });
+    loaded.desk(state('c'));
+    loaded.desk(RESULT());
+    await flush();
+    loaded.desk(state('d'));
+    loaded.desk({ type: 'close', reason: 'done' });
+    await flush();
+    expect(loaded.preconditions).toEqual([{ ifMatch: 'b' }, { ifMatch: 'c' }]);
+    // an answer without an ETag: the loaded bytes' own sha256, else any stored state
+    const bare = await opened({ stored: stored('e', '') });
+    bare.desk(state('f'));
+    bare.desk({ type: 'close', reason: 'done' });
+    await flush();
+    expect(bare.preconditions).toEqual([{ ifMatch: 'e' }]);
+    const blind = await opened({
+      stored: stored('e', ''),
+      sha256: async () => {
+        throw new Error('crypto.subtle is not available');
+      },
+    });
+    blind.desk(state('f'));
+    blind.desk({ type: 'close', reason: 'done' });
+    await flush();
+    expect(blind.preconditions).toEqual([{ ifMatch: '*' }]);
+  });
+
+  it('a write refused because another session stored a newer state keeps it: no retry, no write on Close', async () => {
+    const h = await opened({
+      stored: stored('mine'),
+      store: async () => {
+        throw new DeskStateConflict('theirs');
+      },
+    });
+    h.desk(state('edit'));
+    await vi.advanceTimersByTimeAsync(DESK_STATE_WRITE_INTERVAL_MS);
+    expect(h.stores).toEqual(['edit']);
+    expect(h.last()).toMatchObject({
+      line: 'The desk was not stored',
+      kept: { reason: 'conflict', notice: DESK_CONFLICT_NOTICE },
+    });
+    expect(h.toasts).toEqual([[DESK_CONFLICT_NOTICE, 'warning']]);
+    // not tried again: no backoff, no 10 minutes, nothing before a result
+    h.desk(state('edit 2'));
+    await vi.advanceTimersByTimeAsync(DESK_STATE_WRITE_INTERVAL_MS * 3);
+    h.desk(RESULT());
+    await flush();
+    expect(h.stores).toEqual(['edit']);
+    await h.bridge.close();
+    expect(h.stores).toEqual(['edit']);
+    expect(h.closed()).toBe(1);
+  });
+
+  it('Replace names the ETag the conflict gave: a state a third session stored meanwhile is refused again', async () => {
+    // the server's state: rideo's write holds only when it names it
+    let server: string | null = 'theirs';
+    const h = await opened({
+      stored: stored('mine'),
+      store: async (s, _signal, pre) => {
+        const named = pre && 'ifMatch' in pre ? pre.ifMatch : null;
+        if (named !== server) throw new DeskStateConflict(server);
+        server = text(s.data);
+        return server;
+      },
+    });
+    h.desk(state('edit'));
+    await vi.advanceTimersByTimeAsync(DESK_STATE_WRITE_INTERVAL_MS);
+    expect(h.last().kept?.reason).toBe('conflict');
+    server = 'third';
+    h.bridge.replace();
+    await flush();
+    expect(h.last().kept?.reason).toBe('conflict');
+    h.bridge.replace();
+    await flush();
+    expect(h.last().kept).toBeNull();
+    expect(server).toBe('edit');
+    expect(h.preconditions).toEqual([{ ifMatch: 'mine' }, { ifMatch: 'theirs' }, { ifMatch: 'third' }]);
+    expect(h.toasts).toEqual([
+      [DESK_CONFLICT_NOTICE, 'warning'],
+      [DESK_CONFLICT_NOTICE, 'warning'],
+    ]);
+  });
+
+  it("a Close whose last write meets another session's state keeps the panel open; Close again closes", async () => {
+    const h = await opened({
+      stored: stored('mine'),
+      store: async () => {
+        throw new DeskStateConflict('theirs');
+      },
+    });
+    h.desk(state('edit'));
+    const closing = h.bridge.close();
+    h.desk(state('final', 'save-1'));
+    await closing;
+    expect(h.closed()).toBe(0);
+    expect(h.last()).toMatchObject({
+      phase: 'open',
+      line: 'The desk was not stored',
+      kept: { reason: 'conflict' },
+    });
+    expect(h.port.close).not.toHaveBeenCalled();
+    await h.bridge.close();
+    expect(h.stores).toEqual(['final']);
+    expect(h.closed()).toBe(1);
+    // the desk's own Done too
+    const done = await opened({
+      stored: stored('mine'),
+      store: async () => {
+        throw new DeskStateConflict(null);
+      },
+    });
+    done.desk(state('last'));
+    done.desk({ type: 'close', reason: 'done' });
+    await flush();
+    expect(done.closed()).toBe(0);
+    expect(done.last().kept?.reason).toBe('conflict');
+  });
+
+  it('a conflict on the way out of the panel is said in a toast', async () => {
+    const h = await opened({
+      stored: stored('mine'),
+      store: async () => {
+        throw new DeskStateConflict('theirs');
+      },
+    });
+    h.desk(state('edit'));
+    h.bridge.flush();
+    h.bridge.dispose();
+    await flush();
+    expect(h.stores).toEqual(['edit']);
+    expect(h.toasts).toEqual([[DESK_CONFLICT_NOTICE, 'warning']]);
+  });
+});
+
+describe('the desk bridge: Start over (docs/design/director-desk.md#the-desk)', () => {
+  it('clears a stored state that cannot be loaded and opens the desk without it', async () => {
+    const h = harness({
+      load: async () => {
+        throw new TypeError('the stored desk state of scene 1 could not be read: storage answered 404');
+      },
+    });
+    h.bridge.start();
+    h.bridge.frameLoaded();
+    h.hello();
+    h.desk(READY);
+    await flush();
+    expect(h.last()).toMatchObject({ phase: 'failed', remedy: 'retry' });
+    expect(h.opens()).toEqual([]);
+    h.bridge.startOver();
+    expect(h.last()).toMatchObject({ failure: null, remedy: null, line: 'Clearing the stored desk state…' });
+    await flush();
+    expect(h.events).toEqual(['clear']);
+    expect(h.opens().map((o) => o.message.state)).toEqual([null]);
+    h.desk(OPENED);
+    expect(h.last()).toMatchObject({ phase: 'open', line: 'Opened from the brief' });
+    // none is stored now: the next write says so
+    h.desk(state('fresh'));
+    h.desk({ type: 'close', reason: 'done' });
+    await flush();
+    expect(h.preconditions).toEqual([{ ifNoneMatch: '*' }]);
+  });
+
+  it('a clear that fails keeps the panel failed with Retry and Start over; nothing opened', async () => {
+    const h = harness({
+      load: async () => {
+        throw new TypeError('Failed to fetch');
+      },
+      clear: async () => {
+        throw new TypeError('Failed to fetch');
+      },
+    });
+    h.bridge.start();
+    h.bridge.frameLoaded();
+    h.hello();
+    h.desk(READY);
+    await flush();
+    h.bridge.startOver();
+    await flush();
+    expect(h.last()).toMatchObject({
+      phase: 'failed',
+      remedy: 'retry',
+      failure: 'The stored desk state could not be cleared: Failed to fetch',
+    });
+    expect(h.opens()).toEqual([]);
+  });
+
+  it('offers nothing to start over once the desk is open', async () => {
+    const h = await opened({ stored: stored('kept') });
+    h.bridge.startOver();
+    await flush();
+    expect(h.events).toEqual([]);
+  });
+});
+
+describe("the desk bridge: the desk's errors (docs/design/director-desk.md#the-protocol)", () => {
+  it("toasts only the errors meant for the person; its answers to rideo's own requests go to the status line", async () => {
+    const h = await opened();
+    for (const code of ['not_open', 'bad_message', 'unsupported_version', 'busy', 'cancelled'])
+      h.desk({ type: 'error', code, message: `${code} said` });
+    expect(h.toasts).toEqual([]);
+    expect(h.last().line).toBe('cancelled said');
+    for (const code of ['export_failed', 'export_unavailable', 'out_of_memory', 'invalid_scene'])
+      h.desk({ type: 'error', code, message: `${code} said` });
+    expect(h.toasts).toEqual(
+      ['export_failed', 'export_unavailable', 'out_of_memory', 'invalid_scene'].map((c) => [
+        `${c} said`,
+        'warning',
+      ]),
+    );
+  });
+
+  it('a Close while the desk still stages: its not_open answer to save is no toast', async () => {
+    const h = harness();
+    h.bridge.start();
+    h.bridge.frameLoaded();
+    h.hello();
+    h.desk(READY);
+    await flush();
+    const closing = h.bridge.close();
+    expect(h.posted().at(-1)).toEqual({ type: 'save', id: 'save-1' });
+    h.desk({
+      type: 'error',
+      id: 'save-1',
+      code: 'not_open',
+      message: 'No scene is open yet: send open first.',
+    });
+    await closing;
+    expect(h.toasts).toEqual([]);
+    expect(h.closed()).toBe(1);
+  });
+
+  it('applies a result with the brief the desk was opened with', async () => {
+    const briefs: (DeskBrief | null)[] = [];
+    const h = await opened({
+      applyResult: async (_r, b) => {
+        briefs.push(b);
+        return { ok: true, message: 'Attached 1 reference.', shots: [{ shotId: SHOT, ok: true }] };
+      },
+    });
+    h.desk(RESULT());
+    await flush();
+    expect(briefs).toEqual([brief()]);
   });
 });

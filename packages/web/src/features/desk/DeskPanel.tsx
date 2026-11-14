@@ -1,14 +1,14 @@
 import { type Clip, DESK_MODES, type DeskMode, deskBrief } from '@rideo/shared';
-import { Box, RotateCw, X } from 'lucide-react';
+import { Box, RotateCw, Undo2, X } from 'lucide-react';
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Badge, Button, Select } from '../../components/ui';
-import { api } from '../../lib/api';
+import { Badge, Button, Dialog, Select } from '../../components/ui';
+import { ApiError, api, etagValue } from '../../lib/api';
 import { useConfig } from '../../lib/config';
 import { useProject } from '../../store/project';
 import { useUi } from '../../store/ui';
 import { uploadReference } from '../clips/reference-upload';
-import { DeskBridge, type DeskStatus } from './bridge';
+import { DeskBridge, DeskStateConflict, type DeskStatus } from './bridge';
 import { applyDeskResult, pngToJpeg } from './results';
 
 /** Where the desk's headers are explained (the timeout message links to it). */
@@ -28,6 +28,16 @@ const MODE_KEY = 'rideo.deskMode';
 const MODE_LABELS: Record<DeskMode, string> = { camera: 'Camera', motion: 'Motion', pose: 'Poses' };
 /** The reference modes rideo offers the desk, in the order of the Follow menu. */
 const MODES: DeskMode[] = ['camera', 'motion', 'pose'];
+
+/** What each confirmation says: what replacing the kept state, or starting over, does and what is lost. */
+const CONFIRM = {
+  unreadable:
+    'What the desk holds now (staged from the brief or from this browser’s copy of the scene) replaces the stored desk state, which this desk could not read, and later changes are stored as usual. The project’s history keeps the state it replaces.',
+  conflict:
+    'What the desk holds now replaces the newer desk state another session stored for this clip, and later changes are stored as usual. The project’s history keeps the state it replaces.',
+  startOver:
+    'The stored desk state of this scene is cleared and the desk opens again: from this browser’s own copy of the scene if it has one, else from the brief. What was staged only in the stored desk state is lost.',
+} as const;
 
 /** The person's Follow mode, remembered in this browser (Camera by default). */
 function useDeskMode(): [DeskMode, (mode: DeskMode) => void] {
@@ -77,6 +87,8 @@ export function DeskPanel({ clip, onClose }: { clip: Clip; onClose: () => void }
   const [root, setRoot] = useState<HTMLElement | null>(null);
   const [status, setStatus] = useState<DeskStatus | null>(null);
   const [visible, setVisible] = useState(false);
+  /** The confirmation open: Replace the stored desk state, or Start over. */
+  const [confirm, setConfirm] = useState<'replace' | 'startOver' | null>(null);
 
   // The panel goes to the studio's root element, so the rest of the root can be made inert
   useLayoutEffect(() => {
@@ -118,13 +130,24 @@ export function DeskPanel({ clip, onClose }: { clip: Clip; onClose: () => void }
         readOnly: opening.current.readOnly,
       }),
       load: () => api.deskState(projectId, clip.id),
-      store: async (state, signal) =>
-        (await api.saveDeskState(projectId, clip.id, state, signal)).deskState.media.hash,
-      applyResult: (result) => {
+      store: async (state, precondition, signal) => {
+        try {
+          return (await api.saveDeskState(projectId, clip.id, state, precondition, signal)).deskState.media
+            .hash;
+        } catch (err) {
+          // another session stored a newer state, or cleared it: the bridge keeps it
+          // (docs/design/director-desk.md#when-rideo-stores-it)
+          if (err instanceof ApiError && err.code === 'desk_state_conflict')
+            throw new DeskStateConflict(etagValue(err.headers?.get('etag')), err.message);
+          throw err;
+        }
+      },
+      clear: () => api.clearDeskState(projectId, clip.id),
+      applyResult: (result, brief) => {
         const docs = useProject.getState().docs;
         return applyDeskResult(
           result,
-          { project: docs!.project, clip: docs?.clips[clip.id] ?? null, mode: modeRef.current },
+          { project: docs!.project, clip: docs?.clips[clip.id] ?? null, mode: modeRef.current, brief },
           {
             upload: (file, opts) => uploadReference(projectId, file, { ...opts, keep: false }),
             patchShot: (shotId, body) => api.updateShot(projectId, clip.id, shotId, body),
@@ -229,15 +252,25 @@ export function DeskPanel({ clip, onClose }: { clip: Clip; onClose: () => void }
               status.failure
             )}
             {status.remedy === 'retry' ? (
-              <Button
-                size="sm"
-                icon={<RotateCw className="size-4" />}
-                onClick={() => bridge.current?.retry()}
-                className="ml-2 align-middle"
-                data-testid="desk-retry"
-              >
-                Retry
-              </Button>
+              <span className="ml-2 inline-flex flex-wrap gap-2 align-middle">
+                <Button
+                  size="sm"
+                  icon={<RotateCw className="size-4" />}
+                  onClick={() => bridge.current?.retry()}
+                  data-testid="desk-retry"
+                >
+                  Retry
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  icon={<Undo2 className="size-4" />}
+                  onClick={() => setConfirm('startOver')}
+                  data-testid="desk-start-over"
+                >
+                  Start over
+                </Button>
+              </span>
             ) : null}
           </span>
         ) : (
@@ -249,6 +282,21 @@ export function DeskPanel({ clip, onClose }: { clip: Clip; onClose: () => void }
           </span>
         ) : null}
       </p>
+      {status?.kept ? (
+        <div
+          className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-border bg-warning/10 px-3 py-1.5 text-[12px] sm:px-4"
+          role="status"
+          data-testid="desk-kept"
+          data-reason={status.kept.reason}
+        >
+          <span className="min-w-0 flex-1 text-warning" data-testid="desk-kept-notice">
+            {status.kept.notice}
+          </span>
+          <Button size="sm" onClick={() => setConfirm('replace')} data-testid="desk-replace">
+            Replace the stored desk state
+          </Button>
+        </div>
+      ) : null}
       {status && url ? (
         <iframe
           // a panel that gets another clip loads the desk again and connects afresh
@@ -263,6 +311,58 @@ export function DeskPanel({ clip, onClose }: { clip: Clip; onClose: () => void }
           data-testid="desk-frame"
         />
       ) : null}
+      <Dialog
+        open={confirm === 'replace' && !!status?.kept}
+        onClose={() => setConfirm(null)}
+        title="Replace the stored desk state?"
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setConfirm(null)}>
+              Cancel
+            </Button>
+            <Button
+              variant="danger"
+              onClick={() => {
+                setConfirm(null);
+                bridge.current?.replace();
+              }}
+              data-testid="desk-replace-confirm"
+            >
+              Replace
+            </Button>
+          </>
+        }
+      >
+        <p className="text-[13px]" data-testid="desk-replace-what">
+          {CONFIRM[status?.kept?.reason ?? 'conflict']}
+        </p>
+      </Dialog>
+      <Dialog
+        open={confirm === 'startOver' && status?.remedy === 'retry'}
+        onClose={() => setConfirm(null)}
+        title="Start over?"
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setConfirm(null)}>
+              Cancel
+            </Button>
+            <Button
+              variant="danger"
+              onClick={() => {
+                setConfirm(null);
+                bridge.current?.startOver();
+              }}
+              data-testid="desk-start-over-confirm"
+            >
+              Start over
+            </Button>
+          </>
+        }
+      >
+        <p className="text-[13px]" data-testid="desk-start-over-what">
+          {CONFIRM.startOver}
+        </p>
+      </Dialog>
     </div>
   );
   return (

@@ -1,10 +1,20 @@
-import { type DeskResultMessage, ProjectSettingsSchema } from '@rideo/shared';
+import { type DeskBrief, type DeskResultMessage, ProjectSettingsSchema } from '@rideo/shared';
 import * as f from '@rideo/shared/testing';
 import { describe, expect, it } from 'vitest';
 import { applyDeskResult, type DeskResultDeps } from '../src/features/desk/results';
 
 /** A desk's result applied in the studio (docs/design/director-desk.md#the-result). */
 const mp4 = f.mp4Bytes;
+
+/** The brief a desk was opened with, as far as a result's plan reads it. */
+const deskBriefOf = (clip: { id: string }, shots: { id: string; durationSec: number }[]) =>
+  ({
+    id: clip.id,
+    fps: 24,
+    width: 1280,
+    height: 720,
+    shots: shots.map((s) => ({ id: s.id, durationSec: s.durationSec })),
+  }) as unknown as DeskBrief;
 
 function setup(status: 'planned' | 'approved' = 'planned') {
   const s0 = f.shot({ index: 0, durationSec: 3 });
@@ -138,6 +148,21 @@ describe('applyDeskResult', () => {
     expect(ack.message).toBe(
       'Attached 0 of 2 references. S1: clip 2 is approved: unapprove it to change its shots. S2: clip 2 is approved: unapprove it to change its shots.',
     );
+  });
+
+  it('checks the shots against the brief the desk was opened with', async () => {
+    const { s0, s1, clip, project, result, uploads, deps } = setup();
+    // the person made shot 1 longer in the desk; rideo's shots are still the brief's
+    result.shots[0] = { ...result.shots[0]!, frames: 84, durationSec: 3.5 };
+    const brief = deskBriefOf(clip, [s0, s1]);
+    const ack = await applyDeskResult(result, { project, clip, mode: 'camera', brief }, deps);
+    expect(uploads.map((u) => u.name)).toEqual(['desk-c2-s2-camera.mp4']);
+    expect(ack.shots[0]).toEqual({
+      shotId: s0.id,
+      ok: false,
+      error:
+        "the clip has 84 frames and the shot 72 (3 s at 24 fps): set its length back in the desk, or change the shot's duration in the studio",
+    });
   });
 
   it('goes on with the other shots when one fails', async () => {

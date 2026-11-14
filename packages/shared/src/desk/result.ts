@@ -1,6 +1,6 @@
 import type { Clip } from '../schemas/clip';
 import type { Probe } from '../schemas/common';
-import type { DeskMode, DeskMove, DeskResultFile, DeskResultMessage } from '../schemas/desk';
+import type { DeskBrief, DeskMode, DeskMove, DeskResultFile, DeskResultMessage } from '../schemas/desk';
 import type { Project } from '../schemas/project';
 import { deskFormat, deskFrames } from './brief';
 
@@ -51,11 +51,24 @@ export const DESK_REFUSALS = {
   shotGone: 'the shot is no longer in the clip',
   twice: 'the shot is in the result twice',
   approved: (clip: number) => `clip ${clip} is approved: unapprove it to change its shots`,
+  /** The shot or the project changed in rideo since the brief the desk rendered from. */
   changed: 'the shot changed since the desk rendered it: render it again',
+  /** Nothing changed in rideo: the person gave the shot another length in the desk. */
+  length: (clipFrames: number, shotFrames: number, durationSec: number, fps: number) =>
+    `the clip has ${clipFrames} frames and the shot ${shotFrames} (${seconds(durationSec)} s at ${fps} fps): set its length back in the desk, or change the shot's duration in the studio`,
+  /** Nothing changed in rideo: the desk rendered another size or frame rate than the brief's. */
+  format: (
+    clip: { width: number; height: number; fps: number },
+    scene: { width: number; height: number; fps: number },
+  ) =>
+    `the clip is ${clip.width}×${clip.height} at ${clip.fps} fps, the scene ${scene.width}×${scene.height} at ${scene.fps} fps`,
   noClip: 'the result has no clip for the shot',
   missingFile: (name: string) => `the file ${name} is not in the result`,
   notMp4: (name: string) => `the file ${name} is not an MP4 clip`,
 } as const;
+
+/** A duration as the refusals say it: "3", "2.5", "0.33". */
+const seconds = (sec: number) => String(Math.round(sec * 100) / 100);
 
 const ascii = (bytes: Uint8Array, start: number, length: number) =>
   String.fromCharCode(...bytes.subarray(start, start + length));
@@ -78,17 +91,28 @@ export function pngSize(data: ArrayBuffer): { width: number; height: number } | 
 
 /**
  * The plan of a result for one clip: its shots in the result's order, each refused (the shot is gone, the clip is
- * approved, the size, frame rate or the shot's frame count changed, its clip is missing) or attached in the person's
- * mode, else the first of camera, motion and pose the result has.
+ * approved, the size, frame rate or the shot's frame count is not the clip's, its clip is missing) or attached in the
+ * person's mode, else the first of camera, motion and pose the result has. `brief` is the brief the desk was opened
+ * with: a frame count or format that is not the clip's is "changed" only when the shot or the project changed in rideo
+ * since that brief; otherwise the desk rendered something else than the brief asked for (the person gave the shot
+ * another length in the desk), and the refusal says so with the numbers.
  */
 export function planDeskResult(input: {
   result: Pick<DeskResultMessage, 'sceneId' | 'fps' | 'width' | 'height' | 'shots' | 'files'>;
   project: Pick<Project, 'settings'>;
   clip: Pick<Clip, 'id' | 'index' | 'status' | 'shots'> | null | undefined;
   mode: DeskMode;
+  brief?: Pick<DeskBrief, 'id' | 'fps' | 'width' | 'height' | 'shots'> | null;
 }): DeskShotPlan[] {
-  const { result, project, clip, mode } = input;
+  const { result, project, clip, mode, brief } = input;
   const format = deskFormat(project.settings);
+  // the project's size and frame rate are still the ones of the brief the desk was opened with
+  const briefFormat =
+    !!brief &&
+    brief.id === clip?.id &&
+    brief.fps === format.fps &&
+    brief.width === format.width &&
+    brief.height === format.height;
   const files = new Map(result.files.map((f) => [f.name, f]));
   const seen = new Set<string>();
   return result.shots.map((r): DeskShotPlan => {
@@ -107,13 +131,21 @@ export function planDeskResult(input: {
     if (seen.has(r.shotId)) return refuse(DESK_REFUSALS.twice, number);
     seen.add(r.shotId);
     if (clip.status === 'approved') return refuse(DESK_REFUSALS.approved(clip.index + 1), number);
-    if (
-      result.fps !== format.fps ||
-      result.width !== format.width ||
-      result.height !== format.height ||
-      r.frames !== deskFrames(shot.durationSec, format.fps)
-    )
+    const frames = deskFrames(shot.durationSec, format.fps);
+    const sameFormat =
+      result.fps === format.fps && result.width === format.width && result.height === format.height;
+    if (!sameFormat || r.frames !== frames) {
+      const sent = brief?.shots.find((s) => s.id === r.shotId);
+      // nothing changed in rideo since the brief: the desk rendered something else than it asked for
+      if (briefFormat && sent?.durationSec === shot.durationSec)
+        return refuse(
+          sameFormat
+            ? DESK_REFUSALS.length(r.frames, frames, shot.durationSec, format.fps)
+            : DESK_REFUSALS.format(result, format),
+          number,
+        );
       return refuse(DESK_REFUSALS.changed, number);
+    }
     const chosen = r.references[mode] ? mode : DESK_MODE_FALLBACK.find((m) => r.references[m]);
     if (!chosen) return refuse(DESK_REFUSALS.noClip, number);
     const name = r.references[chosen]!;

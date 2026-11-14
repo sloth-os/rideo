@@ -290,6 +290,10 @@ describe('settings page (docs/design/settings.md)', () => {
     page('/settings#jobs');
     const row = await screen.findByTestId('setting-RIDEO_DESK_URL');
     expect(row.textContent).toMatch(/Director’s desk page/);
+    // the help says where the desk may be served: never on another port of the studio's own host
+    expect(row.textContent).toContain(
+      'on another host than this studio’s (never another port of its host: the session cookie goes to every port)',
+    );
     const input = row.querySelector('input')!;
     fireEvent.change(input, { target: { value: 'http://desk.example.com/desk.html' } });
     expect(within(row).getByTestId('setting-check').textContent).toMatch(/https/);

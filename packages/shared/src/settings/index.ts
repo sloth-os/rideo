@@ -843,7 +843,7 @@ export const SETTING_FIELDS: readonly SettingField[] = [
     label: 'Director’s desk page',
     kind: 'url',
     placeholder: 'https://desk.example.com/desk.html',
-    help: 'The 3D-Editor’s desk page the Storyboard view embeds (docs/design/director-desk.md#the-setting), on its own origin and served with Cross-Origin-Embedder-Policy: require-corp, Cross-Origin-Resource-Policy: cross-origin and a Content-Security-Policy: frame-ancestors naming this studio. https://, or http:// on localhost. Empty: no desk.',
+    help: 'The 3D-Editor’s desk page the Storyboard view embeds (docs/design/director-desk.md#the-setting), on another host than this studio’s (never another port of its host: the session cookie goes to every port), served with Cross-Origin-Embedder-Policy: require-corp, Cross-Origin-Resource-Policy: cross-origin and a Content-Security-Policy: frame-ancestors naming this studio. https://, or http:// on localhost or 127.0.0.1. Empty: no desk.',
   },
   // Appearance (docs/design/embedding.md#themes)
   {

@@ -67,6 +67,7 @@ import {
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { AiReviewService } from '../domain/ai-review';
+import { DeskStateConflictError } from '../domain/desk';
 import type { Detection, Studio } from '../domain/studio';
 import { AppError, invalid } from '../errors';
 import type { AuthedRequest } from './auth-routes';
@@ -685,7 +686,7 @@ export function registerRoutes(app: FastifyInstance, studio: Studio): void {
     scope.put(
       '/api/projects/:id/clips/:clipId/desk-state',
       { bodyLimit: DESK_STATE_MAX_BYTES },
-      async (req) => {
+      async (req, reply) => {
         const header = (name: string) => {
           const v = req.headers[name];
           return typeof v === 'string' ? v : undefined;
@@ -693,15 +694,24 @@ export function registerRoutes(app: FastifyInstance, studio: Studio): void {
         const length = header('content-length');
         const body = req.body as NodeJS.ReadableStream | undefined;
         const stream = body && typeof (body as { pipe?: unknown }).pipe === 'function' ? body : req.raw;
-        return {
-          deskState: await studio.desk.saveState(actor(), pid(req), p(req, 'clipId'), {
+        try {
+          const deskState = await studio.desk.saveState(actor(), pid(req), p(req, 'clipId'), {
             format: header('x-desk-state-format'),
             version: header('x-desk-state-version'),
             contentType: header('content-type'),
             contentLength: length !== undefined && /^\d+$/.test(length) ? Number(length) : undefined,
+            ifMatch: header('if-match'),
+            ifNoneMatch: header('if-none-match'),
             body: stream as Readable,
-          }),
-        };
+          });
+          // the bytes are stored as they came: the state's ETag, which the next write names in If-Match
+          reply.header('etag', `"${deskState.media.hash}"`);
+          return { deskState };
+        } catch (err) {
+          // the state that is stored instead, for the client to replace on purpose (none when the clip names none)
+          if (err instanceof DeskStateConflictError && err.stored) reply.header('etag', `"${err.stored}"`);
+          throw err;
+        }
       },
     );
   });
