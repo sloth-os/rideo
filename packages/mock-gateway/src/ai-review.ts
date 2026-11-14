@@ -1,20 +1,27 @@
 import type {
+  CastReviewInput,
   ScreenplayReviewInput,
   ScreenplayReviseInput,
   ScreenplayReviseOutput,
   StageReviewOutput,
   StoryboardSceneReviewInput,
+  TakeWatchInput,
+  TakeWatchOutput,
 } from '@rideo/shared';
 
 /**
  * AI review tasks of the mock (docs/design/ai-review.md#mock-gateway): deterministic answers from the input, so tests
- * follow generate → review → revise → review → gate.
+ * follow generate → review → revise → review → gate, a take watched whole and the cast reviewed.
  */
 
 /** Words that put a crowd in a scene, which an AI video model cannot keep. */
 export const CROWD = /\b(crowds?|tourists|onlookers|spectators|bystanders)\b/gi;
 /** A frame the reviewer cannot read. */
 const BLURRY = /\bblurry\b/i;
+/** A take whose motion breaks, so tests see the whole-take watch retry it. */
+const MOTION_GLITCH = /\bmotion glitch\b/i;
+/** A character whose references do not match each other, so tests see the cast review draw them again. */
+const INCONSISTENT = /\binconsistent\b/i;
 
 const SCREENPLAY_DIMENSIONS = [
   'story',
@@ -114,11 +121,7 @@ export function screenplayRevise(input: ScreenplayReviseInput): ScreenplayRevise
 
 /** `storyboard.review`: a missing or blurry frame is redrawn; the rest scores 8. */
 export function storyboardReview(input: StoryboardSceneReviewInput, frames: number): StageReviewOutput {
-  // A blocked scene's frames are also scored against their camera views (docs/design/director-desk.md)
-  const scores = scoresOf(
-    input.shots.some((s) => s.blocking) ? [...STORYBOARD_DIMENSIONS, 'blocking'] : STORYBOARD_DIMENSIONS,
-    8,
-  );
+  const scores = scoresOf(STORYBOARD_DIMENSIONS, 8);
   const issues: StageReviewOutput['issues'] = [];
   const recommendations: StageReviewOutput['recommendations'] = [];
   for (const s of input.shots) {
@@ -150,5 +153,72 @@ export function storyboardReview(input: StoryboardSceneReviewInput, frames: numb
     strengths: ['Readable staging.'],
     issues,
     recommendations,
+  };
+}
+
+/** `take.watch`: a take passes unless its shot says "motion glitch" (a critical morph). */
+export function takeWatch(input: TakeWatchInput, watched: boolean): TakeWatchOutput {
+  const glitch = MOTION_GLITCH.test(`${input.shot.description} ${input.shot.action}`);
+  return {
+    fix: glitch ? 'every figure keeps its shape and size from the first frame to the last' : '',
+    overall: glitch ? 3 : 8,
+    motion: glitch ? 0.2 : 0.9,
+    physics: 0.85,
+    action: watched ? 0.9 : 0.6,
+    camera: 0.85,
+    identity: 0.9,
+    others: [],
+    issues: glitch
+      ? [
+          {
+            time: Math.min(input.durationSec, 2),
+            severity: 'critical',
+            title: 'The figure morphs mid-shot',
+            detail: 'Watched whole: the body melts and reforms between the frames.',
+          },
+        ]
+      : [],
+  };
+}
+
+/** `cast.review`: a cast passes; a character whose identity says "inconsistent" gets its references drawn again. */
+export function castReview(input: CastReviewInput, references: number): StageReviewOutput {
+  const subject = input.subject;
+  const text = subject.kind === 'character' ? `${subject.identity} ${subject.wardrobe}` : subject.description;
+  const bad = INCONSISTENT.test(text) && subject.kind === 'character';
+  const who = subject.kind === 'character' ? { character: subject.name } : { element: subject.name };
+  return {
+    scores: {
+      likeness: references ? 8 : 3,
+      consistency: bad ? 3 : 8,
+      distinct: 8,
+      clarity: 8,
+      style: 8,
+    },
+    summary: `${subject.name}: ${references} reference(s) reviewed.`,
+    strengths: references ? [`${subject.name} reads clearly.`] : [],
+    issues: bad
+      ? [
+          {
+            ...who,
+            dimension: 'consistency',
+            severity: 'critical',
+            title: `${subject.name}'s views do not match`,
+            detail: 'The face and the outfit change from view to view.',
+          },
+        ]
+      : [],
+    recommendations: bad
+      ? [
+          {
+            ...who,
+            dimension: 'consistency',
+            priority: 1,
+            title: `Draw ${subject.name} again`,
+            detail: 'One face and one outfit in every view.',
+            action: { kind: 'regenerate_refs', instruction: 'the same face and outfit in every view' },
+          },
+        ]
+      : [],
   };
 }

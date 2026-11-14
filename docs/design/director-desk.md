@@ -1,258 +1,335 @@
 # The 3D Director's Desk
 
-A film made shot by shot loses its geography between cuts. The swimming demo's storyboard review scored the
-continuity of its frames 5 in all three rounds, and its feedback scored continuity across cuts 4 of 10: the
-watermelon halves wandered from one side of the beach to the other, the shoreline and the sun swapped sides, and
-Rosie and Sammy changed places in a shot and its reverse shot. Each frame was drawn from words, and words do not say
-where the camera stands. Previs tools block a scene in 3D first: the open-source
-[3D Director Desk](https://github.com/jiguang132/storyai-3d-director-desk) (three.js, mannequins with poses, a
-director's view over the set and a view through each camera, a capture per camera, July 2026), Morphic's
-[3D Scene](https://morphic.com/3d) (an agent lays the scene out; it warns when a camera crosses the line between two
-characters or sits inside a wall), Autodesk Flow Studio's 3D Editor, and [PrevizWhiz](https://arxiv.org/abs/2602.03838)
-(CHI '26: rough 3D frames restyled into previz, with a "faithful" resemblance that 7 of 10 filmmakers preferred).
-They lock the camera and the staging, and let the image and video models paint.
+A film made shot by shot loses its geography between cuts: the swimming demo's watermelon halves wandered from one
+side of the beach to the other, and Rosie and Sammy changed places in a shot and its reverse shot. Previs tools stage a
+scene in 3D first and lock the camera and the staging before the image and video models paint.
 
-Rideo blocks every storyboarded scene in a small 3D set before its frames are drawn:
+Rideo stages a scene on the **3D-Editor's director's desk**, embedded in the Storyboard view. The desk is another
+application, served from its own origin and shown in an iframe. Rideo gives it a **brief** made from its own documents
+(the scene, the cast, the props, every shot with its framing, lens, move and planned layout) and keeps the desk's
+**state** for it; a person stages the scene there (figures that walk, sit, ride and hold props, a camera per shot), and
+the desk renders each shot's **reference clip** in the browser. Rideo attaches the clip to the shot as its
+[motion reference](directing.md#shot-controls) and takes the camera the desk staged (its lens and its move), so the
+video model follows the staged motion or camera path.
 
-1. **The blocking.** One set per scene (its size, the ground, landmarks such as the sea or a lodge, the sun), every
-   character as a coloured mannequin on a mark (position, facing, pose, where they move to in each shot), the props,
-   and a **camera per shot** (position, target, lens, an end position for a move). It is stored on the clip.
-2. **AI blocking.** On autopilot (and on request) the text model lays the scene out as a floor plan: marks and
-   landmarks in metres, and for each shot a camera *described* (who it frames, from which side, how high). A pure
-   **solver** turns each description into an exact camera from the shot's framing and lens, and enforces the
-   **180° rule**: a cut whose camera crossed the line between the scene's two main characters is mirrored back.
-3. **The desk.** The Storyboard view opens each scene on the desk: a director's view of the floor plan (drag the
-   mannequins, props and cameras, turn them), and the view through the selected shot's camera with a thirds grid, the
-   same picture the image model is given. Checks list what breaks the scene (a crossed line, a character out of
-   frame, a camera inside a wall).
-4. **Generation.** A shot's frame is drawn with the blocking: its keyframe prompt says where everyone stands and faces
-   and where the light comes from (`Blocking: …`, computed from the camera), and its **camera view** (the mannequins
-   seen through the shot's camera) is one more reference image, so the image model keeps the composition. The video
-   starts from that frame; a blocked camera move becomes the shot's named move.
-5. **Review.** The storyboard reviewer sees each frame next to its camera view and scores whether the frame keeps the
-   blocking.
+The two share no code and no server. Everything they exchange goes through the **desk embed protocol, version 1**,
+which the 3D-Editor owns ([docs/embedding.md](https://github.com/sloth-os/3D-Editor/blob/main/docs/embedding.md)).
 
-Everything that decides a picture is computed by pure shared functions (rule R3): the same blocking gives the same
-solved cameras, the same prompt lines and the same pixels in the server and in the browser.
+## Why
 
-## The document
+Rideo had a desk of its own from October 2026 to November 14, 2026: a `SceneBlocking` document per clip, AI blocking
+(the text model's floor plan, a camera solver, the 180° rule), a blocking line in every keyframe prompt and a flat
+render of mannequins (the *camera view*) as one more reference image. On real models it did not help. The storyboards
+scored 5.6–6.9 with it on against 7.1–7.3 off, the reviewers' blocking dimension 3–5; with the reference images
+delivered (fp46) 7.00 against 7.27 off. The image model followed neither the mannequins nor the line, the AI blocking
+took about ten minutes of reasoning per scene, and riders were drawn beside their ponies. New projects had it off from
+October 30 ([the desk on request](first-pass.md#the-desk-on-request), the measurements in
+[first pass](first-pass.md#measured)).
 
-`clip.blocking` (null until the scene is blocked), validated by `SceneBlockingSchema` (shared):
+What a desk is good at is a person staging a scene in 3D and rendering its motion, and video models already take a
+reference video for the motion, the poses or the camera's path (`reference_video`). The 3D-Editor's desk does the
+staging well (articulated figures and animals, riders on their mounts, held props, physics, a catalog of models, a
+camera per shot with checks of the line) and renders the passes the reference modes need. So rideo's own desk was
+removed ([what happened to it](#what-happened-to-the-blocking)) and the 3D-Editor's is embedded: nothing about the desk
+reaches a prompt but the shot's motion reference and its camera.
 
-```ts
-type SceneBlocking = {
-  version: 1;
-  source: 'ai' | 'user';                 // who placed it last
-  updatedAt: string;
-  set: {
-    width: number; depth: number;        // metres, 2–200; the floor is centred on the origin
-    ground: string;                      // "sand", "snow", "wooden floor": its colour in the render
-    interior: boolean;                   // a room: grey walls of light, no sky
-    sun: { azimuthDeg: number; elevationDeg: number };   // where the key light comes from
-    landmarks: { id; label; shape: 'box' | 'cylinder' | 'water' | 'wall'; x; z; width; depth; height;
-                 rotationDeg; color: string; elementId: string | null }[];   // ≤ 24
-  };
-  actors: { id; characterId; color: string; heightM: number;                   // ≤ 8
-            x; z; facingDeg; pose: Pose }[];                                   // the scene's opening marks
-  props: { id; elementId: string | null; label; x; z; size; color; heldBy: string | null }[];   // ≤ 16
-  shots: Record<shotId, {
-    marks: Record<characterId, { x; z; facingDeg; pose: Pose; toX: number | null; toZ: number | null }>;
-    camera: { x; y; z; targetX; targetY; targetZ; lensMm: number;
-              end: { x; y; z; targetX; targetY; targetZ } | null };            // a move: where it ends
-    spec: CameraSpec | null;             // how the camera was described, kept for the solver
-  }>;
-};
-type Pose = 'stand' | 'walk' | 'run' | 'sit' | 'crouch' | 'kneel' | 'lie' | 'reach' | 'point' | 'wave';
-type CameraSpec = { subjects: string[];                  // character ids it frames (the shot's cast by default)
-                    angle: 'front' | 'three_quarter_left' | 'three_quarter_right' | 'profile_left'
-                         | 'profile_right' | 'back' | 'over_shoulder' | 'pov';
-                    height: 'eye' | 'low' | 'high' | 'overhead'; move: 'none' | 'push_in' | 'pull_out'
-                         | 'dolly_left' | 'dolly_right' | 'orbit_left' | 'orbit_right' | 'crane_up' };
-```
+## What it is
 
-**Coordinates.** Metres; the floor is `y = 0`; `x` runs to the right and `z` towards the front of the set (the
-audience's side), so a camera at the front looks towards `-z` and sees `+x` on its right. A facing of 0° looks at the
-front, 90° to the right (`+x`), 180° to the back. Each shot's marks override the opening marks for the characters in
-it (a character with no mark in a shot stands where the opening marks put them); `toX`/`toZ` is where they walk to
-during the shot. Each actor gets a colour of the desk palette in cast order (orange, blue, green, purple, yellow,
-pink, teal, red), which the prompt names (`orange figure = Rosie`). AI landmarks get a colour from their label
-(`landmarkColor`: hills, grass and paddocks green, barns red, fences, gates and rails white, lanes, paths and gravel
-tan, hay and straw golden, trees and hedges dark green, water blue, rock and stone grey, houses and stables beige),
-else from their shape; the first AI blocking of the riding demo, all of it the default grey, rendered its hills and
-fences as grey walls. Far scenery (hills, mountains, a skyline) is not a landmark: the blocking prompt leaves it to
-the shot descriptions, as a box it walls the sky off every camera.
+| | Rideo | The desk |
+|---|---|---|
+| Owns | the brief (made from its documents), the desk state (stored as it is given, never read), the shots' motion references and cameras | the staging, the rendering and encoding of the clips, its working copy of the scene |
+| Runs | the bridge in the studio tab (`postMessage` to the iframe), the desk-state and brief routes and one MCP tool on the server | in the iframe: in the browser, with no server of its own needed |
+| Never | sends the desk a URL, a token or media; reads the state's bytes | calls rideo's server, sends anything rideo did not give it |
 
-Re-planning a scene keeps its set, actors and props; shots that no longer exist lose their marks and cameras, and new
-shots get solved cameras. A blocking whose shots do not match the clip's (a shot added, removed, re-cast) is
-**incomplete**: `blockingState(blocking, shots)` is `missing`, `incomplete` or `ready`, and the desk and the jobs
-complete it (`normalizeBlocking`: an actor for every character of the scene, a solved camera for every shot without
-one, from the shot's framing).
+The desk is optional. Without [`RIDEO_DESK_URL`](#the-setting) there is no desk, and nothing else changes. It is a
+person's tool in the browser; agents work from the same brief with the 3D-Editor's own MCP tools
+([agents](#agents)).
 
-## The solver
+## The setting
 
-`solveCamera(blocking, shot, spec, aspect)` (shared) places the camera of a shot:
+`RIDEO_DESK_URL` (Settings → **Limits and embedding**, group `jobs`, a URL field): the desk page, for example
+`https://desk.example.com/desk.html`. Empty (the default): no desk, and the **Director's desk** buttons are not shown.
+The URL must be `https:`, or `http:` on `localhost` or `127.0.0.1` for development (both pages must be
+[secure contexts](#topology-and-headers)); its path is the page itself, not a folder. Like every setting, the
+environment wins and locks the field ([settings](settings.md)).
 
-| Step | Rule |
+Every browser reads it from `GET /api/config` as `features.desk: {url}` (`null` when unset): it is not a secret, and
+the studio needs it before a person opens a project. The bridge takes the desk's origin from it once
+(`new URL(url).origin`), posts only to that origin and accepts messages only from it. The desk needs no
+`RIDEO_CORS_ORIGINS` entry, because it never calls rideo's API. The tab that saves the setting reloads its
+configuration at once; other tabs see a changed URL when they load again.
+
+## Topology and headers
+
+**Its own origin.** The desk is served from another origin than rideo (another host, or another port), never from a
+path of rideo's own origin. On rideo's origin, rideo's service worker deletes every other cache when it activates and
+caches navigations in its scope as rideo's shell, the server answers unknown paths with rideo's `index.html`, and the
+desk would share rideo's `localStorage` (where the session token is) and IndexedDB.
+
+**Headers on the desk page.** Rideo's pages are cross-origin isolated by default (`RIDEO_CROSS_ORIGIN_ISOLATION`:
+`Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: require-corp`,
+[engine performance](engine-performance.md)). Under that policy a cross-origin iframe loads only when it says it may:
+the desk page is served with `Cross-Origin-Embedder-Policy: require-corp` and
+`Cross-Origin-Resource-Policy: cross-origin`, and with `Content-Security-Policy: frame-ancestors` listing rideo's
+origins (and the pages that embed rideo through the [library](embedding.md), whose origin is the iframe's parent).
+Without them the browser shows its own error page inside the iframe and rideo gets no error event, so the bridge gives
+up after 15 seconds ([the desk in the studio](#the-desk)). The desk needs no `SharedArrayBuffer`, so the iframe gets no
+`cross-origin-isolated` permission.
+
+**The iframe.** `<iframe src="<RIDEO_DESK_URL>" title="3D director's desk" allow="fullscreen; clipboard-write">`:
+no `sandbox` (the desk needs scripts, storage and downloads) and never the `credentialless` attribute (it would throw
+the desk's storage away).
+
+**Secure contexts.** Both pages are HTTPS, or `http://localhost` / `http://127.0.0.1` in development: the desk encodes
+its clips with WebCodecs and keeps files in the Origin Private File System, which exist only there. In development the
+desk's dev server runs on another port than rideo's (5173) and sends the same two headers.
+
+**Partitioned storage.** Inside rideo the desk's IndexedDB is partitioned by rideo's site: what a person staged in the
+standalone desk is not seen inside rideo, and the reverse. The authoritative copy of a scene is the
+[desk state](#the-desk-state) rideo stores; the desk's own copy is a cache that keeps the work between two stored
+states.
+
+## The protocol
+
+The desk posts `hello` (the versions it speaks) to its parent once loaded. The bridge accepts it only from the
+iframe's window and the desk's origin, with version 1 among its versions, creates a `MessageChannel` and posts
+`connect` with the channel's second port; every later message travels on the port. The desk answers `ready` (its
+version and whether this browser can encode the clips), rideo sends `open` with the brief, the stored state (or none)
+and its options, and the desk answers `opened` (where the scene came from: the state, its local copy or the brief, and
+how the brief differs from what was staged) and `state`.
+
+| Rideo sends | When |
 |---|---|
-| Subjects | the spec's characters (the shot's cast when empty; a shot without characters frames the set's centre or its first prop) at their marks for the shot |
-| Coverage | the frame height at the subjects, by framing, for a 1.7 m figure (scaled by the tallest subject): extreme wide 10 m, wide 4.2, medium 1.25, medium close 0.85, close-up 0.45, extreme close-up 0.22, over the shoulder 1.1, POV 2.5, insert 0.35 |
-| Lens | the shot's `camera.lensMm`, else 24 mm (wide), 35 (medium), 50 (medium close), 85 (close-up and closer) |
-| Distance | `(coverage / 2) / tan(fovV / 2)` with a 36 mm wide sensor and the project's aspect ratio; a group also needs every subject inside the frame's width by angle: for each, its depth towards the camera plus `(|sideways offset| + 0.25 m × scale) / tan(fovH / 2) × 1.1`. One nearer the camera than the group's centre covers a wider angle: in the riding demo's gate scene (four subjects, 24 mm) the spread measured at the centre's depth left the nearest panda 41° off the axis, outside the 37° half-width |
-| Target | the subjects' centre at the height the framing looks at: half the figure (wide), the chest (medium), the eyes (close-up); a prop for an insert |
-| Direction | around the subjects: `front` faces the subject's facing (a group: the side of the line between the two main characters that faces the set's front), three-quarters ±35°, profile ±90°, `back` 180°; `over_shoulder` stands 0.9 m behind the first subject's shoulder looking at the second; `pov` is the first subject's eyes looking where they face |
-| Height | `eye` (the subject's eyes; 1.5 m for wide shots), `low` 0.35 m, `high` the head plus 1.2 m, `overhead` the head plus 4 m |
-| Move | the end position: `push_in` and `pull_out` 35% closer or farther, dollies 1.5 m sideways, orbits 30° around the target, `crane_up` 2 m higher |
-| Inside the set | a camera inside a landmark is moved out along its direction (a wall at the edge of an interior is the exception it may stand at) |
+| `open` {`scene`: the [brief](#the-brief), `state`, `options`} | once, after `ready`: `options` = `hostName` (the studio's brand name, `RIDEO_BRAND_NAME`, at most 40 characters), `modes` `["camera", "motion", "pose"]`, `defaultMode` (the person's mode, [the desk](#the-desk)), `readOnly` for an approved clip |
+| `save` | when the person closes the panel: the desk answers `state` with the same `id` |
+| `export` | never on its own: the person presses **Send** in the desk |
+| `result-ack` | after each `result`: what was attached and what was refused, shot by shot |
 
-**The line.** The scene's main pair are the two characters who share the most shots. The first shot that shows them
-both sets the side of the line the camera stays on. `enforceLine` mirrors across the line any later camera of a cut
-that frames either of them from the other side (position and target reflected in the floor plane). A camera move that
-crosses the line during its shot (an orbit) is motivated and kept. Singles of a shot and reverse shot are on the same
-side as their two-shot, so eyelines match.
+| The desk sends | Rideo |
+|---|---|
+| `ready` | sends `open`; when `capabilities.export.available` is false, says why under the panel's title ("This browser cannot render the reference clips: …"): staging still works |
+| `opened` | shows the desk; the desk itself lists the brief's changes and offers to update its shots |
+| `state` | keeps the newest, and stores it ([when](#when-rideo-stores-it)) |
+| `progress` | shows the export's phase and count under the title |
+| `result` | applies it ([the result](#the-result)) and answers `result-ack` |
+| `error` | shows its message; `state_unreadable`: "The stored desk could not be read; the scene was staged from the brief" |
+| `close` | stores the last state and closes the panel |
 
-**Normalization.** `normalizeBlocking(raw, ctx)` makes any blocking safe to render: names become character ids
-(unknown ones are dropped), positions are clamped into the set, actors closer than 0.35 m are pushed apart, missing
-cameras are solved, cameras of cuts are kept on the line, sizes and colours are clamped to their ranges. AI blocking
-always goes through it; the desk runs it when a person asks the desk to **Fix the blocking**.
+Rideo speaks version 1. A desk that offers no version rideo speaks is not connected: "This desk speaks protocol
+versions …; this studio speaks 1". Every message is validated with zod in both directions (`packages/shared`, the
+schemas of the protocol and of the brief); a message that does not validate is ignored and logged, and one that
+carried an `id` is answered with `error` `bad_message`. Rideo keeps a copy of the 3D-Editor's fixtures (one valid
+example of every message and some invalid ones) in `packages/shared/test/fixtures/desk-protocol/`, and its tests parse
+every valid one and reject every invalid one, so a change on either side that breaks the other shows up in the tests.
+
+## The brief
+
+`deskBrief(docs, clipId)` (shared, pure) makes the `SceneBrief` of one clip; the same brief is sent to the desk and
+served to agents. It is validated against the protocol's schema before it leaves rideo. A clip without shots has no
+brief.
+
+| Brief | From rideo | Rule |
+|---|---|---|
+| `id` | `clip.id` | the clip is the unit of the desk: one brief, one desk state, one desk project per clip |
+| `name` | `clip.title` | cut to 200 characters; `Scene <n>` when empty |
+| `fps` | `settings.fps` | integer 12–60 |
+| `width`, `height` | `settings.resolution` | each rounded down to an even number: the clips are H.264 4:2:0 |
+| `set.description` | the scene (`clip.sceneId` in the screenplay) and its location element (`scene.locationId`) | the place (`scene.location`, else the location element's name, else `scene.heading`), the location element's `description` and the scene's `continuity` (time, weather, light, who wears and carries what), as sentences, cut to 4000 characters |
+| `set.interior` | `scene.heading` | `INT.` true, `EXT.` false; `INT./EXT.`, `I/E`, `EST.` or none: null (the desk decides from the words) |
+| `set.timeOfDay` | `scene.timeOfDay`, else the heading's time | the first that matches: dawn, sunrise, daybreak, first light, early morning → `dawn`; golden hour, magic hour → `golden_hour`; dusk, sunset, twilight, evening → `dusk`; night, midnight → `night`; noon, midday → `noon`; afternoon → `afternoon`; morning → `morning`; anything else (`day`, `continuous`, `later`) → null (the desk's daylight) |
+| `cast` | the characters of the clip's shots | in order of first appearance (shots by `index`), those in the project, at most 16 |
+| `cast[].id`, `name` | `character.id`, `name` | |
+| `cast[].description` | the identity and the summary | the identity as the video prompts say it (`compactIdentity`: age, gender, ethnicity, build, distinguishing marks, the default wardrobe), then `character.summary`, cut to 4000 characters: the words the desk reads the figure from ("a golden retriever", "a girl of 8") |
+| `cast[].kind` | – | null: rideo has no species field, the desk reads it from the description |
+| `cast[].heightM` | `identity.height` | a measure it names ("170 cm", "1.2 m"), 0.1–4 m; else null |
+| `elements` | the scene's location, then the elements of the scene and of the clip's shots | in order of first appearance, those in the project, at most 64 |
+| `elements[].kind` | `element.kind` | `location` → `location`, `prop` → `prop`, `style` → `other` (the desk stages no style) |
+| `elements[].name`, `description` | `element.name`, `description` | |
+| `shots` | `clip.shots` | sorted by `index` |
+| `shots[].id` | `shot.id` | results name rideo's shots by it |
+| `shots[].index` | its position | 0, 1, 2… in order |
+| `shots[].durationSec`, `description`, `action`, `continuity` | the shot's | |
+| `shots[].castIds`, `elementIds` | `characterIds`, `elementIds` | only those in the brief's cast and elements |
+| `shots[].framing`, `movement` | `camera.framing`, `camera.movement` | the same words |
+| `shots[].move`, `lensMm` | `camera.move`, `camera.lensMm` | null when unset; the move library is the same 20 moves ([directing](directing.md#move-library)) |
+| `shots[].layout` | `shot.layout` | `characterId` → `castId`, entries whose character is in the cast ([following the shot plan](#following-the-shot-plan)) |
+
+Nothing else goes: no reference images, voices, lines, takes, frames, URLs or tokens. Rideo's ids (`clp_…`, `sht_…`,
+`chr_…`, `ele_…`) fit the protocol's id pattern as they are.
 
 ## Following the shot plan
 
-The shot planner writes, beside each shot's description, its **planned layout** (`shot.layout`): every character
-in frame with the side of the frame they are on (`left`, `centre`, `right`) and which way they face in the picture
-(`left`, `right`, `camera`, `away`), as the description says it. Measured on six storyboards with the desk on, the AI
-blocking's cameras disagreed with it (blocking 3–5): a camera described `front` of a pair the plan saw from the other
-side put everyone on the other side of the frame, and the frames followed neither the plan nor the camera view.
-
-So after an AI blocking is normalized, `fitBlockingToPlan` checks every shot's camera against its planned layout
-(`planAgreement`: each planned character in frame, on its side, facing its way; a three-quarter turn counts for its
-side, a character a little off centre counts for the side it leans to, and two characters keep their order across
-the frame). A shot whose camera disagrees is solved again from the solver's other directions around its subjects
-(`front`, the three-quarters, the profiles, `back`, and over either shoulder for an over-the-shoulder shot), and the
-camera that agrees best is kept; the AI's own camera stays when it agrees. The plan wins over the line: a shot planned
-from the other side of the line is solved there, and `line_crossed` reports it.
-
-A shot whose camera still disagrees with its plan gets neither its blocking line nor its camera view: the image model
-gets the plan's words alone rather than a picture that contradicts them (`plan_mismatch`, a warning).
-
-Measured (fp27, the desk on): the fit refit about half of the shots to agree with their plan and left about four in ten
-disagreeing (the AI's marks could not give the planned layout from any direction), and the storyboards scored 6.1 (kite)
-and 6.6 (riding), blocking 4 and 3.5, against 7.2 and 6.8 on average with the desk off (a gateway fault kept every image from the image model in these runs, so this
-tested the blocking line and not the camera view; [measured again](first-pass.md#the-desk-on-request) with images delivered, the
-desk still scored lower): the image model did not follow
-the mannequins' camera views better when they agreed with the plan. The desk stays off for new projects. Where the camera
-agrees because a character leans to their planned side from the middle third, the blocking line says the planned side
-(`alignLayoutToPlan`), so the line never contradicts the description. A shot without a planned layout (planned before
-it, or by a person) keeps the blocking as it is.
-
-## Checks
-
-`blockingIssues(blocking, clip, ctx)` (shared) lists what breaks the scene, shown on the desk, sent to the storyboard
-reviewer and logged by the jobs:
-
-| Code | Severity | When |
-|---|---|---|
-| `line_crossed` | error | a cut's camera frames the main pair, or one of them, from the other side of the line than the scene set |
-| `subject_out_of_frame` | error | a character of the shot is not in its camera's frame (behind it or outside the picture) |
-| `camera_inside` | error | a camera stands inside a landmark |
-| `screen_direction` | warning | a character walks across the frame one way in a shot and the other way in the next cut |
-| `absent_in_frame` | warning | a character of the scene who is not in the shot stands in its frame (the render leaves them out, the frame would not) |
-| `actors_overlap` | warning | two characters closer than 0.35 m |
-| `outside_set` | warning | a mark or a camera outside the set |
-| `plan_mismatch` | warning | the shot's camera shows its characters on other sides or facing other ways than its planned layout: the shot gets neither its blocking line nor its camera view |
-
-## What the image and video models get
-
-**The blocking line** (prompt version 2, a shot with a blocking): `shotLayout` projects every character of the shot
-through its camera, and `blockingLine` writes it after the camera line of the keyframe prompt:
-
-```
-Blocking: Rosie is left of frame in the foreground, facing right; Sammy is right of frame, facing the camera.
-Behind them: the sea. Light: the sun is behind the camera, on the left.
-```
-
-- *Where*: the third of the frame (`left of frame`, `in the centre`, `right of frame`) and the depth among the
-  subjects (`in the foreground`, `in the background`).
-- *Facing*: towards the camera, with the back to it, or to the frame's left or right (three-quarters between).
-- *Behind them*: landmarks in the frame farther than the subjects.
-- *Light*: the sun against the camera's direction: behind the camera (faces lit), ahead (backlight), or from the left
-  or right.
-- *Moves*: a mark with a destination adds `Rosie walks from left of frame to the centre.` to the video prompt's action.
-
-The board's prompt hash includes the line and a signature of what the shot's camera view is drawn from (the set, the
-shot's characters, the props, the shot's marks and camera), so moving a mannequin or the shot's camera makes its frame
-*outdated*: it is drawn again with the new blocking. Moving another shot's camera leaves it current.
-
-**The camera view** (`settings.blocking.layoutImage`): `renderShotBlocking` draws the shot's camera
-view (flat-shaded mannequins in their colours on the ground, the landmarks, the props and the sky, lit from the sun)
-at 1024 px wide. It goes to the image model after the cast's and the elements' references and before the scene
-reference (whose phrase says it is the last image) when the model's `max_input_images` leaves a slot, and the prompt
-names it: `Reference images, in order: … 4 the blocking (orange figure
-= Rosie, blue figure = Sammy).` and `Keep the camera angle, the framing and where each figure stands and faces from the
-blocking; draw the real characters and place, never the mannequins.` Only the shot's characters are drawn: a
-mannequin in the picture is a person in the frame.
-
-**The camera move.** A blocked camera with an end position whose shot has no move of its own gets the move of the
-library it matches (`cameraMoveOf`: closer is `push_in`, farther `pull_out`, sideways `dolly_left`/`dolly_right`,
-around the target `orbit_left`/`orbit_right`, up `crane_up`), so the video request's `camera_motion` and the prompt's
-camera line follow the blocking.
-
-## Jobs
-
-| Kind | Lane | Does |
-|---|---|---|
-| `scene.block` | llm | the text model's floor plan of one clip's scene (`scene.block` task: the scene, its place and props, the cast with their heights, every shot with its framing, lens, description, action, cast and end state); normalized, the cameras solved and kept on the line; committed as `clip.blocking` (`source: ai`) with its issues logged |
-
-`storyboard.generate` (and a production scene's `clip.storyboard`, [AI review](ai-review.md#production-storyboards))
-blocks every clip it draws whose blocking is `missing` before drawing, and completes an `incomplete` one, when
-`settings.blocking.enabled` is on. `shot.board` and the keyframe step of `shot.generate` read the blocking.
-
-`settings.blocking = { enabled: boolean, layoutImage: boolean }`: off in the schema, so projects from before the desk
-keep their prompts byte-identical (R3) and their frames current. New projects were created with it on until October
-30, 2026, and are created with it off since: the AI blocking's cameras disagreed with the shot plans, and the frames
-followed neither ([the desk on request](first-pass.md#the-desk-on-request)). A person turns it on for a project.
+The shot planner writes, beside each shot's description, its **planned layout** (`shot.layout`): every character in
+frame with the side of the frame they are on (`left`, `centre`, `right`) and which way they face in the picture
+(`left`, `right`, `camera`, `away`), as the description says it. The brief carries it as the shot's `layout`; the desk
+stages the opening frame to agree with it, and each shot of a result says whether its camera shows the planned layout
+(`planAgrees`, null for a shot without one). Rideo attaches a shot that disagrees all the same (the person staged it)
+and lists it in the result's summary: "S3: the camera does not show the planned layout".
 
 ## The desk
 
-`/p/:id/storyboard` opens each scene's desk from its row (**Director's desk**). On wide screens the plan and the camera
-view sit side by side, on phones one above the other; every control works with a finger.
+The Storyboard view (`/p/:id/storyboard`) shows **Director's desk** on every scene row (storyboarded and production
+scenes) whose clip has shots, when the setting is on. It opens a full-screen panel inside the studio's root (so it
+keeps the theme): a header with the scene's title, the person's **Follow** mode (*Camera*, *Motion*, *Poses*: the
+reference the shots get; the browser remembers it, *Camera* by default) and **Close**, a status line, and the iframe
+filling the rest. The page behind it is inert while it is open. On phones it is the same panel, inside the safe-area
+insets.
 
-- **Director's view**: the floor plan as SVG, the set's outline and ground, landmarks as their shapes, each character
-  as a coloured disc with a nose for its facing and its name, props as squares, the line between the main pair, and
-  each shot's camera as a wedge of its field of view (numbered `S1`, `S2`…). Drag to move, drag a nose or a camera's
-  aim to turn; the selected shot's marks are edited, or the opening marks with *All shots*.
-- **Camera view**: the selected shot's camera view (`renderShotBlocking`, the picture the image model gets) with a
-  thirds grid and each character's name at its head; the shot strip below picks the shot.
-- **Inspector**: the selected character's pose and facing; the camera's lens, height and move, and **Auto camera**
-  (solve the shot's camera from its framing); the set's size, ground and sun.
-- **Checks**: the issues with the shot they are about; **Fix the blocking** normalizes it (solver and line).
-- **Save** commits the blocking (`source: user`); **Block with AI** runs `scene.block`; **Redraw frames** draws the
-  scene's frames that the new blocking made outdated.
+- **Connecting.** No `hello` within 15 seconds of the iframe's `load` event: "The desk at <origin> did not answer.
+  Check that it is served with the headers it needs" with a link to [these headers](#topology-and-headers); **Close**
+  still works.
+- **Approved clips** open read-only: the person can look and render, and a result is refused for their shots
+  ([the result](#the-result)).
+- **Closing.** **Close** asks the desk for its state (`save`), stores it and closes; the desk's own **Done** sends the
+  last state and `close`. Keys pressed inside the iframe go to the desk: the panel closes with its button, never with
+  Escape.
+
+## The result
+
+A `result` comes when the person presses **Send** in the desk (its `id` starts with `desk-`). Rideo takes the shots in
+order, one at a time; a shot that fails does not stop the others.
+
+1. **Refused**, with the reason, when the shot is no longer in the clip; when the clip is approved ("clip <n> is
+   approved: unapprove it to change its shots"); or when the clip no longer has the result's size, frame rate or the
+   shot's frame count (`max(1, round(durationSec × fps))`): "the shot changed since the desk rendered it: render it
+   again".
+2. **The reference.** The file of the person's mode (`references[mode]`; when the result has none for that mode, the
+   first of `camera`, `motion`, `pose` it has) becomes `desk-c<clip>-s<shot>-<mode>.mp4` (`video/mp4`) and goes
+   through the same upload as every browser file (`POST /api/projects/:id/uploads`, role `reference`), with a probe
+   made from the result (`hasVideo`, no audio, `videoCodec` `h264`, the result's width, height and fps, `durationSec`
+   = frames / fps), so the resource is ready at once, and with the shot's still as its poster (re-encoded as JPEG in
+   the browser: posters are stored as JPEG).
+3. **The shot.** `PATCH /api/projects/:id/clips/:clipId/shots/:shotId` with
+   `{motionReference: {resourceId, mode}, camera: {lensMm, move}}`: the reference to follow, and the lens and move
+   the desk staged (`move` null when the staged camera has no named move).
+
+Then rideo answers `result-ack` (`ok` when every shot was attached, a one-line `message`, and `shots` with each
+shot's `ok` and `error`), which the desk shows, and shows the same summary as a toast. The files' bytes are let go once
+uploaded. A shot's earlier references stay as resources; only the shot's `motionReference` changes.
+
+## What the image and video models get
+
+Nothing new reaches a prompt. A shot attached from the desk has a motion reference and a camera like any other
+([directing](directing.md)): the video request carries the clip as `reference_video` with its mode's phrase
+(`Reproduce the camera movement of the reference video.` for *Camera*), the camera line and `camera_motion` follow the
+lens and the move, and a shot with a motion reference gets a video request of its own ([multi-shot](multi-shot.md)).
+Motion, pose and camera references go to the model as they were uploaded, without a transcode: the clip already has
+the project's frame rate and size and exactly the shot's frames. A changed lens or move changes the keyframe prompt's
+camera line, so the shot's storyboard frame is *outdated* and drawn again ([storyboard](storyboard.md)); a new motion
+reference leaves the frame current (it is part of the video prompt only).
+
+## The desk state
+
+The desk's state is opaque bytes (`format` `3d-editor.desk-state`, `version` 1, at most 64 MiB) that rideo stores per
+clip and gives back on the next `open`. Rideo never reads them.
+
+**Where.** The bytes are an immutable media file named by its hash, `media/desk/<scene-slug>-<hash12>.bin`
+(`application/octet-stream`), and the clip names it:
+
+```ts
+clip.deskState: {
+  format: string;    // as the desk gave it: '3d-editor.desk-state'
+  version: number;   // 1
+  media: MediaRef;   // path, hash (sha256), size
+  updatedAt: string;
+} | null             // null: none stored
+```
+
+That is how rideo keeps every file: documents are versioned and media is immutable and referenced by hash
+([version control](version-control.md)), so a clip restored to an earlier commit, or read on another branch, gets the
+desk state it had then, and the file travels with the project on WebDAV, in the browser's storage and in project
+files. A file rewritten in place would not survive a restore or a branch. Rideo keeps every media file until the
+project is deleted, so it stores states sparingly.
+
+### When rideo stores it
+
+The desk sends `state` after its edits (at most every 5 seconds). The bridge keeps the newest and stores it when the
+panel closes (after `save`, or on the desk's `close`), before it applies a `result`, and while the desk stays open at
+most once a minute when the state changed since the last write. A state whose sha256 is the stored one is not sent
+again, and the server changes nothing for one it already has (no new file, no commit). Between two writes the desk's
+own copy holds the work on that device. Each write is a commit, `Save the desk of scene <n>`, coalesced per clip and
+author like typing ([coalescing](version-control.md#coalescing)).
+
+### The routes
+
+| Route | Body | Returns |
+|---|---|---|
+| `GET /api/projects/:id/clips/:clipId/desk-state` | – | the bytes (`application/octet-stream`) with `X-Desk-State-Format`, `X-Desk-State-Version`, `ETag` (the sha256); `404` `not_found` when none is stored |
+| `PUT /api/projects/:id/clips/:clipId/desk-state` | the bytes (`application/octet-stream`, at most 64 MiB) with `X-Desk-State-Format` and `X-Desk-State-Version` | `{deskState}` (`200`; the same when the bytes were stored already) |
+| `DELETE /api/projects/:id/clips/:clipId/desk-state` | – | `204`: the clip names no state (the file stays, as all media); the next `open` stages the brief |
+
+A state is stored for any clip, approved or not (it is the desk's working copy, not the film), and a clip planned
+again keeps it: the desk lists the shots the new plan added and removed when it opens.
+
+## Agents
+
+`GET /api/projects/:id/clips/:clipId/desk-brief` and the MCP tool `desk_brief` (`projectId`, `clipId`, read-only)
+return the clip's brief. An agent stages it with the 3D-Editor's MCP tool `desk_stage_brief`, renders the shots there,
+and attaches each clip with rideo's own tools: `resource_add` (the clip as an https or `data:` URI; a video added that
+way is probed by an open studio tab, `media.process`) and `shot_update` with `motionReference` and `camera`. The desk
+state has no MCP tool: it is the browser desk's opaque bytes, up to 64 MiB, and agents work from the brief.
 
 ## Surfaces
 
 | REST | MCP |
 |---|---|
-| `GET /api/projects/:id/clips/:clipId/blocking` → `{blocking, state, issues, lines}` (`lines`: each shot's blocking line) | `blocking_get` |
-| `PUT /api/projects/:id/clips/:clipId/blocking` `{blocking, fix?}` → the same | `blocking_set` |
-| `POST /api/projects/:id/clips/:clipId/blocking/generate` → job (`scene.block`) | `blocking_generate` |
-| `GET /api/projects/:id/clips/:clipId/shots/:shotId/blocking.png` → the shot's camera view (PNG, `?width=` 160–1920) | `blocking_render` (the PNG as image content) |
+| `GET /api/projects/:id/clips/:clipId/desk-brief` → the `SceneBrief` | `desk_brief` |
+| `GET` / `PUT` / `DELETE /api/projects/:id/clips/:clipId/desk-state` | – (opaque bytes, [above](#agents)) |
 
-REST and MCP call the same `StoryboardService` methods. A blocking that does not validate is a `validation_error`
-(422); one for a clip that is approved is a `conflict` (409): unapprove the clip to change its blocking.
+REST and MCP call the same `DeskService` (`packages/server/src/domain/desk.ts`). The desk's URL reaches browsers in
+`GET /api/config` (`features.desk`).
+
+| Error | When |
+|---|---|
+| `not_found` (404) | the project, the clip, or a desk state to read |
+| `validation_error` (422) | a brief of a clip without shots ("plan the shots of clip <n> first"); a state without its format and version headers, of another format or version than the desk's, or not `application/octet-stream` |
+| `validation_error` (413) | a state over 64 MiB |
+
+The desk's own errors (`unsupported_version`, `invalid_scene`, `busy`, `export_unavailable`, `export_failed`,
+`out_of_memory`, `cancelled`, `not_open`, `state_unreadable`) are shown with their message in the panel; rideo
+records none of them.
+
+## What happened to the blocking
+
+On November 14, 2026 rideo's own desk was removed: the `clip.blocking` document (`SceneBlocking`) and its solver, line
+and checks, `settings.blocking`, the `scene.block` job and LLM task, the blocking line and moves in the keyframe,
+video, scene-sheet and multi-shot prompts, the camera view and its phrase in keyframe requests, the storyboard
+reviewer's blocking lines, camera views and `blocking` dimension, the `/blocking` REST routes, the `blocking_*` MCP
+tools, the `rideo_blocking_*` metrics, the job notice, the mock gateway's floor plans and the SVG desk.
+
+- **Stored documents still read.** A project's `settings.blocking` is dropped when the project is read; a clip's
+  `blocking` is ignored by everything that reads the clip and is gone after the clip's next write (every write
+  validates its document). Stored reviews whose issues or recommendations name the `blocking` dimension still parse
+  (a legacy dimension no reviewer is asked for; the panel lists them under its name and draws no bar for an old
+  `scores.blocking`). Job records of `scene.block` no longer parse and leave the job list.
+- **Prompts.** A project that never turned the desk on (every project since October 30, and the schema's default)
+  keeps byte-identical prompts and current frames. A project that had `settings.blocking.enabled`: its blocked shots'
+  frames are *outdated* once (their prompt hash held the blocking), and the storyboard draws them again; the lens and
+  move the old desk wrote to its shots stay.
+- **The 3D-Editor's old bridge** (server to server, through the `/blocking` routes) is gone from the 3D-Editor too; the
+  [protocol](#the-protocol) replaces it.
 
 ## Observability
 
-`rideo_blocking_total{source, outcome}` counts blockings saved (`source`: `ai`, `user`; `outcome`: `clean`,
-`issues`), `rideo_blocking_issues_total{code}` the issues found when one is saved, and
-`rideo_blocking_line_fixes_total` the cameras the solver brought back over the line, and
-`rideo_blocking_plan_fits_total{outcome}` each AI-blocked shot against its planned layout (`agreed` as blocked,
-`refit` by another camera, `mismatch` still disagreeing). The job logs the project, the
-clip, the shots solved and the issues.
+`rideo_desk_state_saves_total{outcome}` counts the states sent to the server (`saved`: a new state stored;
+`unchanged`: the stored one again; `refused`: too large, or another format) and `rideo_desk_briefs_total` the briefs
+served (REST and MCP). The server logs `desk state saved` with the project, the clip, the size, the sha256, the format
+and the version.
 
-## Mock gateway
+## Tests
 
-`scene.block` answers a floor plan from rules over its input: the cast in a row across the set facing each other
-(two characters) or the front, a landmark for the place, each prop beside the first character, and for each shot a
-camera spec from its framing (`front`, alternating three-quarters for singles of a conversation, `over_shoulder` for
-over-the-shoulder shots). A shot whose description says "cross the line" gets its camera on the other side, so
-tests see the solver bring it back.
+- **Unit (shared):** the brief from rideo's documents, row by row of [the table](#the-brief) (even sizes, the time of
+  day, interiors, the cast and element order and limits, ids filtered, a clip without shots); the protocol's schemas
+  against every fixture; which file of a result a shot gets and when a shot is refused; legacy documents with
+  `blocking` fields and reviews with the `blocking` dimension.
+- **Integration:** the desk-state routes (bytes back as stored, headers, the 64 MiB limit, a second PUT of the same
+  bytes changing nothing, a commit per state, a clip restored with its state); `desk-brief` and `desk_brief` returning
+  the same brief; the metrics.
+- **Unit (web):** the bridge: messages from another origin or window ignored, the 15-second timeout, `open` with the
+  stored state, states stored when the panel closes and at most once a minute, a result uploaded and attached,
+  `result-ack`, an approved clip refused.
+- **End to end (desktop and mobile):** a fake desk (`e2e/fixtures/desk/`, served by `e2e/support/desk-page.ts` on its
+  own origin, `localhost` against the studio's `127.0.0.1`, with the two headers) speaks protocol version 1 and sends
+  a canned result (a checked-in H.264 clip and still); `e2e/director-desk.spec.ts` opens the desk on a scene, sees it
+  connect and its state stored, sends the result and finds the shot's motion reference and camera set in the Direct
+  panel; a desk page served without the headers shows the timeout message; nothing scrolls sideways.

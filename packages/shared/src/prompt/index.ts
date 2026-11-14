@@ -62,9 +62,6 @@ export const SCENE_REFERENCE_PHRASE =
  */
 export const SCENE_REFERENCE_PHRASE_V3 =
   "The last image is this scene's opening frame, the same place earlier in the scene: keep its landmarks where they stand, the look of every prop (its shape, size, colour and material), the ground, the weather, the light and the time of day as in it. Who is in frame, where each one stands, what each holds and every prop's state and place follow the text above, not this image.";
-/** The camera view of a blocked shot, sent as a reference image (docs/design/director-desk.md). */
-export const BLOCKING_IMAGE_PHRASE =
-  'Keep the camera angle, the framing and where each figure stands and faces from the blocking; draw the real characters and place, never the mannequins.';
 
 export const DEFAULT_VIDEO_LIMITS = { min: 4, max: 10 };
 /**
@@ -302,19 +299,6 @@ export interface ShotContext {
   /** Version 2: what each reference image of a keyframe request shows, in order (docs/design/continuity.md). */
   referenceLabels?: string[];
   /**
-   * Version 2, a blocked scene (docs/design/director-desk.md#what-the-image-and-video-models-get): where everyone
-   * stands and faces (keyframes), who walks where (videos), and the colours of the camera view's figures.
-   */
-  blocking?: {
-    line: string | null;
-    moves: string | null;
-    legend: string;
-    /** Hash of what the shot's camera view is drawn from: a storyboard frame is outdated when it changes. */
-    signature?: string;
-  } | null;
-  /** The keyframe request carries the shot's camera view (a reference image before the scene reference). */
-  blockingImage?: boolean;
-  /**
    * Version 2, a video that starts from a frame: the shot's description and action as that frame shows them
    * (`frame.reconcile`, docs/design/first-pass.md#the-video-reads-its-first-frame), in place of the planned ones.
    */
@@ -491,9 +475,6 @@ export function shotBodyV2(
   if (mode === 'keyframe' && previous && shot.continuity !== 'continuous')
     lines.push(`Continues from the previous shot: ${previous}.`);
   if (!opts.cameraSaid) lines.push(cameraLine(ctx, mode));
-  // The blocking: where everyone stands in the frame (keyframes), who walks where (videos)
-  if (mode === 'keyframe' && ctx.blocking?.line) lines.push(ctx.blocking.line);
-  if (mode === 'video' && ctx.blocking?.moves) lines.push(ctx.blocking.moves);
   if (mode === 'video' && opts.motionReference && shot.motionReference)
     lines.push(MOTION_REFERENCE_PHRASES[shot.motionReference.mode]);
   return lines;
@@ -589,7 +570,6 @@ function compileShotPromptV2(
       );
     if (ctx.sceneReference)
       lines.push(promptVersionOf(settings) >= 3 ? SCENE_REFERENCE_PHRASE_V3 : SCENE_REFERENCE_PHRASE);
-    if (ctx.blockingImage) lines.push(BLOCKING_IMAGE_PHRASE);
     lines.push(`Avoid: ${EXCLUSIONS_STILL}${avoidsTheLens(ctx) ? `, ${LOOKING_INTO_CAMERA}` : ''}.`);
     return lines.join(' ');
   }

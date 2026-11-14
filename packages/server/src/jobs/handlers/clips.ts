@@ -35,7 +35,6 @@ import { assertCastReady, assertVoicesReady, clipStatusOf } from '../../domain/c
 import { AppError, notFound } from '../../errors';
 import { throwIfAborted } from '../../util/abort';
 import type { JobContext } from '../queue';
-import { ensureBlocking } from './blocking';
 import { commitAs, docsFor, type HandlerDeps } from './common';
 import { approveClipOnAutopilot, approveProductionOnAutopilot } from './reviews';
 
@@ -138,7 +137,7 @@ export async function clipPlan(deps: HandlerDeps, ctx: JobContext) {
     ctx,
     (tx) => {
       const existing = tx.list<Clip>('clips/').find((c) => c.sceneId === sceneId);
-      // A plan again keeps the scene's set and marks: its new shots get cameras when it is blocked again
+      // A plan again keeps the clip (its id and notes) with the new shots
       const next: Clip = existing
         ? {
             ...existing,
@@ -160,7 +159,6 @@ export async function clipPlan(deps: HandlerDeps, ctx: JobContext) {
             approvedBy: null,
             notes: '',
             review: null,
-            blocking: null,
             boardReview: null,
           };
       tx.set(docPath.clip(next.id), next);
@@ -175,7 +173,6 @@ export async function clipPlan(deps: HandlerDeps, ctx: JobContext) {
     assertVoicesReady(deps, clip.shots, fresh.characters, fresh.project.settings);
     await ctx.spawn('clip.generate', { clipId: clip.id }, { dedupeKey: `clip:${clip.id}` });
   }
-  if (thenBoard) await ensureBlocking(deps, ctx, [clip.id]);
   if (thenBoard)
     for (const shot of clip.shots)
       await ctx.spawn('shot.board', { clipId: clip.id, shotId: shot.id }, { dedupeKey: `board:${shot.id}` });
@@ -471,9 +468,9 @@ export async function batchGenerate(deps: HandlerDeps, ctx: JobContext) {
       }
       assertCastReady(next.shots, docs.characters, docs.elements);
       assertVoicesReady(deps, next.shots, docs.characters, docs.project.settings);
-      // Production storyboards (docs/design/ai-review.md#production-storyboards): the scene is blocked, drawn, reviewed
-      // and its frames approved before any of its video is made; one of the storyboard stage's scenes too when the
-      // stage did not draw it (written after it)
+      // Production storyboards (docs/design/ai-review.md#production-storyboards): the scene is drawn, reviewed and its
+      // frames approved before any of its video is made; one of the storyboard stage's scenes too when the stage did
+      // not draw it (written after it)
       const sb = docs.project.settings.storyboard;
       if (sb?.production && sb.enabled !== false && !clipFramesApproved(next, docs)) {
         const state = clipBoardReviewState(next);

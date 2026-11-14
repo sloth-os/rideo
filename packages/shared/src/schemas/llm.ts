@@ -440,7 +440,6 @@ export const LLM_TASKS = [
   'screenplay.review',
   'screenplay.revise',
   'storyboard.review',
-  'scene.block',
   'take.watch',
   'cast.review',
   'frame.reconcile',
@@ -459,8 +458,7 @@ export const REQUIRED_SCORES: Partial<Record<LlmTaskId, readonly string[]>> = {
   'feedback.film': VISION_DIMENSION_IDS,
   'screenplay.review': REVIEW_DIMENSIONS.screenplay,
   'cast.review': REVIEW_DIMENSIONS.cast,
-  // `blocking` is scored only while the director's desk is on
-  'storyboard.review': REVIEW_DIMENSIONS.storyboard.filter((d) => d !== 'blocking'),
+  'storyboard.review': REVIEW_DIMENSIONS.storyboard,
 };
 
 /** The scores of `REQUIRED_SCORES[task]` a parsed answer lacks: empty when it gives them all or the task needs none. */
@@ -1108,140 +1106,6 @@ export interface CastReviewInput {
 /** The label before each reference image of `cast.review`. */
 export const CAST_REFERENCE_LABEL = 'Reference';
 
-/** `scene.block`: the scene and its shots for the text model's floor plan (docs/design/director-desk.md#jobs). */
-export interface SceneBlockInput {
-  scene: {
-    heading: string;
-    location: string;
-    timeOfDay: string;
-    continuity: string;
-    summary: string;
-    action: string;
-  };
-  place: { name: string; description: string } | null;
-  props: { name: string; description: string }[];
-  cast: { name: string; heightM: number; look: string }[];
-  shots: {
-    index: number;
-    framing: string;
-    movement: string;
-    lensMm: number | null;
-    description: string;
-    action: string;
-    endState: string;
-    characters: string[];
-    speakers: string[];
-    continuity: 'cut' | 'continuous';
-  }[];
-  /** What the floor plan means: units, axes, facings. */
-  conventions: string;
-}
-
-const coord = z.coerce.number().min(-500).max(500).catch(0);
-const facing = z.coerce.number().min(-3600).max(3600).catch(0);
-const poseName = z
-  .enum(['stand', 'walk', 'run', 'sit', 'crouch', 'kneel', 'lie', 'reach', 'point', 'wave'])
-  .catch('stand');
-const blockMark = z.object({
-  name: z.string().min(1).max(100),
-  x: coord,
-  z: coord,
-  facingDeg: facing,
-  pose: poseName.default('stand'),
-  toX: z.coerce.number().min(-500).max(500).nullable().optional().catch(null),
-  toZ: z.coerce.number().min(-500).max(500).nullable().optional().catch(null),
-});
-
-/** The text model's floor plan of a scene: marks in metres, a camera described per shot. */
-export const SceneBlockOutputSchema = z.object({
-  set: z
-    .object({
-      width: z.coerce.number().min(2).max(200).catch(12).default(12),
-      depth: z.coerce.number().min(2).max(200).catch(10).default(10),
-      ground: str(80),
-      interior: flag.default(false),
-      sun: z
-        .object({
-          azimuthDeg: z.coerce.number().min(-3600).max(3600).catch(135).default(135),
-          elevationDeg: z.coerce.number().min(2).max(90).catch(40).default(40),
-        })
-        .catch({ azimuthDeg: 135, elevationDeg: 40 })
-        .default({ azimuthDeg: 135, elevationDeg: 40 }),
-      landmarks: lenientArray(
-        z.object({
-          label: z.string().min(1).max(80),
-          shape: z.enum(['box', 'cylinder', 'water', 'wall']).catch('box').default('box'),
-          x: coord,
-          z: coord,
-          width: z.coerce.number().min(0.05).max(500).catch(1),
-          depth: z.coerce.number().min(0.05).max(500).catch(1),
-          height: z.coerce.number().min(0.01).max(200).catch(1),
-          rotationDeg: facing.default(0),
-        }),
-        24,
-      ),
-    })
-    .catch({
-      width: 12,
-      depth: 10,
-      ground: '',
-      interior: false,
-      sun: { azimuthDeg: 135, elevationDeg: 40 },
-      landmarks: [],
-    }),
-  actors: lenientArray(blockMark, 8),
-  props: lenientArray(
-    z.object({
-      name: z.string().min(1).max(80),
-      x: coord,
-      z: coord,
-      size: z.coerce.number().min(0.05).max(20).catch(0.4).default(0.4),
-      heldBy: optionalText(100),
-    }),
-    16,
-  ),
-  shots: lenientArray(
-    z.object({
-      index: z.coerce.number().int().nonnegative(),
-      marks: lenientArray(blockMark, 8),
-      camera: z
-        .object({
-          subjects: lenientArray(z.string().min(1).max(100), 8),
-          angle: z
-            .enum([
-              'front',
-              'three_quarter_left',
-              'three_quarter_right',
-              'profile_left',
-              'profile_right',
-              'back',
-              'over_shoulder',
-              'pov',
-            ])
-            .catch('front')
-            .default('front'),
-          height: z.enum(['eye', 'low', 'high', 'overhead']).catch('eye').default('eye'),
-          move: z
-            .enum([
-              'none',
-              'push_in',
-              'pull_out',
-              'dolly_left',
-              'dolly_right',
-              'orbit_left',
-              'orbit_right',
-              'crane_up',
-            ])
-            .catch('none')
-            .default('none'),
-        })
-        .catch({ subjects: [], angle: 'front', height: 'eye', move: 'none' }),
-    }),
-    60,
-  ),
-});
-export type SceneBlockOutput = z.infer<typeof SceneBlockOutputSchema>;
-
 /** `take.watch`: one take as planned, watched whole by the vision model (docs/design/ai-review.md#takes-watched-whole). */
 export interface TakeWatchInput {
   shot: {
@@ -1317,10 +1181,6 @@ export interface StoryboardSceneReviewInput {
     characters: string[];
     dialogue: { character: string; line: string }[];
     frame: 'attached' | 'missing';
-    /** With a blocking (docs/design/director-desk.md): the shot's blocking line; its camera view follows its frame. */
-    blocking?: string;
   }[];
   video: VideoModelFacts;
-  /** The scene's blocking issues (docs/design/director-desk.md#checks), when it is blocked. */
-  blockingIssues?: string[];
 }

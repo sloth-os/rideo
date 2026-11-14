@@ -1,6 +1,5 @@
 import {
   type BoardState,
-  blockingState,
   boardApprovable,
   boardState,
   type Clip,
@@ -17,7 +16,6 @@ import {
 import {
   ArrowLeft,
   ArrowRight,
-  Camera,
   Check,
   Clapperboard,
   Download,
@@ -51,8 +49,6 @@ import { AiReviewPanel, ReviewCard } from '../ai-review/AiReviewPanel';
 
 // The player pulls in mediabunny (WebCodecs); load it only when an animatic exists.
 const AnimaticPlayer = lazy(() => import('./AnimaticPlayer').then((m) => ({ default: m.AnimaticPlayer })));
-// The director's desk (docs/design/director-desk.md#the-desk) loads when a scene opens it.
-const DirectorDesk = lazy(() => import('./DirectorDesk').then((m) => ({ default: m.DirectorDesk })));
 
 const STATE_TONE: Record<BoardState, 'success' | 'warning' | 'danger' | 'info' | 'neutral'> = {
   approved: 'success',
@@ -330,7 +326,7 @@ function BoardReviewCard({ clip }: { clip: Clip }) {
   );
 }
 
-/** A scene's row: its frames, its desk, and for a production scene its review. */
+/** A scene's row: its frames, and for a production scene its review. */
 function SceneRow({
   clip,
   title,
@@ -342,49 +338,14 @@ function SceneRow({
   duration: number;
   production?: boolean;
 }) {
-  const { docs } = useProject();
-  const [desk, setDesk] = useState(false);
   const shots = clip ? [...clip.shots].sort((a, b) => a.index - b.index) : [];
-  const blocked = clip
-    ? blockingState(
-        clip.blocking,
-        shots.map((s) => ({ id: s.id, index: s.index, characterIds: s.characterIds, camera: s.camera })),
-      )
-    : 'missing';
   return (
     <section className="space-y-2" data-testid={production ? 'production-scene' : 'storyboard-scene'}>
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h3 className="text-[13px] font-semibold">
-          {title}
-          <span className="ml-2 font-normal text-muted">{formatDuration(duration)}</span>
-          {clip && docs?.project.settings.blocking?.enabled ? (
-            <Badge tone={blocked === 'ready' ? 'success' : 'neutral'} className="ml-2">
-              {blocked === 'ready'
-                ? 'blocked'
-                : blocked === 'incomplete'
-                  ? 'blocking incomplete'
-                  : 'not blocked'}
-            </Badge>
-          ) : null}
-        </h3>
-        {clip?.shots.length ? (
-          <Button
-            size="sm"
-            icon={<Camera className="size-3.5" />}
-            onClick={() => setDesk((v) => !v)}
-            aria-expanded={desk}
-            data-testid="open-desk"
-          >
-            Director's desk
-          </Button>
-        ) : null}
-      </div>
+      <h3 className="text-[13px] font-semibold">
+        {title}
+        <span className="ml-2 font-normal text-muted">{formatDuration(duration)}</span>
+      </h3>
       {production && clip ? <BoardReviewCard clip={clip} /> : null}
-      {clip && desk ? (
-        <Suspense fallback={<Spinner className="size-5" />}>
-          <DirectorDesk clip={clip} onClose={() => setDesk(false)} />
-        </Suspense>
-      ) : null}
       {clip ? (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {shots.map((shot) => (
@@ -400,8 +361,7 @@ function SceneRow({
 
 /**
  * The storyboard stage (docs/design/storyboard.md): the frames of the first scenes as a grid to review, reorder,
- * redraw and approve, each scene's director's desk, the production scenes with their reviews, the animatic, and the
- * shot list downloads.
+ * redraw and approve, the production scenes with their reviews, the animatic, and the shot list downloads.
  */
 export function StoryboardView() {
   const { docs, projectId, workflow, jobs } = useProject();

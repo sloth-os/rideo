@@ -28,7 +28,6 @@ import { GatewayClient } from '../gateway/gateway-client';
 import { ProxyClient } from '../gateway/proxy-client';
 import { GatewayProxies } from '../gateway/proxy-sync';
 import { screenplayReview, screenplayRevise, storyboardReview } from '../jobs/handlers/ai-review';
-import { sceneBlock } from '../jobs/handlers/blocking';
 import { clipReview } from '../jobs/handlers/clip-review';
 import { batchGenerate, clipGenerate, clipPlan } from '../jobs/handlers/clips';
 import type { HandlerDeps } from '../jobs/handlers/common';
@@ -464,7 +463,6 @@ export function createStudio(
   reg('screenplay.revise', screenplayRevise);
   reg('storyboard.review', storyboardReview);
   reg('clip.review', clipReview);
-  reg('scene.block', sceneBlock);
   reg('clip.storyboard', clipStoryboard);
   reg('cast.review', castReview);
   reg('takes.watch', takesWatch);

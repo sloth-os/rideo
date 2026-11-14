@@ -322,7 +322,7 @@ Every LLM use is a **task** with an id, a zod output schema, a system prompt and
 3. Validate with zod. If validation fails, make **one repair call** with the validation errors and the
    previous output. A review must also give every score it is asked for (`REQUIRED_SCORES`: the picture's eight
    dimensions for `feedback.scene` and `feedback.film`; the stage's dimensions for `screenplay.review`, `cast.review`
-   and `storyboard.review`, without the desk's `blocking`). The lenient schema keeps the scores it can read and drops
+   and `storyboard.review`). The lenient schema keeps the scores it can read and drops
    the rest (a null or an empty string is no score, never a 0), so an answer without one is invalid and repaired, never
    judged on what is left. In fp56 two answers'
    picture scores came back unreadable, and a scene was scored 8 on its sound alone.

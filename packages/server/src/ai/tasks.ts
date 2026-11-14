@@ -55,9 +55,6 @@ import {
   rubricLines,
   SCENE_VIDEO_LABEL,
   SCENE_WATCH_LABEL,
-  type SceneBlockInput,
-  type SceneBlockOutput,
-  SceneBlockOutputSchema,
   type ScorePlanInput,
   type ScorePlanOutput,
   ScorePlanOutputSchema,
@@ -295,17 +292,6 @@ List the issues: "shot" (its index), "dimension", "severity" ("critical", "major
 Then the recommendations, most important first: "shot" when it is about one, "dimension", "priority" (1 = must fix before video, 2 = should, 3 = could), "title", "detail", and an "action": {"kind":"redraw_board", with only the fields that change: "description" (the revised first frame), "action", "framing", "movement", "characters" (the names in frame), "durationSec"} to draw that frame again, {"kind":"replan_scene","direction":"what the new shot plan must do"} when the scene's shots must be planned again, or {"kind":"note"}.
 Be honest and specific; praise only what deserves it.
 Return only JSON: {"scores":{"composition":7,"continuity":7,"character":7,"coverage":7,"storytelling":7,"feasibility":7,"pacing":7},"summary":"...","strengths":["..."],"issues":[{"shot":2,"dimension":"continuity","severity":"major","title":"...","detail":"..."}],"recommendations":[{"shot":2,"dimension":"continuity","priority":1,"title":"...","detail":"...","action":{"kind":"redraw_board","description":"..."}}]}`,
-
-  'scene.block': `rideo-task: scene.block
-You are a director blocking one scene of a film in a small 3D set before it is storyboarded, like a previs artist on a director's desk. You get the scene, its place and props, the cast with their heights, and every shot in order (framing, movement, lens, description, action, end state, who is in it, who speaks). "conventions" says what the numbers mean.
-Lay the scene out as a floor plan a camera team could use:
-- The set: its width and depth in metres (big enough for every mark and the cameras of the wide shots), the ground ("sand", "snow", "wooden floor"...), interior or not, and where the sun or key light comes from (azimuth in degrees: 0 the front, 90 the right, 180 the back, 270 the left; elevation 5–90). Keep the light where the scene's time of day puts it.
-- Landmarks the scene's geography needs, as simple shapes in metres: the sea or a lake as "water", a building or rock as "box", a tree or pillar as "cylinder", walls as "wall". Put them where the scene says (the sea behind them, the lodge on the left) and keep them there: every shot of the scene shares this geography. Only what stands on the set or within a few metres of it (a fence, a gate, a barn, a tree); far scenery (hills, mountains, a skyline, the sky) is not a landmark: the shots' descriptions carry it. Name each landmark by what it is ("white fence", "red barn"): its colour on the desk comes from its name.
-- Every character's opening mark: x and z in metres, facingDeg, and a pose (stand, walk, run, sit, crouch, kneel, lie, reach, point, wave). Two people talking stand 1–2 m apart facing each other.
-- Props on the floor where they are (or "heldBy" a character's name).
-- For each shot (by "index"): the marks of the characters who move or change pose in it (toX/toZ where they walk to during the shot), and the camera described, not placed: "subjects" (the names it frames), "angle" (front, three_quarter_left, three_quarter_right, profile_left, profile_right, back, over_shoulder with the shoulder's owner first, pov with the viewer first), "height" (eye, low, high, overhead) and "move" (none, push_in, pull_out, dolly_left, dolly_right, orbit_left, orbit_right, crane_up). A solver places each camera from that and the shot's framing and lens.
-Keep the 180-degree rule: once the scene shows two characters from one side of the line between them, every cut stays on that side (shot and reverse shot are both on it). Keep screen direction: a character leaving frame right enters the next shot from the left.
-Return only JSON: {"set":{"width":12,"depth":10,"ground":"sand","interior":false,"sun":{"azimuthDeg":200,"elevationDeg":35},"landmarks":[{"label":"the sea","shape":"water","x":0,"z":-7,"width":30,"depth":6,"height":0.05}]},"actors":[{"name":"Rosie","x":-1,"z":0,"facingDeg":90,"pose":"stand"}],"props":[{"name":"beach ball","x":0.5,"z":0.6,"size":0.4}],"shots":[{"index":0,"marks":[{"name":"Rosie","x":-1,"z":0,"facingDeg":90,"pose":"walk","toX":0,"toZ":0}],"camera":{"subjects":["Rosie","Sammy"],"angle":"front","height":"eye","move":"none"}}]}`,
 
   'take.watch': `rideo-task: take.watch
 You are a script supervisor and a VFX supervisor watching one take of an AI-generated film from its first frame to its last, to catch what still frames miss. You get the shot as planned (description, action, camera, length, place, the end state it should reach), who is in it with how they look ("cast", each with its reference image before the take), who must not be in it ("absent"), and the take ("Take video:"; when "watching" is "frames", its frames in order instead).
@@ -1117,15 +1103,6 @@ export class LlmTasks {
     return { out: await call('omni'), via: 'omni', model: this.deps.omni!.model };
   }
 
-  /** The text model's floor plan of a scene (docs/design/director-desk.md#jobs). */
-  blockScene(input: SceneBlockInput, signal?: AbortSignal): Promise<SceneBlockOutput> {
-    return this.run('scene.block', SceneBlockOutputSchema, input, {
-      temperature: 0.3,
-      maxTokens: 8000,
-      signal,
-    });
-  }
-
   /** One character's or element's references reviewed by the vision model (docs/design/ai-review.md#how-a-review-runs). */
   reviewCast(
     input: CastReviewInput,
@@ -1162,17 +1139,14 @@ export class LlmTasks {
     });
   }
 
-  /** One storyboarded scene, its frames attached in shot order, each followed by its camera view when blocked. */
+  /** One storyboarded scene, its frames attached in shot order. */
   reviewStoryboardScene(
     input: StoryboardSceneReviewInput,
-    frames: { label: string; data: Buffer; blocking?: Buffer }[],
+    frames: { label: string; data: Buffer }[],
     signal?: AbortSignal,
   ): Promise<StageReviewOutput> {
     return this.run('storyboard.review', StageReviewOutputSchema, input, {
-      images: frames.flatMap((f) => [
-        { label: `Frame ${f.label}:`, data: f.data, mime: 'image/png' },
-        ...(f.blocking ? [{ label: `Blocking ${f.label}:`, data: f.blocking, mime: 'image/png' }] : []),
-      ]),
+      images: frames.map((f) => ({ label: `Frame ${f.label}:`, data: f.data, mime: 'image/png' })),
       temperature: 0.2,
       maxTokens: 8000,
       signal,

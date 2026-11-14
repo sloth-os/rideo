@@ -49,10 +49,11 @@ describe('the first pass', () => {
       return line ? Number(line.split(' ').at(-1)) : 0;
     };
     const before = await reviewCalls();
-    // Every framing spelled out, the director's desk and the brief's adaptation on request (docs/design/first-pass.md)
+    // Every framing spelled out and the brief's adaptation on request (docs/design/first-pass.md); no blocking settings
+    // since rideo's own desk is gone (docs/design/director-desk.md#what-happened-to-the-blocking)
     expect(created.settings.generation.promptVersion).toBe(3);
     expect(created.settings.brief.adapt).toBe(false);
-    expect(created.settings.blocking).toMatchObject({ enabled: false, layoutImage: false });
+    expect(created.settings).not.toHaveProperty('blocking');
     const pid = created.id;
 
     // One screenplay draft unless a project asks for more, as its settings do (docs/design/first-pass.md#two-drafts-the-better-kept)

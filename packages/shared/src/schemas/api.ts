@@ -93,8 +93,6 @@ export const ProjectSettingsPatchSchema = z
         sheetPixels: z.number().int().min(1_000_000).max(16_777_216),
       })
       .partial(),
-    /** The 3D director's desk (docs/design/director-desk.md#jobs). */
-    blocking: z.object({ enabled: z.boolean(), layoutImage: z.boolean() }).partial(),
     generation: z
       .object({
         includeAudio: z.boolean(),
@@ -305,13 +303,6 @@ export const MusicInputSchema = z.object({
 
 /** `POST /clips/:clipId/review` (docs/design/ai-review.md#scenes-before-the-edit): `fix: false` only watches. */
 export const ClipReviewInputSchema = z.object({ fix: z.boolean().optional() });
-
-/** `PUT /clips/:clipId/blocking` (docs/design/director-desk.md#surfaces). */
-export const BlockingInputSchema = z.object({
-  blocking: z.record(z.string(), z.unknown()),
-  /** Keep the cameras of cuts on the scene's side of the line, and the rest normalized. */
-  fix: z.boolean().optional(),
-});
 
 /** `POST /takes/watch`: the takes to watch whole (the cut's when empty). */
 export const TakesWatchInputSchema = z.object({

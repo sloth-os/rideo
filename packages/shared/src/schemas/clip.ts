@@ -1,7 +1,6 @@
 import { z } from 'zod';
 import { CameraMoveIdSchema } from '../directing';
 import { StageReviewSchema, StageVerdictSchema } from './ai-review';
-import { SceneBlockingSchema } from './blocking';
 import { ActorSchema, IdSchema, IsoDateSchema, MediaRefSchema } from './common';
 import { FeedbackIssueSchema, FeedbackRecommendationSchema, FeedbackScoresSchema } from './feedback';
 import { ContentCredentialsStampSchema } from './provenance';
@@ -452,8 +451,6 @@ export const ClipSchema = z.object({
   notes: z.string().max(4000).default(''),
   /** Its scene's takes watched before the edit (docs/design/ai-review.md#scenes-before-the-edit). */
   review: ClipReviewSchema.nullable().default(null),
-  /** The scene blocked in 3D (docs/design/director-desk.md). */
-  blocking: SceneBlockingSchema.nullable().default(null),
   /** A production scene's storyboard review (docs/design/ai-review.md#production-storyboards). */
   boardReview: StageReviewSchema.nullable().default(null),
 });

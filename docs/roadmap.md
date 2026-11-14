@@ -235,14 +235,15 @@ mm-gateway backends for cost and privacy, with a documented GPU setup. *Why:* [L
 
 ### P1 — added October 2026
 
-**23. 3D director's desk** (M) — *done:* [design/director-desk.md](design/director-desk.md) — every storyboarded scene
-blocked in a small 3D set (mannequins on marks, props, landmarks, the sun, a camera per shot) by the AI with a camera
-solver that keeps the 180° rule, edited on a desk with a director's view and a view through each camera; each frame is
-drawn from its camera view and blocking line. *Why:* the swimming demo's continuity across cuts scored 4 of 10, its
-props and shoreline swapping sides; previs desks lock camera and staging before AI paints them (the open-source 3D
-Director Desk, Morphic 3D Scene, Autodesk Flow Studio 3D Editor, PrevizWhiz). *Next:* riders seated on their mounts
-([improvements](improvements.md#the-riding-demo-october-2930-2026), item 55): the riding demo turned blocking off once
-its lines put a rider beside her pony.
+**23. 3D director's desk** (M) — *done, then replaced:* [design/director-desk.md](design/director-desk.md) — rideo's
+own desk (October 2026: every storyboarded scene blocked in a small 3D set by the AI with a camera solver that kept the
+180° rule, each frame drawn from its camera view and blocking line) did not help on real models and was removed on
+November 14, 2026; the 3D-Editor's director's desk is embedded instead: a person stages a scene from rideo's brief, and
+each shot gets the desk's reference clip, rendered in the browser, as its motion reference with the staged lens and
+move. *Why:* the swimming demo's continuity across cuts scored 4 of 10, its props and shoreline swapping sides; previs
+desks lock camera and staging before AI paints them (the open-source 3D Director Desk, Morphic 3D Scene, Autodesk Flow
+Studio 3D Editor, PrevizWhiz). Riders sit on their mounts on the 3D-Editor's desk
+([improvements](improvements.md#the-riding-demo-october-2930-2026), item 55).
 
 **24. AI review of every step** (M) — *done:* [design/ai-review.md](design/ai-review.md) — on autopilot no gate opens
 without a review that passed: the cast's references, every production scene's storyboard before its video, every

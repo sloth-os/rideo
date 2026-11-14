@@ -44,7 +44,6 @@ describe('makers aim at what their reviewers score', () => {
         'pacing',
       ]),
     );
-    expect(prompt).not.toContain('- blocking:');
     expect(prompt).not.toContain('- character: the cast looks like');
     expect(prompt).toContain('which way each one faces, and who holds which prop in which hand');
     expect(prompt).toContain('a line of six words needs a shot of four seconds');
@@ -59,7 +58,7 @@ describe('makers aim at what their reviewers score', () => {
       'its "description" already shows that pose, clear in a still picture',
     );
     expect(SYSTEM_PROMPTS_V2['clip.plan']).toContain('The shot before it ends with that pose begun');
-    // The layout as data, for the director's desk (docs/design/director-desk.md#following-the-shot-plan)
+    // The layout as data, which the desk's brief carries (docs/design/director-desk.md#following-the-shot-plan)
     expect(SYSTEM_PROMPTS_V2['clip.plan']).toContain('"layout": the first frame\'s layout as data');
     expect(SYSTEM_PROMPTS_V2['clip.plan']).toContain(
       'a shot in which someone walks somewhere lasts at least four seconds',

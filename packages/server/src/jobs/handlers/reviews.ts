@@ -53,7 +53,6 @@ import {
   withCarried,
   writeReview,
 } from './ai-review';
-import { ensureBlocking } from './blocking';
 import { commitAs, docsFor, type HandlerDeps, sampledReview, subjectsAtOnce } from './common';
 import { activeReferenceJobs } from './story';
 import { drawBoards } from './storyboard';
@@ -336,8 +335,8 @@ async function writeBoardReview(
 }
 
 /**
- * `clip.storyboard` (docs/design/ai-review.md#production-storyboards): a production scene blocked, its frames drawn and
- * reviewed (rounds with fixes); a pass approves its frames as the system.
+ * `clip.storyboard` (docs/design/ai-review.md#production-storyboards): a production scene's frames drawn and reviewed
+ * (rounds with fixes); a pass approves its frames as the system.
  */
 export async function clipStoryboard(deps: HandlerDeps, ctx: JobContext) {
   const { clipId } = ctx.job.params as { clipId: string };
@@ -347,8 +346,6 @@ export async function clipStoryboard(deps: HandlerDeps, ctx: JobContext) {
   if (!clip) throw notFound(`clip ${clipId}`);
   if (!clip.shots.length) throw invalid(`plan the shots of clip ${clip.index + 1} first`);
   const scene = clip.index + 1;
-  ctx.progress(0.05, 1, `blocking scene ${scene}`);
-  await ensureBlocking(deps, ctx, [clipId]);
   const draw = async () => {
     const d = await docsFor(deps, ctx);
     const c = d.clips[clipId]!;

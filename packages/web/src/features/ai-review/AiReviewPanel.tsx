@@ -59,7 +59,6 @@ const DIMENSION_LABEL: Record<string, string> = {
   composition: 'Composition',
   coverage: 'Coverage',
   storytelling: 'Storytelling',
-  blocking: 'Keeps the blocking',
   likeness: 'Likeness',
   consistency: 'Consistent views',
   distinct: 'Told apart',
@@ -97,10 +96,7 @@ function actionText(
 }
 
 function Bars({ review, stage }: { review: StageReview; stage: ReviewStage }) {
-  // A dimension the review did not score (the blocking of a scene without one) is left out
-  const dims = (REVIEW_DIMENSIONS[stage] as readonly string[]).filter(
-    (d) => d !== 'blocking' || typeof review.scores[d] === 'number',
-  );
+  const dims: readonly string[] = REVIEW_DIMENSIONS[stage];
   return (
     <ul className="grid grid-cols-1 gap-x-4 gap-y-1 sm:grid-cols-2" aria-label="Scores">
       {dims.map((d) => {

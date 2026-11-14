@@ -52,6 +52,36 @@ test('the screenplay and the storyboard are reviewed, revised by their review an
   await expect(page.getByTestId('approve-storyboard')).toBeEnabled();
 });
 
+/** The cast reviewed before the storyboard (docs/design/ai-review.md#surfaces), desktop and phone. */
+test('the cast review gates the cast, shown with the cast', async ({ page, request }, testInfo) => {
+  test.setTimeout(240_000);
+  const api = new Api(request);
+  const pid = await api.storyProject(`Cast review (${testInfo.project.name})`, {
+    screenplay: true,
+    settings: { review: { cast: true } },
+  });
+  await api.call('POST', `/projects/${pid}/workflow/approve`, { gate: 'screenplay_approved' });
+  const s = await api.call<any>('GET', `/projects/${pid}/state`);
+  for (const c of Object.values<any>(s.docs.characters)) {
+    const j = await api.call<any>('POST', `/projects/${pid}/characters/${c.id}/references/generate`, {
+      views: ['front'],
+    });
+    await api.waitJob(pid, j.id);
+  }
+  for (const e of Object.values<any>(s.docs.elements)) {
+    const j = await api.call<any>('POST', `/projects/${pid}/elements/${e.id}/references/generate`, {});
+    await api.waitJob(pid, j.id);
+  }
+  await api.waitIdle(pid, 120_000);
+  await page.goto(`/p/${pid}/cast`);
+  const panel = page.getByTestId('ai-review-cast');
+  await expect(panel).toBeVisible();
+  await expect(panel.getByTestId('ai-review-state')).toHaveText('Passed', { timeout: 60_000 });
+  await expect(panel.getByTestId('ai-review-score-consistency')).toBeVisible();
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+  expect(overflow).toBeLessThanOrEqual(1);
+});
+
 /** The review gates in the project settings (docs/design/first-pass.md#the-gate-at-8), desktop and phone. */
 test('the project settings show the review gates at 8 and save a new bar', async ({
   page,

@@ -11,20 +11,19 @@ export type ReviewStage = z.infer<typeof ReviewStageSchema>;
 export const REVIEW_DIMENSIONS = {
   screenplay: ['story', 'character', 'dialogue', 'pacing', 'visual', 'continuity', 'feasibility', 'brief'],
   cast: ['likeness', 'consistency', 'distinct', 'clarity', 'style'],
-  storyboard: [
-    'composition',
-    'continuity',
-    'character',
-    'coverage',
-    'storytelling',
-    'feasibility',
-    'pacing',
-    'blocking',
-  ],
+  storyboard: ['composition', 'continuity', 'character', 'coverage', 'storytelling', 'feasibility', 'pacing'],
   cut: ['takes', 'scenes', 'continuity', 'sound'],
 } as const satisfies Record<ReviewStage, readonly string[]>;
 export type ReviewDimension = (typeof REVIEW_DIMENSIONS)[ReviewStage][number];
-const ALL_DIMENSIONS = [...new Set(Object.values(REVIEW_DIMENSIONS).flat())] as [string, ...string[]];
+/**
+ * Dimensions no reviewer is asked for any more, still read from stored reviews: the storyboard's `blocking`, scored
+ * while rideo had its own 3D desk (docs/design/director-desk.md#what-happened-to-the-blocking).
+ */
+export const LEGACY_REVIEW_DIMENSIONS = ['blocking'] as const;
+const ALL_DIMENSIONS = [
+  ...new Set([...Object.values(REVIEW_DIMENSIONS).flat(), ...LEGACY_REVIEW_DIMENSIONS]),
+] as [string, ...string[]];
+/** A stored issue's or recommendation's dimension: every stage's, and the legacy ones. */
 export const ReviewDimensionSchema = z.enum(ALL_DIMENSIONS);
 
 /** `settings.review` (docs/design/ai-review.md#the-gates). */

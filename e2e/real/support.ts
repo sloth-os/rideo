@@ -77,8 +77,6 @@ export const REAL_PROJECT_SETTINGS = {
   targetDurationSec: 10,
   pilotDurationSec: 10,
   storyboard: { enabled: false, production: false },
-  // The director's desk blocks storyboarded scenes only; the suite has none
-  blocking: { enabled: false },
   consistency: { threshold: 0.5, maxAttempts: 2 },
   // One draft, one review of the screenplay with one judge answer, one watch of the scene, and no automatic revisions
   // or fixes: the suite checks the reviews run, not the story. The reviews of the cast, the takes and the cut, the

@@ -2,7 +2,6 @@ import {
   type Actor,
   assembleStageReview,
   autoApplicable,
-  blockingView,
   boardApprovable,
   boardState,
   type Character,
@@ -43,7 +42,6 @@ import { invalid } from '../../errors';
 import { throwIfAborted } from '../../util/abort';
 import { eachLimit } from '../../util/limit';
 import type { JobContext } from '../queue';
-import { cameraView, ensureBlocking } from './blocking';
 import { commitAs, docsFor, type HandlerDeps, sampledReview, subjectsAtOnce } from './common';
 import { drawBoards } from './storyboard';
 
@@ -131,9 +129,6 @@ export function storyboardSceneInput(
   const castIds = [...new Set(clip.shots.flatMap((s) => s.characterIds))];
   const names = (ids: string[]) => ids.map((id) => docs.characters[id]?.name ?? '').filter(Boolean);
   const level = docs.project.settings.dialogue?.level ?? 'any';
-  // A blocked scene: each shot's blocking line, and what the blocking breaks (docs/design/director-desk.md)
-  const blocked =
-    clip.blocking && docs.project.settings.blocking?.enabled === true ? blockingView(docs, clip) : null;
   return {
     film: {
       title: sp.title,
@@ -162,16 +157,14 @@ export function storyboardSceneInput(
         line: d.line,
       })),
       frame: s.board ? 'attached' : 'missing',
-      ...(blocked?.lines[s.id] ? { blocking: blocked.lines[s.id]! } : {}),
     })),
     video,
-    ...(blocked ? { blockingIssues: blocked.issues.map((i) => i.message).slice(0, 20) } : {}),
   };
 }
 
 /**
- * One scene's frames reviewed by the vision model (docs/design/ai-review.md#how-a-review-runs): each frame followed by
- * its camera view when the scene is blocked; with where its scene numbers and shots point.
+ * One scene's frames reviewed by the vision model (docs/design/ai-review.md#how-a-review-runs), in shot order; with
+ * where its scene numbers and shots point.
  */
 export async function reviewSceneFrames(
   deps: HandlerDeps,
@@ -183,16 +176,13 @@ export async function reviewSceneFrames(
   video: VideoModelFacts,
 ) {
   const shots = [...clip.shots].sort(byIndex);
-  const frames: { label: string; data: Buffer; blocking?: Buffer }[] = [];
+  const frames: { label: string; data: Buffer }[] = [];
   for (const s of shots)
-    if (s.board) {
-      const view = cameraView(docs, clip, s, 512);
+    if (s.board)
       frames.push({
         label: `C${clip.index + 1}·S${s.index + 1}`,
         data: await deps.media.pngBuffer(ctx.job.projectId, s.board.keyframe, 512),
-        ...(view ? { blocking: view.png } : {}),
       });
-    }
   const out = await sampledReview(docs.project.settings.review?.judgeSamples, () =>
     deps.llm.reviewStoryboardScene(
       storyboardSceneInput(docs, clip, scene, number, video),
@@ -645,8 +635,6 @@ export async function applyStoryboardFixes(
   const replanned = replans
     .map((r) => Object.values(fresh.clips).find((c) => c.sceneId === docs.clips[r.clipId]?.sceneId)?.id)
     .filter((id): id is string => !!id);
-  // The new shots get their cameras on the desk before their frames are drawn (docs/design/director-desk.md)
-  if (replanned.length) await ensureBlocking(deps, ctx, replanned);
   await drawFrames(deps, ctx, [...new Set([...redraw, ...replanned])]);
 }
 

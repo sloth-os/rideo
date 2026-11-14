@@ -27,7 +27,7 @@
 | [design/multi-shot.md](design/multi-shot.md) | Multi-shot generation: consecutive shots in one request for models that render several shots, split at the cuts and verified shot by shot |
 | [design/directing.md](design/directing.md) | Directing controls: camera moves, lens and aperture, start and end frames, motion references, seeds, variations and A/B comparison |
 | [design/storyboard.md](design/storyboard.md) | The storyboard stage, board frames reused by the video pass, the animatic, screenplay import (Fountain, FDX, PDF), shot lists |
-| [design/director-desk.md](design/director-desk.md) | The 3D director's desk: every scene blocked in a small 3D set (mannequins, props, a camera per shot), AI blocking with a camera solver and the 180° rule, the blocking line and camera view given to the image model, the desk in the Storyboard view |
+| [design/director-desk.md](design/director-desk.md) | The 3D director's desk: the 3D-Editor's desk embedded in the Storyboard view (`RIDEO_DESK_URL`, its own origin and headers), the embed protocol, the brief made from rideo's documents, reference clips attached as motion references with the staged camera, the desk state stored per clip, what happened to rideo's own blocking |
 | [design/dialogue.md](design/dialogue.md) | Character voices (designed or cloned, locked), TTS or native dialogue, lip sync, the speaker check, the Dialogue track |
 | [design/character-consistency.md](design/character-consistency.md) | How consistency is guaranteed: identity lock, deterministic conditioning, judge gate, continuity, drift |
 | [design/continuity.md](design/continuity.md) | Continuity, storytelling and realism: prompt version 2 (scene lines, video prompt blocks, voices, exclusions), story structure, dialogue levels, film grammar in shot planning, the scene reference frame, temporal and physics checks |
@@ -63,8 +63,9 @@
 | Take | One generated attempt of a shot: keyframe, watermarked video, poster, consistency report, watermark id. |
 | Timeline | Tracks of items that reference takes or media, edited with pure operations. |
 | Gate | An approval that moves a workflow to its next stage. |
-| Blocking | A scene's 3D layout: the set, the characters' marks and a camera per shot ([director's desk](design/director-desk.md)). |
-| Camera view | A shot's camera seeing the blocking: the mannequins and the set, given to the image model as a layout. |
+| Desk | The 3D-Editor's director's desk embedded in the studio: a scene staged in 3D, each shot's reference clip rendered in the browser ([director's desk](design/director-desk.md)). |
+| Brief | What rideo tells the desk about a scene: its place, cast, props and shots with their cameras and planned layouts ([the brief](design/director-desk.md#the-brief)). |
+| Desk state | The desk's opaque save of a staged scene, stored per clip and given back when the desk opens ([the desk state](design/director-desk.md#the-desk-state)). |
 | Clip gate | What a clip must pass before autopilot approves it: every take's checks (watched whole), the scene's review, its frames ([AI review](design/ai-review.md#the-clip-gate)). |
 | Actor | Who made a change: `user`, `agent` (MCP client), `system` (jobs), or `webdav` (external edit). |
 | Workspace | A browser's project store (IndexedDB) when projects are kept in browsers. |

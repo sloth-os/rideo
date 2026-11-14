@@ -95,9 +95,7 @@ export class ProjectService extends Service {
       generation: { promptVersion: LATEST_PROMPT_VERSION, rerenderMissedCuts: true },
       // Every production scene storyboarded, and every step reviewed: the cast, the extensions, every take watched
       // whole, the cut before export (docs/design/ai-review.md#autopilot-every-step-reviewed-and-approved), every score
-      // of every review held at 8 (docs/design/first-pass.md#the-gate-at-8). The director's desk is a person's tool
-      // until its AI blocking follows the shot plan (docs/design/first-pass.md#the-desk-on-request).
-      blocking: { enabled: false, layoutImage: false },
+      // of every review held at 8 (docs/design/first-pass.md#the-gate-at-8).
       storyboard: { enabled: true, scenes: 3, production: true },
       review: {
         cast: true,

@@ -300,10 +300,6 @@ function buildServer(studio: Studio): McpServer {
             projectId,
             detail: { tool: name },
           });
-        // A picture (blocking_render) is image content
-        const image = (result as { [MCP_IMAGE]?: { data: string; mimeType: string } } | null)?.[MCP_IMAGE];
-        if (image)
-          return { content: [{ type: 'image' as const, data: image.data, mimeType: image.mimeType }] };
         return {
           content: [{ type: 'text' as const, text: JSON.stringify(result ?? { ok: true }, null, 2) }],
         };
@@ -1166,53 +1162,9 @@ function buildServer(studio: Studio): McpServer {
     { projectId: PROJECT, stage: STAGE, note: z.string().max(1000).default('') },
     (a, actor) => studio.aiReviews.override(actor, a.projectId, a.stage, a.note),
   );
-  // The 3D director's desk (docs/design/director-desk.md#surfaces)
-  tool(
-    'blocking_get',
-    "A scene's 3D blocking: the set (size, ground, landmarks, the sun), every character's mark, the props and each shot's camera (position, target, lens, end of a move), its state (missing, incomplete, ready), the completed draft the desk edits, the issues (a crossed line, a character out of frame, a camera in a wall) and each shot's blocking line as the prompts say it.",
-    { projectId: PROJECT, clipId: z.string() },
-    (a) => studio.storyboard.getBlocking(a.projectId, a.clipId),
-    ro,
-  );
-  tool(
-    'blocking_set',
-    "Save a scene's blocking (the shape blocking_get returns as `draft`; metres, y up, x right, z towards the front, facing 0° = the front). fix=true also keeps the cameras of cuts on the scene's side of the line. A shot's lens follows its camera; a camera move becomes the shot's move when it has none. Its frames become outdated: draw them again.",
-    {
-      projectId: PROJECT,
-      clipId: z.string(),
-      blocking: z.record(z.string(), z.unknown()),
-      fix: z.boolean().optional(),
-    },
-    (a, actor) => studio.storyboard.setBlocking(actor, a.projectId, a.clipId, a.blocking, { fix: a.fix }),
-  );
-  tool(
-    'blocking_generate',
-    "Block a scene with the AI (job scene.block): the text model lays out the set, the marks and a camera described per shot; a solver places the cameras from the shots' framing and lens and keeps the 180° rule. Returns the job; use job_wait, then blocking_get.",
-    { projectId: PROJECT, clipId: z.string() },
-    (a, actor) => studio.storyboard.generateBlocking(actor, a.projectId, a.clipId),
-  );
-  tool(
-    'blocking_render',
-    "A shot's camera view on the desk as a PNG (the mannequins and the set through its camera: the picture the image model gets as the layout of its frame).",
-    {
-      projectId: PROJECT,
-      clipId: z.string(),
-      shotId: z.string(),
-      width: z.number().int().min(160).max(1920).optional(),
-    },
-    async (a) => ({
-      [MCP_IMAGE]: {
-        data: (
-          await studio.storyboard.renderBlocking(a.projectId, a.clipId, a.shotId, a.width ?? 768)
-        ).toString('base64'),
-        mimeType: 'image/png',
-      },
-    }),
-    ro,
-  );
   tool(
     'clip_storyboard',
-    "Storyboard one production scene before its video (job clip.storyboard): blocked, its frames drawn, reviewed by the vision model with its camera views (fixes and rounds), and its frames approved when the review passes. The review is the clip's `boardReview`.",
+    "Storyboard one production scene before its video (job clip.storyboard): its frames drawn, reviewed by the vision model (fixes and rounds), and approved when the review passes. The review is the clip's `boardReview`.",
     { projectId: PROJECT, clipId: z.string() },
     (a, actor) => studio.storyboard.storyboardClip(actor, a.projectId, a.clipId),
   );
@@ -1887,9 +1839,6 @@ interface Session {
 }
 
 const ownerOf = (p: Principal | null) => (p ? `${p.kind}:${p.token?.id ?? p.user.id}` : 'anonymous');
-
-/** A tool result that is a picture: `{ [MCP_IMAGE]: { data, mimeType } }` becomes MCP image content. */
-const MCP_IMAGE = '$image';
 
 /** Tools that need more than reading (read-only tools) or editing (the rest). */
 const TOOL_PERMISSIONS: Record<string, Permission> = {

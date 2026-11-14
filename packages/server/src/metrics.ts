@@ -285,13 +285,6 @@ export class Metrics {
       'Frames corrected by an edit of the frame instead of drawn again, by source (storyboard, keyframe)',
     ),
   );
-  /** AI-blocked shots against their planned layout (docs/design/director-desk.md#following-the-shot-plan). */
-  readonly blockingPlanFits = this.add(
-    new Counter(
-      'rideo_blocking_plan_fits_total',
-      'AI-blocked shots against their planned layout, by outcome (agreed, refit, mismatch)',
-    ),
-  );
   /** Briefs adapted for the video model (docs/design/first-pass.md#the-brief-adapted-for-the-video-model). */
   readonly briefAdaptations = this.add(
     new Counter(
@@ -305,16 +298,6 @@ export class Metrics {
       'rideo_reference_checks_total',
       'Cast references checked against their subject as they are drawn, by kind (character, element) and outcome (matched, mismatched, error)',
     ),
-  );
-  /** The 3D director's desk (docs/design/director-desk.md#observability). */
-  readonly blockings = this.add(
-    new Counter('rideo_blocking_total', 'Blockings saved, by source (ai, user) and outcome (clean, issues)'),
-  );
-  readonly blockingIssues = this.add(
-    new Counter('rideo_blocking_issues_total', 'Issues found in blockings when they were saved, by code'),
-  );
-  readonly blockingLineFixes = this.add(
-    new Counter('rideo_blocking_line_fixes_total', 'Cameras the solver brought back over the line of action'),
   );
   /** Gates and clips approved by autopilot after their reviews (docs/design/ai-review.md#autopilot-every-step-reviewed-and-approved). */
   readonly autopilotApprovals = this.add(

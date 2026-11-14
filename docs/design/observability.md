@@ -103,9 +103,8 @@ cost), as does a take replaced by a regeneration: the cost of quality, which the
 | `rideo_take_watch_score` | histogram | – | overall scores 0–10 of takes watched whole |
 | `rideo_clip_review_watched_total` | counter | `watched` (`video`, `frames`) | scene reviews by what the vision model watched |
 | `rideo_autopilot_approvals_total` | counter | `step` (`cast`, `resources`, `frames`, `clip`, `pilot`, `production`, `cut`) | approvals autopilot made after a passing review |
-| `rideo_blocking_total` | counter | `source` (`ai`, `user`), `outcome` (`clean`, `issues`) | blockings saved on the [director's desk](director-desk.md) |
-| `rideo_blocking_issues_total` | counter | `code` | issues of the blockings saved |
-| `rideo_blocking_line_fixes_total` | counter | – | cameras the solver brought back over the line |
+| `rideo_desk_state_saves_total` | counter | `outcome` (`saved`, `unchanged`, `refused`) | desk states sent to the server for the [director's desk](director-desk.md#the-desk-state) |
+| `rideo_desk_briefs_total` | counter | – | briefs of the [director's desk](director-desk.md#the-brief) served (REST and MCP) |
 | `rideo_http_request_seconds` | histogram | `method`, `route` (the route pattern), `status` (class: `2xx`…) | REST latency |
 | `rideo_storage_seconds` | histogram | `op` | WebDAV operations, buckets up to 300 s (uploads to slow cloud drives) |
 | `rideo_storage_ops_per_request` | histogram | – | storage operations one request made |

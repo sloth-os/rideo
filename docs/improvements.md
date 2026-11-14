@@ -516,19 +516,20 @@ it. A follow-up is now queued behind a running review and reviews only if that o
 the default grey (the hills a 70 × 12 × 6 m box walling off the sky), and the solver fitted a group by its spread at
 the group's centre, leaving the nearest of four subjects 40° off the axis of a 37° half-width. Landmarks now take their
 colour from their names, far scenery stays in the shot descriptions, and each subject of a group is fitted by angle
-([the solver](design/director-desk.md#the-solver)). The run itself went on without layout images.
+(the solver of rideo's own desk, [removed since](design/director-desk.md#what-happened-to-the-blocking)). The run itself
+went on without layout images.
 
 **54. A scene written after the storyboard stage went to video without frames** (S, done) — the batch skipped the
 production storyboard of the first `storyboard.scenes` scenes, as if the stage had drawn them; it draws only the
 scenes written by then, so scene 3 was rendered from keyframes of its own with no review. The clip's frames decide now
 ([production storyboards](design/ai-review.md#production-storyboards)).
 
-**55. Riders and their mounts** (M) — the desk has no mounted relation: a panda riding a pony is two mannequins on two
-marks, and the blocking line ("Rosie left of frame, Clover right of frame") drew Rosie floating beside a riderless
-Clover, a critical issue the storyboard review found in three rounds. Blocking was turned off for scenes 7–12, after
-which every rider sat in the saddle. *How:* a mark's `mount` (another actor): the rider takes the mount's position and
-facing at saddle height, the pair is never pushed apart, the line says "Rosie rides Clover, left of frame", and the
-blocking prompt asks for it.
+**55. Riders and their mounts** (M, closed: rideo's own desk was
+[removed](design/director-desk.md#what-happened-to-the-blocking); the 3D-Editor's desk, embedded instead, seats a rider
+on its mount) — the desk had no mounted relation: a panda riding a pony was two mannequins on two marks, and the
+blocking line ("Rosie left of frame, Clover right of frame") drew Rosie floating beside a riderless Clover, a critical
+issue the storyboard review found in three rounds. Blocking was turned off for scenes 7–12, after which every rider
+sat in the saddle.
 
 **56. A frame that contradicts its shot makes the video morph** (S–M, done: the video reads its first frame,
 [first pass](design/first-pass.md#the-video-reads-its-first-frame)) — the pilot's shot 5 failed its whole-take watch
@@ -553,10 +554,10 @@ autopilot; after a person fixed a scene by hand and its review passed, the clip 
 new-element review ran the whole cast review (4 characters and 9 elements, about 25 minutes a round) for one prop.
 *How:* review the new elements alone, with the cast as context.
 
-**60. Slow steps on a reasoning model** (S, half done) — `scene.block` took 614 s for one scene (25,109 output tokens,
+**60. Slow steps on a reasoning model** (S, done) — `scene.block` took 614 s for one scene (25,109 output tokens,
 nearly all reasoning), the cast review's 12 calls ran one after another at 1–3.5 minutes each. The cast review's
 calls and the storyboard review's scenes now run three at a time ([efficiency](design/first-pass.md#efficiency)).
-*Still:* a reasoning setting for `scene.block`.
+`scene.block` is gone with rideo's own desk ([removed](design/director-desk.md#what-happened-to-the-blocking)).
 
 **61. Four characters in a frame** (S, done: the writer and the planner keep a moment to three characters,
 [first pass](design/first-pass.md#one-rubric-for-the-maker-and-the-reviewer)) — a frame of two riders on two ponies drew Sammy on a grey pony and Rosie on
@@ -588,8 +589,8 @@ differs.
 
 Every score of every review at 8 on the first result, without revisions or regenerations
 ([right the first time](design/first-pass.md)): the gates hold every score at 8 for new projects, the writer and the
-shot planner get their reviewers' rubric, references are drawn from a whole figure, the director's desk is off by
-default, and `scripts/first-pass.mjs` measures a build's first pass on real models
+shot planner get their reviewers' rubric, references are drawn from a whole figure, the director's desk was off by
+default (rideo's own desk, [replaced since](design/director-desk.md#why)), and `scripts/first-pass.mjs` measures a build's first pass on real models
 ([measured](design/first-pass.md#measured)). What the measurements left open:
 
 **63. Scene reviews dropped what they heard** (S, done) — the scene review before the edit heard each scene but
@@ -613,7 +614,8 @@ lit as a sunset. A staging check now draws a frame again while it contradicts it
 ([frames that follow their shot](design/first-pass.md#frames-that-follow-their-shot)). *Still:* frames that agree with
 each other: a scene's frames drawn as edits of its first frame.
 
-**67. AI blocking that disagrees with the shot plan** (M) — blocking 3–5 on six measured storyboards; its camera views
+**67. AI blocking that disagrees with the shot plan** (M, closed) — blocking 3–5 on six measured storyboards; its camera views
 contradicted the shots' planned framing and screen positions, and the frames followed neither (5.6–6.9 with the desk
-on, 7.1–7.3 off). The desk is off for new projects. *How:* solve each camera from the shot's planned screen positions
-and facing, check the projected layout against the plan before it reaches the image model, and seat riders (item 55).
+on, 7.1–7.3 off). The desk stayed off for new projects and was
+[removed](design/director-desk.md#what-happened-to-the-blocking) on November 14, 2026: the 3D-Editor's desk stages a
+scene from rideo's brief, the planned layouts included, and says for each shot whether its camera shows the plan.

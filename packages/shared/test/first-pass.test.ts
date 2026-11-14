@@ -152,7 +152,7 @@ describe('one rubric for the maker and the reviewer (docs/design/first-pass.md#o
     expect(text).toContain('every dimension scores 8 or more on that first review');
     expect(text).toContain('"video" is your input "video".');
     expect(text).toContain(rubricLines('storyboard', ['continuity', 'pacing']));
-    expect(text).not.toContain('- blocking:');
+    expect(text).not.toContain('- composition:');
   });
 
   it("tells the makers what the video model renders well and badly, with the shots' range", () => {

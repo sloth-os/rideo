@@ -3,7 +3,6 @@ import { ProjectBrandSchema } from '../brand/schema';
 import { fnv1a32 } from '../util/hash';
 import { ProjectAccessSchema } from './accounts';
 import { DEFAULT_REVIEW_SETTINGS, ReviewSettingsSchema } from './ai-review';
-import { BlockingSettingsSchema } from './blocking';
 import { ActorSchema, AspectRatioSchema, IdSchema, IsoDateSchema } from './common';
 
 export const ProjectKindSchema = z.enum(['story', 'edit']);
@@ -154,8 +153,6 @@ export const ProjectSettingsSchema = z.object({
     sheet: false,
     sheetPixels: 4_600_000,
   }),
-  /** The 3D director's desk (docs/design/director-desk.md#jobs). */
-  blocking: BlockingSettingsSchema.default({ enabled: false, layoutImage: true }),
   generation: z
     .object({
       includeAudio: z.boolean().default(false),
