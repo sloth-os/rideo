@@ -815,6 +815,13 @@ function buildServer(studio: Studio): McpServer {
       return studio.clips.updateShot(actor, projectId, clipId, shotId, fields);
     },
   );
+  tool(
+    'desk_brief',
+    "The SceneBrief of a clip for the 3D-Editor's director's desk (docs/design/director-desk.md#agents): the scene, its cast and props, and every shot with its framing, lens, move and planned layout. Stage it with the 3D-Editor's desk_stage_brief, render the shots there, then attach each clip with resource_add and shot_update {motionReference, camera}. The desk's state has no tool: it is the browser desk's opaque bytes.",
+    { projectId: PROJECT, clipId: z.string().describe('Clip id (clp_…), a scene with planned shots') },
+    (a) => studio.desk.brief(a.projectId, a.clipId),
+    ro,
+  );
   // Take edits and extensions (docs/design/take-editing.md)
   tool(
     'take_edit',

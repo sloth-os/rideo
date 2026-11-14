@@ -164,7 +164,7 @@ export async function buildServer(
     reply.header('vary', 'Origin');
     reply.header(
       'access-control-expose-headers',
-      'content-range, accept-ranges, content-length, content-disposition, x-rideo-source',
+      'content-range, accept-ranges, content-length, content-disposition, x-rideo-source, etag, x-desk-state-format, x-desk-state-version',
     );
     // media a cross-origin-isolated host may play
     reply.header('cross-origin-resource-policy', 'cross-origin');
@@ -172,7 +172,7 @@ export async function buildServer(
       reply.header('access-control-allow-methods', 'GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS');
       reply.header(
         'access-control-allow-headers',
-        'authorization, content-type, range, x-rideo-workspace, x-rideo-coalesce, x-rideo-size, x-rideo-range',
+        'authorization, content-type, range, x-rideo-workspace, x-rideo-coalesce, x-rideo-size, x-rideo-range, x-desk-state-format, x-desk-state-version',
       );
       reply.header('access-control-max-age', '600');
       return reply.code(204).send();
@@ -374,6 +374,8 @@ export async function buildServer(
         sfx: config.sfx ? { provider: config.sfx.provider } : null,
         /** NLE hand-off (docs/design/interchange.md#where-the-media-is): the WebDAV root clients reach. */
         interchange: { mediaBase: studio.interchange.defaultMediaBase() },
+        /** The 3D-Editor's desk page (docs/design/director-desk.md#the-setting); null: no desk. */
+        desk: config.desk ? { url: config.desk.url } : null,
       },
       llm: ai
         ? { provider: config.llm.provider, model: config.llm.model, vision: config.vision.model }

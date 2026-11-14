@@ -306,6 +306,16 @@ export class Metrics {
       'Approvals autopilot made after a passing review, by step (cast, resources, frames, clip, pilot, production, cut)',
     ),
   );
+  /** The 3D-Editor's director's desk (docs/design/director-desk.md#observability). */
+  readonly deskStateSaves = this.add(
+    new Counter(
+      'rideo_desk_state_saves_total',
+      'Desk states sent to the server, by outcome (saved: a new state stored, unchanged: the stored one again, refused: too large, another format or version, without its headers, or not application/octet-stream)',
+    ),
+  );
+  readonly deskBriefs = this.add(
+    new Counter('rideo_desk_briefs_total', "Briefs of the director's desk served (REST and MCP)"),
+  );
   readonly httpSeconds = this.add(
     new Histogram(
       'rideo_http_request_seconds',

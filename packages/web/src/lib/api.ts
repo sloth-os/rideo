@@ -8,11 +8,13 @@ import type {
   BrandSlot,
   Character,
   Clip,
+  ClipDeskState,
   CommentTarget,
   CommentThread,
   CommitSummary,
   ConsentInput,
   DeliveryInput,
+  DeskState,
   Diff,
   EditKind,
   EditorJobKind,
@@ -133,6 +135,8 @@ export interface PublicConfig {
     interchange?: { mediaBase: string };
     /** Telemetry from the studio (docs/design/observability.md#telemetry-from-the-studio). */
     telemetry?: boolean;
+    /** The 3D-Editor's desk page (docs/design/director-desk.md#the-setting); null or absent: no desk. */
+    desk?: { url: string } | null;
   };
   llm: { provider: string; model: string; vision: string } | null;
   models: Record<'image' | 'video' | 'music', { id: string; limits?: Record<string, unknown> | null }[]>;
@@ -194,16 +198,17 @@ interface StagedFile {
   complete?: boolean;
 }
 
-async function request<T>(
+/** A request with the token and the workspace; the answer as it comes. */
+async function send(
   method: string,
   path: string,
   body?: unknown,
   headers: Record<string, string> = {},
-): Promise<T> {
+): Promise<Response> {
   const token = getToken();
   const isForm = typeof FormData !== 'undefined' && body instanceof FormData;
   const isBlob = (typeof Blob !== 'undefined' && body instanceof Blob) || body instanceof Uint8Array;
-  const res = await fetch(apiUrl(path), {
+  return fetch(apiUrl(path), {
     method,
     headers: {
       ...(body !== undefined && !isForm
@@ -221,6 +226,33 @@ async function request<T>(
           ? (body as FormData | Blob | Uint8Array<ArrayBuffer>)
           : JSON.stringify(body),
   });
+}
+
+/** The problem of a failed answer, after the 401 and 5xx hooks. */
+function problemOf(res: Response, json: unknown): ApiError {
+  const problem = (json ?? {}) as Partial<ProblemDetails>;
+  return new ApiError(res.status, {
+    type: problem.type ?? 'about:blank',
+    title: problem.title ?? res.statusText,
+    status: res.status,
+    detail: problem.detail ?? res.statusText,
+    code: problem.code ?? 'internal_error',
+    errors: problem.errors,
+  });
+}
+
+function observe(res: Response, path: string): void {
+  if (res.status === 401 && !path.startsWith('/auth/')) onUnauthorized?.();
+  if (res.status >= 500 && path !== '/telemetry') onServerError?.();
+}
+
+async function request<T>(
+  method: string,
+  path: string,
+  body?: unknown,
+  headers: Record<string, string> = {},
+): Promise<T> {
+  const res = await send(method, path, body, headers);
   if (res.status === 204) return undefined as T;
   const text = await res.text();
   let json: unknown = null;
@@ -229,20 +261,39 @@ async function request<T>(
   } catch {
     json = { detail: text };
   }
-  if (res.status === 401 && !path.startsWith('/auth/')) onUnauthorized?.();
-  if (res.status >= 500 && path !== '/telemetry') onServerError?.();
-  if (!res.ok) {
-    const problem = (json ?? {}) as Partial<ProblemDetails>;
-    throw new ApiError(res.status, {
-      type: problem.type ?? 'about:blank',
-      title: problem.title ?? res.statusText,
-      status: res.status,
-      detail: problem.detail ?? res.statusText,
-      code: problem.code ?? 'internal_error',
-      errors: problem.errors,
-    });
-  }
+  observe(res, path);
+  if (!res.ok) throw problemOf(res, json);
   return json as T;
+}
+
+/**
+ * The desk's stored state of a clip (docs/design/director-desk.md#the-routes): its bytes, format, version and sha256
+ * (the ETag); null when none is stored.
+ */
+async function deskState(
+  id: string,
+  clipId: string,
+): Promise<{ format: string; version: number; sha256: string; data: ArrayBuffer } | null> {
+  const path = `/projects/${id}/clips/${clipId}/desk-state`;
+  const res = await send('GET', path);
+  observe(res, path);
+  if (res.status === 404) return null;
+  if (!res.ok) {
+    const text = await res.text();
+    let json: unknown = null;
+    try {
+      json = text ? JSON.parse(text) : null;
+    } catch {
+      json = { detail: text };
+    }
+    throw problemOf(res, json);
+  }
+  return {
+    format: res.headers.get('x-desk-state-format') ?? '',
+    version: Number(res.headers.get('x-desk-state-version') ?? 0),
+    sha256: (res.headers.get('etag') ?? '').replace(/^W\//, '').replace(/"/g, ''),
+    data: await res.arrayBuffer(),
+  };
 }
 
 /** A download of the shot list (the token rides in the query like media URLs). */
@@ -445,6 +496,15 @@ export const api = {
     request<Job>('POST', `${p(id)}/clips/${clipId}/review`, body),
   updateShot: (id: string, clipId: string, shotId: string, body: Record<string, unknown>) =>
     request<Clip>('PATCH', `${p(id)}/clips/${clipId}/shots/${shotId}`, body),
+  // The 3D-Editor's director's desk (docs/design/director-desk.md#the-routes)
+  deskState,
+  saveDeskState: (id: string, clipId: string, state: DeskState) =>
+    request<{ deskState: ClipDeskState }>(
+      'PUT',
+      `${p(id)}/clips/${clipId}/desk-state`,
+      new Uint8Array(state.data),
+      { 'x-desk-state-format': state.format, 'x-desk-state-version': String(state.version) },
+    ),
   // Take edits and extensions (docs/design/take-editing.md)
   editTake: (
     id: string,

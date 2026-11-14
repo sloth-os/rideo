@@ -56,7 +56,9 @@ export type MediaKind =
   /** Feedback reports (docs/design/feedback.md#the-report). */
   | 'reports'
   /** The editor's waveform peaks and filmstrips (docs/design/editor.md#waveforms-and-filmstrips). */
-  | 'lanes';
+  | 'lanes'
+  /** The 3D-Editor desk's opaque states (docs/design/director-desk.md#the-desk-state). */
+  | 'desk';
 
 export interface PutOptions {
   kind: MediaKind;

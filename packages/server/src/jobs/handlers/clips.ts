@@ -160,6 +160,7 @@ export async function clipPlan(deps: HandlerDeps, ctx: JobContext) {
             notes: '',
             review: null,
             boardReview: null,
+            deskState: null,
           };
       tx.set(docPath.clip(next.id), next);
       return next;

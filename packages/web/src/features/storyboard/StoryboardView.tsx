@@ -16,6 +16,7 @@ import {
 import {
   ArrowLeft,
   ArrowRight,
+  Box,
   Check,
   Clapperboard,
   Download,
@@ -26,7 +27,7 @@ import {
   Sparkles,
   X,
 } from 'lucide-react';
-import { lazy, Suspense, useState } from 'react';
+import { lazy, Suspense, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { Entity } from '../../components/Entity';
 import { JobRow } from '../../components/JobProgress';
@@ -43,9 +44,11 @@ import {
   Spinner,
 } from '../../components/ui';
 import { api, shotListUrl } from '../../lib/api';
+import { useConfig } from '../../lib/config';
 import { useProject } from '../../store/project';
 import { reportError, useUi } from '../../store/ui';
 import { AiReviewPanel, ReviewCard } from '../ai-review/AiReviewPanel';
+import { DeskPanel } from '../desk/DeskPanel';
 
 // The player pulls in mediabunny (WebCodecs); load it only when an animatic exists.
 const AnimaticPlayer = lazy(() => import('./AnimaticPlayer').then((m) => ({ default: m.AnimaticPlayer })));
@@ -339,12 +342,42 @@ function SceneRow({
   production?: boolean;
 }) {
   const shots = clip ? [...clip.shots].sort((a, b) => a.index - b.index) : [];
+  // The 3D-Editor's desk on the scene, when the studio has one (docs/design/director-desk.md#the-desk)
+  const desk = !!useConfig()?.features.desk && !!clip?.shots.length;
+  const [deskOpen, setDeskOpen] = useState(false);
+  const section = useRef<HTMLElement>(null);
   return (
-    <section className="space-y-2" data-testid={production ? 'production-scene' : 'storyboard-scene'}>
-      <h3 className="text-[13px] font-semibold">
-        {title}
-        <span className="ml-2 font-normal text-muted">{formatDuration(duration)}</span>
-      </h3>
+    <section
+      ref={section}
+      className="space-y-2"
+      data-testid={production ? 'production-scene' : 'storyboard-scene'}
+    >
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h3 className="min-w-0 text-[13px] font-semibold">
+          {title}
+          <span className="ml-2 font-normal text-muted">{formatDuration(duration)}</span>
+        </h3>
+        {desk ? (
+          <Button
+            size="sm"
+            icon={<Box className="size-4" />}
+            onClick={() => setDeskOpen(true)}
+            data-testid="open-desk"
+            title={clip?.status === 'approved' ? 'Opens read-only: the clip is approved' : undefined}
+          >
+            Director’s desk
+          </Button>
+        ) : null}
+      </div>
+      {deskOpen && clip ? (
+        <DeskPanel
+          clip={clip}
+          onClose={() => {
+            setDeskOpen(false);
+            section.current?.querySelector<HTMLButtonElement>('[data-testid="open-desk"]')?.focus();
+          }}
+        />
+      ) : null}
       {production && clip ? <BoardReviewCard clip={clip} /> : null}
       {clip ? (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
@@ -479,8 +512,8 @@ export function StoryboardView() {
         <div className="space-y-4" data-testid="production-scenes">
           <h3 className="text-[14px] font-semibold">Production scenes</h3>
           <p className="text-[12px] text-muted">
-            Each scene is blocked, drawn and reviewed before any of its video: the batch goes on when its
-            review passes.
+            Each scene is drawn and reviewed before any of its video: the batch goes on when its review
+            passes.
           </p>
           {production.map((clip) => (
             <SceneRow

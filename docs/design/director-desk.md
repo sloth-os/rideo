@@ -100,8 +100,8 @@ how the brief differs from what was staged) and `state`.
 
 | Rideo sends | When |
 |---|---|
-| `open` {`scene`: the [brief](#the-brief), `state`, `options`} | once, after `ready`: `options` = `hostName` (the studio's brand name, `RIDEO_BRAND_NAME`, at most 40 characters), `modes` `["camera", "motion", "pose"]`, `defaultMode` (the person's mode, [the desk](#the-desk)), `readOnly` for an approved clip |
-| `save` | when the person closes the panel: the desk answers `state` with the same `id` |
+| `open` {`scene`: the [brief](#the-brief), `state`, `options`} | after `ready`, once per connection (a desk page that loads again says `hello` again, is connected again and gets the newest state the panel holds): `options` = `hostName` (the studio's brand name, `RIDEO_BRAND_NAME`, at most 40 characters), `modes` `["camera", "motion", "pose"]`, `defaultMode` (the person's mode, [the desk](#the-desk)), `readOnly` for an approved clip |
+| `save` | when the person closes the panel: the desk answers `state` with the same `id` (rideo waits at most 5 seconds, then stores the newest state the desk sent) |
 | `export` | never on its own: the person presses **Send** in the desk |
 | `result-ack` | after each `result`: what was attached and what was refused, shot by shot |
 
@@ -109,7 +109,7 @@ how the brief differs from what was staged) and `state`.
 |---|---|
 | `ready` | sends `open`; when `capabilities.export.available` is false, says why under the panel's title ("This browser cannot render the reference clips: …"): staging still works |
 | `opened` | shows the desk; the desk itself lists the brief's changes and offers to update its shots |
-| `state` | keeps the newest, and stores it ([when](#when-rideo-stores-it)) |
+| `state` | keeps the newest (a state of another scene is ignored), and stores it ([when](#when-rideo-stores-it)) |
 | `progress` | shows the export's phase and count under the title |
 | `result` | applies it ([the result](#the-result)) and answers `result-ack` |
 | `error` | shows its message; `state_unreadable`: "The stored desk could not be read; the scene was staged from the brief" |
@@ -117,10 +117,11 @@ how the brief differs from what was staged) and `state`.
 
 Rideo speaks version 1. A desk that offers no version rideo speaks is not connected: "This desk speaks protocol
 versions …; this studio speaks 1". Every message is validated with zod in both directions (`packages/shared`, the
-schemas of the protocol and of the brief); a message that does not validate is ignored and logged, and one that
-carried an `id` is answered with `error` `bad_message`. Rideo keeps a copy of the 3D-Editor's fixtures (one valid
-example of every message and some invalid ones) in `packages/shared/test/fixtures/desk-protocol/`, and its tests parse
-every valid one and reject every invalid one, so a change on either side that breaks the other shows up in the tests.
+schemas of the protocol and of the brief); a message of a type rideo does not know is ignored and logged, one that
+does not validate is ignored and logged too, and one that carried an `id` is answered with `error` `bad_message`.
+Rideo keeps a copy of the 3D-Editor's fixtures (one valid example of every message and some invalid ones) in
+`packages/shared/test/fixtures/desk-protocol/`, and its tests parse every valid one and reject every invalid one, so a
+change on either side that breaks the other shows up in the tests.
 
 ## The brief
 
@@ -132,16 +133,16 @@ brief.
 |---|---|---|
 | `id` | `clip.id` | the clip is the unit of the desk: one brief, one desk state, one desk project per clip |
 | `name` | `clip.title` | cut to 200 characters; `Scene <n>` when empty |
-| `fps` | `settings.fps` | integer 12–60 |
-| `width`, `height` | `settings.resolution` | each rounded down to an even number: the clips are H.264 4:2:0 |
+| `fps` | `settings.fps` | integer 12–60: rideo's range, inside the protocol's 1–120 |
+| `width`, `height` | `settings.resolution` | each rounded down to an even number (the clips are H.264 4:2:0): rideo's 64–4096 then fits the protocol's even 16–4096, and a result is checked against the rounded size |
 | `set.description` | the scene (`clip.sceneId` in the screenplay) and its location element (`scene.locationId`) | the place (`scene.location`, else the location element's name, else `scene.heading`), the location element's `description` and the scene's `continuity` (time, weather, light, who wears and carries what), as sentences, cut to 4000 characters |
 | `set.interior` | `scene.heading` | `INT.` true, `EXT.` false; `INT./EXT.`, `I/E`, `EST.` or none: null (the desk decides from the words) |
-| `set.timeOfDay` | `scene.timeOfDay`, else the heading's time | the first that matches: dawn, sunrise, daybreak, first light, early morning → `dawn`; golden hour, magic hour → `golden_hour`; dusk, sunset, twilight, evening → `dusk`; night, midnight → `night`; noon, midday → `noon`; afternoon → `afternoon`; morning → `morning`; anything else (`day`, `continuous`, `later`) → null (the desk's daylight) |
+| `set.timeOfDay` | `scene.timeOfDay`, else the heading's time | the first that matches: dawn, sunrise, daybreak, first light, early morning → `dawn`; golden hour, magic hour → `golden_hour`; dusk, sunset, twilight, evening → `dusk`; night, nighttime, midnight → `night`; noon, midday → `noon`; afternoon → `afternoon`; morning → `morning`; anything else (`day`, `continuous`, `later`) → null (the desk's daylight) |
 | `cast` | the characters of the clip's shots | in order of first appearance (shots by `index`), those in the project, at most 16 |
 | `cast[].id`, `name` | `character.id`, `name` | |
 | `cast[].description` | the identity and the summary | the identity as the video prompts say it (`compactIdentity`: age, gender, ethnicity, build, distinguishing marks, the default wardrobe), then `character.summary`, cut to 4000 characters: the words the desk reads the figure from ("a golden retriever", "a girl of 8") |
 | `cast[].kind` | – | null: rideo has no species field, the desk reads it from the description |
-| `cast[].heightM` | `identity.height` | a measure it names ("170 cm", "1.2 m"), 0.1–4 m; else null |
+| `cast[].heightM` | `identity.height` | a measure it names ("170 cm", "1700 mm", "1.2 m", "5 ft 7 in", `5'7"`), to the centimetre, 0.1–4 m; else null |
 | `elements` | the scene's location, then the elements of the scene and of the clip's shots | in order of first appearance, those in the project, at most 64 |
 | `elements[].kind` | `element.kind` | `location` → `location`, `prop` → `prop`, `style` → `other` (the desk stages no style) |
 | `elements[].name`, `description` | `element.name`, `description` | |
@@ -180,19 +181,22 @@ insets.
   still works.
 - **Approved clips** open read-only: the person can look and render, and a result is refused for their shots
   ([the result](#the-result)).
-- **Closing.** **Close** asks the desk for its state (`save`), stores it and closes; the desk's own **Done** sends the
-  last state and `close`. Keys pressed inside the iframe go to the desk: the panel closes with its button, never with
-  Escape.
+- **Closing.** **Close** asks the desk for its state (`save`), stores it and closes (a desk that does not answer within
+  5 seconds: the newest state it sent is stored); the desk's own **Done** sends the last state and `close`, and its
+  **Close** sends `close` alone. Keys pressed inside the iframe go to the desk: the panel closes with its button, never
+  with Escape.
 
 ## The result
 
 A `result` comes when the person presses **Send** in the desk (its `id` starts with `desk-`). Rideo takes the shots in
 order, one at a time; a shot that fails does not stop the others.
 
-1. **Refused**, with the reason, when the shot is no longer in the clip; when the clip is approved ("clip <n> is
-   approved: unapprove it to change its shots"); or when the clip no longer has the result's size, frame rate or the
-   shot's frame count (`max(1, round(durationSec × fps))`): "the shot changed since the desk rendered it: render it
-   again".
+1. **Refused**, with the reason, checked in this order: the result is of another scene than the panel's ("the result
+   is of another scene"); the shot is no longer in the clip ("the shot is no longer in the clip"); the clip is approved
+   ("clip <n> is approved: unapprove it to change its shots"); the clip no longer has the result's size, frame rate or
+   the shot's frame count (`max(1, round(durationSec × fps))`): "the shot changed since the desk rendered it: render it
+   again"; the shot has no clip in the result ("the result has no clip for the shot"), or names a file the result does
+   not carry as `video/mp4` ("the file <name> is not in the result").
 2. **The reference.** The file of the person's mode (`references[mode]`; when the result has none for that mode, the
    first of `camera`, `motion`, `pose` it has) becomes `desk-c<clip>-s<shot>-<mode>.mp4` (`video/mp4`) and goes
    through the same upload as every browser file (`POST /api/projects/:id/uploads`, role `reference`), with a probe
@@ -245,10 +249,14 @@ project is deleted, so it stores states sparingly.
 
 The desk sends `state` after its edits (at most every 5 seconds). The bridge keeps the newest and stores it when the
 panel closes (after `save`, or on the desk's `close`), before it applies a `result`, and while the desk stays open at
-most once a minute when the state changed since the last write. A state whose sha256 is the stored one is not sent
-again, and the server changes nothing for one it already has (no new file, no commit). Between two writes the desk's
-own copy holds the work on that device. Each write is a commit, `Save the desk of scene <n>`, coalesced per clip and
-author like typing ([coalescing](version-control.md#coalescing)).
+most once every 10 minutes (counted from the last write, or from the panel's opening) when the state changed since:
+every write of a changed state is a new media file that rideo keeps until the project is deleted, up to 64 MiB each.
+Before `open` the bridge reads the stored state and its sha256 (the `ETag`); a state whose sha256 is the stored one
+is not sent again, and the server changes nothing for the state it already holds (no new file, no commit). Between
+two writes the desk's own copy holds the work on that device. Each write is a commit, `Save the desk of scene <n>`,
+coalesced per clip and author like typing ([coalescing](version-control.md#coalescing)); a `DELETE` is a commit
+`Clear the desk of scene <n>`. A write that fails is said in the status line and a toast, and the next one tries
+again.
 
 ### The routes
 
@@ -257,6 +265,11 @@ author like typing ([coalescing](version-control.md#coalescing)).
 | `GET /api/projects/:id/clips/:clipId/desk-state` | – | the bytes (`application/octet-stream`) with `X-Desk-State-Format`, `X-Desk-State-Version`, `ETag` (the sha256); `404` `not_found` when none is stored |
 | `PUT /api/projects/:id/clips/:clipId/desk-state` | the bytes (`application/octet-stream`, at most 64 MiB) with `X-Desk-State-Format` and `X-Desk-State-Version` | `{deskState}` (`200`; the same when the bytes were stored already) |
 | `DELETE /api/projects/:id/clips/:clipId/desk-state` | – | `204`: the clip names no state (the file stays, as all media); the next `open` stages the brief |
+
+The body of a `PUT` is never held in memory: a declared `Content-Length` over 64 MiB is refused before the body is
+read, and a body without one (chunked) is counted as it is written to a temporary file and refused once it passes
+64 MiB. Any other body type is refused with `422`. The state is stored in every storage mode (the embedded WebDAV, an
+external server, the browser's storage).
 
 A state is stored for any clip, approved or not (it is the desk's working copy, not the film), and a clip planned
 again keeps it: the desk lists the shots the new plan added and removed when it opens.
@@ -282,8 +295,8 @@ REST and MCP call the same `DeskService` (`packages/server/src/domain/desk.ts`).
 | Error | When |
 |---|---|
 | `not_found` (404) | the project, the clip, or a desk state to read |
-| `validation_error` (422) | a brief of a clip without shots ("plan the shots of clip <n> first"); a state without its format and version headers, of another format or version than the desk's, or not `application/octet-stream` |
-| `validation_error` (413) | a state over 64 MiB |
+| `validation_error` (422) | a brief of a clip without shots ("plan the shots of clip <n> first"); a state without its format and version headers, of another format or version than the desk's, or not `application/octet-stream` (any other body type) |
+| `validation_error` (413) | a state over 64 MiB: by its `Content-Length`, before the body is read, or counted as it arrives |
 
 The desk's own errors (`unsupported_version`, `invalid_scene`, `busy`, `export_unavailable`, `export_failed`,
 `out_of_memory`, `cancelled`, `not_open`, `state_unreadable`) are shown with their message in the panel; rideo
@@ -312,24 +325,51 @@ tools, the `rideo_blocking_*` metrics, the job notice, the mock gateway's floor 
 ## Observability
 
 `rideo_desk_state_saves_total{outcome}` counts the states sent to the server (`saved`: a new state stored;
-`unchanged`: the stored one again; `refused`: too large, or another format) and `rideo_desk_briefs_total` the briefs
-served (REST and MCP). The server logs `desk state saved` with the project, the clip, the size, the sha256, the format
-and the version.
+`unchanged`: the stored one again; `refused`: too large, another format or version, without its headers, or not
+`application/octet-stream`) and `rideo_desk_briefs_total` the briefs served (REST and MCP). The server logs
+`desk state saved` with the project, the clip, the size, the sha256, the format, the version and the file's path, and
+`desk state refused` with the project, the clip and the reason (`content-type`, `headers`, `format` or `size`). The
+studio logs the messages it ignored or refused to the browser's console (`[desk] …`, at the debug level).
 
 ## Tests
 
-- **Unit (shared):** the brief from rideo's documents, row by row of [the table](#the-brief) (even sizes, the time of
-  day, interiors, the cast and element order and limits, ids filtered, a clip without shots); the protocol's schemas
-  against every fixture; which file of a result a shot gets and when a shot is refused; legacy documents with
-  `blocking` fields and reviews with the `blocking` dimension.
-- **Integration:** the desk-state routes (bytes back as stored, headers, the 64 MiB limit, a second PUT of the same
-  bytes changing nothing, a commit per state, a clip restored with its state); `desk-brief` and `desk_brief` returning
-  the same brief; the metrics.
-- **Unit (web):** the bridge: messages from another origin or window ignored, the 15-second timeout, `open` with the
-  stored state, states stored when the panel closes and at most once a minute, a result uploaded and attached,
-  `result-ack`, an approved clip refused.
+- **Unit (shared):** the brief from rideo's documents (`desk-brief.test.ts`), row by row of [the table](#the-brief):
+  names, odd sizes rounded down, interiors from `INT.`, `EXT.`, `I/E` and other headings, the time of day from the
+  scene or the heading, heights in centimetres, metres and feet, the cast and element order, the limits and cut
+  strings, ids and layouts filtered to the brief's cast, a clip without shots; the protocol's schemas
+  (`desk-protocol.test.ts`) against a verbatim copy of the 3D-Editor's fixtures, `{"$bytes": …}` decoded to
+  ArrayBuffers: every valid one parses (in its direction too) and every invalid one is refused, a state over 64 MiB,
+  the same 20 moves and framings as rideo's, the desk page's URL rule; a result's plan (`desk-result.test.ts`): the
+  file of the person's mode or the fallback, every refusal, an odd resolution, the summary; legacy documents with
+  `blocking` fields and reviews with the `blocking` dimension. `RIDEO_DESK_URL` in the server's configuration
+  (`config.test.ts`).
+- **Integration** (`packages/server/test/integration/desk.test.ts`): `desk-brief` and `desk_brief` returning the same
+  brief, a clip without shots refused, the metric; the desk-state routes: the bytes back as stored with their headers
+  and `ETag`, a media file under `media/desk/`, a second PUT of the same bytes changing nothing, `DELETE`; a commit per
+  state, coalesced per clip and author, and a clip restored with its state; the refusals (413 by `Content-Length` and
+  for a chunked body past 64 MiB, 422 without the headers, for another format or version and another body type, 404
+  for a clip that is not there) and the `refused` count; the state kept in the browser's storage on the studio that
+  keeps projects in browsers; the setting saved and reaching `GET /api/config` (`features.desk`), an `http:` page
+  that is not on `localhost` refused.
+- **Unit (web):** the bridge with fake windows and ports (`desk-bridge.test.ts`): a `hello` only from the iframe's
+  window and the desk's origin, the version mismatch, the 15-second timeout after `load` (Close still works), `open`
+  after `ready` with the brief, the stored state (transferred) and the options, states of another scene ignored, the
+  newest state stored at most every 10 minutes while the desk is open and only when its sha256 is not the stored one,
+  Close storing the answer to `save` (or, after 5 seconds without one, the newest state), the desk's own `close`,
+  `bad_message` for an invalid message with an `id`, unknown types ignored, the state stored before a result and
+  `result-ack` with the summary's toast, export unavailable, progress and the desk's errors; a result applied
+  (`desk-results.test.ts`): each clip uploaded with its probe and JPEG poster and its shot patched, an approved clip
+  refused without an upload, a failing shot not stopping the others, the buffers let go; the Settings page's desk URL
+  (`settings.test.tsx`).
 - **End to end (desktop and mobile):** a fake desk (`e2e/fixtures/desk/`, served by `e2e/support/desk-page.ts` on its
-  own origin, `localhost` against the studio's `127.0.0.1`, with the two headers) speaks protocol version 1 and sends
-  a canned result (a checked-in H.264 clip and still); `e2e/director-desk.spec.ts` opens the desk on a scene, sees it
-  connect and its state stored, sends the result and finds the shot's motion reference and camera set in the Direct
-  panel; a desk page served without the headers shows the timeout message; nothing scrolls sideways.
+  own origin, `localhost` against the studio's `127.0.0.1`, with `Cross-Origin-Embedder-Policy: require-corp`,
+  `Cross-Origin-Resource-Policy: cross-origin` and `Content-Security-Policy: frame-ancestors` naming the studio)
+  speaks protocol version 1: it shows the brief's shots and the state it was given, and its **Send** posts a result
+  for every shot of the brief (`max(1, round(durationSec × fps))` frames, a checked-in 24-frame 320×180 H.264 clip per
+  mode and a PNG still, the last shot disagreeing with the plan). `e2e/director-desk.spec.ts` opens the desk on a scene
+  (the page behind it inert, *Camera* by default), sends the result and finds through the API every shot's motion
+  reference and staged lens and move, and each uploaded clip ready with its probe and JPEG poster, the plan's
+  disagreement in the toast; the state stored on Close and given back on the next open, the desk's own **Done**
+  storing its last state; *Poses* followed and remembered after a reload; a desk page served without its headers
+  answered by the timeout message after 15 seconds, **Close** still closing; an approved clip opened read-only and
+  its result refused; nothing scrolls sideways.

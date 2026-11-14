@@ -68,6 +68,13 @@ export const conflict = (message: string) => new AppError('conflict', message);
 export const invalid = (message: string, errors: unknown[] = []) =>
   new AppError('validation_error', message, errors);
 
+/** A body over a size limit: `validation_error`, answered with 413 (docs/design/director-desk.md#surfaces). */
+export function tooLarge(message: string): AppError {
+  const err = new AppError('validation_error', message);
+  (err as { status: number }).status = 413;
+  return err;
+}
+
 /** Normalizes any thrown value into an AppError. */
 export function toAppError(err: unknown): AppError {
   if (err instanceof AppError) return err;

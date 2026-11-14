@@ -85,6 +85,10 @@ describe('the settings model (docs/design/settings.md#the-settings-page)', () =>
     expect(checkValue(field('MM_GATEWAY_URL'), 'gateway:8000')).toMatch(/http/);
     expect(checkValue(field('RIDEO_LLM_PROXY_DOMAIN'), 'https://k:s@ai.example.com/v1')).toMatch(/base URL/);
     expect(checkValue(field('RIDEO_LLM_PROXY_DOMAIN'), 'ai.example.com')).toBeNull();
+    // the director's desk page (docs/design/director-desk.md#the-setting)
+    expect(checkValue(field('RIDEO_DESK_URL'), 'http://desk.example.com/desk.html')).toMatch(/https/);
+    expect(checkValue(field('RIDEO_DESK_URL'), 'https://desk.example.com/')).toMatch(/not a folder/);
+    expect(checkValue(field('RIDEO_DESK_URL'), 'https://desk.example.com/desk.html')).toBeNull();
   });
 
   it('says what needs attention per section', () => {
@@ -280,6 +284,23 @@ describe('settings page (docs/design/settings.md)', () => {
     await waitFor(() => expect(screen.queryByTestId('settings-savebar')).toBeNull());
     await waitFor(() => expect(useConfigStore.getState().config?.features.gateway).toBe(true));
     expect(screen.getByTestId('settings-status-gateway-value').textContent).toMatch(/Connected/);
+  });
+
+  it("shows the director's desk page under Limits and embedding, checks it and saves it", async () => {
+    page('/settings#jobs');
+    const row = await screen.findByTestId('setting-RIDEO_DESK_URL');
+    expect(row.textContent).toMatch(/Director’s desk page/);
+    const input = row.querySelector('input')!;
+    fireEvent.change(input, { target: { value: 'http://desk.example.com/desk.html' } });
+    expect(within(row).getByTestId('setting-check').textContent).toMatch(/https/);
+    fireEvent.change(input, { target: { value: 'https://desk.example.com/desk.html' } });
+    expect(within(row).queryByTestId('setting-check')).toBeNull();
+    fireEvent.click(screen.getByTestId('settings-save'));
+    await waitFor(() => expect(calls.some((c) => c.init?.method === 'PUT')).toBe(true));
+    const put = calls.find((c) => c.init?.method === 'PUT')!;
+    expect(JSON.parse(String(put.init!.body))).toEqual({
+      values: { RIDEO_DESK_URL: 'https://desk.example.com/desk.html' },
+    });
   });
 
   it('checks values while typing, and opens the section of a refused one', async () => {

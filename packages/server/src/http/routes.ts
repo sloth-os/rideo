@@ -1,6 +1,7 @@
-import { createWriteStream } from 'node:fs';
+import { createReadStream, createWriteStream } from 'node:fs';
 import { rm } from 'node:fs/promises';
 import { extname } from 'node:path';
+import type { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import {
   AddElementReferenceInputSchema,
@@ -18,6 +19,7 @@ import {
   CloneVoiceInputSchema,
   ConsentInputSchema,
   CreateProjectInputSchema,
+  DESK_STATE_MAX_BYTES,
   DescribeCharacterInputSchema,
   ElementInputSchema,
   ElementReferenceViewSchema,
@@ -654,6 +656,52 @@ export function registerRoutes(app: FastifyInstance, studio: Studio): void {
       parse(ShotUpdateInputSchema, req.body),
     ),
   );
+  // The 3D-Editor's director's desk (docs/design/director-desk.md#surfaces): a clip's brief and the desk's state
+  app.get('/api/projects/:id/clips/:clipId/desk-brief', async (req) =>
+    studio.desk.brief(pid(req), p(req, 'clipId')),
+  );
+  app.get('/api/projects/:id/clips/:clipId/desk-state', async (req, reply) => {
+    const { deskState, file } = await studio.desk.state(pid(req), p(req, 'clipId'));
+    return reply
+      .type('application/octet-stream')
+      .header('content-length', deskState.media.size)
+      .header('x-desk-state-format', deskState.format)
+      .header('x-desk-state-version', String(deskState.version))
+      .header('etag', `"${deskState.media.hash}"`)
+      .header('cache-control', 'no-store')
+      .send(createReadStream(file));
+  });
+  app.delete('/api/projects/:id/clips/:clipId/desk-state', async (req, reply) => {
+    await studio.desk.clearState(actor(), pid(req), p(req, 'clipId'));
+    return reply.code(204).send();
+  });
+  // A state is bytes: any body reaches the service as a stream, counted there and never held in memory (other body
+  // types are refused with 422; the parsers that read one stop at the limit).
+  app.register(async (scope) => {
+    scope.addContentTypeParser('*', (_req, payload, done) => done(null, payload));
+    scope.put(
+      '/api/projects/:id/clips/:clipId/desk-state',
+      { bodyLimit: DESK_STATE_MAX_BYTES },
+      async (req) => {
+        const header = (name: string) => {
+          const v = req.headers[name];
+          return typeof v === 'string' ? v : undefined;
+        };
+        const length = header('content-length');
+        const body = req.body as NodeJS.ReadableStream | undefined;
+        const stream = body && typeof (body as { pipe?: unknown }).pipe === 'function' ? body : req.raw;
+        return {
+          deskState: await studio.desk.saveState(actor(), pid(req), p(req, 'clipId'), {
+            format: header('x-desk-state-format'),
+            version: header('x-desk-state-version'),
+            contentType: header('content-type'),
+            contentLength: length !== undefined && /^\d+$/.test(length) ? Number(length) : undefined,
+            body: stream as Readable,
+          }),
+        };
+      },
+    );
+  });
   // Take edits and extensions (docs/design/take-editing.md)
   app.post('/api/projects/:id/clips/:clipId/shots/:shotId/takes/:takeId/edit', async (req, reply) =>
     reply

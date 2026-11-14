@@ -204,6 +204,15 @@ only those names as extras, and reading verdicts that name a character instead o
   stored with rideo's own desk (`clip.blocking`, `settings.blocking`) still parse and lose those fields, and stored
   storyboard reviews whose issues and recommendations name the `blocking` dimension still parse while no reviewer is
   asked for it ([what happened to the blocking](design/director-desk.md#what-happened-to-the-blocking)).
+- **the 3D-Editor's desk** (`packages/shared/test/desk-protocol.test.ts`, `desk-brief.test.ts`, `desk-result.test.ts`,
+  `packages/web/test/desk-bridge.test.ts`, `desk-results.test.ts`): the protocol's schemas against a verbatim copy of
+  the 3D-Editor's fixtures (`packages/shared/test/fixtures/desk-protocol/`: every valid one parses, every invalid one
+  is refused) and the desk page's URL rule; the brief from rideo's documents, row by row (odd sizes, interiors, the
+  time of day, heights, the order and limits of the cast and elements, layouts filtered, a clip without shots); a
+  result's plan (the person's mode and the fallback, every refusal, the summary); the bridge with fake windows and
+  ports (the handshake, the 15-second timeout, `open` with the stored state, `bad_message`, states stored on Close,
+  before a result and at most every 10 minutes, the same bytes not sent again, `result-ack`); a result uploaded and
+  attached shot by shot with its JPEG poster ([director's desk](design/director-desk.md#tests)).
 - **reviews of every step** (`packages/shared/test/ai-review-gates.test.ts`): the whole-take watch's verdict and its
   merge into the quality checks, the scene review's verdict, the clip gate, the cast review's subject and merge
   (fixes pointed at the character), the `cast.reviewPassed` gate (off for older projects, continue anyway), the cut's
@@ -318,6 +327,12 @@ only those names as extras, and reading verdicts that name a character instead o
   a generated, verified end frame and an image end frame as `last_frame` (dropped for a model without last
   frames); an image start frame and a pose reference video; resource validation; variations with offset seeds
   and continued numbering (the mock records every request it gets).
+- **Director's desk** (`desk.test.ts`): `desk-brief` and the MCP tool `desk_brief` return the same brief; the desk
+  state stored as an immutable media file the clip names, given back with its format, version and `ETag`, the same
+  bytes again changing nothing, a commit per state coalesced per clip and author, a restored clip with its state,
+  `DELETE`; states over 64 MiB refused by their `Content-Length` and as a chunked body arrives (413), other formats,
+  versions and body types (422); the state kept in the browser's storage; `RIDEO_DESK_URL` saved and reaching
+  `GET /api/config` as `features.desk`.
 - **Take editing** (`take-editing.test.ts`): a relit take is a verified, watermarked derived take that keeps the
   sound and dialogue, signed as an AI edit with its parent as ingredient; a new-angle edit; an extension from the
   last frame (+N s, trimmed to what was asked); generative extend after a take (a signed, watermarked extension
@@ -431,7 +446,7 @@ only those names as extras, and reading verdicts that name a character instead o
 ### End-to-end (Playwright)
 
 Projects: `desktop` (1440×900) runs every spec except `responsive`; `mobile` (412×915, touch) runs
-`responsive`, `mcp-sync`, `provenance`, `elements`, `dialogue`, `storyboard`, `directing`, `take-editing`,
+`responsive`, `mcp-sync`, `provenance`, `elements`, `dialogue`, `storyboard`, `director-desk`, `directing`, `take-editing`,
 `multi-shot`, `post-audio`, `localization`, `finishing`, `accounts`, `review`, `interchange`, `editor-depth`,
 `editing-tools`, `recipes`, `brand`, `search`, `performance`, `engine`, `pwa`, `settings`, `browser-storage`, `subpath`, `embed`,
 `feedback` and `insights`. The
@@ -461,6 +476,7 @@ when a new stack starts. Specs:
 | `post-audio.spec.ts` | (desktop and mobile) the Mix card: ducking on after assembly, depth −18 dB, *Score the cut* with a direction (Cue 1 on the Music track), *Add sound effects* (an Effects track, its lane on desktop); an export rendered in the tab at broadcast loudness with stems; the export card shows about −23 LUFS and the three stem downloads |
 | `multi-shot.spec.ts` | (desktop and mobile) the multi-shot setting off and on in the project settings; a clip on `mock-multishot-v1` renders two shots in one request (`shot 1 of 2`, `shot 2 of 2` badges) and the third alone |
 | `directing.spec.ts` | (desktop and mobile) the Direct panel sets a push-in, an 85 mm lens, f/2 and a generated end frame; two variations are generated, compared side by side and B is chosen |
+| `director-desk.spec.ts` | (desktop and mobile, against the fake desk on its own origin) the Storyboard view's *Director's desk* on a planned scene: the panel connects (the page behind it inert, *Camera* by default), the desk's **Send** attaches every shot's clip as its motion reference with the staged lens and move (checked through the API: the resources ready with their probe and JPEG poster) and the toast lists the shot whose camera disagrees with the plan; the state stored on Close and given back on the next open, the desk's own **Done** storing its last state; *Poses* followed and remembered after a reload; a desk page served without its headers: the timeout message after 15 seconds, Close still closing; an approved clip opened read-only and its result refused; no sideways scroll |
 | `ai-review.spec.ts` | (desktop and mobile) the screenplay and the storyboard reviewed, revised by their review and passing before the next stage; the project settings' review gates at 8 (a new bar saved), frames corrected by editing them and how long the staging check reasons; one screenplay draft until the settings ask for more; the Story view's adapted brief; the cast review's panel in the Cast view passing; no sideways scroll |
 | `storyboard.spec.ts` | (desktop and mobile) generate the storyboard, approve a frame, move it later, approve all; download the shot list CSV and PDF; build the animatic, play it, export it in the tab (listed as an animatic export); approve the storyboard; import a Fountain screenplay in the Story view |
 | `dialogue.spec.ts` | (desktop and mobile) the Cast view's voice panel: design three voices, the previews play, pick one, lock it; clone a recording of a real person through the consent dialog and lock it; the gate stops asking for voices; the dialogue mode setting |
@@ -479,7 +495,9 @@ mock gateway, the main studio with the embedded WebDAV (temporary data dir) serv
 accounts, one that keeps projects in browsers without a gateway (and allows the host page's origin), one under
 `/studio` with a prefix-stripping proxy in front of it at `/rideo`, two whose settings the settings spec changes, a
 slow-media proxy in front of the main studio (`e2e/support/slow-media-proxy.ts`: HTTP/1.1, every ranged media read held
-20 s, everything else at once), and the library's host page (`e2e/fixtures/embed`, built by `npm run build:e2e-host` against `dist-lib`). The main studio
+20 s, everything else at once), the library's host page (`e2e/fixtures/embed`, built by `npm run build:e2e-host` against `dist-lib`),
+and a fake 3D desk on its own origin (`e2e/fixtures/desk`, served by `e2e/support/desk-page.ts` on `localhost` with
+the headers a desk page needs; the main studio's `RIDEO_DESK_URL` names it). The main studio
 starts last, so its readiness means all are up. `npm run test:e2e` builds the app, the library and the host first. Tiny media sizes (320×180)
 and short durations keep the suite fast. Playwright's Chromium decodes H.264 with WebCodecs, so the story
 spec emulates a browser without an H.264 decoder (an init script hides AVC from `VideoDecoder`): the preview

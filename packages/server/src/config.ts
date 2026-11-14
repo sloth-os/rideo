@@ -1,6 +1,7 @@
 import {
   apiBaseProblem,
   desiredProxies,
+  deskUrlProblem,
   type Prices,
   parsePrices,
   parseThemeJson,
@@ -104,6 +105,8 @@ export const EnvSchema = z
     RIDEO_BASE_PATH: basePath,
     /** Origins whose pages may use this server through the studio library (docs/design/embedding.md). */
     RIDEO_CORS_ORIGINS: str(''),
+    /** The 3D-Editor's desk page the Storyboard view embeds (docs/design/director-desk.md#the-setting). */
+    RIDEO_DESK_URL: str(),
     /** The studio theme (docs/design/embedding.md#themes), JSON. */
     RIDEO_THEME: theme,
     RIDEO_API_TOKEN: str(),
@@ -264,6 +267,10 @@ export const EnvSchema = z
       if (v && !/^https?:\/\/[^\s/]+/i.test(v))
         ctx.addIssue({ code: 'custom', path: [key], message: 'an http:// or https:// URL' });
     }
+    if (e.RIDEO_DESK_URL) {
+      const problem = deskUrlProblem(e.RIDEO_DESK_URL);
+      if (problem) ctx.addIssue({ code: 'custom', path: ['RIDEO_DESK_URL'], message: problem });
+    }
     // API base URLs, and one origin per domain among the endpoints whose keys the studio registers
     const values = e as unknown as Record<string, string | undefined>;
     let parsed = true;
@@ -325,6 +332,8 @@ export interface Config {
   basePath: string;
   /** Origins that may call the API from their pages (docs/design/embedding.md); `*` for any. */
   cors: { origins: string[] };
+  /** The 3D-Editor's desk page (docs/design/director-desk.md#the-setting); null: no desk. */
+  desk: { url: string } | null;
   /** The studio theme (docs/design/embedding.md#themes). */
   theme: Theme | null;
   /** Where projects live (docs/design/browser-storage.md). */
@@ -511,6 +520,7 @@ export function loadConfig(
         .map((o) => o.trim().replace(/\/+$/, ''))
         .filter(Boolean),
     },
+    desk: e.RIDEO_DESK_URL?.trim() ? { url: e.RIDEO_DESK_URL.trim() } : null,
     theme: e.RIDEO_THEME ? ThemeSchema.parse(e.RIDEO_THEME) : null,
     storage: { mode: storageMode },
     apiToken: e.RIDEO_API_TOKEN,

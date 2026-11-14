@@ -75,6 +75,7 @@ import { BrandService } from './brand';
 import { BundleService } from './bundles';
 import { ClipService } from './clips';
 import type { Deps, Logger } from './deps';
+import { DeskService } from './desk';
 import { EditService } from './edit';
 import { EditorService } from './editor';
 import { ElementService } from './elements';
@@ -124,6 +125,8 @@ export interface Studio {
   brand: BrandService;
   search: SearchService;
   performance: PerformanceService;
+  /** The 3D-Editor's director's desk: briefs and desk states (docs/design/director-desk.md#surfaces). */
+  desk: DeskService;
   inbox: InboxService;
   push: PushService;
   editor: EditorService;
@@ -383,6 +386,7 @@ export function createStudio(
     recipes: new RecipeService(deps),
     search: new SearchService(deps),
     performance: new PerformanceService(deps),
+    desk: new DeskService(deps),
     inbox: new InboxService(deps),
     push,
     brand: new BrandService(deps),

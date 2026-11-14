@@ -233,6 +233,18 @@ describe('config', () => {
     expect(issues({ MM_GATEWAY_URL: 'gateway:8000' })).toEqual(['MM_GATEWAY_URL']);
     expect(issues({ RIDEO_BASE_PATH: '//evil.test' })).toEqual(['RIDEO_BASE_PATH']);
     expect(issues({ RIDEO_THEME: '{"colors":{"accent":"red;}"}}' })).toEqual(['RIDEO_THEME']);
+    // the desk's page: https, or http on localhost; a page, not a folder (docs/design/director-desk.md#the-setting)
+    expect(issues({ RIDEO_DESK_URL: 'http://desk.example.com/desk.html' })).toEqual(['RIDEO_DESK_URL']);
+    expect(issues({ RIDEO_DESK_URL: 'https://desk.example.com/' })).toEqual(['RIDEO_DESK_URL']);
+    expect(issues({ RIDEO_DESK_URL: 'desk.html' })).toEqual(['RIDEO_DESK_URL']);
+    expect(issues({ RIDEO_DESK_URL: 'http://localhost:5174/desk.html' })).toEqual([]);
+  });
+
+  it('reads the desk page (docs/design/director-desk.md#the-setting)', () => {
+    expect(loadConfig({}).desk).toBeNull();
+    expect(loadConfig({ RIDEO_DESK_URL: ' https://desk.example.com/desk.html ' }).desk).toEqual({
+      url: 'https://desk.example.com/desk.html',
+    });
   });
 
   it('merges the settings file under the environment (docs/design/settings.md#where-values-come-from)', () => {
