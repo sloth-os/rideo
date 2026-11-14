@@ -147,7 +147,8 @@ jobs:
     runs-on: ubuntu-24.04
     needs: real-ai-check
     if: needs.real-ai-check.outputs.configured == 'true'
-    timeout-minutes: 75
+    # story.spec.ts may take 75 minutes (docs/testing.md#real-models-e2ereal), plus the install and the gateway's image
+    timeout-minutes: 90
     env:
       IMAGE_MODEL_TYPE: ${{ vars.IMAGE_MODEL_TYPE }}
       IMAGE_MODEL_BASE_URL: ${{ vars.IMAGE_MODEL_BASE_URL }}

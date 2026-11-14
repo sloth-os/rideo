@@ -8,8 +8,8 @@ export default defineConfig({
   testDir: 'e2e/real',
   testMatch: /\.spec\.ts$/,
   outputDir: 'test-results/real',
-  // Video models take minutes per shot.
-  timeout: 60 * 60_000,
+  // Video models take minutes per shot, and the provider's checks reason for minutes (docs/testing.md#real-models-e2ereal).
+  timeout: 75 * 60_000,
   expect: { timeout: 60_000 },
   fullyParallel: false,
   workers: 1,
