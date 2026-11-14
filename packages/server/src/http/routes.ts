@@ -675,9 +675,12 @@ export function registerRoutes(app: FastifyInstance, studio: Studio): void {
     await studio.desk.clearState(actor(), pid(req), p(req, 'clipId'));
     return reply.code(204).send();
   });
-  // A state is bytes: any body reaches the service as a stream, counted there and never held in memory (other body
-  // types are refused with 422; the parsers that read one stop at the limit).
+  // A state is bytes: every body reaches the service as a stream, whatever its type, counted there and never parsed
+  // or held in memory. The route has no JSON or text parser (it would read and parse a body the service refuses, answer
+  // malformed JSON with a 400 and a long one with a 413 of its own, none of them counted or logged): the service
+  // refuses any other type with a counted, logged 422 and lets the rest of the body through unread.
   app.register(async (scope) => {
+    scope.removeAllContentTypeParsers();
     scope.addContentTypeParser('*', (_req, payload, done) => done(null, payload));
     scope.put(
       '/api/projects/:id/clips/:clipId/desk-state',

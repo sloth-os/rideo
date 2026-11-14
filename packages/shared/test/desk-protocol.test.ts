@@ -5,6 +5,7 @@ import {
   CAMERA_MOVES,
   CameraSchema,
   DESK_MOVES,
+  DESK_RESULT_LIMITS,
   DESK_STATE_MAX_BYTES,
   DESK_TO_HOST_TYPES,
   DeskConnectSchema,
@@ -100,6 +101,34 @@ describe('the desk protocol fixtures', () => {
     const big = { ...ok, data: new ArrayBuffer(DESK_STATE_MAX_BYTES + 1) };
     expect(DeskStateSchema.safeParse(big).success).toBe(false);
     expect(DeskStateSchema.safeParse({ ...ok, version: 2 }).success).toBe(false);
+  });
+
+  it('bounds a result: at most 200 shots, 800 files and file names of 200 characters', () => {
+    const [, fixture] = valid.find(([n]) => n === 'result.json')!;
+    const result = revive(fixture) as {
+      shots: { shotId: string; references: Record<string, string>; still: string | null }[];
+      files: { name: string; mime: string; data: ArrayBuffer }[];
+    };
+    const ok = DeskToHostMessageSchema.safeParse(result);
+    expect(ok.success).toBe(true);
+    expect(DESK_RESULT_LIMITS).toEqual({ shots: 200, files: 800, name: 200 });
+    const shot = result.shots[0]!;
+    const file = result.files[0]!;
+    const shots = (n: number) => ({ ...result, shots: Array.from({ length: n }, () => shot) });
+    expect(DeskToHostMessageSchema.safeParse(shots(200)).success).toBe(true);
+    expect(DeskToHostMessageSchema.safeParse(shots(201)).success).toBe(false);
+    const files = (n: number) => ({ ...result, files: Array.from({ length: n }, () => file) });
+    expect(DeskToHostMessageSchema.safeParse(files(800)).success).toBe(true);
+    expect(DeskToHostMessageSchema.safeParse(files(801)).success).toBe(false);
+    const named = (name: string) => ({ ...result, files: [{ ...file, name }, ...result.files.slice(1)] });
+    expect(DeskToHostMessageSchema.safeParse(named('n'.repeat(200))).success).toBe(true);
+    expect(DeskToHostMessageSchema.safeParse(named('n'.repeat(201))).success).toBe(false);
+    const referenced = (name: string) => ({
+      ...result,
+      shots: [{ ...shot, references: { camera: name }, still: name }, ...result.shots.slice(1)],
+    });
+    expect(DeskToHostMessageSchema.safeParse(referenced('n'.repeat(200))).success).toBe(true);
+    expect(DeskToHostMessageSchema.safeParse(referenced('n'.repeat(201))).success).toBe(false);
   });
 
   it('names the same 20 moves and framings as rideo', () => {

@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { applyDeskResult, type DeskResultDeps } from '../src/features/desk/results';
 
 /** A desk's result applied in the studio (docs/design/director-desk.md#the-result). */
-const bytes = (n: number) => new Uint8Array(n).buffer as ArrayBuffer;
+const mp4 = f.mp4Bytes;
 
 function setup(status: 'planned' | 'approved' = 'planned') {
   const s0 = f.shot({ index: 0, durationSec: 3 });
@@ -47,10 +47,10 @@ function setup(status: 'planned' | 'approved' = 'planned') {
       },
     ],
     files: [
-      { name: 's0.camera.mp4', mime: 'video/mp4', data: bytes(11) },
-      { name: 's0.motion.mp4', mime: 'video/mp4', data: bytes(12) },
-      { name: 's0.still.png', mime: 'image/png', data: bytes(5) },
-      { name: 's1.camera.mp4', mime: 'video/mp4', data: bytes(13) },
+      { name: 's0.camera.mp4', mime: 'video/mp4', data: mp4(14) },
+      { name: 's0.motion.mp4', mime: 'video/mp4', data: mp4(15) },
+      { name: 's0.still.png', mime: 'image/png', data: f.pngBytes(1280, 720) },
+      { name: 's1.camera.mp4', mime: 'video/mp4', data: mp4(16) },
     ],
   };
   const uploads: { name: string; type: string; size: number; probe: unknown; poster: Blob | null }[] = [];
@@ -83,9 +83,9 @@ describe('applyDeskResult', () => {
     const { s0, s1, clip, project, result, uploads, patches, posters, deps } = setup();
     const ack = await applyDeskResult(result, { project, clip, mode: 'motion' }, deps);
     expect(uploads.map((u) => [u.name, u.type, u.size])).toEqual([
-      ['desk-c2-s1-motion.mp4', 'video/mp4', 12],
+      ['desk-c2-s1-motion.mp4', 'video/mp4', 15],
       // no motion clip for the second shot: the first of camera, motion, pose it has
-      ['desk-c2-s2-camera.mp4', 'video/mp4', 13],
+      ['desk-c2-s2-camera.mp4', 'video/mp4', 16],
     ]);
     expect(uploads[0]!.probe).toMatchObject({
       hasVideo: true,
@@ -96,7 +96,7 @@ describe('applyDeskResult', () => {
     });
     expect(uploads[0]!.poster?.type).toBe('image/jpeg');
     expect(uploads[1]!.poster).toBeNull();
-    expect(posters).toEqual([5]);
+    expect(posters).toEqual([33]);
     expect(patches).toEqual([
       [
         s0.id,

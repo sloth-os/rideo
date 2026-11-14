@@ -1,5 +1,5 @@
 import { type Clip, DESK_MODES, type DeskMode, deskBrief } from '@rideo/shared';
-import { Box, X } from 'lucide-react';
+import { Box, RotateCw, X } from 'lucide-react';
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Badge, Button, Select } from '../../components/ui';
@@ -14,6 +14,15 @@ import { applyDeskResult, pngToJpeg } from './results';
 /** Where the desk's headers are explained (the timeout message links to it). */
 export const DESK_HEADERS_DOC =
   'https://github.com/sloth-os/rideo/blob/main/docs/design/director-desk.md#topology-and-headers';
+
+/**
+ * The desk's iframe sandbox (docs/design/director-desk.md#topology-and-headers): scripts and its own storage, its
+ * downloads, forms, dialogs, popups and pointer lock, never navigating the studio's tab (no `allow-top-navigation*`).
+ */
+export const DESK_SANDBOX =
+  'allow-scripts allow-same-origin allow-downloads allow-forms allow-modals allow-popups allow-popups-to-escape-sandbox allow-pointer-lock';
+/** What the desk may use of the page's features: full screen, the clipboard, and the screen kept awake while it renders. */
+export const DESK_ALLOW = 'fullscreen; clipboard-write; screen-wake-lock';
 
 const MODE_KEY = 'rideo.deskMode';
 const MODE_LABELS: Record<DeskMode, string> = { camera: 'Camera', motion: 'Motion', pose: 'Poses' };
@@ -109,7 +118,8 @@ export function DeskPanel({ clip, onClose }: { clip: Clip; onClose: () => void }
         readOnly: opening.current.readOnly,
       }),
       load: () => api.deskState(projectId, clip.id),
-      store: async (state) => (await api.saveDeskState(projectId, clip.id, state)).deskState.media.hash,
+      store: async (state, signal) =>
+        (await api.saveDeskState(projectId, clip.id, state, signal)).deskState.media.hash,
       applyResult: (result) => {
         const docs = useProject.getState().docs;
         return applyDeskResult(
@@ -130,6 +140,9 @@ export function DeskPanel({ clip, onClose }: { clip: Clip; onClose: () => void }
     bridge.current = desk;
     desk.start();
     return () => {
+      // leaving without Close (another view, the back gesture, the clip leaving the list): the newest state not stored
+      // yet is stored on the way out, best effort
+      desk.flush();
       desk.dispose();
       bridge.current = null;
     };
@@ -204,11 +217,28 @@ export function DeskPanel({ clip, onClose }: { clip: Clip; onClose: () => void }
       >
         {status?.failure ? (
           <span data-testid="desk-failure">
-            {status.failure} (
-            <a href={DESK_HEADERS_DOC} target="_blank" rel="noreferrer" className="text-accent underline">
-              the headers
-            </a>
-            ).
+            {status.remedy === 'headers' ? (
+              <>
+                {status.failure} (
+                <a href={DESK_HEADERS_DOC} target="_blank" rel="noreferrer" className="text-accent underline">
+                  the headers
+                </a>
+                ).
+              </>
+            ) : (
+              status.failure
+            )}
+            {status.remedy === 'retry' ? (
+              <Button
+                size="sm"
+                icon={<RotateCw className="size-4" />}
+                onClick={() => bridge.current?.retry()}
+                className="ml-2 align-middle"
+                data-testid="desk-retry"
+              >
+                Retry
+              </Button>
+            ) : null}
           </span>
         ) : (
           (status?.line ?? 'Connecting to the desk…')
@@ -221,10 +251,13 @@ export function DeskPanel({ clip, onClose }: { clip: Clip; onClose: () => void }
       </p>
       {status && url ? (
         <iframe
+          // a panel that gets another clip loads the desk again and connects afresh
+          key={clip.id}
           ref={frame}
           src={url}
           title="3D director's desk"
-          allow="fullscreen; clipboard-write"
+          sandbox={DESK_SANDBOX}
+          allow={DESK_ALLOW}
           className="min-h-0 w-full flex-1 border-0 bg-bg"
           onLoad={() => bridge.current?.frameLoaded()}
           data-testid="desk-frame"

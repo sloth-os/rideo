@@ -1,4 +1,7 @@
 import { createHash } from 'node:crypto';
+import { readdirSync, readlinkSync } from 'node:fs';
+import { request } from 'node:http';
+import { dirname } from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import {
@@ -10,7 +13,7 @@ import {
   SYSTEM_ACTOR,
 } from '@rideo/shared';
 import * as f from '@rideo/shared/testing';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { ApiError, type Stack, startStack } from '../helpers/stack';
 import { attachWorkspace, type WorkspaceClient } from '../helpers/workspace-client';
 
@@ -234,6 +237,7 @@ describe('the desk state (docs/design/director-desk.md#the-routes)', () => {
   it('refuses states over 64 MiB, by their length or as they arrive, and others than the desk format', async () => {
     const { pid, clip } = await seeded(stack);
     const refused = await metric('rideo_desk_state_saves_total', '{outcome="refused"}');
+    const logged = vi.spyOn(stack.server.studio.deps.log, 'info');
     const problem = async (res: Response) => ({ status: res.status, code: ((await res.json()) as any).code });
 
     // the declared length
@@ -266,33 +270,215 @@ describe('the desk state (docs/design/director-desk.md#the-routes)', () => {
     });
     expect((await put(stack, pid, clip.id, small)).status).toBe(200);
 
-    // the format and version headers, and the body's type
+    // the format and version headers, and the body's type: every other type is refused, its body never parsed
+    // (malformed or empty JSON is no 400), counted and logged
     const body = bytes('x');
-    const variants: Record<string, string>[] = [
-      { 'x-desk-state-format': '' },
-      { 'x-desk-state-version': '' },
-      { 'x-desk-state-format': 'yjs' },
-      { 'x-desk-state-version': '2' },
-      { 'content-type': 'application/json' },
-      { 'content-type': 'image/png' },
+    const variants: [Record<string, string>, NonNullable<RequestInit['body']>][] = [
+      [{ 'x-desk-state-format': '' }, body],
+      [{ 'x-desk-state-version': '' }, body],
+      [{ 'x-desk-state-format': 'yjs' }, body],
+      [{ 'x-desk-state-version': '2' }, body],
+      [{ 'content-type': 'application/json' }, '"x"'],
+      [{ 'content-type': 'application/json' }, '{"malformed": '],
+      [{ 'content-type': 'application/json' }, ''],
+      [{ 'content-type': 'text/plain' }, 'a state as text'],
+      [{ 'content-type': 'image/png' }, body],
     ];
-    for (const headers of variants) {
-      const res = await put(
-        stack,
-        pid,
-        clip.id,
-        headers['content-type'] === 'application/json' ? '"x"' : body,
-        headers,
-      );
+    for (const [headers, sent] of variants) {
+      const res = await put(stack, pid, clip.id, sent, headers);
       expect(await problem(res), JSON.stringify(headers)).toEqual({ status: 422, code: 'validation_error' });
     }
-    expect(await metric('rideo_desk_state_saves_total', '{outcome="refused"}')).toBe(refused + 8);
+    // a JSON body that declares 70 MiB is answered at once, before it arrives, with the same 422
+    const declared = await new Promise<{ status: number; code: string }>((resolve, reject) => {
+      const req = request(
+        deskUrl(stack, pid, clip.id),
+        {
+          method: 'PUT',
+          headers: {
+            ...FORMAT,
+            'content-type': 'application/json',
+            'content-length': String(70 * 1024 * 1024),
+          },
+        },
+        (res) => {
+          let text = '';
+          res.on('data', (c) => (text += c));
+          res.on('end', () => {
+            req.destroy();
+            resolve({ status: res.statusCode ?? 0, code: (JSON.parse(text) as { code: string }).code });
+          });
+        },
+      );
+      req.on('error', (err) => (err.message.includes('socket hang up') ? undefined : reject(err)));
+      req.write('{"state": "');
+    });
+    expect(declared).toEqual({ status: 422, code: 'validation_error' });
+    expect(await metric('rideo_desk_state_saves_total', '{outcome="refused"}')).toBe(refused + 12);
+    const refusals = logged.mock.calls.filter((c) => c[1] === 'desk state refused');
+    expect(refusals.map((c) => (c[0] as { reason: string }).reason)).toEqual([
+      'size',
+      'size',
+      'headers',
+      'headers',
+      'format',
+      'format',
+      'content-type',
+      'content-type',
+      'content-type',
+      'content-type',
+      'content-type',
+      'content-type',
+    ]);
+    logged.mockRestore();
     // an unknown clip
     expect((await put(stack, pid, 'clp_0000000000000none', body)).status).toBe(404);
     // the stored state is the streamed one
     expect(new TextDecoder().decode(await (await fetch(deskUrl(stack, pid, clip.id))).arrayBuffer())).toBe(
       'streamed state',
     );
+  });
+
+  it('answers 404 only when the clip names no state, and a retryable 503 when its file cannot be read', async () => {
+    const { pid, clip } = await seeded(stack);
+    await rejects(stack.api('GET', `/projects/${pid}/clips/${clip.id}/desk-state`), 'not_found', 404);
+    // the clip names a state whose file is gone from storage (a restore from a copy without media, say)
+    const h = await stack.server.studio.deps.projects.existing(pid);
+    await h.repo.transact(
+      (tx) => {
+        const current = structuredClone(tx.require<Clip>(docPath.clip(clip.id), clip.id));
+        current.deskState = {
+          format: '3d-editor.desk-state',
+          version: 1,
+          media: f.media({
+            path: 'media/desk/gone-000000000000.bin',
+            hash: '0'.repeat(64),
+            mime: 'application/octet-stream',
+            size: 12,
+          }),
+          updatedAt: new Date().toISOString(),
+        };
+        tx.set(docPath.clip(clip.id), current);
+      },
+      { actor: SYSTEM_ACTOR, message: 'Name a state whose file is gone' },
+    );
+    await rejects(stack.api('GET', `/projects/${pid}/clips/${clip.id}/desk-state`), 'storage_error', 503);
+    // a new state replaces it
+    expect((await put(stack, pid, clip.id, bytes('a state that is there'))).status).toBe(200);
+    expect(new TextDecoder().decode(await (await fetch(deskUrl(stack, pid, clip.id))).arrayBuffer())).toBe(
+      'a state that is there',
+    );
+  });
+
+  it('leaves no temporary file and no open file when the client goes away before its body is read', async () => {
+    const { pid, clip } = await seeded(stack);
+    const deps = stack.server.studio.deps;
+    const tmpDir = dirname(deps.media.tmp('bin'));
+    const leftovers = () => {
+      const files = readdirSync(tmpDir).filter((n) => n.endsWith('.bin'));
+      let open: string[] = [];
+      try {
+        open = readdirSync('/proc/self/fd')
+          .map((fd) => {
+            try {
+              return readlinkSync(`/proc/self/fd/${fd}`);
+            } catch {
+              return '';
+            }
+          })
+          .filter((target) => target.startsWith(tmpDir) && target.endsWith('.bin'));
+      } catch {
+        // no /proc: the files are checked alone
+      }
+      return { files, open };
+    };
+    const before = leftovers();
+    // the service waits for the project while the client goes away
+    const projects = deps.projects;
+    const docs = projects.docs.bind(projects);
+    let release!: () => void;
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    let entered!: () => void;
+    const waiting = new Promise<void>((r) => {
+      entered = r;
+    });
+    projects.docs = (async (...args: Parameters<typeof docs>) => {
+      entered();
+      await gate;
+      return docs(...args);
+    }) as typeof projects.docs;
+    const desk = stack.server.studio.desk;
+    const save = desk.saveState.bind(desk);
+    let outcome: Promise<unknown> | undefined;
+    desk.saveState = ((...args: Parameters<typeof save>) => {
+      outcome = save(...args);
+      return outcome;
+    }) as typeof desk.saveState;
+    try {
+      const req = request(deskUrl(stack, pid, clip.id), {
+        method: 'PUT',
+        headers: { 'content-type': 'application/octet-stream', ...FORMAT, 'content-length': '4096' },
+      });
+      req.on('error', () => undefined);
+      req.write(Buffer.alloc(16));
+      await waiting;
+      req.destroy();
+      await new Promise((r) => setTimeout(r, 200));
+      release();
+      const settled = await Promise.race([
+        outcome!.then(
+          () => 'stored',
+          (err: { code?: string }) => err.code ?? 'failed',
+        ),
+        new Promise((r) => setTimeout(() => r('still waiting'), 5_000)),
+      ]);
+      expect(settled).toBe('cancelled');
+    } finally {
+      projects.docs = docs;
+      desk.saveState = save;
+    }
+    expect(leftovers()).toEqual(before);
+    await rejects(stack.api('GET', `/projects/${pid}/clips/${clip.id}/desk-state`), 'not_found', 404);
+  });
+
+  it('answers 404 for clip ids that name members of every object, on every desk route and in desk_brief', async () => {
+    const { pid } = await seeded(stack);
+    for (const id of ['constructor', '__proto__', 'toString', 'hasOwnProperty']) {
+      await rejects(stack.api('GET', `/projects/${pid}/clips/${id}/desk-brief`), 'not_found', 404);
+      await rejects(stack.api('GET', `/projects/${pid}/clips/${id}/desk-state`), 'not_found', 404);
+      expect((await put(stack, pid, id, bytes('x'))).status, id).toBe(404);
+      expect((await fetch(deskUrl(stack, pid, id), { method: 'DELETE' })).status, id).toBe(404);
+      const r = await client.callTool({ name: 'desk_brief', arguments: { projectId: pid, clipId: id } });
+      expect(r.isError, id).toBe(true);
+      expect(JSON.parse((r.content as { text: string }[])[0]!.text)).toMatchObject({ code: 'not_found' });
+    }
+  });
+
+  it("keeps the shot's planned framing and movement when a partial camera is set, over PATCH and shot_update", async () => {
+    const { pid, clip, shot } = await seeded(stack);
+    const path = `/projects/${pid}/clips/${clip.id}/shots/${shot.id}`;
+    await stack.api('PATCH', path, { camera: { framing: 'close_up', movement: 'pan' } });
+    // the desk's PATCH: the staged lens and move only
+    const patched = await stack.api<Clip>('PATCH', path, { camera: { lensMm: 35, move: 'push_in' } });
+    expect(patched.shots[0]!.camera).toMatchObject({
+      framing: 'close_up',
+      movement: 'pan',
+      lensMm: 35,
+      move: 'push_in',
+    });
+    const r = await client.callTool({
+      name: 'shot_update',
+      arguments: { projectId: pid, clipId: clip.id, shotId: shot.id, camera: { lensMm: 50 } },
+    });
+    expect(r.isError).toBeFalsy();
+    const state = await stack.api<any>('GET', `/projects/${pid}/state`);
+    expect(state.docs.clips[clip.id].shots[0].camera).toMatchObject({
+      framing: 'close_up',
+      movement: 'pan',
+      lensMm: 50,
+      move: 'push_in',
+    });
   });
 
   it("keeps the state in the browser's storage on a studio that keeps projects in browsers", async () => {

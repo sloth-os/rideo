@@ -258,7 +258,10 @@ missing, failed, stale or outdated (the first shot first, the others with it as 
 the scene's frames with the storyboard reviewer (one call, as for a storyboarded scene). A failing review applies its
 fixes (`redraw_board`, `replan_scene`) and reviews again, up to `maxRounds`; a pass approves the scene's frames as the
 system. The review is the clip's `boardReview` (a `StageReview` with `stage: storyboard`, current while its subject,
-`clipBoardSubject`, is the clip's shots and frames).
+`clipBoardSubject`, is the clip's shots and frames). A scene whose review passed while its frames are not all approved
+has them approved again without a model call only when none of them needs drawing; a frame that is missing, failed,
+stale or outdated (its shot's prompt changed without changing the review's subject, as an upgrade can do) makes the
+batch storyboard the scene again, which draws that frame and reviews the scene once more.
 
 A scene whose review still fails stops the batch (`stopReason: the storyboard of scene 7 did not pass its review`), and
 the Inbox lists it. A person applies or dismisses the recommendations, redraws frames, approves them by hand, or

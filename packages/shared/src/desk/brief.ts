@@ -99,20 +99,33 @@ export function deskTimeOfDay(text: string): DeskTimeOfDay | null {
   return null;
 }
 
-/** Measures a height may be written in, to metres. */
+/** A weight written right after a number ("1 m 80 kg"): that number is not centimetres of a height. */
+const WEIGHT_AFTER = String.raw`\s*(?:kg|kilos?|kilograms?|lbs?|pounds?|st|stones?)\b`;
+
+/** Measures a height may be written in, to metres; the first that matches reads it. */
 const HEIGHT_UNITS: readonly { re: RegExp; metres: (m: RegExpExecArray) => number }[] = [
+  // metres and centimetres: "1 m 70", "1m70", "1 m 75 cm"
+  {
+    re: new RegExp(
+      String.raw`(?<![\d.])(\d)\s*m\s*(\d{2})(?:\s*(?:cm|centimet(?:er|re)s?)\b)?(?!\d|${WEIGHT_AFTER})`,
+    ),
+    metres: (m) => Number(m[1]) + Number(m[2]) / 100,
+  },
   { re: /(\d+(?:\.\d+)?)\s*(?:cm|centimet(?:er|re)s?)\b/, metres: (m) => Number(m[1]) / 100 },
   { re: /(\d+(?:\.\d+)?)\s*(?:mm|millimet(?:er|re)s?)\b/, metres: (m) => Number(m[1]) / 1000 },
   { re: /(\d+(?:\.\d+)?)\s*(?:m|met(?:er|re)s?)\b/, metres: (m) => Number(m[1]) },
+  // feet, then inches: a number after the feet counts as inches only up to 11 ("6 ft 180 lbs" is 6 ft)
   {
-    re: /(\d+)\s*(?:ft|feet|foot|'|′)\s*(?:(\d+(?:\.\d+)?)\s*(?:in\b|inch(?:es)?\b|"|″)?)?/,
-    metres: (m) => Number(m[1]) * 0.3048 + Number(m[2] ?? 0) * 0.0254,
+    re: /(\d+(?:\.\d+)?)\s*(?:ft|feet|foot|'|′)\s*(?:(\d{1,2}(?:\.\d+)?)(?![\d.])\s*(?:in\b|inch(?:es)?\b|"|″)?)?/,
+    metres: (m) => {
+      const inches = m[2] === undefined ? 0 : Number(m[2]);
+      return Number(m[1]) * 0.3048 + (inches < 12 ? inches : 0) * 0.0254;
+    },
   },
 ];
 
-/** The height an identity names ("170 cm", "1.2 m", "5 ft 8 in"), in metres to the centimetre, 0.1–4; else null. */
-export function heightInMetres(text: string | null | undefined): number | null {
-  const t = (text ?? '').toLowerCase().replace(/(\d),(\d)/g, '$1.$2');
+/** A height in one text, the first unit that matches it, in range or null. */
+function readHeight(t: string): number | null {
   for (const unit of HEIGHT_UNITS) {
     const m = unit.re.exec(t);
     if (!m) continue;
@@ -120,6 +133,18 @@ export function heightInMetres(text: string | null | undefined): number | null {
     return Number.isFinite(metres) && metres >= 0.1 && metres <= 4 ? metres : null;
   }
   return null;
+}
+
+/**
+ * The height an identity names ("170 cm", "1.2 m", "1 m 70", "5 ft 8 in"), in metres to the centimetre, 0.1–4; else
+ * null. A comma before three digits is a thousands separator ("1,700 mm") or a decimal comma ("1,750 m"): the reading
+ * that gives a height in range is the one (both cannot, their values are a thousand times apart).
+ */
+export function heightInMetres(text: string | null | undefined): number | null {
+  const t = (text ?? '').toLowerCase();
+  const decimal = (s: string) => s.replace(/(\d),(\d)/g, '$1.$2');
+  const thousands = decimal(t.replace(/(\d),(\d{3})(?!\d)/g, '$1$2'));
+  return readHeight(thousands) ?? (thousands === decimal(t) ? null : readHeight(decimal(t)));
 }
 
 const ELEMENT_KINDS: Record<ElementKind, DeskBrief['elements'][number]['kind']> = {
@@ -147,20 +172,24 @@ export function deskBrief(
   docs: Pick<ProjectDocs, 'project' | 'screenplay' | 'characters' | 'elements' | 'clips'>,
   clipId: string,
 ): DeskBrief | null {
-  const clip = docs.clips[clipId];
+  // the project's own clips only: an id such as `constructor` names no clip
+  const clip = Object.hasOwn(docs.clips, clipId) ? docs.clips[clipId] : undefined;
   if (!clip?.shots.length) return null;
   const L = DESK_BRIEF_LIMITS;
   const shots = [...clip.shots].sort((a, b) => a.index - b.index).slice(0, L.shots);
   const scene = clip.sceneId ? docs.screenplay?.scenes.find((s) => s.id === clip.sceneId) : undefined;
-  const location = scene?.locationId ? docs.elements[scene.locationId] : undefined;
+  const location =
+    scene?.locationId && Object.hasOwn(docs.elements, scene.locationId)
+      ? docs.elements[scene.locationId]
+      : undefined;
   const castIds = firsts(
     shots.flatMap((s) => s.characterIds),
-    (id) => !!docs.characters[id],
+    (id) => Object.hasOwn(docs.characters, id),
     L.cast,
   );
   const elementIds = firsts(
     [scene?.locationId, ...(scene?.elementIds ?? []), ...shots.flatMap((s) => s.elementIds)],
-    (id) => !!docs.elements[id],
+    (id) => Object.hasOwn(docs.elements, id),
     L.elements,
   );
   const inCast = new Set(castIds);
@@ -204,24 +233,29 @@ export function deskBrief(
         kind: ELEMENT_KINDS[e.kind],
       };
     }),
-    shots: shots.map((s, index) => ({
-      id: s.id,
-      index,
-      durationSec: s.durationSec,
-      description: cutText(s.description, L.shotText),
-      action: cutText(s.action, L.shotText),
-      castIds: firsts(s.characterIds, (id) => inCast.has(id), L.cast),
-      elementIds: firsts(s.elementIds, (id) => inElements.has(id), L.elements),
-      framing: s.camera.framing ?? null,
-      movement: s.camera.movement ? cutText(s.camera.movement, L.movement) : null,
-      move: s.camera.move ?? null,
-      lensMm: s.camera.lensMm ?? null,
-      continuity: s.continuity,
-      layout: s.layout
-        .filter((p) => inCast.has(p.characterId))
-        .slice(0, L.layout)
-        .map((p) => ({ castId: p.characterId, side: p.side, facing: p.facing })),
-    })),
+    shots: shots.map((s, index) => {
+      const shotCast = firsts(s.characterIds, (id) => inCast.has(id), L.cast);
+      return {
+        id: s.id,
+        index,
+        durationSec: s.durationSec,
+        description: cutText(s.description, L.shotText),
+        action: cutText(s.action, L.shotText),
+        castIds: shotCast,
+        elementIds: firsts(s.elementIds, (id) => inElements.has(id), L.elements),
+        framing: s.camera.framing ?? null,
+        movement: s.camera.movement ? cutText(s.camera.movement, L.movement) : null,
+        move: s.camera.move ?? null,
+        lensMm: s.camera.lensMm ?? null,
+        continuity: s.continuity,
+        // the shot's own cast only: a character taken out of the shot after planning keeps a stale layout entry
+        // (an update changes characterIds, never the layout), and the desk would stage them in it
+        layout: s.layout
+          .filter((p) => shotCast.includes(p.characterId))
+          .slice(0, L.layout)
+          .map((p) => ({ castId: p.characterId, side: p.side, facing: p.facing })),
+      };
+    }),
   };
   return DeskBriefSchema.parse(brief);
 }

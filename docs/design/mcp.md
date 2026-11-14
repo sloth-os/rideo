@@ -126,7 +126,7 @@ or keep going and `job_wait` until a tab picks the job up.
 | `clip_board_review_override` | `projectId`, `clipId`, `note?` → clip: continue without passing its storyboard review (an approval) |
 | `takes_watch` | `projectId`, `takes?[]` (`clipId`, `shotId`, `takeId`; the cut's when empty) → job: takes watched whole ([takes watched whole](ai-review.md#takes-watched-whole)) |
 | `desk_brief` | `projectId`, `clipId` → the clip's `SceneBrief` for the 3D-Editor's desk, to stage with its `desk_stage_brief` ([director's desk](director-desk.md#agents)); the desk's state has no tool (opaque bytes for the browser desk) |
-| `shot_update` | `projectId`, `clipId`, `shotId`, `fields` |
+| `shot_update` | `projectId`, `clipId`, `shotId`, `fields` (a `camera` changes only the fields it names) |
 | `shot_regenerate` | `projectId`, `clipId`, `shotId` → job |
 | `take_select` | `projectId`, `clipId`, `shotId`, `takeId`, `inCut?` (also put the take in the cut, in place of the shot's items: [when a fix does not pass](feedback.md#when-a-fix-does-not-pass)) |
 | `take_override` | `projectId`, `clipId`, `shotId`, `takeId`, `reason` (requires `allowAgentOverrides`) |

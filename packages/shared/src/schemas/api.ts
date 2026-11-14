@@ -314,11 +314,22 @@ export const TakesWatchInputSchema = z.object({
 
 export const OverrideNoteSchema = z.object({ note: z.string().max(1000).default('') });
 
+/**
+ * A camera in a shot update (REST `PATCH …/shots/:shotId` and MCP `shot_update`): only the fields it names change
+ * (docs/design/directing.md#surfaces). `CameraSchema.partial()` would still fill an absent framing or movement with
+ * its default, and the update would overwrite the shot's planned ones (the desk's `{lensMm, move}` did, on every shot).
+ */
+export const CameraPatchSchema = CameraSchema.extend({
+  framing: CameraSchema.shape.framing.removeDefault(),
+  movement: CameraSchema.shape.movement.removeDefault(),
+}).partial();
+export type CameraPatch = z.infer<typeof CameraPatchSchema>;
+
 export const ShotUpdateInputSchema = z
   .object({
     description: z.string().max(4000),
     action: z.string().max(4000),
-    camera: CameraSchema.partial(),
+    camera: CameraPatchSchema,
     characterIds: z.array(IdSchema),
     elementIds: z.array(IdSchema),
     wardrobe: z.record(z.string(), IdSchema),

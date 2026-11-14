@@ -1,6 +1,6 @@
 import { createWriteStream } from 'node:fs';
 import { rm } from 'node:fs/promises';
-import type { Readable } from 'node:stream';
+import { finished, type Readable } from 'node:stream';
 import {
   type Actor,
   type Clip,
@@ -12,7 +12,7 @@ import {
   deskBrief,
   docPath,
 } from '@rideo/shared';
-import { type AppError, invalid, notFound, tooLarge } from '../errors';
+import { AppError, invalid, notFound, toAppError, tooLarge } from '../errors';
 import { sha256File } from '../util/crypto';
 import { Service } from './base';
 
@@ -32,33 +32,55 @@ export interface DeskStateUpload {
  * `desk-brief` and the MCP tool `desk_brief`) and the desk's opaque state, stored per clip as an immutable media file
  * that `clip.deskState` names.
  */
+/** The project's own clip of that id: an id such as `constructor` or `__proto__` names none (a 404, never a 500). */
+function ownClip(clips: Record<string, Clip>, clipId: string): Clip {
+  const clip = Object.hasOwn(clips, clipId) ? clips[clipId] : undefined;
+  if (!clip) throw notFound(`clip ${clipId}`);
+  return clip;
+}
+
 export class DeskService extends Service {
   private async clip(projectId: string, clipId: string): Promise<Clip> {
-    const docs = await this.deps.projects.docs(projectId);
-    const clip = docs.clips[clipId];
-    if (!clip) throw notFound(`clip ${clipId}`);
-    return clip;
+    return ownClip((await this.deps.projects.docs(projectId)).clips, clipId);
   }
 
   /** The clip's `SceneBrief` (docs/design/director-desk.md#the-brief). */
   async brief(projectId: string, clipId: string): Promise<DeskBrief> {
     const docs = await this.deps.projects.docs(projectId);
-    const clip = docs.clips[clipId];
-    if (!clip) throw notFound(`clip ${clipId}`);
+    const clip = ownClip(docs.clips, clipId);
     const brief = deskBrief(docs, clipId);
     if (!brief) throw invalid(`plan the shots of clip ${clip.index + 1} first`);
     this.deps.metrics.deskBriefs.inc();
     return brief;
   }
 
-  /** The stored state and a local, hash-checked copy of its bytes. */
+  /**
+   * The stored state and a local, hash-checked copy of its bytes. `not_found` (404) only when the clip names no state:
+   * a named state whose file cannot be read (storage answers 404 for it, fails, or the bytes fail their hash check) is
+   * a retryable `storage_error` (503), so a browser never takes it for "none stored" and opens the desk without it
+   * (docs/design/director-desk.md#the-routes).
+   */
   async state(projectId: string, clipId: string): Promise<{ deskState: ClipDeskState; file: string }> {
     const clip = await this.clip(projectId, clipId);
     if (!clip.deskState) throw notFound(`desk state of clip ${clip.index + 1}`);
-    return {
-      deskState: clip.deskState,
-      file: await this.deps.media.localPath(projectId, clip.deskState.media),
-    };
+    try {
+      return {
+        deskState: clip.deskState,
+        file: await this.deps.media.localPath(projectId, clip.deskState.media),
+      };
+    } catch (err) {
+      const cause = toAppError(err);
+      this.deps.log.warn(
+        { projectId, clipId, path: clip.deskState.media.path, error: cause.message },
+        'desk state unreadable',
+      );
+      throw new AppError(
+        'storage_error',
+        `the stored desk state of scene ${clip.index + 1} could not be read: ${cause.message}`,
+        [],
+        true,
+      );
+    }
   }
 
   /**
@@ -162,7 +184,10 @@ export class DeskService extends Service {
     }
   }
 
-  /** The clip names no state (the file stays, as all media): the desk's next `open` stages the brief. */
+  /**
+   * The clip names no state (the file stays, as all media). The desk's next `open` carries none: the desk restores its
+   * own copy of the scene in a browser that has one (and the next state stored writes it back), else stages the brief.
+   */
   async clearState(actor: Actor, projectId: string, clipId: string): Promise<void> {
     const clip = await this.clip(projectId, clipId);
     if (!clip.deskState) return;
@@ -182,10 +207,22 @@ export class DeskService extends Service {
 
 /**
  * Writes a body to a file, counting its bytes as they arrive: past 64 MiB the file is dropped, the rest of the body
- * is let through unread and a 413 `validation_error` is thrown.
+ * is let through unread and a 413 `validation_error` is thrown. A body whose client went away, before or while it is
+ * read, fails at once (a destroyed request emits neither `end` nor, without a listener yet, `error`): its file is
+ * closed and the caller removes it.
  */
-function receive(body: Readable, path: string): Promise<number> {
+export function receive(body: Readable, path: string): Promise<number> {
+  // nobody reads the answer to a request whose client went away: a `cancelled`, not a server error
+  const gone = (err?: unknown) =>
+    new AppError(
+      'cancelled',
+      `the client went away before the desk state arrived${err instanceof Error ? ` (${err.message})` : ''}`,
+    );
   return new Promise((resolve, reject) => {
+    if (body.destroyed) {
+      reject(gone());
+      return;
+    }
     const out = createWriteStream(path);
     let size = 0;
     let settled = false;
@@ -206,7 +243,10 @@ function receive(body: Readable, path: string): Promise<number> {
       }
     };
     body.on('data', onData);
-    body.once('error', fail);
+    // an error, or a close before the end (the client went away): `finished` reports both
+    finished(body, (err) => {
+      if (err) fail(gone(err));
+    });
     out.once('error', fail);
     body.once('end', () => {
       if (settled) return;

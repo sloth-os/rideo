@@ -5,9 +5,11 @@ import {
   type DeskShotAttach,
   deskResultSummary,
   deskShotPatch,
+  looksLikeMp4,
   ProbeSchema,
   ProjectSettingsSchema,
   planDeskResult,
+  pngSize,
   ShotUpdateInputSchema,
 } from '../src';
 import * as f from '../src/testing/fixtures';
@@ -15,6 +17,7 @@ import * as f from '../src/testing/fixtures';
 /** Which file of a result a shot gets, and when a shot is refused (docs/design/director-desk.md#the-result). */
 
 const bytes = (n: number) => new Uint8Array(n).buffer as ArrayBuffer;
+const mp4 = f.mp4Bytes;
 
 function setup() {
   const s0 = f.shot({ index: 0, durationSec: 3 });
@@ -57,10 +60,10 @@ function setup() {
       },
     ],
     files: [
-      { name: `${s0.id}.camera.mp4`, mime: 'video/mp4', data: bytes(8) },
-      { name: `${s0.id}.pose.mp4`, mime: 'video/mp4', data: bytes(9) },
-      { name: `${s0.id}.still.png`, mime: 'image/png', data: bytes(4) },
-      { name: `${s1.id}.motion.mp4`, mime: 'video/mp4', data: bytes(10) },
+      { name: `${s0.id}.camera.mp4`, mime: 'video/mp4', data: mp4(12) },
+      { name: `${s0.id}.pose.mp4`, mime: 'video/mp4', data: mp4(13) },
+      { name: `${s0.id}.still.png`, mime: 'image/png', data: f.pngBytes(1280, 720) },
+      { name: `${s1.id}.motion.mp4`, mime: 'video/mp4', data: mp4(14) },
     ],
   };
   return { s0, s1, clip, project, result };
@@ -91,7 +94,58 @@ describe('planDeskResult', () => {
       motionReference: { resourceId: 'res_0000000000000001', mode: 'pose' },
       camera: { lensMm: 24, move: 'tracking_follow' },
     });
-    expect(ShotUpdateInputSchema.safeParse(patch).success).toBe(true);
+    // the update schema keeps the camera to the lens and the move: the shot's framing and movement stay as planned
+    expect(ShotUpdateInputSchema.parse(patch).camera).toStrictEqual({ lensMm: 24, move: 'tracking_follow' });
+  });
+
+  it('refuses a shot listed twice (its first entry is taken) and a clip that is not an MP4', () => {
+    const { s0, s1, project, clip, result } = setup();
+    const reasons = (plans: ReturnType<typeof planDeskResult>) => plans.map((p) => (p.ok ? 'ok' : p.reason));
+    const twice = { ...result, shots: [result.shots[0]!, result.shots[1]!, result.shots[0]!] };
+    expect(reasons(planDeskResult({ result: twice, project, clip, mode: 'camera' }))).toEqual([
+      'ok',
+      'ok',
+      DESK_REFUSALS.twice,
+    ]);
+    // a shot no longer in the clip is said so, listed twice or not
+    expect(
+      reasons(planDeskResult({ result: twice, project, clip: { ...clip, shots: [s1] }, mode: 'camera' })),
+    ).toEqual([DESK_REFUSALS.shotGone, 'ok', DESK_REFUSALS.shotGone]);
+    const notMp4 = {
+      ...result,
+      files: result.files.map((x) => (x.name === `${s0.id}.camera.mp4` ? { ...x, data: bytes(64) } : x)),
+    };
+    expect(reasons(planDeskResult({ result: notMp4, project, clip, mode: 'camera' }))).toEqual([
+      DESK_REFUSALS.notMp4(`${s0.id}.camera.mp4`),
+      'ok',
+    ]);
+    expect(DESK_REFUSALS.notMp4('a.mp4')).toBe('the file a.mp4 is not an MP4 clip');
+  });
+
+  it('drops a still without the PNG signature or of another size than the result', () => {
+    const { s0, project, clip, result } = setup();
+    const withStill = (data: ArrayBuffer) => ({
+      ...result,
+      files: result.files.map((x) => (x.name === `${s0.id}.still.png` ? { ...x, data } : x)),
+    });
+    const poster = (data: ArrayBuffer) =>
+      (planDeskResult({ result: withStill(data), project, clip, mode: 'camera' })[0] as DeskShotAttach)
+        .poster;
+    expect(poster(f.pngBytes(1280, 720))?.name).toBe(`${s0.id}.still.png`);
+    expect(poster(f.pngBytes(320, 180))).toBeNull();
+    expect(poster(bytes(64))).toBeNull();
+    expect(poster(mp4(64))).toBeNull();
+    // the shot is attached all the same
+    expect(planDeskResult({ result: withStill(bytes(3)), project, clip, mode: 'camera' })[0]!.ok).toBe(true);
+  });
+
+  it('reads the MP4 and PNG signatures', () => {
+    expect(looksLikeMp4(mp4(12))).toBe(true);
+    expect(looksLikeMp4(bytes(12))).toBe(false);
+    expect(looksLikeMp4(mp4(12).slice(0, 7))).toBe(false);
+    expect(pngSize(f.pngBytes(640, 360))).toEqual({ width: 640, height: 360 });
+    expect(pngSize(f.pngBytes(640, 360).slice(0, 23))).toBeNull();
+    expect(pngSize(bytes(33))).toBeNull();
   });
 
   it('falls back to the first of camera, motion and pose the result has', () => {

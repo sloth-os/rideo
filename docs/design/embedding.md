@@ -72,7 +72,9 @@ studio.unmount();
 | `chrome.header` | `true` | `false` hides the studio's header, for hosts that bring their own navigation |
 
 `mountRideo(element, options)` returns `{navigate(path), setTheme(theme), unmount()}`. One studio per page: its
-stores are module singletons.
+stores are module singletons. `unmount()` while the [director's desk](director-desk.md#the-desk) is open is leaving it
+without Close: the desk's newest state not stored yet is sent to the server on the way out (best effort, not waited
+for), and the desk's iframe (another host, sandboxed without top navigation) goes away with the studio.
 
 ### Talking to a server on another origin
 

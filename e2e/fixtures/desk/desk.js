@@ -1,7 +1,10 @@
 // A stand-in for the 3D-Editor's desk page (docs/design/director-desk.md#tests): the desk side of the embed protocol,
 // version 1, from the contract's fixtures' shapes. It stages nothing: it shows the brief's shots and the state it was
-// given, makes a state of its own text, and its Send posts a result for every shot (a real H.264 clip per mode and a
-// PNG still, as bytes) whose frames, size and rate come from the brief.
+// given, makes a state of its own text (the same bytes again for an unchanged scene), and its Send posts a result for
+// every shot (a real H.264 clip per mode and a PNG still of the brief's size, as bytes) whose frames, size and rate
+// come from the brief. Its Send part leaves the last shot out and names it in an `error` `export_failed` after the
+// result, the way the real desk reports a shot it could not render; a given state that starts with `unreadable` is
+// one it cannot read (`error` `state_unreadable`, then `opened` from the brief).
 (() => {
   const $ = (id) => document.querySelector(`[data-testid="${id}"]`);
   const encode = (text) => new TextEncoder().encode(text).buffer;
@@ -11,9 +14,20 @@
   let current = '';
   let edits = 0;
   let results = 0;
-  const media = Promise.all(
-    ['clip.mp4', 'still.png'].map((name) => fetch(name).then((r) => r.arrayBuffer())),
-  );
+  const clipBytes = fetch('clip.mp4').then((r) => r.arrayBuffer());
+  /** A PNG of the brief's size, as the desk's stills are. */
+  const stillOf = (width, height) =>
+    new Promise((resolve) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const g = canvas.getContext('2d');
+      g.fillStyle = '#8a8f99';
+      g.fillRect(0, 0, width, height);
+      g.fillStyle = '#c9ccd3';
+      g.fillRect(width / 4, height / 4, width / 2, height / 2);
+      canvas.toBlob((blob) => resolve(blob.arrayBuffer()), 'image/png');
+    });
 
   const stateOf = (id) => ({
     type: 'state',
@@ -34,7 +48,15 @@
         return port.postMessage({ type: 'error', code: 'busy', message: 'The scene is open already.' });
       scene = m.scene;
       const given = m.state ? decode(m.state.data) : null;
-      current = given ?? `staged ${scene.id}`;
+      // a state this desk cannot read: the brief is staged, and the host is told
+      const unreadable = given?.startsWith('unreadable') ?? false;
+      if (unreadable)
+        port.postMessage({
+          type: 'error',
+          code: 'state_unreadable',
+          message: 'the state was saved by a desk this one does not read',
+        });
+      current = given && !unreadable ? given : `staged ${scene.id}`;
       $('desk-connected').textContent = 'open';
       $('desk-scene').textContent = scene.name;
       $('desk-options').textContent = JSON.stringify(m.options ?? {});
@@ -51,7 +73,7 @@
       port.postMessage({
         type: 'opened',
         sceneId: scene.id,
-        source: given ? 'state' : 'brief',
+        source: given && !unreadable ? 'state' : 'brief',
         changes: null,
       });
       port.postMessage(stateOf());
@@ -94,11 +116,15 @@
     port.postMessage(stateOf());
   });
 
-  $('desk-send').addEventListener('click', async () => {
+  /** A result for the brief's shots, or all but the last (`part`), which an `error` `export_failed` then names. */
+  const send = async (part) => {
     if (!scene) return;
-    const [clip, still] = await media;
+    const clip = await clipBytes;
+    const still = await stillOf(scene.width, scene.height);
     const files = [];
-    const shots = scene.shots.map((shot, i) => {
+    const last = scene.shots.at(-1);
+    const rendered = part ? scene.shots.slice(0, -1) : scene.shots;
+    const shots = rendered.map((shot) => {
       const frames = Math.max(1, Math.round(shot.durationSec * scene.fps));
       const references = {};
       for (const mode of ['camera', 'motion', 'pose']) {
@@ -115,8 +141,8 @@
         camera: { lensMm: 40, move: 'dolly_left' },
         line: 'Everyone stands where the brief puts them.',
         moves: null,
-        // the last shot's camera disagrees with the planned layout
-        planAgrees: i === scene.shots.length - 1 ? false : null,
+        // the brief's last shot: its camera disagrees with the planned layout
+        planAgrees: shot.id === last.id ? false : null,
         issues: [],
       };
     });
@@ -134,7 +160,16 @@
       result,
       files.map((f) => f.data),
     );
-  });
+    if (part)
+      port.postMessage({
+        type: 'error',
+        id: result.id,
+        code: 'export_failed',
+        message: `S${scene.shots.length} (${last.id}) was not rendered: the encoder stopped`,
+      });
+  };
+  $('desk-send').addEventListener('click', () => send(false));
+  $('desk-send-part').addEventListener('click', () => send(true));
 
   $('desk-done').addEventListener('click', () => {
     if (!scene) return;

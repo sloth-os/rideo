@@ -164,6 +164,40 @@ describe('deskBrief', () => {
     const empty = { ...clip, shots: [] };
     expect(deskBrief({ ...docs, clips: { [clip.id]: empty } }, clip.id)).toBeNull();
     expect(deskBrief(docs, 'clp_00000000000none')).toBeNull();
+    // ids that name members of every object are no clips either
+    for (const id of ['constructor', '__proto__', 'toString', 'hasOwnProperty'])
+      expect(deskBrief(docs, id)).toBeNull();
+  });
+
+  it('takes characters, elements and the location only from the project, never from object members', () => {
+    const { docs, clip, s0, mira } = story();
+    const odd = {
+      ...s0,
+      characterIds: ['constructor', '__proto__', mira.id],
+      elementIds: ['toString', 'valueOf'],
+      layout: [{ characterId: 'constructor', side: 'left' as const, facing: 'right' as const }],
+    };
+    const brief = deskBrief({ ...docs, clips: { [clip.id]: { ...clip, shots: [odd] } } }, clip.id)!;
+    expect(brief.cast.map((c) => c.id)).toEqual([mira.id]);
+    expect(brief.shots[0]).toMatchObject({ castIds: [mira.id], elementIds: [], layout: [] });
+  });
+
+  it("keeps a shot's layout to the shot's own cast: a character taken out of the shot but still in another is dropped", () => {
+    const { docs, clip, s0, s1, mira, pip } = story();
+    // Pip is in the brief's cast (shot 2), not in shot 1: the layout entry left behind is not staged
+    const stale = {
+      ...s0,
+      layout: [
+        { characterId: mira.id, side: 'left' as const, facing: 'right' as const },
+        { characterId: pip.id, side: 'right' as const, facing: 'left' as const },
+      ],
+    };
+    const brief = deskBrief({ ...docs, clips: { [clip.id]: { ...clip, shots: [s1, stale] } } }, clip.id)!;
+    expect(brief.cast.map((c) => c.id)).toEqual([mira.id, pip.id]);
+    expect(brief.shots[0]).toMatchObject({
+      castIds: [mira.id],
+      layout: [{ castId: mira.id, side: 'left', facing: 'right' }],
+    });
   });
 
   it('names a scene without a title by its number, and cuts long titles', () => {
@@ -246,6 +280,38 @@ describe('deskBrief', () => {
     expect(heightInMetres('900 cm')).toBeNull();
     expect(heightInMetres('5 cm')).toBeNull();
     expect(heightInMetres(undefined)).toBeNull();
+  });
+
+  it.each([
+    // millimetres, with and without a thousands separator
+    ['1700 mm', 1.7],
+    ['1,700 mm', 1.7],
+    // a comma read as a decimal mark when the thousands reading is out of range
+    ['1,70 m', 1.7],
+    ['1,750 m', 1.75],
+    // metres and centimetres written together
+    ['1 m 70', 1.7],
+    ['1m70', 1.7],
+    ['1 m 75 cm', 1.75],
+    ['1 m 70 tall', 1.7],
+    // a weight after the metres is not centimetres
+    ['1 m 80 kg', 1],
+    ['1.8 m 80 kg', 1.8],
+    ['175cm, 70 kg', 1.75],
+    // feet and inches, the inches optional or with decimals; a weight in pounds is not inches
+    ['5 ft 7 in', 1.7],
+    ['5 ft 8', 1.73],
+    [`5'7"`, 1.7],
+    ['6 ft 180 lbs', 1.83],
+    ['5.5 ft', 1.68],
+    ['5 ft 11.5 in', 1.82],
+    ['6 feet 2 inches', 1.88],
+    ['about 2 metres', 2],
+    ['50 cm (a small dog)', 0.5],
+    ['12 m', null],
+    ['', null],
+  ])('reads %j as %s m', (written, metres) => {
+    expect(heightInMetres(written)).toBe(metres);
   });
 
   it('keeps the protocol limits: 16 cast, 64 elements, 200 shots, strings cut', () => {

@@ -1,5 +1,6 @@
 import {
   approvedElementReferences,
+  boardNeedsGeneration,
   boardState,
   type Clip,
   clipBoardReviewState,
@@ -479,7 +480,10 @@ export async function batchGenerate(deps: HandlerDeps, ctx: JobContext) {
           stopReason = `the storyboard of scene ${next.index + 1} did not pass its review`;
           break;
         }
-        if ((state === 'passed' || state === 'overridden') && !boardTried.has(next.id)) {
+        // A passed review only approves the frames again when none needs drawing: a frame outdated without the
+        // review's subject changing (a prompt changed by an upgrade) is drawn again by the storyboard, which reviews it
+        const redraw = next.shots.some((s) => boardNeedsGeneration(boardState(s, docs)));
+        if ((state === 'passed' || state === 'overridden') && !redraw && !boardTried.has(next.id)) {
           await deps.services.storyboard.approveFrames(ctx.actor, ctx.job.projectId, next.id);
           boardTried.add(next.id);
           continue;

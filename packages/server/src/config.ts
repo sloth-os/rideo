@@ -1,6 +1,7 @@
 import {
   apiBaseProblem,
   desiredProxies,
+  deskHostProblem,
   deskUrlProblem,
   type Prices,
   parsePrices,
@@ -268,7 +269,13 @@ export const EnvSchema = z
         ctx.addIssue({ code: 'custom', path: [key], message: 'an http:// or https:// URL' });
     }
     if (e.RIDEO_DESK_URL) {
-      const problem = deskUrlProblem(e.RIDEO_DESK_URL);
+      // with accounts on, a desk on the studio's own host (any port) would get the session cookie
+      // (docs/design/director-desk.md#topology-and-headers); the public URL defaults to localhost
+      const problem =
+        deskUrlProblem(e.RIDEO_DESK_URL) ??
+        (e.RIDEO_OIDC_ISSUER
+          ? deskHostProblem(e.RIDEO_DESK_URL, e.RIDEO_PUBLIC_URL ?? 'http://localhost')
+          : null);
       if (problem) ctx.addIssue({ code: 'custom', path: ['RIDEO_DESK_URL'], message: problem });
     }
     // API base URLs, and one origin per domain among the endpoints whose keys the studio registers

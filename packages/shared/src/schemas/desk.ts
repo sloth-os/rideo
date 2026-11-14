@@ -204,6 +204,15 @@ export const DeskBriefChangesSchema = z.object({
 });
 export type DeskBriefChanges = z.infer<typeof DeskBriefChangesSchema>;
 
+/**
+ * The bounds rideo puts on a result (docs/design/director-desk.md#the-result): at most as many shots as a brief has,
+ * four files per shot (three clips and a still), names of a shot id and a suffix.
+ */
+export const DESK_RESULT_LIMITS = { shots: 200, files: 800, name: 200 } as const;
+
+/** A file of a result, by its name. */
+const DeskFileNameSchema = z.string().min(1).max(DESK_RESULT_LIMITS.name);
+
 /** One shot of a result (docs/design/director-desk.md#the-result). */
 export const DeskShotResultSchema = z.object({
   shotId: DeskIdSchema,
@@ -211,11 +220,11 @@ export const DeskShotResultSchema = z.object({
   frames: z.number().int().min(1),
   durationSec: z.number().positive(),
   references: z.object({
-    motion: z.string().min(1).optional(),
-    pose: z.string().min(1).optional(),
-    camera: z.string().min(1).optional(),
+    motion: DeskFileNameSchema.optional(),
+    pose: DeskFileNameSchema.optional(),
+    camera: DeskFileNameSchema.optional(),
   }),
-  still: z.string().min(1).nullable(),
+  still: DeskFileNameSchema.nullable(),
   camera: z.object({ lensMm: z.number().int().min(8).max(800), move: DeskMoveSchema.nullable() }),
   line: z.string(),
   moves: z.string().nullable(),
@@ -228,7 +237,7 @@ export type DeskShotResult = z.infer<typeof DeskShotResultSchema>;
 
 /** A file of a result: `<shotId>.<mode>.mp4` clips and `<shotId>.still.png` stills. */
 export const DeskResultFileSchema = z.object({
-  name: z.string().min(1),
+  name: DeskFileNameSchema,
   mime: z.enum(['video/mp4', 'image/png']),
   data: ArrayBufferSchema,
 });
@@ -348,8 +357,8 @@ export const DeskResultMessageSchema = z.object({
   fps: FpsSchema,
   width: EvenSizeSchema,
   height: EvenSizeSchema,
-  shots: z.array(DeskShotResultSchema),
-  files: z.array(DeskResultFileSchema),
+  shots: z.array(DeskShotResultSchema).max(DESK_RESULT_LIMITS.shots),
+  files: z.array(DeskResultFileSchema).max(DESK_RESULT_LIMITS.files),
 });
 export type DeskResultMessage = z.infer<typeof DeskResultMessageSchema>;
 export const DeskErrorMessageSchema = z.object({

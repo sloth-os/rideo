@@ -204,6 +204,7 @@ async function send(
   path: string,
   body?: unknown,
   headers: Record<string, string> = {},
+  signal?: AbortSignal,
 ): Promise<Response> {
   const token = getToken();
   const isForm = typeof FormData !== 'undefined' && body instanceof FormData;
@@ -225,6 +226,7 @@ async function send(
         : isForm || isBlob
           ? (body as FormData | Blob | Uint8Array<ArrayBuffer>)
           : JSON.stringify(body),
+    ...(signal ? { signal } : {}),
   });
 }
 
@@ -251,8 +253,9 @@ async function request<T>(
   path: string,
   body?: unknown,
   headers: Record<string, string> = {},
+  signal?: AbortSignal,
 ): Promise<T> {
-  const res = await send(method, path, body, headers);
+  const res = await send(method, path, body, headers, signal);
   if (res.status === 204) return undefined as T;
   const text = await res.text();
   let json: unknown = null;
@@ -498,12 +501,14 @@ export const api = {
     request<Clip>('PATCH', `${p(id)}/clips/${clipId}/shots/${shotId}`, body),
   // The 3D-Editor's director's desk (docs/design/director-desk.md#the-routes)
   deskState,
-  saveDeskState: (id: string, clipId: string, state: DeskState) =>
+  /** `signal` aborts the upload (closing the desk waits for it at most 10 seconds). */
+  saveDeskState: (id: string, clipId: string, state: DeskState, signal?: AbortSignal) =>
     request<{ deskState: ClipDeskState }>(
       'PUT',
       `${p(id)}/clips/${clipId}/desk-state`,
       new Uint8Array(state.data),
       { 'x-desk-state-format': state.format, 'x-desk-state-version': String(state.version) },
+      signal,
     ),
   // Take edits and extensions (docs/design/take-editing.md)
   editTake: (

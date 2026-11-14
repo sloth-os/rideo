@@ -296,3 +296,21 @@ export function docs(overrides: Partial<ProjectDocs> = {}): ProjectDocs {
 export function byId<T extends { id: string }>(items: T[]): Record<string, T> {
   return Object.fromEntries(items.map((i) => [i.id, i]));
 }
+
+/** `n` bytes (at least 12) that start like an MP4: an `ftyp` box, as the desk's clips do. */
+export function mp4Bytes(n = 12): ArrayBuffer {
+  const bytes = new Uint8Array(Math.max(n, 12));
+  bytes.set([0, 0, 0, 12, 0x66, 0x74, 0x79, 0x70, 0x69, 0x73, 0x6f, 0x6d]);
+  return bytes.buffer;
+}
+
+/** The first bytes of a PNG of this size: its signature and its `IHDR`, as the desk's stills start. */
+export function pngBytes(width: number, height: number): ArrayBuffer {
+  const bytes = new Uint8Array(33);
+  bytes.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52]);
+  const view = new DataView(bytes.buffer);
+  view.setUint32(16, width);
+  view.setUint32(20, height);
+  bytes.set([8, 2, 0, 0, 0], 24);
+  return bytes.buffer;
+}

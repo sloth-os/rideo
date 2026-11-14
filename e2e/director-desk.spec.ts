@@ -41,6 +41,15 @@ async function storedState(request: APIRequestContext, pid: string, clipId: stri
   return res.text();
 }
 
+/** The commits that stored a desk state of the clip. */
+async function deskCommits(api: Api, pid: string, clipId: string): Promise<number> {
+  const commits = await api.call<{ message: string }[]>(
+    'GET',
+    `/projects/${pid}/history?path=clips/${clipId}.json`,
+  );
+  return commits.filter((c) => c.message.startsWith('Save the desk')).length;
+}
+
 test('the desk connects, its Send attaches every shot’s clip and camera, and its state is stored and given back', async ({
   page,
   request,
@@ -49,8 +58,15 @@ test('the desk connects, its Send attaches every shot’s clip and camera, and i
   const api = new Api(request);
   const { pid, clip } = await planned(api, `Desk (${testInfo.project.name})`);
   const shots = [...clip.shots].sort((a: any, b: any) => a.index - b.index);
+  const plannedCamera = new Map(shots.map((s: any) => [s.id, s.camera]));
   await openDesk(page, pid);
   await expect(page.getByTestId('desk-title')).toHaveText(clip.title);
+  // sandboxed: scripts, its own storage and downloads, never the studio's tab
+  const frame = page.getByTestId('desk-frame');
+  const sandbox = ((await frame.getAttribute('sandbox')) ?? '').split(/\s+/);
+  expect(sandbox).toEqual(expect.arrayContaining(['allow-scripts', 'allow-same-origin', 'allow-downloads']));
+  expect(sandbox.filter((t) => t.startsWith('allow-top-navigation'))).toEqual([]);
+  await expect(frame).toHaveAttribute('allow', /screen-wake-lock/);
   // Camera by default
   await expect(page.getByTestId('desk-mode')).toHaveValue('camera');
   const d = desk(page);
@@ -79,7 +95,14 @@ test('the desk connects, its Send attaches every shot’s clip and camera, and i
   const docs = (await api.call<any>('GET', `/projects/${pid}/state`)).docs;
   for (const shot of docs.clips[clip.id].shots) {
     expect(shot.motionReference).toMatchObject({ mode: 'camera' });
-    expect(shot.camera).toMatchObject({ lensMm: 40, move: 'dolly_left' });
+    // the staged lens and move; the planned framing and movement kept
+    const plan = plannedCamera.get(shot.id) as { framing: string; movement: string };
+    expect(shot.camera).toMatchObject({
+      lensMm: 40,
+      move: 'dolly_left',
+      framing: plan.framing,
+      movement: plan.movement,
+    });
     const resource = docs.resources[shot.motionReference.resourceId];
     const frames = Math.max(1, Math.round(shot.durationSec * 24));
     expect(resource).toMatchObject({
@@ -111,12 +134,116 @@ test('the desk connects, its Send attaches every shot’s clip and camera, and i
   await page.getByTestId('storyboard-scene').first().getByTestId('open-desk').click();
   await expect(desk(page).getByTestId('desk-given')).toHaveText(staged);
   await expect(page.getByTestId('desk-status')).toContainText('Opened from the stored desk');
+  // opened and closed without an edit: the desk sends the same bytes, nothing is stored (the same file, no commit)
+  const commits = await deskCommits(api, pid, clip.id);
+  await page.getByTestId('desk-close').click();
+  await expect(page.getByTestId('desk-panel')).toBeHidden();
+  expect((await api.call<any>('GET', `/projects/${pid}/state`)).docs.clips[clip.id].deskState).toEqual(
+    stored,
+  );
+  expect(await deskCommits(api, pid, clip.id)).toBe(commits);
+  await page.getByTestId('storyboard-scene').first().getByTestId('open-desk').click();
+  await expect(desk(page).getByTestId('desk-given')).toHaveText(staged);
   // the desk's own Done: its last state stored, the panel closed
   await desk(page).getByTestId('desk-edit').click();
   const done = (await desk(page).getByTestId('desk-current').textContent())!;
   await desk(page).getByTestId('desk-done').click();
   await expect(page.getByTestId('desk-panel')).toBeHidden();
   expect(await storedState(request, pid, clip.id)).toBe(done);
+});
+
+test('a partial result attaches the shots it has, and the desk says which shot it left out', async ({
+  page,
+  request,
+}, testInfo) => {
+  test.setTimeout(180_000);
+  const api = new Api(request);
+  // a 30 s pilot: the first scene is planned as two shots
+  const { pid, clip } = await planned(api, `Desk part (${testInfo.project.name})`, {
+    targetDurationSec: 60,
+    pilotDurationSec: 30,
+  });
+  const shots = [...clip.shots].sort((a: any, b: any) => a.index - b.index);
+  expect(shots.length).toBeGreaterThan(1);
+  await openDesk(page, pid);
+  const d = desk(page);
+  await expect(d.getByTestId('desk-connected')).toHaveText('open');
+  await d.getByTestId('desk-send-part').click();
+  const n = shots.length - 1;
+  await expect(d.getByTestId('desk-ack')).toContainText(`ok: Attached ${n} reference${n === 1 ? '' : 's'}.`);
+  // the desk's export_failed, named after the result, in a toast
+  await expect(page.getByTestId('toast').filter({ hasText: 'was not rendered' })).toContainText(
+    `S${shots.length} (${shots.at(-1).id}) was not rendered: the encoder stopped`,
+  );
+  const docs = (await api.call<any>('GET', `/projects/${pid}/state`)).docs;
+  const after = [...docs.clips[clip.id].shots].sort((a: any, b: any) => a.index - b.index);
+  for (const shot of after.slice(0, -1)) expect(shot.motionReference).toMatchObject({ mode: 'camera' });
+  expect(after.at(-1).motionReference).toBeNull();
+  await noSidewaysScroll(page);
+  await page.getByTestId('desk-close').click();
+  await expect(page.getByTestId('desk-panel')).toBeHidden();
+});
+
+test('a stored state the desk cannot read is said; one the server cannot read fails the panel until Retry', async ({
+  page,
+  request,
+}, testInfo) => {
+  test.setTimeout(180_000);
+  const api = new Api(request);
+  const { pid, clip } = await planned(api, `Desk unreadable (${testInfo.project.name})`);
+  const put = await request.put(`/api/projects/${pid}/clips/${clip.id}/desk-state`, {
+    headers: {
+      'content-type': 'application/octet-stream',
+      'x-desk-state-format': '3d-editor.desk-state',
+      'x-desk-state-version': '1',
+    },
+    data: Buffer.from('unreadable: saved by another desk'),
+  });
+  expect(put.status()).toBe(200);
+  // the desk cannot read it: it stages the brief, and the toast says why
+  await openDesk(page, pid);
+  const d = desk(page);
+  await expect(d.getByTestId('desk-connected')).toHaveText('open');
+  await expect(
+    page.getByTestId('toast').filter({ hasText: 'The stored desk could not be read' }),
+  ).toContainText('the state was saved by a desk this one does not read');
+  await expect(page.getByTestId('desk-status')).toContainText('Opened from the brief');
+  await page.getByTestId('desk-close').click();
+  await expect(page.getByTestId('desk-panel')).toBeHidden();
+  const staged = `staged ${clip.id}`;
+  expect(await storedState(request, pid, clip.id)).toBe(staged);
+
+  // the server cannot read the stored state (503): the panel fails with Retry, the desk is connected but not opened
+  let failing = true;
+  await page.route(`**/api/projects/${pid}/clips/${clip.id}/desk-state`, (route) =>
+    failing && route.request().method() === 'GET'
+      ? route.fulfill({
+          status: 503,
+          contentType: 'application/problem+json',
+          body: JSON.stringify({
+            type: 'about:blank',
+            title: 'Service Unavailable',
+            status: 503,
+            detail: 'the stored desk state of scene 1 could not be read: storage answered 404',
+            code: 'storage_error',
+          }),
+        })
+      : route.fallback(),
+  );
+  await page.getByTestId('storyboard-scene').first().getByTestId('open-desk').click();
+  await expect(page.getByTestId('desk-failure')).toContainText(
+    'The stored desk could not be loaded: the stored desk state of scene 1 could not be read: storage answered 404',
+  );
+  await expect(d.getByTestId('desk-connected')).toHaveText('connected');
+  await noSidewaysScroll(page);
+  failing = false;
+  await page.getByTestId('desk-retry').click();
+  await expect(d.getByTestId('desk-connected')).toHaveText('open');
+  await expect(d.getByTestId('desk-given')).toHaveText(staged);
+  await expect(page.getByTestId('desk-status')).toContainText('Opened from the stored desk');
+  await page.getByTestId('desk-close').click();
+  await expect(page.getByTestId('desk-panel')).toBeHidden();
+  expect(await storedState(request, pid, clip.id)).toBe(staged);
 });
 
 test('the Follow mode is the reference the shots get, and the browser remembers it', async ({
