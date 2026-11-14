@@ -1149,7 +1149,7 @@ again; all three of the scene's reviews still named it. What rose was the rest o
 cast and their camera (kite 1's temporal 5.33 → 7.00, kite 2's character 7.33 → 8.33, cinematography +0.67 in both).
 Cost $6.71 for the takes made again, their watches and the six scene reviews.
 
-### A prop doubled where the scene's continuity puts it (found, not yet tried)
+### The scene's continuity left out of the takes (tried, not built)
 
 Every prompt of a scene's shots carries the scene line: the place and the scene's continuity, which the writer wrote for
 the start of the scene: who wears what, who carries what, where a prop lies ("Rosie carries the red kite under her left
@@ -1171,8 +1171,23 @@ string (5), landmarks such as the barn and the mounting block (4) and one handle
 first frame already shows who holds what, and the shot's description and action say what happens to it; a video prompt
 already leaves the continuity out when someone of the scene is out of frame (`sceneLine`, `placeOnly`). Made again
 ([fp86](#a-failed-take-made-again-as-a-new-project-does)), kite 1's fifth take still doubled its kite and kite 2's
-fourth still grew its tree: attempts do not undo what the prompt asks for. *Next:* those two shots rendered with the
-continuity left out of their video prompts, four takes each, against 8 of 23 doubled.
+fourth still grew its tree.
+
+Left out (fp87, November 13, 2026), the doubles stayed. The two shots were rendered from fp65's frames of them (fp39's
+plans, drawn with the capped staging check of new projects) with the scene line cut to the place and the time (`Scene:
+Hill Path, bright afternoon.`), four takes each, one attempt each, every take watched. Two of the eight doubled a prop,
+against 8 of 23 before, and each shot doubled what it had doubled with the continuity: in kite 1's second the handle,
+whose ring shows a second rim in Sammy's paw as he draws it back, and in riding 1's seventh a second carrot bucket.
+Neither double stood where the continuity put the prop. The second bucket appears at about one second beside the one the
+frame cuts at its lower right edge, as the camera pulls back to a full shot; that shot's camera pulled back in all four
+takes and pulled back or jumped to another framing in 7 of its 9 earlier single takes, and both earlier buckets came in
+takes that jumped. The brush, which the continuity puts in the bucket while Rosie holds it, did not double (2 of 11
+before), too few takes to tell. A third take doubled Sammy's muzzle as he turned his head, one of the ghosted characters
+counted apart from the props. What doubles on these shots is the action, a ring-shaped handle in a paw that pulls the
+kite away and a prop the frame cuts at its edge when the camera widens; the continuity is stale on exactly the shots
+that move a prop, which is why the two went together. Not built ($8.37): the setting (`generation.sceneStateInVideo`)
+stays on an unmerged branch. *Next:* the staging check could ask that a prop the action uses be whole inside the frame,
+since the widened camera drew the bucket the frame cut a second time.
 
 The tree that grew into kite 2's fourth take has another source. The staging check read the frame as "Rosie stands
 frame right facing left, near the tree side", meaning the side of the frame where the tree stands far up on the ridge,
@@ -1425,6 +1440,7 @@ cell is one run's first round; the scores of the same build and brief differ by 
 | fp84: fp65's eight control storyboards reviewed again with three fresh answers each (nothing drawn; [the controls reviewed again](#the-controls-reviewed-again)) | – | – | 7.25 against the first answers' 7.19 (a storyboard moved 0.19 on average); storytelling 7.44 against 7.54, feasibility 6.96 against 6.54; against all six answers fp77, fp81 and fp82 score +0.13, +0.13 and +0.03, storytelling −0.31 |
 | fp85: fp82's kite scenes (descriptions and end states as stills) rendered shot by shot from their approved frames, one attempt a take | – | – | scene reviews kite 1 6.70, kite 2 6.27 against 6.42 and 6.52 for six runs of fp39's plans (+0.01); takes passing 8 of 12 against 49 of 60; [a second kite and a tree popping into the frame](#descriptions-written-as-stills-tried-not-built) |
 | fp86: fp85's four failed takes made again with the attempts a new project gives (three in all) | – | – | scene reviews kite 1 7.03, kite 2 6.73 against 6.70 and 6.27 with one attempt (+0.40); three of four ended passing, the doubled kite and the tree still there ([made again as a new project does](#a-failed-take-made-again-as-a-new-project-does)) |
+| fp87: kite 1's second and riding 1's seventh shots (fp39's plans, fp65's frames) rendered with the scene's continuity left out of their video prompts, four takes each with one attempt | – | – | a prop doubled in 2 of 8 takes against 8 of 23 before, the same props (the handle in Sammy's paw, a second bucket as the camera widens); [not built](#the-scenes-continuity-left-out-of-the-takes-tried-not-built) |
 | fp55: fp53's riding 1 render split again at the cuts found near the planned ones (same render, reviewed beside the old split) | – | – | scene 6.67 against 5.97; takes passing 6 of 8 against 2 |
 | fp54: HappyHorse 1.1 instead of Wan 3.0, from the same 13 approved frames | – | – | shots' watch 5.0 against 6.1, passed 5 against 7; kite scene 5.7 |
 | fp51: the faulted frames drawn twice more and one picked (storyboards only, plans of fp39) | – | – | 7.17 against 7.28 at the same time, continuity 5.9 against 5.5; [5 of 8 faulted again](#a-scene-read-whole-then-a-frame-picked-tried-not-merged) |
@@ -1539,9 +1555,9 @@ What keeps each under 8, what was tried, and what to try next:
    (fp82) took every motion out of them and nearly halved the conflicts the check keeps, at 7.25 (+0.06)
    ([tried, not built](#descriptions-written-as-stills-tried-not-built)); its kite scenes rendered scored as fp39's
    plans do (+0.01, fp85): what fails a take now is a prop doubled or a tree popping into the frame, not a frame
-   that disagrees with its plan, and the doubled props come from the prompt
-   ([a prop doubled where the scene's continuity puts it](#a-prop-doubled-where-the-scenes-continuity-puts-it-found-not-yet-tried)).
-   *Next:* the continuity left out of video prompts.
+   that disagrees with its plan. Leaving the scene's continuity, stale once a prop moves, out of the takes' prompts did
+   not stop the doubling (fp87, [tried, not built](#the-scenes-continuity-left-out-of-the-takes-tried-not-built)).
+   *Next:* a frame that cuts a prop the action uses at its edge drawn again: a camera that widens draws it twice.
 4. **Stills that tell the beat** (storytelling 6–8): a frame is the start of its shot, so a beat inside the take was
    missing from the storyboard; the planner now starts a shot on its beat's pose (fp18, being measured).
 5. **The video** (scene 6.0–7.3, first takes 5.8–7.4): the video model adds its own failures (a kite that morphs and
@@ -1575,7 +1591,8 @@ model's; a take watch that finds it could have the take made again). Wan's own p
    ([made again](#a-render-that-missed-its-cuts-made-again)). Every take of these runs was made once; with the three
    attempts a new project gives a failed take, fp85's kite scenes rose from 6.70 and 6.27 to 7.03 and 6.73 (fp86,
    [made again as a new project does](#a-failed-take-made-again-as-a-new-project-does)), while the doubled kite and
-   the tree that failed them stayed.
+   the tree that failed them stayed. Nor did the scene's continuity left out of the takes' prompts stop the doubling
+   ([fp87](#the-scenes-continuity-left-out-of-the-takes-tried-not-built)).
 6. **Close framings drawn whole** (fixed, fp7) and **the AI blocking**: its cameras now follow each shot's planned
    layout where its marks allow ([following the shot plan](director-desk.md#following-the-shot-plan)), yet with the
    desk on the storyboards scored 6.1 and 6.6 (fp27) against 7.2 and 6.8 without it: the image model does not draw
