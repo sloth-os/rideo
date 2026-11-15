@@ -136,16 +136,22 @@ function readHeight(t: string): number | null {
 }
 
 /**
+ * A space (or a no-break or thin space, as typesetters separate thousands) between a digit and three digits that a
+ * metric length follows ("1 700 mm"): a thousands separator. Elsewhere a space parts two numbers ("5 ft 11 180 lbs").
+ */
+const SPACED_THOUSANDS = /(\d)[ \u00a0\u2009\u202f](\d{3})(?!\d)(?=\s*(?:mm|cm|m\b|millimet|centimet|met))/g;
+
+/**
  * The height an identity names ("170 cm", "1.2 m", "1 m 70", "5 ft 8 in"), in metres to the centimetre, 0.1–4; else
- * null. A comma or a space before three digits is read as a thousands separator first ("1,700 mm", "1 700 mm"); when
- * that reading gives no height in range, the comma is a decimal comma ("1,750 m") and the space parts two numbers ("a
- * girl of 8 120 cm" is 1.2 m).
+ * null. A comma before three digits is read as a thousands separator first ("1,700 mm"), and so is a space when a
+ * metric length follows the three digits ("1 700 mm"); when that reading gives no height in range, the comma is a
+ * decimal comma ("1,750 m") and the space parts two numbers ("a girl of 8 120 cm" is 1.2 m). A space before three
+ * digits that no metric length follows always parts two numbers: "5 ft 11 180 lbs" is 1.8 m.
  */
 export function heightInMetres(text: string | null | undefined): number | null {
   const t = (text ?? '').toLowerCase();
   const decimal = (s: string) => s.replace(/(\d),(\d)/g, '$1.$2');
-  // a no-break or thin space too, as typesetters separate thousands
-  const thousands = decimal(t.replace(/(\d)[, \u00a0\u2009\u202f](\d{3})(?!\d)/g, '$1$2'));
+  const thousands = decimal(t.replace(/(\d),(\d{3})(?!\d)/g, '$1$2').replace(SPACED_THOUSANDS, '$1$2'));
   return readHeight(thousands) ?? (thousands === decimal(t) ? null : readHeight(decimal(t)));
 }
 
