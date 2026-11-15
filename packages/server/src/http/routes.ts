@@ -702,6 +702,7 @@ export function registerRoutes(app: FastifyInstance, studio: Studio): void {
             contentLength: length !== undefined && /^\d+$/.test(length) ? Number(length) : undefined,
             ifMatch: header('if-match'),
             ifNoneMatch: header('if-none-match'),
+            replace: header('x-desk-state-replace')?.trim() === '1',
             body: stream as Readable,
           });
           // the bytes are stored as they came: the state's ETag, which the next write names in If-Match

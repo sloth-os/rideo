@@ -374,6 +374,51 @@ describe('the desk state (docs/design/director-desk.md#the-routes)', () => {
     );
   });
 
+  it('commits a Replace on its own: the history keeps the state it replaced, even by the same author a moment ago', async () => {
+    const { pid, clip, shot } = await seeded(stack);
+    const a = bytes('panel A loaded this');
+    const b = bytes('session B, newer');
+    const edits = bytes('panel A edits');
+    const later = bytes('panel A edits, later');
+    expect((await put(stack, pid, clip.id, a, { 'if-none-match': '*' })).status).toBe(200);
+    // another change in between: the next state is a commit of its own
+    await stack.api('PATCH', `/projects/${pid}/clips/${clip.id}/shots/${shot.id}`, {
+      description: 'Mira waits.',
+    });
+    // the same person's other session stores B over A
+    expect((await put(stack, pid, clip.id, b, { 'if-match': `"${sha(a)}"` })).status).toBe(200);
+    // panel A's write names A: refused, the stored state is B
+    const refused = await put(stack, pid, clip.id, edits, { 'if-match': `"${sha(a)}"` });
+    expect(refused.status).toBe(412);
+    expect(refused.headers.get('etag')).toBe(`"${sha(b)}"`);
+    // the person replaces B, seconds later and as the same author: a commit of its own, B's commit not amended
+    const replaced = await put(stack, pid, clip.id, edits, {
+      'if-match': `"${sha(b)}"`,
+      'x-desk-state-replace': '1',
+    });
+    expect(replaced.status).toBe(200);
+    const states = async () => {
+      const commits = (await deskCommits(pid, clip.id)).filter((c) => c.message.startsWith('Save the desk'));
+      const hashes: string[] = [];
+      for (const c of commits) {
+        const doc = await stack.api<Clip>('GET', `/projects/${pid}/docs/clips/${clip.id}.json?at=${c.id}`);
+        hashes.push(doc.deskState!.media.hash);
+      }
+      return hashes;
+    };
+    expect(await states()).toEqual([sha(edits), sha(b), sha(a)]);
+    // a later state right after it: stored as usual, and the Replace's commit is never amended
+    expect((await put(stack, pid, clip.id, later, { 'if-match': `"${sha(edits)}"` })).status).toBe(200);
+    expect(await states()).toEqual([sha(later), sha(edits), sha(b), sha(a)]);
+    // and B can be restored from the history
+    const commits = (await deskCommits(pid, clip.id)).filter((c) => c.message.startsWith('Save the desk'));
+    await stack.api('POST', `/projects/${pid}/history/restore`, {
+      commit: commits[2]!.id,
+      paths: [`clips/${clip.id}.json`],
+    });
+    expect(new Uint8Array(await (await fetch(deskUrl(stack, pid, clip.id))).arrayBuffer())).toEqual(b);
+  });
+
   it('stores a state only over the one its precondition names, else answers 412 desk_state_conflict', async () => {
     const { pid, clip } = await seeded(stack);
     const conflicts = await metric('rideo_desk_state_saves_total', '{outcome="conflict"}');
@@ -406,12 +451,16 @@ describe('the desk state (docs/design/director-desk.md#the-routes)', () => {
     expect(((await next.json()) as { deskState: { media: { hash: string } } }).deskState.media.hash).toBe(
       sha(two),
     );
-    // a stale ETag (a weak one never matches) is refused, and the newer state kept
+    // a stale ETag (a weak one never matches) is refused, and the newer state kept; nothing is written for it, not
+    // even the file (the precondition is checked before the file is kept)
+    const files = vi.spyOn(stack.server.studio.deps.media, 'putFile');
     expect(await problem(await put(stack, pid, clip.id, three, { 'if-match': `"${sha(one)}"` }))).toEqual({
       status: 412,
       code: 'desk_state_conflict',
       etag: `"${sha(two)}"`,
     });
+    expect(files).not.toHaveBeenCalled();
+    files.mockRestore();
     expect((await put(stack, pid, clip.id, three, { 'if-match': `W/"${sha(two)}"` })).status).toBe(412);
     expect(await stored()).toBe('session two');
     // a list that names the stored state, or *, holds while a state is stored

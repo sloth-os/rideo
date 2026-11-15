@@ -30,6 +30,11 @@ export interface DeskStateUpload {
    */
   ifMatch?: string | undefined;
   ifNoneMatch?: string | undefined;
+  /**
+   * `X-Desk-State-Replace: 1`: the person chose to replace the stored state (the panel's Replace the stored desk state).
+   * The write is a commit of its own, never coalesced into the tip, so the history keeps the state it replaces.
+   */
+  replace?: boolean;
   body: Readable;
 }
 
@@ -143,7 +148,9 @@ export class DeskService extends Service {
    * memory), as `media/desk/<scene-slug>-<hash12>.bin`. The bytes stored already change nothing, whatever the
    * precondition (the change it asks for is made): no new file, no commit. Otherwise a precondition (`If-Match`,
    * `If-None-Match`) that does not name the stored state is a `412` `desk_state_conflict`, checked again in the
-   * transaction; a write without one replaces whatever is stored. Each write is a commit, coalesced per clip and author.
+   * transaction; a write without one replaces whatever is stored. Each write is a commit, coalesced per clip and author,
+   * but for a Replace (`upload.replace`), which is a commit of its own and never amends the tip: the history keeps the
+   * state it replaces even when the tip is that state's commit by the same author a moment ago.
    */
   async saveState(
     actor: Actor,
@@ -241,7 +248,10 @@ export class DeskService extends Service {
           tx.set(docPath.clip(clipId), current);
           return { deskState: current.deskState, changed: true };
         },
-        { message: `Save the desk of scene ${clip.index + 1}`, coalesce: { key: `desk:${clipId}` } },
+        {
+          message: `Save the desk of scene ${clip.index + 1}`,
+          coalesce: upload.replace ? undefined : { key: `desk:${clipId}` },
+        },
       );
       this.deps.metrics.deskStateSaves.inc({ outcome: result.changed ? 'saved' : 'unchanged' });
       if (result.changed)
@@ -254,6 +264,7 @@ export class DeskService extends Service {
             format: DESK_STATE_FORMAT,
             version: DESK_STATE_VERSION,
             path: media.path,
+            replace: !!upload.replace,
           },
           'desk state saved',
         );

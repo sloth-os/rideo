@@ -44,7 +44,13 @@ describe('embedding origins (docs/design/embedding.md#talking-to-a-server-on-ano
     // a desk state's write names the state it replaces (docs/design/director-desk.md#when-rideo-stores-it)
     const desk = (pre.headers.get('access-control-allow-headers') ?? '').split(/,\s*/);
     expect(desk).toEqual(
-      expect.arrayContaining(['x-desk-state-format', 'x-desk-state-version', 'if-match', 'if-none-match']),
+      expect.arrayContaining([
+        'x-desk-state-format',
+        'x-desk-state-version',
+        'x-desk-state-replace',
+        'if-match',
+        'if-none-match',
+      ]),
     );
     expect(pre.headers.get('access-control-allow-methods')).toContain('PUT');
 
