@@ -134,7 +134,8 @@ export function DeskPanel({ clip, onClose }: { clip: Clip; onClose: () => void }
           return (await api.saveDeskState(projectId, clip.id, state, precondition, signal)).deskState.media
             .hash;
         } catch (err) {
-          // another session stored a newer state, or cleared it: the bridge keeps it
+          // another session changed the stored state (stored another, restored an older one) or cleared it: the bridge
+          // keeps it
           // (docs/design/director-desk.md#when-rideo-stores-it)
           if (err instanceof ApiError && err.code === 'desk_state_conflict')
             throw new DeskStateConflict(etagValue(err.headers?.get('etag')), err.message);

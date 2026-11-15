@@ -364,6 +364,62 @@ describe('planDeskResult', () => {
     ).toEqual([DESK_REFUSALS.changed, 'ok']);
   });
 
+  it("decides by the shot's own brief_length issue over a stale changes.retimed: retimed at open, Update shots pressed, then the length changed in the desk", () => {
+    const { s0, s1, project, clip, result } = setup();
+    const reasons = (plans: ReturnType<typeof planDeskResult>) => plans.map((p) => (p.ok ? 'ok' : p.reason));
+    const brief = {
+      id: clip.id,
+      fps: 24,
+      width: 1280,
+      height: 720,
+      shots: [
+        { id: s0.id, durationSec: 3 },
+        { id: s1.id, durationSec: 2.5 },
+      ],
+    } as Parameters<typeof planDeskResult>[0]['brief'];
+    const sent = (frames: number, message: string) => ({
+      ...result,
+      shots: [
+        {
+          ...result.shots[0]!,
+          frames,
+          durationSec: frames / 24,
+          issues: [{ code: 'brief_length', severity: 'error' as const, message }],
+        },
+        result.shots[1]!,
+      ],
+    });
+    // the desk opened with shot 1 retimed by the brief (opened.changes.retimed), the person pressed Update shots (the
+    // desk's live changes no longer list it), then made it 84 frames in the desk: the desk's issue at Send says to set
+    // the length back, and so does rideo, whatever the opened list says
+    const changedInTheDesk = sent(
+      84,
+      "The shot is 84 frames (3.5 s) in the desk and 72 frames (3 s) in the brief, at 24 fps: Rideo refuses a clip of another length. Set its length back, or change the shot's duration in Rideo.",
+    );
+    expect(
+      reasons(
+        planDeskResult({ result: changedInTheDesk, project, clip, mode: 'camera', brief, retimed: [s0.id] }),
+      ),
+    ).toEqual([DESK_REFUSALS.length(84, 72, 3, 24), 'ok']);
+    // sent before Update shots: the desk's issue points to it, opened's list or not
+    const notUpdated = sent(
+      60,
+      "The brief changed this shot's length since it was staged: it is 60 frames (2.5 s) in the desk and 72 frames (3 s) in the brief, at 24 fps: Rideo refuses a clip of another length. Press Update shots (the brief's changes, above the scene), then send again.",
+    );
+    for (const retimed of [[s0.id], []])
+      expect(
+        reasons(planDeskResult({ result: notUpdated, project, clip, mode: 'camera', brief, retimed })),
+      ).toEqual([DESK_REFUSALS.update(60, 72, 3, 24), 'ok']);
+    // a shot without the issue (a desk that gives none): opened's list decides
+    const silent = { ...notUpdated, shots: [{ ...notUpdated.shots[0]!, issues: [] }, result.shots[1]!] };
+    expect(
+      reasons(planDeskResult({ result: silent, project, clip, mode: 'camera', brief, retimed: [s0.id] })),
+    ).toEqual([DESK_REFUSALS.update(60, 72, 3, 24), 'ok']);
+    expect(
+      reasons(planDeskResult({ result: silent, project, clip, mode: 'camera', brief, retimed: [] })),
+    ).toEqual([DESK_REFUSALS.length(60, 72, 3, 24), 'ok']);
+  });
+
   it('compares against the even size an odd resolution is rounded down to', () => {
     const { clip, result } = setup();
     const odd = f.project({

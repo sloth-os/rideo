@@ -40,8 +40,9 @@ export interface DeskStateUpload {
 
 /**
  * A desk state write refused because the stored state is not the one its precondition named (`412`
- * `desk_state_conflict`): another session stored a newer state, or cleared it. `stored` is the stored state's sha256,
- * its ETag (null when the clip names none), so the client can replace that one on purpose.
+ * `desk_state_conflict`): another session changed it (stored another state, or restored an older one: never called
+ * newer, a restore is a conflict too) or cleared it. `stored` is the stored state's sha256, its ETag (null when the
+ * clip names none), so the client can replace that one on purpose.
  */
 export class DeskStateConflictError extends AppError {
   constructor(
@@ -51,7 +52,7 @@ export class DeskStateConflictError extends AppError {
     super(
       'desk_state_conflict',
       stored
-        ? `the stored desk state of scene ${clip} is not the one this write replaces: another session stored a newer one (ETag "${stored}")`
+        ? `the stored desk state of scene ${clip} is not the one this write replaces: another session changed it (the stored state's ETag is "${stored}")`
         : `scene ${clip} has no stored desk state any more: another session cleared it`,
     );
   }
@@ -204,8 +205,8 @@ export class DeskService extends Service {
         this.deps.metrics.deskStateSaves.inc({ outcome: 'unchanged' });
         return clip.deskState!;
       }
-      // the state this write replaces must still be the stored one: another session's newer state is never replaced
-      // unseen
+      // the state this write replaces must still be the stored one: a state another session stored or restored is
+      // never replaced unseen
       const conflict = (stored: ClipDeskState | null | undefined): DeskStateConflictError | null => {
         const sha = stored?.media.hash ?? null;
         if (deskPreconditionHolds(sha, upload.ifMatch, upload.ifNoneMatch)) return null;

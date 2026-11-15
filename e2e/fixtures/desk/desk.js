@@ -5,10 +5,12 @@
 // renders that mode only: a result for every shot (a real H.264 clip in that mode and a PNG still of the brief's size,
 // as bytes) whose frames, size and rate come from the brief. Its Send part leaves the last shot out and names it in an
 // `error` `export_failed` after the result, the way the real desk reports a shot it could not render; its Send longer
-// renders the first shot half a second longer than the brief, with the `brief_length` issue the real desk gives a
-// length changed in the desk; a given state that starts with `unreadable` is one it cannot read (`error`
-// `state_unreadable`, then `opened` from the brief, and no `state` until an edit or a `save`: opening cannot replace
-// the host's copy).
+// renders the first shot half a second longer than the brief, with the `brief_length` issue the real desk gives it: a
+// length changed in the desk says to set it back, and a shot the brief retimed since it was staged points to Update
+// shots. A given state that starts with `unreadable` is one it cannot read (`error` `state_unreadable`, then `opened`
+// from the brief, and no `state` until an edit or a `save`: opening cannot replace the host's copy); one that starts
+// with `retimed` was staged before the brief retimed the first shot: `opened` lists that shot in `changes.retimed`, and
+// its Update shots brings it to the brief (an edit, so a `state` follows) and off the list, as the real desk's does.
 (() => {
   const $ = (id) => document.querySelector(`[data-testid="${id}"]`);
   const encode = (text) => new TextEncoder().encode(text).buffer;
@@ -18,6 +20,8 @@
   let current = '';
   let edits = 0;
   let results = 0;
+  /** The shots the brief retimed since the given state was staged, until Update shots (the desk's live changes). */
+  let retimed = [];
   const clipBytes = fetch('clip.mp4').then((r) => r.arrayBuffer());
   /** A PNG of the brief's size, as the desk's stills are. */
   const stillOf = (width, height) =>
@@ -42,6 +46,7 @@
   });
   const show = () => {
     $('desk-current').textContent = current;
+    $('desk-retimed').textContent = retimed.join(', ');
   };
 
   const onPort = (event) => {
@@ -61,6 +66,7 @@
           message: 'the state was saved by a desk this one does not read',
         });
       current = given && !unreadable ? given : `staged ${scene.id}`;
+      retimed = given?.startsWith('retimed') ? [scene.shots[0].id] : [];
       $('desk-connected').textContent = 'open';
       $('desk-scene').textContent = scene.name;
       $('desk-options').textContent = JSON.stringify(m.options ?? {});
@@ -80,7 +86,9 @@
         type: 'opened',
         sceneId: scene.id,
         source: given && !unreadable ? 'state' : 'brief',
-        changes: null,
+        changes: retimed.length
+          ? { added: [], removed: [], retimed: [...retimed], recast: [], cast: { added: [], removed: [] } }
+          : null,
       });
       // after a state it could not read, the brief's staging is not sent on its own
       if (!unreadable) port.postMessage(stateOf());
@@ -123,6 +131,15 @@
     port.postMessage(stateOf());
   });
 
+  // Update shots: the shots the brief retimed take the brief's length, an edit of the scene
+  $('desk-update-shots').addEventListener('click', () => {
+    if (!scene || !retimed.length) return;
+    retimed = [];
+    current = `${current} +updated`;
+    show();
+    port.postMessage(stateOf());
+  });
+
   /**
    * A result for the brief's shots in the Follow menu's mode only, or all but the last (`part`), which an `error`
    * `export_failed` then names; `longer` renders the first shot half a second longer than the brief.
@@ -153,7 +170,7 @@
         moves: null,
         // the brief's last shot: its camera disagrees with the planned layout
         planAgrees: shot.id === last.id ? false : null,
-        // a length changed in the desk, as the real desk says it
+        // another length than the brief's, as the real desk says it: whose change it is decides what to do
         issues:
           frames === asked
             ? []
@@ -161,7 +178,9 @@
                 {
                   code: 'brief_length',
                   severity: 'error',
-                  message: `The shot is ${frames} frames (${sec(frames)}) in the desk and ${asked} frames (${sec(asked)}) in the brief, at ${scene.fps} fps: Rideo refuses a clip of another length. Set its length back, or change the shot's duration in Rideo.`,
+                  message: retimed.includes(shot.id)
+                    ? `The brief changed this shot's length since it was staged: it is ${frames} frames (${sec(frames)}) in the desk and ${asked} frames (${sec(asked)}) in the brief, at ${scene.fps} fps: Rideo refuses a clip of another length. Press Update shots (the brief's changes, above the scene), then send again.`
+                    : `The shot is ${frames} frames (${sec(frames)}) in the desk and ${asked} frames (${sec(asked)}) in the brief, at ${scene.fps} fps: Rideo refuses a clip of another length. Set its length back, or change the shot's duration in Rideo.`,
                 },
               ],
       };

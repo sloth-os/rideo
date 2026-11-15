@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { deskPreconditionHolds } from '../../src/domain/desk';
+import { DeskStateConflictError, deskPreconditionHolds } from '../../src/domain/desk';
 
 /**
  * A desk state write names the state it replaces (docs/design/director-desk.md#when-rideo-stores-it): `If-Match` with
@@ -41,5 +41,19 @@ describe('deskPreconditionHolds', () => {
     expect(deskPreconditionHolds(A, `"${A}"`, `"${B}"`)).toBe(true);
     expect(deskPreconditionHolds(A, `"${A}"`, '*')).toBe(false);
     expect(deskPreconditionHolds(A, `"${B}"`, `"${B}"`)).toBe(false);
+  });
+});
+
+describe('DeskStateConflictError', () => {
+  it('names the stored state without calling it newer: a restore of an older state is a conflict too', () => {
+    const changed = new DeskStateConflictError(A, 2);
+    expect(changed).toMatchObject({ code: 'desk_state_conflict', stored: A });
+    expect(changed.message).toBe(
+      `the stored desk state of scene 2 is not the one this write replaces: another session changed it (the stored state's ETag is "${A}")`,
+    );
+    expect(changed.message).not.toMatch(/newer/);
+    const cleared = new DeskStateConflictError(null, 2);
+    expect(cleared).toMatchObject({ code: 'desk_state_conflict', stored: null });
+    expect(cleared.message).toBe('scene 2 has no stored desk state any more: another session cleared it');
   });
 });

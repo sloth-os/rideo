@@ -91,7 +91,7 @@ test('the desk connects, its Send attaches every shot’s clip and camera, and i
   page,
   request,
 }, testInfo) => {
-  test.setTimeout(240_000);
+  test.setTimeout(300_000);
   const api = new Api(request);
   const { pid, clip } = await planned(api, `Desk (${testInfo.project.name})`);
   const shots = [...clip.shots].sort((a: any, b: any) => a.index - b.index);
@@ -220,6 +220,28 @@ test('the desk connects, its Send attaches every shot’s clip and camera, and i
   await page.getByTestId('desk-close').click();
   await expect(page.getByTestId('desk-panel')).toBeHidden();
   expect(await storedState(request, pid, clip.id)).toBe('stored by another session');
+
+  // a state this tab stored comes back after the tab saw the server move past it (another session stored another,
+  // the next panel loaded that, then the first was put back, a restore): a conflict like any other, never stored over
+  await page.getByTestId('storyboard-scene').first().getByTestId('open-desk').click();
+  await expect(desk(page).getByTestId('desk-given')).toHaveText('stored by another session');
+  await desk(page).getByTestId('desk-edit').click();
+  const mine = (await desk(page).getByTestId('desk-current').textContent())!;
+  await page.getByTestId('desk-close').click();
+  await expect(page.getByTestId('desk-panel')).toBeHidden();
+  expect(await storedState(request, pid, clip.id)).toBe(mine);
+  await storeAsAnotherSession(request, pid, clip.id, 'stored by another session, later');
+  await page.getByTestId('storyboard-scene').first().getByTestId('open-desk').click();
+  await expect(desk(page).getByTestId('desk-given')).toHaveText('stored by another session, later');
+  await storeAsAnotherSession(request, pid, clip.id, mine);
+  await desk(page).getByTestId('desk-edit').click();
+  await page.getByTestId('desk-close').click();
+  await expect(page.getByTestId('desk-kept-notice')).toHaveText(CONFLICT_NOTICE);
+  await expect(page.getByTestId('desk-panel')).toBeVisible();
+  expect(await storedState(request, pid, clip.id)).toBe(mine);
+  await page.getByTestId('desk-close').click();
+  await expect(page.getByTestId('desk-panel')).toBeHidden();
+  expect(await storedState(request, pid, clip.id)).toBe(mine);
 });
 
 test('a partial result attaches the shots it has, and the desk says which shot it left out', async ({
@@ -361,7 +383,7 @@ test("the desk's own Follow menu decides the reference the shots get; the projec
   page,
   request,
 }, testInfo) => {
-  test.setTimeout(180_000);
+  test.setTimeout(240_000);
   const api = new Api(request);
   const { pid, clip } = await planned(api, `Desk follow (${testInfo.project.name})`);
   await openDesk(page, pid);
@@ -400,6 +422,27 @@ test("the desk's own Follow menu decides the reference the shots get; the projec
   await expect(desk(page).getByTestId('desk-connected')).toHaveText('open');
   await expect(desk(page).getByTestId('desk-follow')).toHaveValue('pose');
   await expect(desk(page).getByTestId('desk-options')).toContainText('"defaultMode":"pose"');
+  await page.getByTestId('desk-close').click();
+  await expect(page.getByTestId('desk-panel')).toBeHidden();
+
+  // a desk opened on a state staged before the brief retimed the first shot (its opened lists that shot): sent longer,
+  // the shot is refused with Update shots; after the desk's Update shots the desk's own issue says to set the length
+  // back, and so does rideo, though the opened list still names the shot
+  const first = [...clip.shots].sort((a: any, b: any) => a.index - b.index)[0].id;
+  await storeAsAnotherSession(request, pid, clip.id, 'retimed: staged before the brief changed');
+  await page.getByTestId('storyboard-scene').first().getByTestId('open-desk').click();
+  const r = desk(page);
+  await expect(r.getByTestId('desk-connected')).toHaveText('open');
+  await expect(r.getByTestId('desk-retimed')).toHaveText(first);
+  await r.getByTestId('desk-send-longer').click();
+  await expect(r.getByTestId('desk-ack')).toContainText('press Update shots in the desk, then send again');
+  await r.getByTestId('desk-update-shots').click();
+  await expect(r.getByTestId('desk-retimed')).toHaveText('');
+  await r.getByTestId('desk-send-longer').click();
+  await expect(r.getByTestId('desk-ack')).toContainText(
+    "set its length back in the desk, or change the shot's duration in the studio",
+  );
+  await expect(r.getByTestId('desk-ack')).not.toContainText('press Update shots');
   await page.getByTestId('desk-close').click();
   await expect(page.getByTestId('desk-panel')).toBeHidden();
 });

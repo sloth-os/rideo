@@ -40,7 +40,8 @@ export interface DeskResultDeps {
  * still as its poster, then the shot's PATCH. A shot that fails does not stop the others. The files' bytes are let go
  * once the shots are done. `brief` and `retimed` are the brief the desk was opened with and the shots it retimed
  * (`opened.changes.retimed`): a refusal tells a length the person changed in the desk from one the brief changed since
- * the desk staged it and from a shot changed in the studio since.
+ * the desk staged it (by the shot's own `brief_length` issue, else by `retimed`) and from a shot changed in the studio
+ * since.
  */
 export async function applyDeskResult(
   result: DeskResultMessage,

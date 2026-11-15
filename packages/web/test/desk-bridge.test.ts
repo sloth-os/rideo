@@ -14,6 +14,7 @@ import {
   DESK_SAVE_TIMEOUT_MS,
   DeskBridge,
   type DeskOpenedWith,
+  type DeskSentState,
   DeskStateConflict,
   type DeskStatus,
   type DeskStorePrecondition,
@@ -143,7 +144,7 @@ function harness(
     clear?: () => Promise<void>;
     applyResult?: (result: DeskResultMessage, opened: DeskOpenedWith) => Promise<DeskAck>;
     /** the states this tab sent for the clip, shared by the clip's panels (`deskStatesSent`) */
-    sent?: Map<string, number>;
+    sent?: Map<string, DeskSentState>;
   } = {},
 ) {
   let listener: ((e: MessageEvent) => void) | null = null;
@@ -1405,7 +1406,7 @@ describe("the desk bridge: a 412 of this tab's own (docs/design/director-desk.md
 
   it("a panel opened again while the last one's write on the way out was uploading: that write lands first, the new panel's Close stores over it", async () => {
     const server = deskServer('S1');
-    const sent = new Map<string, number>();
+    const sent = new Map<string, DeskSentState>();
     let land!: () => Promise<void>;
     // panel A: an edit, then the person leaves the Storyboard view; its write on the way out uploads slowly
     const a = await opened({
@@ -1436,9 +1437,69 @@ describe("the desk bridge: a 412 of this tab's own (docs/design/director-desk.md
     expect([...a.toasts, ...b.toasts]).toEqual([]);
   });
 
+  it("a write sent after the next panel's load went out stays its own though that load names an older state: it lands late, and the next panel stores over it", async () => {
+    const server = deskServer('S1');
+    const sent = new Map<string, DeskSentState>();
+    let land!: () => Promise<void>;
+    // panel A: Q stored, then X over Q on the way out, which uploads slowly
+    const a = await opened({
+      stored: stored('S1'),
+      sent,
+      store: (s, _signal, pre) =>
+        text(s.data) === 'X'
+          ? new Promise<string>((resolve, reject) => {
+              land = () => server.store(s, pre).then(resolve, reject);
+            })
+          : server.store(s, pre),
+    });
+    // panel B of the clip starts first: its load reads S1, and its answer comes late
+    let answer!: () => void;
+    const b = harness({
+      sent,
+      store: (s, _signal, pre) => server.store(s, pre),
+      load: async () => {
+        const held = server.stored;
+        await new Promise<void>((resolve) => {
+          answer = resolve;
+        });
+        return held === null ? null : stored(held);
+      },
+    });
+    b.bridge.start();
+    await flush();
+    a.desk(state('Q'));
+    a.bridge.flush();
+    await flush();
+    expect(server.stored).toBe('Q');
+    a.desk(state('X'));
+    a.bridge.flush();
+    a.bridge.dispose();
+    await flush();
+    // B learns of S1, which the server held before Q: X, sent after B's load went out, may still land, and does
+    answer();
+    await flush();
+    await land();
+    expect(server.stored).toBe('X');
+    b.bridge.frameLoaded();
+    b.hello();
+    b.desk(READY);
+    await flush();
+    b.desk(OPENED);
+    b.desk(state('W'));
+    const closing = b.bridge.close();
+    b.desk(state('W', 'save-1'));
+    await closing;
+    // the 412 named X, which this tab sent: no conflict, W stored over it
+    expect(server.stored).toBe('W');
+    expect(b.preconditions).toEqual([{ ifMatch: 'S1' }, { ifMatch: 'X' }]);
+    expect(b.last().kept).toBeNull();
+    expect(b.closed()).toBe(1);
+    expect([...a.toasts, ...b.toasts]).toEqual([]);
+  });
+
   it("a panel opened again while the last one's write on the way out was uploading: the new panel's write lands first, the old one is dropped without a toast", async () => {
     const server = deskServer('S1');
-    const sent = new Map<string, number>();
+    const sent = new Map<string, DeskSentState>();
     let land!: () => Promise<void>;
     const a = await opened({
       stored: stored('S1'),
@@ -1467,10 +1528,10 @@ describe("the desk bridge: a 412 of this tab's own (docs/design/director-desk.md
   });
 
   it('a 412 naming a state of its own is tried once: another such 412 keeps the stored state', async () => {
-    // states an earlier panel of the clip sent
-    const sent = new Map([
-      ['X', 0],
-      ['Y', 0],
+    // states an earlier panel of the clip sent, whose answers it never got: X over S1, then Y over X
+    const sent = new Map<string, DeskSentState>([
+      ['X', { generation: 0, sentAt: 0, answeredAt: null, over: 'S1' }],
+      ['Y', { generation: 0, sentAt: 0, answeredAt: null, over: 'X' }],
     ]);
     const answers = ['X', 'Y'];
     const h = await opened({
@@ -1483,6 +1544,221 @@ describe("the desk bridge: a 412 of this tab's own (docs/design/director-desk.md
     h.desk(state('B'));
     await vi.advanceTimersByTimeAsync(DESK_STATE_WRITE_INTERVAL_MS);
     expect(h.preconditions).toEqual([{ ifMatch: 'S1' }, { ifMatch: 'X' }]);
+    expect(h.last().kept).toEqual({ reason: 'conflict', notice: DESK_CONFLICT_NOTICE });
+  });
+});
+
+describe('the desk bridge: a state this tab sent that the server moved past (docs/design/director-desk.md#when-rideo-stores-it)', () => {
+  const through =
+    (server: ReturnType<typeof deskServer>) =>
+    (s: DeskState, _signal?: AbortSignal, pre?: DeskStorePrecondition) =>
+      server.store(s, pre);
+
+  it("is no longer its own once a later write of this tab stored another: another session's restore of it is a conflict", async () => {
+    const server = deskServer('S1');
+    const h = await opened({ stored: stored('S1'), store: through(server) });
+    h.desk(state('X'));
+    await vi.advanceTimersByTimeAsync(DESK_STATE_WRITE_INTERVAL_MS);
+    h.desk(state('Z'));
+    await vi.advanceTimersByTimeAsync(DESK_STATE_WRITE_INTERVAL_MS);
+    expect(server.stored).toBe('Z');
+    // another session restores the clip's history to the commit that named X, while this panel is open
+    server.stored = 'X';
+    h.desk(state('W'));
+    await vi.advanceTimersByTimeAsync(DESK_STATE_WRITE_INTERVAL_MS);
+    // the restore is kept and said, never stored over unseen
+    expect(server.stored).toBe('X');
+    expect(h.preconditions).toEqual([{ ifMatch: 'S1' }, { ifMatch: 'X' }, { ifMatch: 'Z' }]);
+    expect(h.last().kept).toEqual({ reason: 'conflict', notice: DESK_CONFLICT_NOTICE });
+    expect(h.toasts).toEqual([[DESK_CONFLICT_NOTICE, 'warning']]);
+  });
+
+  it("is no longer its own once a later panel's load found another state stored: a restore of it is a conflict", async () => {
+    const server = deskServer('S1');
+    const sent = new Map<string, DeskSentState>();
+    // panel A stores X on Close
+    const a = await opened({ stored: stored('S1'), sent, store: through(server) });
+    a.desk(state('X'));
+    const closing = a.bridge.close();
+    a.desk(state('X', 'save-1'));
+    await closing;
+    expect(server.stored).toBe('X');
+    // another session stores Y, and the clip's next panel in this tab opens on it
+    server.stored = 'Y';
+    const b = await opened({ stored: stored('Y'), sent, store: through(server) });
+    // then another session restores the clip to X: B's next write meets it
+    server.stored = 'X';
+    b.desk(state('W'));
+    await vi.advanceTimersByTimeAsync(DESK_STATE_WRITE_INTERVAL_MS);
+    expect(server.stored).toBe('X');
+    expect(b.preconditions).toEqual([{ ifMatch: 'Y' }]);
+    expect(b.last().kept).toEqual({ reason: 'conflict', notice: DESK_CONFLICT_NOTICE });
+  });
+
+  it("is no longer its own once a later panel's Start over cleared the stored state: a restore of it is a conflict", async () => {
+    const server = deskServer('S1');
+    const sent = new Map<string, DeskSentState>();
+    const a = await opened({ stored: stored('S1'), sent, store: through(server) });
+    a.desk(state('X'));
+    const closing = a.bridge.close();
+    a.desk(state('X', 'save-1'));
+    await closing;
+    expect(server.stored).toBe('X');
+    // the clip's next panel cannot load the stored state and starts over
+    const b = harness({
+      sent,
+      store: through(server),
+      load: async () => {
+        throw new TypeError('the stored desk state of scene 1 could not be read: storage answered 404');
+      },
+      clear: async () => {
+        server.stored = null;
+      },
+    });
+    b.bridge.start();
+    b.bridge.frameLoaded();
+    b.hello();
+    b.desk(READY);
+    await flush();
+    b.bridge.startOver();
+    await flush();
+    b.desk(OPENED);
+    // another session restores the clip to X before B's first write
+    server.stored = 'X';
+    b.desk(state('W'));
+    b.desk({ type: 'close', reason: 'done' });
+    await flush();
+    expect(server.stored).toBe('X');
+    expect(b.preconditions).toEqual([{ ifNoneMatch: '*' }]);
+    expect(b.last().kept).toEqual({ reason: 'conflict', notice: DESK_CONFLICT_NOTICE });
+    expect(b.closed()).toBe(0);
+  });
+
+  it('is no longer its own once a 412 named another state: Replace meeting a restore of it refuses again', async () => {
+    const server = deskServer('S1');
+    const h = await opened({ stored: stored('S1'), store: through(server) });
+    h.desk(state('S'));
+    await vi.advanceTimersByTimeAsync(DESK_STATE_WRITE_INTERVAL_MS);
+    expect(server.stored).toBe('S');
+    // another session stores E: this panel's next write is refused and E kept
+    server.stored = 'E';
+    h.desk(state('W'));
+    await vi.advanceTimersByTimeAsync(DESK_STATE_WRITE_INTERVAL_MS);
+    expect(h.last().kept).toEqual({ reason: 'conflict', notice: DESK_CONFLICT_NOTICE });
+    // a third session restores S before the person replaces E: Replace names E and meets S, refused again
+    server.stored = 'S';
+    h.bridge.replace();
+    await flush();
+    expect(server.stored).toBe('S');
+    expect(h.preconditions).toEqual([{ ifMatch: 'S1' }, { ifMatch: 'S' }, { ifMatch: 'E', replace: true }]);
+    expect(h.last().kept).toEqual({ reason: 'conflict', notice: DESK_CONFLICT_NOTICE });
+  });
+
+  it('a state whose write was refused is not its own: the same bytes stored later by another session are a conflict', async () => {
+    const server = deskServer('S1');
+    const h = await opened({ stored: stored('S1'), store: through(server) });
+    // another session stores Y: this panel's X is refused and the stored state kept
+    server.stored = 'Y';
+    h.desk(state('X'));
+    await vi.advanceTimersByTimeAsync(DESK_STATE_WRITE_INTERVAL_MS);
+    expect(h.last().kept).toEqual({ reason: 'conflict', notice: DESK_CONFLICT_NOTICE });
+    // the person edits and replaces Y with Z
+    h.desk(state('Z'));
+    h.bridge.replace();
+    await flush();
+    expect(server.stored).toBe('Z');
+    // X, which never landed from this tab, comes from another session: a conflict, not this tab's own
+    server.stored = 'X';
+    h.desk(state('W'));
+    await vi.advanceTimersByTimeAsync(DESK_STATE_WRITE_INTERVAL_MS);
+    expect(server.stored).toBe('X');
+    expect(h.preconditions).toEqual([{ ifMatch: 'S1' }, { ifMatch: 'Y', replace: true }, { ifMatch: 'Z' }]);
+    expect(h.last().kept).toEqual({ reason: 'conflict', notice: DESK_CONFLICT_NOTICE });
+  });
+
+  it('a state whose write was refused is forgotten at once: the same bytes another session stored before Replace are refused again', async () => {
+    const server = deskServer('S1');
+    const h = await opened({ stored: stored('S1'), store: through(server) });
+    // another session stores Y: this panel's X is refused and Y kept
+    server.stored = 'Y';
+    h.desk(state('X'));
+    await vi.advanceTimersByTimeAsync(DESK_STATE_WRITE_INTERVAL_MS);
+    expect(h.last().kept).toEqual({ reason: 'conflict', notice: DESK_CONFLICT_NOTICE });
+    // a third session stores the same bytes X before the person replaces Y with Z
+    server.stored = 'X';
+    h.desk(state('Z'));
+    h.bridge.replace();
+    await flush();
+    // the Replace named Y and met X, which never landed from this tab: refused again, X kept
+    expect(server.stored).toBe('X');
+    expect(h.preconditions).toEqual([{ ifMatch: 'S1' }, { ifMatch: 'Y', replace: true }]);
+    expect(h.last().kept).toEqual({ reason: 'conflict', notice: DESK_CONFLICT_NOTICE });
+  });
+
+  it('a state whose write went unanswered is forgotten once an answer names another state than the one it replaces: Replace meeting its restore is refused again', async () => {
+    const server = deskServer('S1');
+    let lose = true;
+    const h = await opened({
+      stored: stored('S1'),
+      store: async (s, _signal, pre) => {
+        const got = await server.store(s, pre);
+        if (lose) {
+          lose = false;
+          throw new TypeError('Failed to fetch');
+        }
+        return got;
+      },
+    });
+    // A lands over S1, and its answer is lost
+    h.desk(state('A'));
+    await vi.advanceTimersByTimeAsync(DESK_STATE_WRITE_INTERVAL_MS);
+    expect(server.stored).toBe('A');
+    // another session stores E before the write is tried again: B naming S1 meets E, a conflict
+    server.stored = 'E';
+    h.desk(state('B'));
+    await vi.advanceTimersByTimeAsync(DESK_STORE_RETRY_MS);
+    expect(h.last().kept).toEqual({ reason: 'conflict', notice: DESK_CONFLICT_NOTICE });
+    // a third session restores A before the person replaces E: the Replace names E and meets A, refused again
+    server.stored = 'A';
+    h.bridge.replace();
+    await flush();
+    expect(server.stored).toBe('A');
+    expect(h.preconditions).toEqual([{ ifMatch: 'S1' }, { ifMatch: 'S1' }, { ifMatch: 'E', replace: true }]);
+    expect(h.last().kept).toEqual({ reason: 'conflict', notice: DESK_CONFLICT_NOTICE });
+  });
+
+  it('stays its own while its answer was lost: the lost write met later is taken, and forgotten once stored past', async () => {
+    const server = deskServer('S1');
+    let lose = true;
+    const h = await opened({
+      stored: stored('S1'),
+      store: async (s, _signal, pre) => {
+        const got = await server.store(s, pre);
+        if (lose) {
+          lose = false;
+          throw new TypeError('Failed to fetch');
+        }
+        return got;
+      },
+    });
+    h.desk(state('A'));
+    await vi.advanceTimersByTimeAsync(DESK_STATE_WRITE_INTERVAL_MS);
+    h.desk(state('B'));
+    await vi.advanceTimersByTimeAsync(DESK_STORE_RETRY_MS);
+    // the 412 named A, whose answer was lost: taken, and B stored over it
+    expect(server.stored).toBe('B');
+    expect(h.last().kept).toBeNull();
+    // B was stored after A landed: A coming back now is a restore, and a conflict
+    server.stored = 'A';
+    h.desk(state('C'));
+    await vi.advanceTimersByTimeAsync(DESK_STATE_WRITE_INTERVAL_MS);
+    expect(server.stored).toBe('A');
+    expect(h.preconditions).toEqual([
+      { ifMatch: 'S1' },
+      { ifMatch: 'S1' },
+      { ifMatch: 'A' },
+      { ifMatch: 'B' },
+    ]);
     expect(h.last().kept).toEqual({ reason: 'conflict', notice: DESK_CONFLICT_NOTICE });
   });
 });

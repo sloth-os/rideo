@@ -108,12 +108,19 @@ export function pngSize(data: ArrayBuffer): { width: number; height: number } | 
 }
 
 /**
- * The desk's own issue on a shot whose length is not the brief's (`brief_length`) points to Update shots when the brief
- * retimed the shot since it was staged; for a length changed in the desk it says to set it back. The code alone does
- * not tell the two apart.
+ * Whether the brief retimed the shot since the desk staged it (Update shots brings it to the brief), not the person in
+ * the desk. The desk's own issue on the shot (`brief_length`) decides: the desk writes it at Send from its changes then,
+ * pointing to Update shots for a shot the brief retimed and saying to set it back for a length changed in the desk (one
+ * changed after Update shots too); the code alone does not tell the two apart. `retimed` (`opened.changes.retimed`,
+ * which no later message updates) decides only for a shot without that issue.
  */
-function retimedByBrief(shot: Pick<DeskShotResult, 'issues'>): boolean {
-  return shot.issues.some((i) => i.code === 'brief_length' && /\bupdate shots\b/i.test(i.message));
+function retimedByBrief(
+  shot: Pick<DeskShotResult, 'shotId' | 'issues'>,
+  retimed: ReadonlySet<string>,
+): boolean {
+  const said = shot.issues.filter((i) => i.code === 'brief_length');
+  if (said.length) return said.some((i) => /\bupdate shots\b/i.test(i.message));
+  return retimed.has(shot.shotId);
 }
 
 /**
@@ -123,8 +130,9 @@ function retimedByBrief(shot: Pick<DeskShotResult, 'issues'>): boolean {
  * the protocol's order. `brief` is the brief the desk was opened with: a frame count or format that is not the clip's is
  * "changed" only when the shot or the project changed in rideo since that brief; otherwise the desk rendered something
  * else than the brief asked for, and the refusal says so with the numbers and what to do: Update shots for a shot the
- * brief retimed since it was staged (`retimed`, `opened.changes.retimed` of the desk's connection, or the shot's own
- * `brief_length` issue pointing to Update shots), else set back the length the person changed in the desk.
+ * brief retimed since it was staged, else set back the length the person changed in the desk, as the shot's own
+ * `brief_length` issue says, or for a shot without one, as `retimed` (`opened.changes.retimed` of the desk's
+ * connection) does.
  */
 export function planDeskResult(input: {
   result: Pick<DeskResultMessage, 'sceneId' | 'fps' | 'width' | 'height' | 'shots' | 'files'>;
@@ -170,8 +178,7 @@ export function planDeskResult(input: {
       // nothing changed in rideo since the brief: the desk rendered something else than it asked for
       if (briefFormat && sent?.durationSec === shot.durationSec) {
         if (!sameFormat) return refuse(DESK_REFUSALS.format(result, format), number);
-        const because =
-          retimed.has(r.shotId) || retimedByBrief(r) ? DESK_REFUSALS.update : DESK_REFUSALS.length;
+        const because = retimedByBrief(r, retimed) ? DESK_REFUSALS.update : DESK_REFUSALS.length;
         return refuse(because(r.frames, frames, shot.durationSec, format.fps), number);
       }
       return refuse(DESK_REFUSALS.changed, number);

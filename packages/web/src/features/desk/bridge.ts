@@ -141,9 +141,23 @@ export interface DeskBridgeOptions {
   log?: (message: string, data?: unknown) => void;
   /**
    * The states this tab sent for this clip (`deskStatesSent`), shared with the clip's earlier and later panels: a `412`
-   * that names one of them is no conflict. Without it the bridge remembers only its own.
+   * that names one of them is no conflict, until the tab saw the server move past it. Without it the bridge remembers
+   * only its own.
    */
-  sent?: Map<string, number>;
+  sent?: Map<string, DeskSentState>;
+}
+
+/**
+ * A state this tab sent for a clip (docs/design/director-desk.md#when-rideo-stores-it): the earliest panel that sent it
+ * (its bridge's generation), on the tab's clock when its last write was sent and when that write was stored (null: no
+ * answer yet, or the answer was lost or the write aborted, so it may still land), and the state that write named as
+ * the one it replaces (its `If-Match`; null for `If-None-Match: *`), the only one it can land over.
+ */
+export interface DeskSentState {
+  generation: number;
+  sentAt: number;
+  answeredAt: number | null;
+  over: string | null;
 }
 
 /** What a result is applied with: the brief and the retimed shots of the `open` it answers. */
@@ -205,19 +219,24 @@ export function deskUnreadableNotice(message: string): string {
 type StoreOutcome = 'stored' | 'same' | 'skipped' | 'failed' | 'conflict' | 'superseded';
 
 /**
- * The states this tab sent, per clip: each state's sha256 and the earliest panel (its bridge's generation) that sent
- * it (docs/design/director-desk.md#when-rideo-stores-it). Module-level, so it outlives a panel: the next panel of the
- * clip knows what the last one sent on its way out.
+ * The states this tab sent, per clip, by sha256 (docs/design/director-desk.md#when-rideo-stores-it), until the tab sees
+ * the server is past one: a state whose write was refused for another state is forgotten at once; one whose write was
+ * stored, once the answer to a request sent after that (a load, a write, a Start over's clear) names another stored
+ * state; one whose write was never answered, once the answer to a request sent after it names a state other than the
+ * one that write replaces. That state coming back later (a restore by another session) is a conflict like any other.
+ * Module-level, so it outlives a panel: the next panel of the clip knows what the last one sent on its way out.
  */
-const SENT = new Map<string, Map<string, number>>();
-/** The states remembered per clip: the oldest are forgotten past this many. */
+const SENT = new Map<string, Map<string, DeskSentState>>();
+/** The states remembered per clip: the ones sent longest ago are forgotten past this many. */
 export const DESK_SENT_MAX = 64;
 /** Bridges in the order they were made: a later panel has a higher generation. */
 let generations = 0;
+/** The tab's clock for the states it sent: a tick per request sent and per answer, across every panel. */
+let ticks = 0;
 
 /** The states this tab sent for one clip (`key`: the project and the clip), for its bridges' `sent`. */
-export function deskStatesSent(key: string): Map<string, number> {
-  const sent = SENT.get(key) ?? new Map<string, number>();
+export function deskStatesSent(key: string): Map<string, DeskSentState> {
+  const sent = SENT.get(key) ?? new Map<string, DeskSentState>();
   SENT.set(key, sent);
   return sent;
 }
@@ -277,10 +296,13 @@ export class DeskBridge {
   private handedOver = false;
   /** The brief of the last `open`: a result's plan tells what the desk changed from what rideo changed. */
   private brief: DeskBrief | null = null;
-  /** The shots the brief retimed since the desk staged them, as the desk's `opened` said (`changes.retimed`). */
+  /**
+   * The shots the brief retimed since the desk staged them, as the desk's `opened` said (`changes.retimed`): no later
+   * message updates it, so it tells a result's refusals apart only for a shot without its own `brief_length` issue.
+   */
   private retimed: readonly string[] = [];
   /** The states this tab sent for the clip, and this panel's place among the clip's panels (docs/…#when-rideo-stores-it). */
-  private readonly sent: Map<string, number>;
+  private readonly sent: Map<string, DeskSentState>;
   private readonly generation = ++generations;
   /** The scene the desk was opened on: states are kept, and stored, only once `open` was sent (stored state loaded). */
   private sceneId: string | null = null;
@@ -371,6 +393,7 @@ export class DeskBridge {
   startOver(): void {
     if (this.disposed || this.leaving || this.status.remedy !== 'retry') return;
     this.set({ line: 'Clearing the stored desk state…', failure: null, remedy: null });
+    const since = ++ticks;
     this.stored = Promise.resolve()
       .then(() => this.o.clear())
       .then(
@@ -378,6 +401,7 @@ export class DeskBridge {
           this.log('the stored desk state was cleared (Start over)');
           this.loadFailure = null;
           this.storedSha = null;
+          this.passed(null, since);
           if (!this.leaving)
             this.set(
               this.port
@@ -500,6 +524,7 @@ export class DeskBridge {
    * stored state with that).
    */
   private loadStored(): void {
+    const since = ++ticks;
     this.stored = Promise.resolve()
       .then(() => this.o.load())
       .then(async (s) => {
@@ -509,6 +534,7 @@ export class DeskBridge {
           );
         // the state a write names: its ETag, else the sha256 of its bytes, else any stored state (`*`)
         this.storedSha = s ? s.sha256 || (await this.hash(s.data)) || '*' : null;
+        if (this.storedSha !== '*') this.passed(this.storedSha, since);
         return { state: s };
       })
       .catch((err: unknown) => {
@@ -643,7 +669,8 @@ export class DeskBridge {
       }
       case 'opened':
         if (m.sceneId !== this.sceneId) this.log('the desk opened another scene', m.sceneId);
-        // a result's refusals tell a shot the brief retimed (Update shots) from a length changed in the desk
+        // a result's refusals tell a shot the brief retimed (Update shots) from a length changed in the desk, for a
+        // shot whose result carries no brief_length issue of the desk's own
         this.retimed = m.changes?.retimed ?? [];
         if (!this.leaving)
           this.set({ phase: 'open', line: `Opened from ${SOURCES[m.source]}`, failure: null, remedy: null });
@@ -762,10 +789,10 @@ export class DeskBridge {
    * write that fails is tried again with a backoff (30 seconds, doubling, at most 10 minutes) and said in one toast until
    * a write succeeds; a final write (closing, or leaving the panel) is not tried again, and its failure is said in a
    * toast. A `412` keeps the stored state: nothing more is stored on its own
-   * (docs/design/director-desk.md#when-rideo-stores-it), unless it names a state this tab sent itself: one this panel
-   * or an earlier panel of the clip sent is taken as the stored one and the write tried once more at once (a lost
-   * answer, an earlier panel's write that landed late); a panel on its way out that meets one a later panel sent drops
-   * its write.
+   * (docs/design/director-desk.md#when-rideo-stores-it), unless it names a state this tab sent itself and has not seen
+   * the server move past: one this panel or an earlier panel of the clip sent is taken as the stored one and the write
+   * tried once more at once (a lost answer, an earlier panel's write that landed late); a panel on its way out that
+   * meets one a later panel sent drops its write.
    */
   private storeLatest(
     how: { final?: boolean; signal?: AbortSignal | null; interval?: boolean } = {},
@@ -784,19 +811,23 @@ export class DeskBridge {
       // a page that cannot hash (no crypto.subtle) sends the state: the server keeps the same bytes only once
       const sha = await this.hash(state.data);
       for (let retried = false; ; retried = true) {
+        // the tick this request is sent at: what its answer says about the stored state is from after it
+        const since = ++ticks;
         try {
           if (sha !== null && sha === this.storedSha) {
             this.replacing = false;
             return 'same';
           }
           this.show('Storing the desk…');
-          if (sha !== null) this.remember(sha);
           const replace = this.replacing;
-          this.storedSha = await this.o.store(
-            state,
-            replace ? { ...this.precondition(), replace: true } : this.precondition(),
-            signal,
-          );
+          const pre: DeskStorePrecondition = replace
+            ? { ...this.precondition(), replace: true }
+            : this.precondition();
+          if (sha !== null) this.remember(sha, since, 'ifMatch' in pre ? pre.ifMatch : null);
+          const stored = await this.o.store(state, pre, signal);
+          this.storedSha = stored;
+          if (sha !== null) this.answered(sha, since);
+          this.passed(stored, since);
           if (replace) this.replacing = false;
           this.lastWrite = Date.now();
           this.failures = 0;
@@ -808,15 +839,20 @@ export class DeskBridge {
           return 'stored';
         } catch (err) {
           if (err instanceof DeskStateConflict) {
-            const by = err.stored === null ? undefined : this.sent.get(err.stored);
-            if (by !== undefined && by <= this.generation && !retried) {
+            // refused: this write did not land, and the server held `err.stored` after it was sent
+            if (sha !== null) this.refused(sha, since);
+            this.passed(err.stored, since);
+            const own = err.stored === null ? undefined : this.sent.get(err.stored);
+            if (own && own.generation <= this.generation && !retried) {
               // a state this tab sent (its answer was lost, or an earlier panel's write landed late): no conflict
               this.log('the stored desk state is one this tab sent: stored over it', err.stored);
+              // it landed, as the 412 says: the next stored write leaves it behind
+              own.answeredAt ??= ++ticks;
               this.storedSha = err.stored;
               continue;
             }
             this.dirty = true;
-            if (by !== undefined && this.disposed) {
+            if (own && this.disposed) {
               // on the way out: a later panel of the clip stored the newer state
               this.log(
                 'a later panel of this clip stored the desk state: this one is not stored',
@@ -863,12 +899,50 @@ export class DeskBridge {
     return done;
   }
 
-  /** A state this tab sends: remembered for the clip, with the earliest panel that sent it. */
-  private remember(sha: string): void {
-    const by = this.sent.get(sha);
-    if (by !== undefined && by <= this.generation) return;
-    this.sent.set(sha, this.generation);
+  /**
+   * A state this tab sends (its write sent at `since`, replacing `over`): remembered for the clip with the earliest panel
+   * that sent it, as not answered yet; past `DESK_SENT_MAX`, the state sent longest ago is forgotten.
+   */
+  private remember(sha: string, since: number, over: string | null): void {
+    const had = this.sent.get(sha);
+    this.sent.delete(sha);
+    this.sent.set(sha, {
+      generation: Math.min(had?.generation ?? this.generation, this.generation),
+      sentAt: since,
+      answeredAt: null,
+      over,
+    });
     while (this.sent.size > DESK_SENT_MAX) this.sent.delete(this.sent.keys().next().value as string);
+  }
+
+  /** The write of `sha` sent at `since` was stored: it landed before now. */
+  private answered(sha: string, since: number): void {
+    const sent = this.sent.get(sha);
+    if (sent?.sentAt === since) sent.answeredAt = ++ticks;
+  }
+
+  /**
+   * The write of `sha` sent at `since` was refused (the server answers a write of the bytes it holds as stored, whatever
+   * its precondition, so the `412` names another state): that write never lands, and the state is forgotten, the same
+   * bytes stored later being another session's.
+   */
+  private refused(sha: string, since: number): void {
+    if (this.sent.get(sha)?.sentAt === since) this.sent.delete(sha);
+  }
+
+  /**
+   * An answer to a request this tab sent at `since` says the server held `stored` (null: none) after then. A state this
+   * tab sent that is not `stored` is one the server moved past, and is forgotten so that it coming back (another session
+   * restored it) is a conflict like any other: one whose write was stored before `since`, and one whose write, sent
+   * before `since`, was never answered and replaces another state than `stored` (it lands, if ever, only over that one).
+   */
+  private passed(stored: string | null, since: number): void {
+    for (const [sha, sent] of this.sent) {
+      if (sha === stored) continue;
+      const past =
+        sent.answeredAt !== null ? sent.answeredAt < since : sent.sentAt < since && sent.over !== stored;
+      if (past) this.sent.delete(sha);
+    }
   }
 
   /**

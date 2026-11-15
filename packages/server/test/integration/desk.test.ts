@@ -425,11 +425,13 @@ describe('the desk state (docs/design/director-desk.md#the-routes)', () => {
     const logged = vi.spyOn(stack.server.studio.deps.log, 'info');
     const stored = async () =>
       new TextDecoder().decode(await (await fetch(deskUrl(stack, pid, clip.id))).arrayBuffer());
-    const problem = async (res: Response) => ({
-      status: res.status,
-      code: ((await res.json()) as { code: string }).code,
-      etag: res.headers.get('etag'),
-    });
+    const problem = async (res: Response) => {
+      const body = (await res.json()) as { code: string; detail: string };
+      return { status: res.status, code: body.code, detail: body.detail, etag: res.headers.get('etag') };
+    };
+    // the answer's detail names the stored state, never "newer" (a restore of an older state is refused the same way)
+    const changed = (state: Uint8Array) =>
+      `the stored desk state of scene ${clip.index + 1} is not the one this write replaces: another session changed it (the stored state's ETag is "${sha(state)}")`;
     const one = bytes('session one');
     const two = bytes('session two');
     const three = bytes('session three');
@@ -442,6 +444,7 @@ describe('the desk state (docs/design/director-desk.md#the-routes)', () => {
     expect(await problem(await put(stack, pid, clip.id, two, { 'if-none-match': '*' }))).toEqual({
       status: 412,
       code: 'desk_state_conflict',
+      detail: changed(one),
       etag: `"${sha(one)}"`,
     });
     // If-Match with the ETag the PUT answered stores the next state
@@ -457,6 +460,7 @@ describe('the desk state (docs/design/director-desk.md#the-routes)', () => {
     expect(await problem(await put(stack, pid, clip.id, three, { 'if-match': `"${sha(one)}"` }))).toEqual({
       status: 412,
       code: 'desk_state_conflict',
+      detail: changed(two),
       etag: `"${sha(two)}"`,
     });
     expect(files).not.toHaveBeenCalled();
@@ -479,6 +483,7 @@ describe('the desk state (docs/design/director-desk.md#the-routes)', () => {
     expect(await problem(await put(stack, pid, clip.id, three, { 'if-match': `"${sha(two)}"` }))).toEqual({
       status: 412,
       code: 'desk_state_conflict',
+      detail: `scene ${clip.index + 1} has no stored desk state any more: another session cleared it`,
       etag: null,
     });
     expect((await put(stack, pid, clip.id, three, { 'if-match': '*' })).status).toBe(412);

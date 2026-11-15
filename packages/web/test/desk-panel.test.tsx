@@ -391,6 +391,20 @@ describe('which reference the shots get (docs/design/director-desk.md#the-desk)'
     expect(await refusal({ brief, retimed: [s0.id] })).toContain(
       'press Update shots in the desk, then send again',
     );
+    // the shot's own issue decides over the opened list: Update shots was pressed since the desk opened, then the
+    // person changed the length in the desk, and the desk's issue at Send says to set it back
+    const setBack = longer();
+    setBack.shots[0]!.issues = [
+      {
+        code: 'brief_length',
+        severity: 'error',
+        message:
+          "The shot is 84 frames (3.5 s) in the desk and 72 frames (3 s) in the brief, at 24 fps: Rideo refuses a clip of another length. Set its length back, or change the shot's duration in Rideo.",
+      },
+    ];
+    expect((await bridge().opts.applyResult(setBack, { brief, retimed: [s0.id] })).shots[0]!.error).toBe(
+      DESK_REFUSALS.length(asked + Math.round(fps / 2), asked, 3, fps),
+    );
     // without the brief it could only read as a shot changed in the studio
     expect(await refusal({ brief: null, retimed: [] })).toBe(DESK_REFUSALS.changed);
     expect(rememberedDeskMode(projectId)).toBe('camera');
