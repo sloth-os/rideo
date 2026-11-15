@@ -49,27 +49,33 @@ export interface DeskStatus {
   remedy: 'headers' | 'retry' | null;
   /**
    * The stored state is kept and nothing is stored on its own (docs/design/director-desk.md#when-rideo-stores-it): the
-   * desk could not read it, or another session stored a newer one. The panel says so and offers Replace the stored
-   * desk state (`replace()`); null while states are stored as usual.
+   * desk could not read it, another session changed it (a `412` naming a stored state) or cleared it (a `412` without
+   * one). The panel says so and offers Replace the stored desk state (`replace()`); null while states are stored as
+   * usual.
    */
-  kept: { reason: 'unreadable' | 'conflict'; notice: string } | null;
+  kept: { reason: DeskKeptReason; notice: string } | null;
 }
+
+/** Why the stored state is kept: what the notice and Replace's confirmation say. */
+export type DeskKeptReason = 'unreadable' | 'conflict' | 'cleared';
 
 /**
  * The state a write replaces (docs/design/director-desk.md#when-rideo-stores-it): `If-Match` with the sha256 of the
- * state the panel last loaded or stored (`*`: one whose sha256 is not known), or `If-None-Match: *` when none is stored.
+ * state the panel last loaded or stored (`*`: one whose sha256 is not known), or `If-None-Match: *` when none is stored;
+ * `replace` when the person chose to replace it (Replace the stored desk state): the write is a commit of its own, so
+ * the project's history keeps the state it replaces.
  */
-export type DeskStorePrecondition = { ifMatch: string } | { ifNoneMatch: '*' };
+export type DeskStorePrecondition = ({ ifMatch: string } | { ifNoneMatch: '*' }) & { replace?: true };
 
 /**
  * A write refused because the server holds another state than the one it named (`412` `desk_state_conflict`): another
- * session stored a newer state, or cleared it.
+ * session stored one (or restored an older one), or cleared it.
  */
 export class DeskStateConflict extends Error {
   constructor(
     /** The stored state's sha256 (its ETag); null when the clip names none. */
     readonly stored: string | null,
-    message = 'another session stored a newer desk state',
+    message = 'the stored desk state is not the one this write replaces',
   ) {
     super(message);
     this.name = 'DeskStateConflict';
@@ -121,10 +127,11 @@ export interface DeskBridgeOptions {
   /** Clears the stored state (`DELETE desk-state`): Start over. */
   clear: () => Promise<void>;
   /**
-   * Applies a result (docs/design/director-desk.md#the-result) with the brief the desk was opened with: what
-   * `result-ack` says.
+   * Applies a result (docs/design/director-desk.md#the-result) with the brief the desk was opened with and the shots
+   * the brief retimed since the desk staged them (`opened.changes.retimed`), both of the connection the result came
+   * on: what `result-ack` says.
    */
-  applyResult: (result: DeskResultMessage, brief: DeskBrief | null) => Promise<DeskAck>;
+  applyResult: (result: DeskResultMessage, opened: DeskOpenedWith) => Promise<DeskAck>;
   onStatus: (status: DeskStatus) => void;
   onToast: (message: string, level: 'info' | 'success' | 'warning' | 'error') => void;
   /** The panel closes. */
@@ -132,6 +139,17 @@ export interface DeskBridgeOptions {
   channel?: () => { port1: DeskPort; port2: Transferable };
   sha256?: (data: ArrayBuffer) => Promise<string>;
   log?: (message: string, data?: unknown) => void;
+  /**
+   * The states this tab sent for this clip (`deskStatesSent`), shared with the clip's earlier and later panels: a `412`
+   * that names one of them is no conflict. Without it the bridge remembers only its own.
+   */
+  sent?: Map<string, number>;
+}
+
+/** What a result is applied with: the brief and the retimed shots of the `open` it answers. */
+export interface DeskOpenedWith {
+  brief: DeskBrief | null;
+  retimed: readonly string[];
 }
 
 /** How long Close waits for the desk's answer to `save` before it stores the newest state it has. */
@@ -157,10 +175,52 @@ const FOR_THE_PERSON: ReadonlySet<string> = new Set<DeskErrorCode>([
   'invalid_scene',
 ]);
 
-/** A write refused because another session stored a newer state (docs/design/director-desk.md#when-rideo-stores-it). */
-export const DESK_CONFLICT_NOTICE = 'Another session stored a newer desk state for this clip; it was kept';
-/** What a write outcome was: `same` the stored bytes again, `skipped` nothing to store (or the stored state is kept). */
-type StoreOutcome = 'stored' | 'same' | 'skipped' | 'failed' | 'conflict';
+/**
+ * A write refused with a `412` that names a stored state: another session stored it, or restored an older one
+ * (docs/design/director-desk.md#the-desk). Until Replace, the changes live only in this browser's copy of the scene,
+ * which the desk drops at its next open when the stored state is another staging.
+ */
+export const DESK_CONFLICT_NOTICE =
+  "Another session changed the stored desk state of this clip, and it was kept: changes made here are not stored until you replace it. If it is another staging of the scene, the desk drops this browser's copy the next time it opens unless you replace it.";
+/** A write refused with a `412` without an `ETag`: another session cleared the stored state. */
+export const DESK_CLEARED_NOTICE =
+  'Another session cleared the stored desk state of this clip: changes made here are not stored until you replace it.';
+/** The desk could not read the state handed over (`state_unreadable`): its own message, as a sentence of its own. */
+export function deskUnreadableNotice(message: string): string {
+  const said = deskText(message.trim());
+  const sentence = said && `${said[0]!.toUpperCase()}${said.slice(1)}${/[.!?…]$/.test(said) ? '' : '.'}`;
+  return [
+    'The stored desk state was kept.',
+    sentence,
+    'Changes made here are not stored until you replace it.',
+  ]
+    .filter(Boolean)
+    .join(' ');
+}
+
+/**
+ * What a write outcome was: `same` the stored bytes again, `skipped` nothing to store (or the stored state is kept),
+ * `superseded` a later panel of the clip in this tab stored a newer state.
+ */
+type StoreOutcome = 'stored' | 'same' | 'skipped' | 'failed' | 'conflict' | 'superseded';
+
+/**
+ * The states this tab sent, per clip: each state's sha256 and the earliest panel (its bridge's generation) that sent
+ * it (docs/design/director-desk.md#when-rideo-stores-it). Module-level, so it outlives a panel: the next panel of the
+ * clip knows what the last one sent on its way out.
+ */
+const SENT = new Map<string, Map<string, number>>();
+/** The states remembered per clip: the oldest are forgotten past this many. */
+export const DESK_SENT_MAX = 64;
+/** Bridges in the order they were made: a later panel has a higher generation. */
+let generations = 0;
+
+/** The states this tab sent for one clip (`key`: the project and the clip), for its bridges' `sent`. */
+export function deskStatesSent(key: string): Map<string, number> {
+  const sent = SENT.get(key) ?? new Map<string, number>();
+  SENT.set(key, sent);
+  return sent;
+}
 
 /** The sha256 of the bytes in lowercase hex, as the server's `ETag` and `media.hash` give it. */
 export async function sha256Hex(data: ArrayBuffer): Promise<string> {
@@ -173,6 +233,8 @@ const messageOf = (err: unknown) => (err instanceof Error ? err.message : String
 const wait = (ms: number) => (ms < 60_000 ? `${Math.round(ms / 1000)} s` : `${Math.round(ms / 60_000)} min`);
 
 type Timer = ReturnType<typeof setTimeout>;
+/** A kept stored state: why, the notice, and the state a Replace names (`If-Match`; null: none, `If-None-Match: *`). */
+type Kept = { reason: DeskKeptReason; notice: string; etag: string | null };
 
 export class DeskBridge {
   readonly origin: string;
@@ -199,13 +261,27 @@ export class DeskBridge {
   private storedSha: string | null = null;
   /**
    * The stored state is kept: nothing is stored on its own until the person replaces it (`replace()`), then over the
-   * state `etag` names (the one a conflict reported).
+   * state `etag` names (the one a `412` reported; null after a clear).
    */
-  private kept: { reason: 'unreadable' | 'conflict'; notice: string; etag: string | null } | null = null;
+  private kept: Kept | null = null;
+  /** The kept state when closing began (Close, or the desk's own close): a `412` met while closing holds the panel. */
+  private keptAtClose: Kept | null | undefined = undefined;
+  /**
+   * The person replaced a kept state: the next write that stores is marked as a Replace (a commit of its own), until
+   * one is stored.
+   */
+  private replacing = false;
+  /** Replace asked the desk for its state (`save`, this id): the first state that comes is stored at once. */
+  private replaceSave: string | null = null;
   /** The `open` sent on this connection carried a state, which `state_unreadable` is about. */
   private handedOver = false;
   /** The brief of the last `open`: a result's plan tells what the desk changed from what rideo changed. */
   private brief: DeskBrief | null = null;
+  /** The shots the brief retimed since the desk staged them, as the desk's `opened` said (`changes.retimed`). */
+  private retimed: readonly string[] = [];
+  /** The states this tab sent for the clip, and this panel's place among the clip's panels (docs/…#when-rideo-stores-it). */
+  private readonly sent: Map<string, number>;
+  private readonly generation = ++generations;
   /** The scene the desk was opened on: states are kept, and stored, only once `open` was sent (stored state loaded). */
   private sceneId: string | null = null;
   /** The newest state the desk sent, and whether it may differ from the stored one. */
@@ -226,6 +302,7 @@ export class DeskBridge {
 
   constructor(private readonly o: DeskBridgeOptions) {
     this.origin = deskOrigin(o.url);
+    this.sent = o.sent ?? new Map();
     this.status = {
       phase: 'connecting',
       line: this.connectingLine(),
@@ -323,25 +400,25 @@ export class DeskBridge {
 
   /**
    * Replace the stored desk state, after the person confirmed it, when it was kept: the desk's newest state is stored
-   * over it now, naming the state the notice was about (a newer one a third session stored meanwhile is refused
-   * again), and later states are stored as usual. A desk that sent no state yet (it sends none after it could not read
-   * the one handed over, until the person edits) is asked for the one it holds (`save`).
+   * over it now, naming the state the notice was about (a state a third session stored meanwhile is refused again; none
+   * after a clear) and marked as a Replace (a commit of its own, so the project's history keeps the state it replaces),
+   * and later states are stored as usual. A desk that sent no state yet (it sends none after it could not read the one
+   * handed over, until the person edits) is asked for the one it holds (`save`): its answer, however late, or any state
+   * that comes first, is stored at once; an `error` answering the `save` ends the wait.
    */
   replace(): void {
     if (this.disposed || !this.kept) return;
-    if (this.kept.reason === 'conflict') this.storedSha = this.kept.etag;
+    if (this.kept.reason !== 'unreadable') this.storedSha = this.kept.etag;
     this.log('the person replaces the stored desk state', { reason: this.kept.reason });
     this.kept = null;
+    this.replacing = true;
     this.set({ kept: null });
     if ((this.latest && this.dirty) || !this.port || !this.openSent || this.leaving) {
       void this.storeLatest();
       return;
     }
     const id = `save-${++this.requests}`;
-    this.saves.set(id, (state) => {
-      if (state) void this.storeLatest();
-    });
-    setTimeout(() => this.saves.delete(id), DESK_SAVE_TIMEOUT_MS);
+    this.replaceSave = id;
     this.post({ type: 'save', id });
   }
 
@@ -377,6 +454,7 @@ export class DeskBridge {
     this.helloTimer = this.writeTimer = null;
     for (const resolve of this.saves.values()) resolve(null);
     this.saves.clear();
+    this.replaceSave = null;
     this.dropPort();
   }
 
@@ -465,7 +543,7 @@ export class DeskBridge {
    * person replaces it. The notice goes to the panel and, once per notice, to a toast (the one way to say it when the
    * panel is gone).
    */
-  private keep(reason: 'unreadable' | 'conflict', notice: string, etag: string | null): void {
+  private keep(reason: DeskKeptReason, notice: string, etag: string | null): void {
     if (this.writeTimer) clearTimeout(this.writeTimer);
     this.writeTimer = null;
     const told = this.kept?.notice === notice;
@@ -565,6 +643,8 @@ export class DeskBridge {
       }
       case 'opened':
         if (m.sceneId !== this.sceneId) this.log('the desk opened another scene', m.sceneId);
+        // a result's refusals tell a shot the brief retimed (Update shots) from a length changed in the desk
+        this.retimed = m.changes?.retimed ?? [];
         if (!this.leaving)
           this.set({ phase: 'open', line: `Opened from ${SOURCES[m.source]}`, failure: null, remedy: null });
         return;
@@ -579,6 +659,12 @@ export class DeskBridge {
         this.latest = m.state;
         this.dirty = true;
         waiter?.(m.state);
+        if (this.replaceSave && !this.kept) {
+          // the first state after Replace (its save's answer, however late, or one the desk sent first): stored now
+          this.replaceSave = null;
+          void this.storeLatest();
+          return;
+        }
         this.scheduleWrite();
         return;
       }
@@ -587,9 +673,9 @@ export class DeskBridge {
         return;
       case 'result': {
         // the brief the desk rendered from: a later open on another connection may bring another
-        const brief = this.brief;
+        const opened: DeskOpenedWith = { brief: this.brief, retimed: this.retimed };
         this.results = this.results
-          .then(() => this.applyResult(port, m, brief))
+          .then(() => this.applyResult(port, m, opened))
           .catch((err: unknown) => this.log('a result was not applied', err));
         return;
       }
@@ -600,13 +686,11 @@ export class DeskBridge {
           this.saves.delete(m.id);
           waiter(null);
         }
+        // the desk answered Replace's save with an error: the wait ends, later states are stored as usual
+        if (m.id && m.id === this.replaceSave) this.replaceSave = null;
         if (m.code === 'state_unreadable' && this.handedOver) {
           // the desk could not read the state rideo handed over: it is kept, whatever the desk stages instead
-          this.keep(
-            'unreadable',
-            `The stored desk state was kept: the desk could not read it (${deskText(m.message)})`,
-            this.storedSha,
-          );
+          this.keep('unreadable', deskUnreadableNotice(m.message), this.storedSha);
           return;
         }
         const text =
@@ -655,6 +739,8 @@ export class DeskBridge {
     this.handedOver = state !== null;
     this.sceneId = scene.id;
     this.brief = scene;
+    // this connection's `opened` says which shots the brief retimed
+    this.retimed = [];
   }
 
   /**
@@ -672,10 +758,14 @@ export class DeskBridge {
 
   /**
    * Stores the newest state unless the server holds the same bytes already (one write at a time), naming the state it
-   * replaces; nothing while the stored state is kept. A write that fails is tried again with a backoff (30 seconds,
-   * doubling, at most 10 minutes) and said in one toast until a write succeeds; a final write (closing, or leaving the
-   * panel) is not tried again, and its failure is said in a toast. A write refused because another session stored a
-   * newer state keeps that state: nothing more is stored on its own (docs/design/director-desk.md#when-rideo-stores-it).
+   * replaces (and marked as a Replace after the person replaced a kept state); nothing while the stored state is kept. A
+   * write that fails is tried again with a backoff (30 seconds, doubling, at most 10 minutes) and said in one toast until
+   * a write succeeds; a final write (closing, or leaving the panel) is not tried again, and its failure is said in a
+   * toast. A `412` keeps the stored state: nothing more is stored on its own
+   * (docs/design/director-desk.md#when-rideo-stores-it), unless it names a state this tab sent itself: one this panel
+   * or an earlier panel of the clip sent is taken as the stored one and the write tried once more at once (a lost
+   * answer, an earlier panel's write that landed late); a panel on its way out that meets one a later panel sent drops
+   * its write.
    */
   private storeLatest(
     how: { final?: boolean; signal?: AbortSignal | null; interval?: boolean } = {},
@@ -691,57 +781,94 @@ export class DeskBridge {
         return 'skipped';
       }
       this.dirty = false;
-      try {
-        // a page that cannot hash (no crypto.subtle) sends the state: the server keeps the same bytes only once
-        const sha = await this.hash(state.data);
-        if (sha !== null && sha === this.storedSha) return 'same';
-        this.show('Storing the desk…');
-        this.storedSha = await this.o.store(state, this.precondition(), signal);
-        this.lastWrite = Date.now();
-        this.failures = 0;
-        // any write starts the 10 minutes again (the one before a result too)
-        if (this.writeTimer) clearTimeout(this.writeTimer);
-        this.writeTimer = null;
-        this.show('Desk stored');
-        if (this.dirty) this.scheduleWrite();
-        return 'stored';
-      } catch (err) {
-        this.dirty = true;
-        if (err instanceof DeskStateConflict) {
-          // another session stored a newer state, or cleared it: never replaced unseen, and not tried again
-          this.log(
-            'the desk state was not stored: the stored state is not the one this panel had',
-            err.stored,
+      // a page that cannot hash (no crypto.subtle) sends the state: the server keeps the same bytes only once
+      const sha = await this.hash(state.data);
+      for (let retried = false; ; retried = true) {
+        try {
+          if (sha !== null && sha === this.storedSha) {
+            this.replacing = false;
+            return 'same';
+          }
+          this.show('Storing the desk…');
+          if (sha !== null) this.remember(sha);
+          const replace = this.replacing;
+          this.storedSha = await this.o.store(
+            state,
+            replace ? { ...this.precondition(), replace: true } : this.precondition(),
+            signal,
           );
+          if (replace) this.replacing = false;
+          this.lastWrite = Date.now();
           this.failures = 0;
-          this.keep('conflict', DESK_CONFLICT_NOTICE, err.stored);
-          this.show('The desk was not stored');
-          return 'conflict';
-        }
-        this.log('the desk state was not stored', err);
-        const said = `The desk could not be stored: ${deskText(messageOf(err))}`;
-        if (final) {
-          this.o.onToast(said, 'error');
+          // any write starts the 10 minutes again (the one before a result too)
+          if (this.writeTimer) clearTimeout(this.writeTimer);
+          this.writeTimer = null;
+          this.show('Desk stored');
+          if (this.dirty) this.scheduleWrite();
+          return 'stored';
+        } catch (err) {
+          if (err instanceof DeskStateConflict) {
+            const by = err.stored === null ? undefined : this.sent.get(err.stored);
+            if (by !== undefined && by <= this.generation && !retried) {
+              // a state this tab sent (its answer was lost, or an earlier panel's write landed late): no conflict
+              this.log('the stored desk state is one this tab sent: stored over it', err.stored);
+              this.storedSha = err.stored;
+              continue;
+            }
+            this.dirty = true;
+            if (by !== undefined && this.disposed) {
+              // on the way out: a later panel of the clip stored the newer state
+              this.log(
+                'a later panel of this clip stored the desk state: this one is not stored',
+                err.stored,
+              );
+              return 'superseded';
+            }
+            // another session changed the stored state, or cleared it: never replaced unseen, and not tried again
+            this.log(
+              'the desk state was not stored: the stored state is not the one this panel had',
+              err.stored,
+            );
+            this.failures = 0;
+            if (err.stored === null) this.keep('cleared', DESK_CLEARED_NOTICE, null);
+            else this.keep('conflict', DESK_CONFLICT_NOTICE, err.stored);
+            this.show('The desk was not stored');
+            return 'conflict';
+          }
+          this.dirty = true;
+          this.log('the desk state was not stored', err);
+          const said = `The desk could not be stored: ${deskText(messageOf(err))}`;
+          if (final) {
+            this.o.onToast(said, 'error');
+            return 'failed';
+          }
+          // closing, or leaving the panel: the final write queued after this one tries again and says how it went
+          if (this.leaving || this.disposed) return 'failed';
+          this.failures += 1;
+          const delay = Math.min(DESK_STORE_RETRY_MS * 2 ** (this.failures - 1), DESK_STORE_RETRY_MAX_MS);
+          this.show(`${said}; trying again in ${wait(delay)}`);
+          // one toast per run of failures
+          if (this.failures === 1) this.o.onToast(said, 'error');
+          if (this.writeTimer) clearTimeout(this.writeTimer);
+          this.writeTimer = setTimeout(() => {
+            this.writeTimer = null;
+            void this.storeLatest();
+          }, delay);
           return 'failed';
         }
-        // closing, or leaving the panel: the final write queued after this one tries again and says how it went
-        if (this.leaving || this.disposed) return 'failed';
-        this.failures += 1;
-        const delay = Math.min(DESK_STORE_RETRY_MS * 2 ** (this.failures - 1), DESK_STORE_RETRY_MAX_MS);
-        this.show(`${said}; trying again in ${wait(delay)}`);
-        // one toast per run of failures
-        if (this.failures === 1) this.o.onToast(said, 'error');
-        if (this.writeTimer) clearTimeout(this.writeTimer);
-        this.writeTimer = setTimeout(() => {
-          this.writeTimer = null;
-          void this.storeLatest();
-        }, delay);
-        return 'failed';
       }
     };
     const done = this.writing.then(run, run);
     this.writing = done;
     return done;
+  }
+
+  /** A state this tab sends: remembered for the clip, with the earliest panel that sent it. */
+  private remember(sha: string): void {
+    const by = this.sent.get(sha);
+    if (by !== undefined && by <= this.generation) return;
+    this.sent.set(sha, this.generation);
+    while (this.sent.size > DESK_SENT_MAX) this.sent.delete(this.sent.keys().next().value as string);
   }
 
   /**
@@ -751,13 +878,13 @@ export class DeskBridge {
   private async applyResult(
     port: DeskPort,
     result: DeskResultMessage,
-    brief: DeskBrief | null,
+    opened: DeskOpenedWith,
   ): Promise<void> {
     this.show('Attaching the clips the desk rendered…');
     if (!this.leaving) await this.storeLatest();
     let ack: DeskAck;
     try {
-      ack = await this.o.applyResult(result, brief);
+      ack = await this.o.applyResult(result, opened);
     } catch (err) {
       ack = { ok: false, message: `The result was not applied: ${messageOf(err)}`, shots: [] };
     }
@@ -774,6 +901,7 @@ export class DeskBridge {
   }
 
   private async requestClose(): Promise<void> {
+    this.closingFrom();
     if (this.writeTimer) clearTimeout(this.writeTimer);
     this.writeTimer = null;
     // a kept state is not replaced on Close: the desk is not asked for its state
@@ -792,15 +920,21 @@ export class DeskBridge {
     await this.finish();
   }
 
+  /** Closing begins (Close, or the desk's own close): the state kept then, against which a `412` met later is told. */
+  private closingFrom(): void {
+    if (this.keptAtClose === undefined) this.keptAtClose = this.kept;
+  }
+
   /**
    * The newest state stored (unless the stored one is kept), then the panel closes (Close, or the desk's own Done or
    * Close). A result's uploads are not waited for (they go on, and their toast still says what was attached); the
-   * write is, at most `DESK_CLOSE_STORE_TIMEOUT_MS`, then it is aborted: the person is never held in the panel. A last
-   * write refused because another session stored a newer state leaves the panel open with that notice: the person
-   * replaces it, or Close again closes without storing.
+   * write is, at most `DESK_CLOSE_STORE_TIMEOUT_MS`, then it is aborted: the person is never held in the panel. A `412`
+   * met while closing, by the last write or by a write already on its way when closing began, leaves the panel open
+   * with its notice: the person replaces the stored state, or Close again closes without storing.
    */
   private finish(): Promise<void> {
     if (this.closing) return this.closing;
+    this.closingFrom();
     this.closing = (async () => {
       if (this.helloTimer) clearTimeout(this.helloTimer);
       if (this.writeTimer) clearTimeout(this.writeTimer);
@@ -815,9 +949,12 @@ export class DeskBridge {
       });
       const outcome = await Promise.race([this.storeLatest({ final: true }), late]);
       clearTimeout(timer);
-      if (outcome === 'conflict' && !this.disposed) {
+      // a 412 met while closing (this write's, or one already on its way): the person decides, the panel stays
+      const refused = !!this.kept && this.kept !== this.keptAtClose && this.kept.reason !== 'unreadable';
+      if (outcome !== 'late' && refused && !this.disposed) {
         this.closing = null;
         this.closeRequest = null;
+        this.keptAtClose = undefined;
         this.set({ phase: this.openSent ? 'open' : 'opening', line: 'The desk was not stored' });
         return;
       }

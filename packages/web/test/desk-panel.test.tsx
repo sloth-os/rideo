@@ -1,14 +1,26 @@
-import { DESK_STATE_FORMAT, DESK_STATE_VERSION, type DeskState, evaluateWorkflow } from '@rideo/shared';
+import {
+  DESK_REFUSALS,
+  DESK_STATE_FORMAT,
+  DESK_STATE_VERSION,
+  type DeskResultMessage,
+  type DeskState,
+  deskBrief,
+  deskFormat,
+  deskFrames,
+  evaluateWorkflow,
+} from '@rideo/shared';
 import * as f from '@rideo/shared/testing';
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 import {
+  DESK_CLEARED_NOTICE,
   DESK_CONFLICT_NOTICE,
   type DeskBridgeOptions,
   DeskStateConflict,
   type DeskStatus,
+  deskUnreadableNotice,
 } from '../src/features/desk/bridge';
-import { DeskPanel } from '../src/features/desk/DeskPanel';
+import { DeskPanel, rememberDeskMode, rememberedDeskMode } from '../src/features/desk/DeskPanel';
 import { ApiError, type PublicConfig } from '../src/lib/api';
 import { useConfigStore } from '../src/lib/config';
 import { emptySlice, useProject } from '../src/store/project';
@@ -68,6 +80,11 @@ vi.mock('../src/features/desk/bridge', async (original) => {
   }
   return { ...actual, DeskBridge: FakeBridge };
 });
+
+// a result's clips go through the browser upload every reference takes: its own tests cover it
+vi.mock('../src/features/clips/reference-upload', () => ({
+  uploadReference: vi.fn(async () => ({ id: 'res_0000000000000009' })),
+}));
 
 const DESK_URL = 'https://desk.example.com/app/desk.html';
 const A = 'a'.repeat(64);
@@ -166,6 +183,7 @@ describe('the desk panel’s store and load (docs/design/director-desk.md#when-r
       'if-match': `"${A}"`,
     });
     expect(init.headers).not.toHaveProperty('if-none-match');
+    expect(init.headers).not.toHaveProperty('x-desk-state-replace');
     expect([...new Uint8Array(init.body as Uint8Array)]).toEqual([1, 2, 3]);
 
     // none stored: If-None-Match: *; a write on the way out of the panel has no signal
@@ -178,6 +196,13 @@ describe('the desk panel’s store and load (docs/design/director-desk.md#when-r
     fetchMock.mockResolvedValueOnce(saved(C));
     await bridge().opts.store(STATE, { ifMatch: '*' });
     expect(call(2)[1].headers).toMatchObject({ 'if-match': '*' });
+    // a Replace: the write is marked, so the server commits it on its own
+    fetchMock.mockResolvedValueOnce(saved(C));
+    await bridge().opts.store(STATE, { ifMatch: B, replace: true });
+    expect(call(3)[1].headers).toMatchObject({ 'if-match': `"${B}"`, 'x-desk-state-replace': '1' });
+    fetchMock.mockResolvedValueOnce(saved(C));
+    await bridge().opts.store(STATE, { ifNoneMatch: '*', replace: true });
+    expect(call(4)[1].headers).toMatchObject({ 'if-none-match': '*', 'x-desk-state-replace': '1' });
   });
 
   it('aborting the signal aborts the upload (closing waits for it at most 10 seconds)', async () => {
@@ -285,6 +310,99 @@ describe('leaving the desk panel without Close (docs/design/director-desk.md#the
     await bridge(1).opts.load();
     expect(call(0)[0]).toMatch(new RegExp(`/clips/${clipB.id}/desk-state$`));
   });
+
+  it('gives each bridge the states this tab sent for its clip, which outlive the panel', () => {
+    const first = render(<DeskPanel clip={clipA} onClose={() => undefined} />);
+    first.unmount();
+    render(<DeskPanel clip={clipA} onClose={() => undefined} />);
+    cleanup();
+    render(<DeskPanel clip={clipB} onClose={() => undefined} />);
+    expect(bridge(0).opts.sent).toBeInstanceOf(Map);
+    // the clip's next panel knows what the last one sent on its way out; another clip has its own
+    expect(bridge(1).opts.sent).toBe(bridge(0).opts.sent);
+    expect(bridge(2).opts.sent).not.toBe(bridge(0).opts.sent);
+  });
+});
+
+describe('which reference the shots get (docs/design/director-desk.md#the-desk)', () => {
+  it('has no Follow menu of its own: the desk opens with all three modes on the mode last attached in the project', () => {
+    render(<DeskPanel clip={clipA} onClose={() => undefined} />);
+    expect(screen.queryByTestId('desk-mode')).toBeNull();
+    expect(screen.queryByText('Follow')).toBeNull();
+    expect(bridge().opts.options()).toEqual({
+      hostName: 'Rideo',
+      modes: ['motion', 'pose', 'camera'],
+      defaultMode: 'camera',
+      readOnly: false,
+    });
+    rememberDeskMode(projectId, 'pose');
+    expect(bridge().opts.options().defaultMode).toBe('pose');
+    // remembered per project
+    expect(rememberedDeskMode(`${projectId}x`)).toBe('camera');
+  });
+
+  it('applies a result with the brief and the retimed shots it is given, and remembers the mode attached', async () => {
+    const s0 = f.shot({ index: 0, durationSec: 3 });
+    const s1 = f.shot({ index: 1, durationSec: 2.5 });
+    const staged = f.clip({ index: 2, title: 'The beach', shots: [s0, s1] });
+    const current = useProject.getState().docs!;
+    const docs = { ...current, clips: { ...current.clips, [staged.id]: staged } };
+    useProject.setState({ docs, workflow: evaluateWorkflow(docs) });
+    render(<DeskPanel clip={staged} onClose={() => undefined} />);
+    const brief = deskBrief(docs, staged.id)!;
+    const { fps, width, height } = deskFormat(docs.project.settings);
+    const shot = (id: string, frames: number, mode: 'camera' | 'pose') => ({
+      shotId: id,
+      frames,
+      durationSec: frames / fps,
+      references: { [mode]: `${id}.${mode}.mp4` },
+      still: null,
+      camera: { lensMm: 35, move: null },
+      line: '',
+      moves: null,
+      planAgrees: null,
+      issues: [],
+    });
+    const result = (shots: ReturnType<typeof shot>[]): DeskResultMessage => ({
+      type: 'result',
+      id: 'desk-1',
+      sceneId: staged.id,
+      fps,
+      width,
+      height,
+      shots,
+      files: shots.map((r) => ({
+        name: Object.values(r.references)[0]!,
+        mime: 'video/mp4' as const,
+        data: f.mp4Bytes(12),
+      })),
+    });
+    // shot 1 sent half a second longer than the brief asks
+    const asked = deskFrames(3, fps);
+    const longer = () => result([shot(s0.id, asked + Math.round(fps / 2), 'camera')]);
+    const refusal = async (opened: Parameters<DeskBridgeOptions['applyResult']>[1]) =>
+      (await bridge().opts.applyResult(longer(), opened)).shots[0]!.error;
+    // the person changed its length in the desk
+    expect(await refusal({ brief, retimed: [] })).toBe(
+      DESK_REFUSALS.length(asked + Math.round(fps / 2), asked, 3, fps),
+    );
+    expect(await refusal({ brief, retimed: [] })).toContain('set its length back in the desk');
+    // the brief retimed it since the desk staged it
+    expect(await refusal({ brief, retimed: [s0.id] })).toContain(
+      'press Update shots in the desk, then send again',
+    );
+    // without the brief it could only read as a shot changed in the studio
+    expect(await refusal({ brief: null, retimed: [] })).toBe(DESK_REFUSALS.changed);
+    expect(rememberedDeskMode(projectId)).toBe('camera');
+    // a pose clip attached: the summary names the mode, and the desk opens on it next time
+    const ack = await bridge().opts.applyResult(result([shot(s1.id, deskFrames(2.5, fps), 'pose')]), {
+      brief,
+      retimed: [],
+    });
+    expect(ack).toMatchObject({ ok: true, message: 'Attached 1 pose reference.', mode: 'pose' });
+    expect(rememberedDeskMode(projectId)).toBe('pose');
+    expect(bridge().opts.options().defaultMode).toBe('pose');
+  });
 });
 
 describe('the desk panel’s confirmations (docs/design/director-desk.md#the-desk)', () => {
@@ -302,9 +420,11 @@ describe('the desk panel’s confirmations (docs/design/director-desk.md#the-des
     expect(screen.getByTestId('desk-kept-notice').textContent).toBe(DESK_CONFLICT_NOTICE);
 
     fireEvent.click(screen.getByTestId('desk-replace'));
-    expect(screen.getByTestId('desk-replace-what').textContent).toContain(
-      'replaces the newer desk state another session stored for this clip',
-    );
+    const replaced = screen.getByTestId('desk-replace-what').textContent ?? '';
+    expect(replaced).toContain('replaces the desk state another session stored for this clip');
+    expect(replaced).toContain('The project’s history keeps the state it replaces');
+    // a restore can be the cause: never "newer"
+    expect(replaced).not.toMatch(/newer/);
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
     expect(screen.queryByTestId('desk-replace-what')).toBeNull();
     expect(bridge().calls).not.toContain('replace');
@@ -314,10 +434,7 @@ describe('the desk panel’s confirmations (docs/design/director-desk.md#the-des
       bridge().opts.onStatus({
         ...OPEN,
         line: 'Opened from the brief',
-        kept: {
-          reason: 'unreadable',
-          notice: 'The stored desk state was kept: the desk could not read it (saved by a newer desk)',
-        },
+        kept: { reason: 'unreadable', notice: deskUnreadableNotice('saved by a newer desk') },
       }),
     );
     expect(screen.getByTestId('desk-kept').getAttribute('data-reason')).toBe('unreadable');
@@ -328,6 +445,22 @@ describe('the desk panel’s confirmations (docs/design/director-desk.md#the-des
     fireEvent.click(screen.getByTestId('desk-replace-confirm'));
     expect(bridge().calls.filter((c) => c === 'replace')).toHaveLength(1);
     expect(screen.queryByTestId('desk-replace-what')).toBeNull();
+
+    // cleared by another session: its own notice and confirmation
+    act(() =>
+      bridge().opts.onStatus({
+        ...OPEN,
+        line: 'The desk was not stored',
+        kept: { reason: 'cleared', notice: DESK_CLEARED_NOTICE },
+      }),
+    );
+    expect(screen.getByTestId('desk-kept').getAttribute('data-reason')).toBe('cleared');
+    expect(screen.getByTestId('desk-kept-notice').textContent).toBe(DESK_CLEARED_NOTICE);
+    fireEvent.click(screen.getByTestId('desk-replace'));
+    expect(screen.getByTestId('desk-replace-what').textContent).toBe(
+      'Another session cleared the stored desk state of this clip: what the desk holds now is stored for it, and later changes are stored as usual. The project’s history keeps the state that was cleared.',
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
 
     // stored as usual again: no notice
     act(() => bridge().opts.onStatus({ ...OPEN, line: 'Stored' }));
@@ -353,6 +486,8 @@ describe('the desk panel’s confirmations (docs/design/director-desk.md#the-des
     expect(what).toContain('The stored desk state of this scene is cleared and the desk opens again');
     expect(what).toContain('from this browser’s own copy of the scene if it has one, else from the brief');
     expect(what).toContain('What was staged only in the stored desk state is lost');
+    expect(what).toContain('other browsers’ copies of the scene are replaced by what is stored next');
+    expect(what).toContain('start over in the browser that has the newest work');
     expect(bridge().calls).not.toContain('startOver');
     fireEvent.click(screen.getByTestId('desk-start-over-confirm'));
     expect(bridge().calls.filter((c) => c === 'startOver')).toHaveLength(1);

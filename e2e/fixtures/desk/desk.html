@@ -18,9 +18,20 @@
     <p>Current state: <code data-testid="desk-current"></code></p>
     <ul data-testid="desk-shots"></ul>
     <p>
+      <label>
+        Follow
+        <select data-testid="desk-follow">
+          <option value="motion">Motion</option>
+          <option value="pose">Poses</option>
+          <option value="camera">Camera</option>
+        </select>
+      </label>
+    </p>
+    <p>
       <button type="button" data-testid="desk-edit">Edit</button>
       <button type="button" data-testid="desk-send">Send</button>
       <button type="button" data-testid="desk-send-part">Send part</button>
+      <button type="button" data-testid="desk-send-longer">Send longer</button>
       <button type="button" data-testid="desk-done">Done</button>
       <button type="button" data-testid="desk-close-desk">Close</button>
     </p>

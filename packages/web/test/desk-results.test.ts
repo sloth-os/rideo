@@ -89,12 +89,13 @@ function setup(status: 'planned' | 'approved' = 'planned') {
 }
 
 describe('applyDeskResult', () => {
-  it('uploads each clip in the Follow mode with its probe and JPEG poster, then sets the shot', async () => {
+  it('uploads each clip in the mode it carries with its probe and JPEG poster, then sets the shot', async () => {
     const { s0, s1, clip, project, result, uploads, patches, posters, deps } = setup();
     const ack = await applyDeskResult(result, { project, clip, mode: 'motion' }, deps);
     expect(uploads.map((u) => [u.name, u.type, u.size])).toEqual([
+      // the first shot carries camera and motion: the mode last attached in the project
       ['desk-c2-s1-motion.mp4', 'video/mp4', 15],
-      // no motion clip for the second shot: the first of camera, motion, pose it has
+      // the second carries camera only: that one
       ['desk-c2-s2-camera.mp4', 'video/mp4', 16],
     ]);
     expect(uploads[0]!.probe).toMatchObject({
@@ -125,11 +126,13 @@ describe('applyDeskResult', () => {
     ]);
     expect(ack).toEqual({
       ok: true,
-      message: 'Attached 2 references. S2: the camera does not show the planned layout.',
+      message: 'Attached 2 references: 1 motion, 1 camera. S2: the camera does not show the planned layout.',
       shots: [
         { shotId: s0.id, ok: true },
         { shotId: s1.id, ok: true },
       ],
+      // remembered for the project: the most attached, the protocol's order on a tie
+      mode: 'motion',
     });
     // the transferred bytes are let go
     expect(result.files).toEqual([]);
@@ -179,6 +182,23 @@ describe('applyDeskResult', () => {
     expect(patches.map(([id]) => id)).toEqual([s1.id]);
     expect(ack.ok).toBe(false);
     expect(ack.shots[0]).toMatchObject({ ok: false, error: 'the upload was refused' });
-    expect(ack.message).toMatch(/^Attached 1 of 2 references\. S1: the upload was refused\./);
+    expect(ack.message).toMatch(/^Attached 1 of 2 camera references\. S1: the upload was refused\./);
+    expect(ack.mode).toBe('camera');
+  });
+
+  it('says to press Update shots for a shot the brief retimed since the desk staged it', async () => {
+    const { s0, s1, clip, project, result, uploads, deps } = setup();
+    // the desk restored an older staging of shot 1 (2.5 s) and the person sent it without Update shots
+    result.shots[0] = { ...result.shots[0]!, frames: 60, durationSec: 2.5 };
+    const brief = deskBriefOf(clip, [s0, s1]);
+    const ack = await applyDeskResult(
+      result,
+      { project, clip, mode: 'camera', brief, retimed: [s0.id] },
+      deps,
+    );
+    expect(uploads.map((u) => u.name)).toEqual(['desk-c2-s2-camera.mp4']);
+    expect(ack.shots[0]!.error).toBe(
+      "the clip has 60 frames and the shot 72 (3 s at 24 fps): the brief changed the shot's length since the desk staged it; press Update shots in the desk, then send again",
+    );
   });
 });

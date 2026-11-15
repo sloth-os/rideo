@@ -313,9 +313,10 @@ async function deskState(
 
 /**
  * The state a desk state write replaces (docs/design/director-desk.md#when-rideo-stores-it): `If-Match` with its
- * sha256 (`*` for whatever is stored), or `If-None-Match: *` when none is stored.
+ * sha256 (`*` for whatever is stored), or `If-None-Match: *` when none is stored; `replace` when the person chose to
+ * replace it (`X-Desk-State-Replace: 1`: a commit of its own, so the project's history keeps the state it replaces).
  */
-export type DeskStatePrecondition = { ifMatch: string } | { ifNoneMatch: '*' };
+export type DeskStatePrecondition = ({ ifMatch: string } | { ifNoneMatch: '*' }) & { replace?: true };
 
 /**
  * Stores a clip's desk state (`PUT …/desk-state`) over the state the precondition names. A `412`
@@ -329,10 +330,12 @@ function saveDeskState(
   precondition: DeskStatePrecondition,
   signal?: AbortSignal,
 ): Promise<{ deskState: ClipDeskState }> {
-  const named: Record<string, string> =
-    'ifMatch' in precondition
+  const named: Record<string, string> = {
+    ...('ifMatch' in precondition
       ? { 'if-match': precondition.ifMatch === '*' ? '*' : `"${precondition.ifMatch}"` }
-      : { 'if-none-match': '*' };
+      : { 'if-none-match': '*' }),
+    ...(precondition.replace ? { 'x-desk-state-replace': '1' } : {}),
+  };
   return request<{ deskState: ClipDeskState }>(
     'PUT',
     `/projects/${id}/clips/${clipId}/desk-state`,

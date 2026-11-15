@@ -9,11 +9,15 @@ import {
 } from '@rideo/shared';
 import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 import {
+  DESK_CLEARED_NOTICE,
   DESK_CONFLICT_NOTICE,
+  DESK_SAVE_TIMEOUT_MS,
   DeskBridge,
+  type DeskOpenedWith,
   DeskStateConflict,
   type DeskStatus,
   type DeskStorePrecondition,
+  deskUnreadableNotice,
   type StoredDeskState,
   sha256Hex,
 } from '../src/features/desk/bridge';
@@ -137,7 +141,9 @@ function harness(
     store?: (state: DeskState, signal?: AbortSignal, precondition?: DeskStorePrecondition) => Promise<string>;
     /** what Start over's DELETE does; by default it succeeds */
     clear?: () => Promise<void>;
-    applyResult?: (result: DeskResultMessage, brief: DeskBrief | null) => Promise<DeskAck>;
+    applyResult?: (result: DeskResultMessage, opened: DeskOpenedWith) => Promise<DeskAck>;
+    /** the states this tab sent for the clip, shared by the clip's panels (`deskStatesSent`) */
+    sent?: Map<string, number>;
   } = {},
 ) {
   let listener: ((e: MessageEvent) => void) | null = null;
@@ -202,6 +208,7 @@ function harness(
       return { port1: port, port2 };
     },
     ...(opts.sha256 === null ? {} : { sha256: opts.sha256 ?? (async (data) => text(data)) }),
+    ...(opts.sent ? { sent: opts.sent } : {}),
   });
   return {
     bridge,
@@ -241,6 +248,30 @@ function harness(
 }
 
 const flush = () => vi.advanceTimersByTimeAsync(0);
+
+/**
+ * A server that applies the desk-state route's precondition rules (docs/design/director-desk.md#the-routes): the same
+ * bytes accepted whatever the precondition, `If-Match` holding only for the stored state (`*` for any), `If-None-Match:
+ * *` only when none is stored; a `412` names the stored state. Its "ETag" is the state's text, as the harness hashes.
+ */
+function deskServer(initial: string | null) {
+  const server = {
+    stored: initial,
+    store: async (s: DeskState, pre?: DeskStorePrecondition): Promise<string> => {
+      const data = text(s.data);
+      if (data === server.stored) return data;
+      const holds = !pre
+        ? true
+        : 'ifMatch' in pre
+          ? server.stored !== null && (pre.ifMatch === '*' || pre.ifMatch === server.stored)
+          : server.stored === null;
+      if (!holds) throw new DeskStateConflict(server.stored);
+      server.stored = data;
+      return data;
+    },
+  };
+  return server;
+}
 
 /** A bridge connected and opened (the iframe's `load` first, then the desk's `hello`). */
 async function opened(opts: Parameters<typeof harness>[0] = {}) {
@@ -973,7 +1004,7 @@ describe('the desk bridge: messages', () => {
 });
 
 describe('the desk bridge: a stored state that is kept (docs/design/director-desk.md#when-rideo-stores-it)', () => {
-  const UNREADABLE = 'The stored desk state was kept: the desk could not read it (saved by a newer desk)';
+  const UNREADABLE = deskUnreadableNotice('saved by a newer desk');
 
   /**
    * A desk that cannot read the state handed over: `state_unreadable`, `opened` from the brief, and (an older desk)
@@ -1035,8 +1066,8 @@ describe('the desk bridge: a stored state that is kept (docs/design/director-des
     await flush();
     expect(h.last().kept).toBeNull();
     expect(h.stores).toEqual(['edited']);
-    // the write names the state it replaces: the one the panel loaded
-    expect(h.preconditions).toEqual([{ ifMatch: 'S-newer-desk-format' }]);
+    // the write names the state it replaces, the one the panel loaded, and is marked as a Replace
+    expect(h.preconditions).toEqual([{ ifMatch: 'S-newer-desk-format', replace: true }]);
     h.desk(state('later'));
     await vi.advanceTimersByTimeAsync(DESK_STATE_WRITE_INTERVAL_MS);
     expect(h.stores).toEqual(['edited', 'later']);
@@ -1044,6 +1075,7 @@ describe('the desk bridge: a stored state that is kept (docs/design/director-des
     h.desk(state('final', 'save-1'));
     await closing;
     expect(h.stores).toEqual(['edited', 'later', 'final']);
+    // later writes as usual: no Replace
     expect(h.preconditions.slice(1)).toEqual([{ ifMatch: 'edited' }, { ifMatch: 'later' }]);
   });
 
@@ -1060,7 +1092,7 @@ describe('the desk bridge: a stored state that is kept (docs/design/director-des
     h.desk(state('staged from the brief', 'save-1'));
     await flush();
     expect(h.stores).toEqual(['staged from the brief']);
-    expect(h.preconditions).toEqual([{ ifMatch: 'S-newer-desk-format' }]);
+    expect(h.preconditions).toEqual([{ ifMatch: 'S-newer-desk-format', replace: true }]);
     expect(h.last().kept).toBeNull();
     // a desk that answers Replace's save with an error: nothing stored, the next state stored as usual
     const refused = await unreadable({}, false);
@@ -1168,7 +1200,11 @@ describe('the desk bridge: a stored state that is kept (docs/design/director-des
     await flush();
     expect(h.last().kept).toBeNull();
     expect(server).toBe('edit');
-    expect(h.preconditions).toEqual([{ ifMatch: 'mine' }, { ifMatch: 'theirs' }, { ifMatch: 'third' }]);
+    expect(h.preconditions).toEqual([
+      { ifMatch: 'mine' },
+      { ifMatch: 'theirs', replace: true },
+      { ifMatch: 'third', replace: true },
+    ]);
     expect(h.toasts).toEqual([
       [DESK_CONFLICT_NOTICE, 'warning'],
       [DESK_CONFLICT_NOTICE, 'warning'],
@@ -1207,7 +1243,7 @@ describe('the desk bridge: a stored state that is kept (docs/design/director-des
     done.desk({ type: 'close', reason: 'done' });
     await flush();
     expect(done.closed()).toBe(0);
-    expect(done.last().kept?.reason).toBe('conflict');
+    expect(done.last().kept).toEqual({ reason: 'cleared', notice: DESK_CLEARED_NOTICE });
   });
 
   it('a conflict on the way out of the panel is said in a toast', async () => {
@@ -1223,6 +1259,231 @@ describe('the desk bridge: a stored state that is kept (docs/design/director-des
     await flush();
     expect(h.stores).toEqual(['edit']);
     expect(h.toasts).toEqual([[DESK_CONFLICT_NOTICE, 'warning']]);
+  });
+
+  it("shows the desk's own message as a sentence of its own, and toasts it once however often a desk page that loads again says it", async () => {
+    // the real desk's message is a whole sentence: no nested parentheses
+    expect(
+      deskUnreadableNotice(
+        'The stored desk state was not applied (it was written by version 2 of the desk); the scene was staged from the brief.',
+      ),
+    ).toBe(
+      'The stored desk state was kept. The stored desk state was not applied (it was written by version 2 of the desk); the scene was staged from the brief. Changes made here are not stored until you replace it.',
+    );
+    expect(UNREADABLE).toBe(
+      'The stored desk state was kept. Saved by a newer desk. Changes made here are not stored until you replace it.',
+    );
+    const h = await unreadable({}, false);
+    expect(h.last().kept).toEqual({ reason: 'unreadable', notice: UNREADABLE });
+    expect(h.toasts).toEqual([[UNREADABLE, 'warning']]);
+    // the desk page loads again: connected again, handed the stored state again, and it says so again
+    h.bridge.frameLoaded();
+    h.hello();
+    h.desk(READY);
+    await flush();
+    expect(h.opens().map((o) => text(o.message.state?.data as ArrayBuffer))).toEqual([
+      'S-newer-desk-format',
+      'S-newer-desk-format',
+    ]);
+    h.desk({ type: 'error', code: 'state_unreadable', message: 'saved by a newer desk' });
+    h.desk(OPENED);
+    expect(h.last().kept).toEqual({ reason: 'unreadable', notice: UNREADABLE });
+    expect(h.toasts).toEqual([[UNREADABLE, 'warning']]);
+  });
+
+  it('a 412 without an ETag says another session cleared the stored state; Replace stores over none', async () => {
+    const server = deskServer('mine');
+    const h = await opened({ stored: stored('mine'), store: (s, _signal, pre) => server.store(s, pre) });
+    server.stored = null;
+    h.desk(state('edit'));
+    await vi.advanceTimersByTimeAsync(DESK_STATE_WRITE_INTERVAL_MS);
+    expect(h.last().kept).toEqual({ reason: 'cleared', notice: DESK_CLEARED_NOTICE });
+    expect(DESK_CLEARED_NOTICE).toBe(
+      'Another session cleared the stored desk state of this clip: changes made here are not stored until you replace it.',
+    );
+    expect(h.toasts).toEqual([[DESK_CLEARED_NOTICE, 'warning']]);
+    // a 412 that names a state: changed, never "newer" (a restore can be the cause)
+    expect(DESK_CONFLICT_NOTICE).not.toMatch(/newer/);
+    expect(DESK_CONFLICT_NOTICE).toContain('changes made here are not stored until you replace it');
+    expect(DESK_CONFLICT_NOTICE).toContain(
+      "If it is another staging of the scene, the desk drops this browser's copy the next time it opens unless you replace it.",
+    );
+    h.bridge.replace();
+    await flush();
+    expect(server.stored).toBe('edit');
+    expect(h.preconditions).toEqual([{ ifMatch: 'mine' }, { ifNoneMatch: '*', replace: true }]);
+  });
+
+  it("a Close holds the panel when a write already on its way meets another session's state; Close again closes", async () => {
+    let refuse!: (err: unknown) => void;
+    const h = await opened({
+      stored: stored('mine'),
+      store: () =>
+        new Promise<string>((_resolve, reject) => {
+          refuse = reject;
+        }),
+    });
+    h.desk(state('edit'));
+    // the 10 minutes' write is uploading when the person presses Close
+    await vi.advanceTimersByTimeAsync(DESK_STATE_WRITE_INTERVAL_MS);
+    expect(h.stores).toEqual(['edit']);
+    const closing = h.bridge.close();
+    h.desk(state('final', 'save-1'));
+    await flush();
+    refuse(new DeskStateConflict('theirs'));
+    await closing;
+    // the last write stored nothing (the stored state is kept now), and the person decides
+    expect(h.stores).toEqual(['edit']);
+    expect(h.closed()).toBe(0);
+    expect(h.last()).toMatchObject({
+      phase: 'open',
+      line: 'The desk was not stored',
+      kept: { reason: 'conflict', notice: DESK_CONFLICT_NOTICE },
+    });
+    await h.bridge.close();
+    expect(h.stores).toEqual(['edit']);
+    expect(h.closed()).toBe(1);
+  });
+
+  it("Replace waits for the desk's answer to its save however long it takes, and stores it at once", async () => {
+    const h = await unreadable({}, false);
+    h.bridge.replace();
+    expect(h.posted().at(-1)).toEqual({ type: 'save', id: 'save-1' });
+    // a large scene: the desk answers after twice the 5 seconds Close would wait
+    await vi.advanceTimersByTimeAsync(DESK_SAVE_TIMEOUT_MS * 2);
+    expect(h.stores).toEqual([]);
+    h.desk(state('staged from the brief', 'save-1'));
+    await flush();
+    expect(h.stores).toEqual(['staged from the brief']);
+    expect(h.preconditions).toEqual([{ ifMatch: 'S-newer-desk-format', replace: true }]);
+    // a state the desk sends before it answers is the first after Replace: stored at once too
+    const first = await unreadable({}, false);
+    first.bridge.replace();
+    first.desk(state('edited'));
+    await flush();
+    expect(first.stores).toEqual(['edited']);
+    first.desk(state('edited', 'save-1'));
+    await flush();
+    expect(first.stores).toEqual(['edited']);
+  });
+});
+
+describe("the desk bridge: a 412 of this tab's own (docs/design/director-desk.md#when-rideo-stores-it)", () => {
+  it('the lost answer: a write that reached the server unanswered is taken as the stored state, no conflict', async () => {
+    const server = deskServer('S1');
+    let lose = true;
+    const h = await opened({
+      stored: stored('S1'),
+      store: async (s, _signal, pre) => {
+        const got = await server.store(s, pre);
+        // the 10 minutes' write lands, and its answer is lost on the way back (a dropped network, a proxy's 504)
+        if (lose) {
+          lose = false;
+          throw new TypeError('Failed to fetch');
+        }
+        return got;
+      },
+    });
+    h.desk(state('A'));
+    await vi.advanceTimersByTimeAsync(DESK_STATE_WRITE_INTERVAL_MS);
+    expect(server.stored).toBe('A');
+    h.desk(state('B'));
+    // tried again 30 seconds later naming S1: the 412 names A, which this panel sent
+    await vi.advanceTimersByTimeAsync(DESK_STORE_RETRY_MS);
+    expect(server.stored).toBe('B');
+    expect(h.preconditions).toEqual([{ ifMatch: 'S1' }, { ifMatch: 'S1' }, { ifMatch: 'A' }]);
+    expect(h.last().kept).toBeNull();
+    expect(h.toasts).toEqual([['The desk could not be stored: Failed to fetch', 'error']]);
+    // and later states name B as usual
+    h.desk(state('C'));
+    h.desk({ type: 'close', reason: 'done' });
+    await flush();
+    expect(server.stored).toBe('C');
+    expect(h.preconditions.at(-1)).toEqual({ ifMatch: 'B' });
+    expect(h.closed()).toBe(1);
+  });
+
+  it("a panel opened again while the last one's write on the way out was uploading: that write lands first, the new panel's Close stores over it", async () => {
+    const server = deskServer('S1');
+    const sent = new Map<string, number>();
+    let land!: () => Promise<void>;
+    // panel A: an edit, then the person leaves the Storyboard view; its write on the way out uploads slowly
+    const a = await opened({
+      stored: stored('S1'),
+      sent,
+      store: (s, _signal, pre) =>
+        new Promise<string>((resolve, reject) => {
+          land = () => server.store(s, pre).then(resolve, reject);
+        }),
+    });
+    a.desk(state('A'));
+    a.bridge.flush();
+    a.bridge.dispose();
+    await flush();
+    // the person comes back: panel B loads S1, then A's write lands
+    const b = await opened({ stored: stored('S1'), sent, store: (s, _signal, pre) => server.store(s, pre) });
+    await land();
+    expect(server.stored).toBe('A');
+    b.desk(state('B'));
+    const closing = b.bridge.close();
+    b.desk(state('B', 'save-1'));
+    await closing;
+    // the 412 named A, which this tab sent: no conflict, B stored over it and the panel closed
+    expect(server.stored).toBe('B');
+    expect(b.preconditions).toEqual([{ ifMatch: 'S1' }, { ifMatch: 'A' }]);
+    expect(b.closed()).toBe(1);
+    expect(b.last().kept).toBeNull();
+    expect([...a.toasts, ...b.toasts]).toEqual([]);
+  });
+
+  it("a panel opened again while the last one's write on the way out was uploading: the new panel's write lands first, the old one is dropped without a toast", async () => {
+    const server = deskServer('S1');
+    const sent = new Map<string, number>();
+    let land!: () => Promise<void>;
+    const a = await opened({
+      stored: stored('S1'),
+      sent,
+      store: (s, _signal, pre) =>
+        new Promise<string>((resolve, reject) => {
+          land = () => server.store(s, pre).then(resolve, reject);
+        }),
+    });
+    a.desk(state('A'));
+    a.bridge.flush();
+    a.bridge.dispose();
+    await flush();
+    const b = await opened({ stored: stored('S1'), sent, store: (s, _signal, pre) => server.store(s, pre) });
+    b.desk(state('B'));
+    const closing = b.bridge.close();
+    b.desk(state('B', 'save-1'));
+    await closing;
+    expect(server.stored).toBe('B');
+    // A's write lands now: its 412 names B, which the later panel sent; A's older state never replaces it
+    await land().catch(() => undefined);
+    await flush();
+    expect(server.stored).toBe('B');
+    expect(a.preconditions).toEqual([{ ifMatch: 'S1' }]);
+    expect([...a.toasts, ...b.toasts]).toEqual([]);
+  });
+
+  it('a 412 naming a state of its own is tried once: another such 412 keeps the stored state', async () => {
+    // states an earlier panel of the clip sent
+    const sent = new Map([
+      ['X', 0],
+      ['Y', 0],
+    ]);
+    const answers = ['X', 'Y'];
+    const h = await opened({
+      stored: stored('S1'),
+      sent,
+      store: async () => {
+        throw new DeskStateConflict(answers.shift() ?? 'Z');
+      },
+    });
+    h.desk(state('B'));
+    await vi.advanceTimersByTimeAsync(DESK_STATE_WRITE_INTERVAL_MS);
+    expect(h.preconditions).toEqual([{ ifMatch: 'S1' }, { ifMatch: 'X' }]);
+    expect(h.last().kept).toEqual({ reason: 'conflict', notice: DESK_CONFLICT_NOTICE });
   });
 });
 
@@ -1323,16 +1584,34 @@ describe("the desk bridge: the desk's errors (docs/design/director-desk.md#the-p
     expect(h.closed()).toBe(1);
   });
 
-  it('applies a result with the brief the desk was opened with', async () => {
-    const briefs: (DeskBrief | null)[] = [];
-    const h = await opened({
-      applyResult: async (_r, b) => {
-        briefs.push(b);
-        return { ok: true, message: 'Attached 1 reference.', shots: [{ shotId: SHOT, ok: true }] };
+  it('applies a result with the brief the desk was opened with and the shots its opened said the brief retimed', async () => {
+    const applied: DeskOpenedWith[] = [];
+    const h = harness({
+      applyResult: async (_r, o) => {
+        applied.push(o);
+        return { ok: true, message: 'Attached 1 camera reference.', shots: [{ shotId: SHOT, ok: true }] };
       },
     });
+    h.bridge.start();
+    h.bridge.frameLoaded();
+    h.hello();
+    h.desk(READY);
+    await flush();
+    const changes = { added: [], removed: [], retimed: [SHOT], recast: [], cast: { added: [], removed: [] } };
+    h.desk({ ...OPENED, source: 'state', changes });
     h.desk(RESULT());
     await flush();
-    expect(briefs).toEqual([brief()]);
+    // the desk page loads again: its new opened says nothing was retimed (the person pressed Update shots)
+    h.bridge.frameLoaded();
+    h.hello();
+    h.desk(READY);
+    await flush();
+    h.desk(OPENED);
+    h.desk(RESULT('desk-2'));
+    await flush();
+    expect(applied).toEqual([
+      { brief: brief(), retimed: [SHOT] },
+      { brief: brief(), retimed: [] },
+    ]);
   });
 });

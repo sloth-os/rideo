@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
+  DESK_MODE_FALLBACK,
   DESK_REFUSALS,
   type DeskResultMessage,
   type DeskShotAttach,
+  deskAttachedModes,
   deskResultSummary,
   deskShotPatch,
   looksLikeMp4,
@@ -148,14 +150,19 @@ describe('planDeskResult', () => {
     expect(pngSize(bytes(33))).toBeNull();
   });
 
-  it('falls back to the first of camera, motion and pose the result has', () => {
+  it('attaches the mode a shot carries; of several, the one last attached, else the first in the protocol order', () => {
     const { project, clip, result } = setup();
-    const plans = planDeskResult({ result, project, clip, mode: 'motion' }) as DeskShotAttach[];
-    expect(plans.map((p) => p.mode)).toEqual(['camera', 'motion']);
-    expect(plans[1]).toMatchObject({ fileName: 'desk-c1-s2-motion.mp4', poster: null, planAgrees: false });
-    expect(plans[1]!.patch.camera).toEqual({ lensMm: 85, move: null });
+    expect(DESK_MODE_FALLBACK).toEqual(['motion', 'pose', 'camera']);
+    // shot 1 carries camera and pose (an export that asked for several), shot 2 motion only (a desk's Send)
+    const motion = planDeskResult({ result, project, clip, mode: 'motion' }) as DeskShotAttach[];
+    expect(motion.map((p) => p.mode)).toEqual(['pose', 'motion']);
+    expect(motion[1]).toMatchObject({ fileName: 'desk-c1-s2-motion.mp4', poster: null, planAgrees: false });
+    expect(motion[1]!.patch.camera).toEqual({ lensMm: 85, move: null });
     const camera = planDeskResult({ result, project, clip, mode: 'camera' }) as DeskShotAttach[];
     expect(camera.map((p) => p.mode)).toEqual(['camera', 'motion']);
+    const pose = planDeskResult({ result, project, clip, mode: 'pose' }) as DeskShotAttach[];
+    expect(pose.map((p) => p.mode)).toEqual(['pose', 'motion']);
+    expect(pose[0]!.fileName).toBe('desk-c1-s1-pose.mp4');
   });
 
   it('refuses a shot no longer in the clip, an approved clip, and a changed size, frame rate or length', () => {
@@ -284,6 +291,79 @@ describe('planDeskResult', () => {
     ).toEqual(['ok', DESK_REFUSALS.changed]);
   });
 
+  it('says to press Update shots for a shot the brief retimed since the desk staged it, and to set back a length changed in the desk', () => {
+    const { s0, s1, project, clip, result } = setup();
+    const reasons = (plans: ReturnType<typeof planDeskResult>) => plans.map((p) => (p.ok ? 'ok' : p.reason));
+    // rideo's shot 1 was made 3 s before the panel opened, so the brief carries 3 s; the desk restored an older
+    // staging of 2.5 s and the person sent it without Update shots
+    const brief = {
+      id: clip.id,
+      fps: 24,
+      width: 1280,
+      height: 720,
+      shots: [
+        { id: s0.id, durationSec: 3 },
+        { id: s1.id, durationSec: 2.5 },
+      ],
+    } as Parameters<typeof planDeskResult>[0]['brief'];
+    const older = {
+      ...result,
+      shots: [{ ...result.shots[0]!, frames: 60, durationSec: 2.5 }, result.shots[1]!],
+    };
+    const update =
+      "the clip has 60 frames and the shot 72 (3 s at 24 fps): the brief changed the shot's length since the desk staged it; press Update shots in the desk, then send again";
+    expect(DESK_REFUSALS.update(60, 72, 3, 24)).toBe(update);
+    // the desk's opened said so (changes.retimed)
+    expect(
+      reasons(planDeskResult({ result: older, project, clip, mode: 'camera', brief, retimed: [s0.id] })),
+    ).toEqual([update, 'ok']);
+    // the desk's own issue says so: it points to Update shots
+    const issue = (message: string) => [{ code: 'brief_length', severity: 'error' as const, message }];
+    const byBrief = {
+      ...older,
+      shots: [
+        {
+          ...older.shots[0]!,
+          issues: issue(
+            "The brief changed this shot's length since it was staged: it is 60 frames (2.5 s) in the desk and 72 frames (3 s) in the brief, at 24 fps: Rideo refuses a clip of another length. Press Update shots (the brief's changes, above the scene), then send again.",
+          ),
+        },
+        older.shots[1]!,
+      ],
+    };
+    expect(reasons(planDeskResult({ result: byBrief, project, clip, mode: 'camera', brief }))).toEqual([
+      update,
+      'ok',
+    ]);
+    // a length the person changed in the desk: its brief_length issue says to set it back, and so does rideo
+    const byDesk = {
+      ...older,
+      shots: [
+        {
+          ...older.shots[0]!,
+          issues: issue(
+            "The shot is 60 frames (2.5 s) in the desk and 72 frames (3 s) in the brief, at 24 fps: Rideo refuses a clip of another length. Set its length back, or change the shot's duration in Rideo.",
+          ),
+        },
+        older.shots[1]!,
+      ],
+    };
+    expect(reasons(planDeskResult({ result: byDesk, project, clip, mode: 'camera', brief }))).toEqual([
+      DESK_REFUSALS.length(60, 72, 3, 24),
+      'ok',
+    ]);
+    expect(
+      reasons(planDeskResult({ result: older, project, clip, mode: 'camera', brief, retimed: [] })),
+    ).toEqual([DESK_REFUSALS.length(60, 72, 3, 24), 'ok']);
+    // changed in rideo since the brief: render it again, whatever the desk retimed
+    const changed = { ...clip, shots: [{ ...s0, durationSec: 4 }, s1] };
+    expect(
+      reasons(
+        planDeskResult({ result: older, project, clip: changed, mode: 'camera', brief, retimed: [s0.id] }),
+      ),
+    ).toEqual([DESK_REFUSALS.changed, 'ok']);
+  });
+
   it('compares against the even size an odd resolution is rounded down to', () => {
     const { clip, result } = setup();
     const odd = f.project({
@@ -317,5 +397,36 @@ describe('deskResultSummary', () => {
     });
     expect(deskResultSummary([{ shotId: 'sht_a', shot: 1, ok: true }]).message).toBe('Attached 1 reference.');
     expect(deskResultSummary([])).toEqual({ ok: false, message: 'The result had no shots.' });
+  });
+
+  it('names the mode attached, and each mode when shots got different ones', () => {
+    const shot = (n: number, mode?: 'motion' | 'pose' | 'camera') => ({
+      shotId: `sht_${n}`,
+      shot: n,
+      ok: !!mode,
+      ...(mode ? { mode } : { error: DESK_REFUSALS.changed }),
+    });
+    expect(
+      deskResultSummary([shot(1, 'camera'), shot(2, 'camera'), shot(3, 'camera'), shot(4, 'camera')]),
+    ).toEqual({ ok: true, message: 'Attached 4 camera references.' });
+    expect(deskResultSummary([shot(1, 'pose')]).message).toBe('Attached 1 pose reference.');
+    expect(
+      deskResultSummary([shot(1, 'camera'), shot(2, 'camera'), shot(3, 'camera'), shot(4)]).message,
+    ).toBe(`Attached 3 of 4 camera references. S4: ${DESK_REFUSALS.changed}.`);
+    expect(deskResultSummary([shot(1), shot(2)]).message).toBe(
+      `Attached 0 of 2 references. S1: ${DESK_REFUSALS.changed}. S2: ${DESK_REFUSALS.changed}.`,
+    );
+    const mixed = [shot(1, 'motion'), shot(2, 'camera'), shot(3, 'camera'), shot(4, 'pose'), shot(5)];
+    expect(deskResultSummary(mixed).message).toBe(
+      `Attached 4 of 5 references: 2 camera, 1 motion, 1 pose. S5: ${DESK_REFUSALS.changed}.`,
+    );
+    // the mode remembered for the project: the most attached, the protocol's order on a tie
+    expect(deskAttachedModes(mixed)).toEqual([
+      { mode: 'camera', count: 2 },
+      { mode: 'motion', count: 1 },
+      { mode: 'pose', count: 1 },
+    ]);
+    expect(deskAttachedModes([shot(1, 'pose'), shot(2, 'motion')])[0]!.mode).toBe('motion');
+    expect(deskAttachedModes([shot(1)])).toEqual([]);
   });
 });

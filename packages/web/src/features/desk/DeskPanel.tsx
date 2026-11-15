@@ -1,14 +1,14 @@
 import { type Clip, DESK_MODES, type DeskMode, deskBrief } from '@rideo/shared';
 import { Box, RotateCw, Undo2, X } from 'lucide-react';
-import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Badge, Button, Dialog, Select } from '../../components/ui';
+import { Badge, Button, Dialog } from '../../components/ui';
 import { ApiError, api, etagValue } from '../../lib/api';
 import { useConfig } from '../../lib/config';
 import { useProject } from '../../store/project';
 import { useUi } from '../../store/ui';
 import { uploadReference } from '../clips/reference-upload';
-import { DeskBridge, DeskStateConflict, type DeskStatus } from './bridge';
+import { DeskBridge, DeskStateConflict, type DeskStatus, deskStatesSent } from './bridge';
 import { applyDeskResult, pngToJpeg } from './results';
 
 /** Where the desk's headers are explained (the timeout message links to it). */
@@ -24,56 +24,54 @@ export const DESK_SANDBOX =
 /** What the desk may use of the page's features: full screen, the clipboard, and the screen kept awake while it renders. */
 export const DESK_ALLOW = 'fullscreen; clipboard-write; screen-wake-lock';
 
-const MODE_KEY = 'rideo.deskMode';
-const MODE_LABELS: Record<DeskMode, string> = { camera: 'Camera', motion: 'Motion', pose: 'Poses' };
-/** The reference modes rideo offers the desk, in the order of the Follow menu. */
-const MODES: DeskMode[] = ['camera', 'motion', 'pose'];
+/** Where this browser remembers the mode last attached in a project. */
+const modeKey = (projectId: string) => `rideo.deskMode.${projectId}`;
+
+/**
+ * The mode last attached in a project (docs/design/director-desk.md#the-desk), which the desk opens on
+ * (`defaultMode`); Camera when none. The desk's own Follow menu decides what it renders.
+ */
+export function rememberedDeskMode(projectId: string): DeskMode {
+  try {
+    const saved = localStorage.getItem(modeKey(projectId));
+    return (DESK_MODES as readonly string[]).includes(saved ?? '') ? (saved as DeskMode) : 'camera';
+  } catch {
+    return 'camera';
+  }
+}
+
+/** Remembers the mode a result attached, for the project's next desk. */
+export function rememberDeskMode(projectId: string, mode: DeskMode): void {
+  try {
+    localStorage.setItem(modeKey(projectId), mode);
+  } catch {
+    // storage unavailable: the desk opens on Camera next time
+  }
+}
 
 /** What each confirmation says: what replacing the kept state, or starting over, does and what is lost. */
 const CONFIRM = {
   unreadable:
     'What the desk holds now (staged from the brief or from this browser’s copy of the scene) replaces the stored desk state, which this desk could not read, and later changes are stored as usual. The project’s history keeps the state it replaces.',
   conflict:
-    'What the desk holds now replaces the newer desk state another session stored for this clip, and later changes are stored as usual. The project’s history keeps the state it replaces.',
+    'What the desk holds now replaces the desk state another session stored for this clip, and later changes are stored as usual. The project’s history keeps the state it replaces.',
+  cleared:
+    'Another session cleared the stored desk state of this clip: what the desk holds now is stored for it, and later changes are stored as usual. The project’s history keeps the state that was cleared.',
   startOver:
-    'The stored desk state of this scene is cleared and the desk opens again: from this browser’s own copy of the scene if it has one, else from the brief. What was staged only in the stored desk state is lost.',
+    'The stored desk state of this scene is cleared and the desk opens again: from this browser’s own copy of the scene if it has one, else from the brief. What was staged only in the stored desk state is lost, and other browsers’ copies of the scene are replaced by what is stored next: start over in the browser that has the newest work.',
 } as const;
-
-/** The person's Follow mode, remembered in this browser (Camera by default). */
-function useDeskMode(): [DeskMode, (mode: DeskMode) => void] {
-  const [mode, setMode] = useState<DeskMode>(() => {
-    try {
-      const saved = localStorage.getItem(MODE_KEY);
-      return (DESK_MODES as readonly string[]).includes(saved ?? '') ? (saved as DeskMode) : 'camera';
-    } catch {
-      return 'camera';
-    }
-  });
-  const choose = (next: DeskMode) => {
-    setMode(next);
-    try {
-      localStorage.setItem(MODE_KEY, next);
-    } catch {
-      // storage unavailable: the choice lasts for this page
-    }
-  };
-  return [mode, choose];
-}
 
 /**
  * The 3D-Editor's director's desk on a scene (docs/design/director-desk.md#the-desk): a full-screen panel inside the
- * studio's root (it keeps the theme), with the scene's title, the person's Follow mode and Close, a status line and
- * the desk's iframe filling the rest. The page behind it is inert while it is open; on phones the panel keeps inside
- * the safe-area insets. Keys pressed in the desk go to the desk: the panel closes with its button, never with Escape.
+ * studio's root (it keeps the theme), with the scene's title and Close, a status line and the desk's iframe filling
+ * the rest. The desk's own Follow menu decides which reference its Send renders; the panel opens it on the mode last
+ * attached in the project. The page behind it is inert while it is open; on phones the panel keeps inside the
+ * safe-area insets. Keys pressed in the desk go to the desk: the panel closes with its button, never with Escape.
  */
 export function DeskPanel({ clip, onClose }: { clip: Clip; onClose: () => void }) {
   const config = useConfig();
   const projectId = useProject((s) => s.projectId);
   const url = config?.features.desk?.url ?? null;
-  const [mode, setMode] = useDeskMode();
-  const modeId = useId();
-  const modeRef = useRef(mode);
-  modeRef.current = mode;
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
   const readOnly = clip.status === 'approved';
@@ -123,10 +121,11 @@ export function DeskPanel({ clip, onClose }: { clip: Clip; onClose: () => void }
         if (!brief) throw new Error('The scene has no shots to stage: plan it first');
         return brief;
       },
+      // the desk offers all three modes and opens on the one last attached in the project
       options: () => ({
         hostName: opening.current.hostName.slice(0, 40),
-        modes: MODES,
-        defaultMode: modeRef.current,
+        modes: [...DESK_MODES],
+        defaultMode: rememberedDeskMode(projectId),
         readOnly: opening.current.readOnly,
       }),
       load: () => api.deskState(projectId, clip.id),
@@ -143,22 +142,33 @@ export function DeskPanel({ clip, onClose }: { clip: Clip; onClose: () => void }
         }
       },
       clear: () => api.clearDeskState(projectId, clip.id),
-      applyResult: (result, brief) => {
+      applyResult: async (result, opened) => {
         const docs = useProject.getState().docs;
-        return applyDeskResult(
+        const ack = await applyDeskResult(
           result,
-          { project: docs!.project, clip: docs?.clips[clip.id] ?? null, mode: modeRef.current, brief },
+          {
+            project: docs!.project,
+            clip: docs?.clips[clip.id] ?? null,
+            mode: rememberedDeskMode(projectId),
+            brief: opened.brief,
+            retimed: opened.retimed,
+          },
           {
             upload: (file, opts) => uploadReference(projectId, file, { ...opts, keep: false }),
             patchShot: (shotId, body) => api.updateShot(projectId, clip.id, shotId, body),
             poster: pngToJpeg,
           },
         );
+        // the desk opens on the mode attached next time (docs/design/director-desk.md#the-result)
+        if (ack.mode) rememberDeskMode(projectId, ack.mode);
+        return ack;
       },
       onStatus: setStatus,
       onToast: (message, level) => useUi.getState().toast(message, level),
       onClosed: () => onCloseRef.current(),
       log: (message, data) => console.debug(`[desk] ${message}`, data ?? ''),
+      // the states this tab sent for the clip outlive the panel: the next one knows them
+      sent: deskStatesSent(`${projectId}/${clip.id}`),
     });
     bridge.current = desk;
     desk.start();
@@ -206,22 +216,6 @@ export function DeskPanel({ clip, onClose }: { clip: Clip; onClose: () => void }
             Approved · read-only
           </Badge>
         ) : null}
-        <div className="flex items-center gap-2 text-[12px] text-muted">
-          <label htmlFor={modeId}>Follow</label>
-          <Select
-            id={modeId}
-            value={mode}
-            onChange={(e) => setMode(e.target.value as DeskMode)}
-            className="h-8 w-auto text-[13px]"
-            data-testid="desk-mode"
-          >
-            {MODES.map((m) => (
-              <option key={m} value={m}>
-                {MODE_LABELS[m]}
-              </option>
-            ))}
-          </Select>
-        </div>
         <Button
           size="sm"
           icon={<X className="size-4" />}

@@ -47,6 +47,10 @@ async function storedNow(request: APIRequestContext, pid: string, clipId: string
   return res.status() === 200 ? res.text() : null;
 }
 
+/** The panel's notice when a write meets a state another session stored (docs/design/director-desk.md#the-desk). */
+const CONFLICT_NOTICE =
+  "Another session changed the stored desk state of this clip, and it was kept: changes made here are not stored until you replace it. If it is another staging of the scene, the desk drops this browser's copy the next time it opens unless you replace it.";
+
 /** A desk state stored as another session would (a write without a precondition replaces whatever is stored). */
 async function storeAsAnotherSession(request: APIRequestContext, pid: string, clipId: string, text: string) {
   const res = await request.put(`/api/projects/${pid}/clips/${clipId}/desk-state`, {
@@ -100,17 +104,18 @@ test('the desk connects, its Send attaches every shot’s clip and camera, and i
   expect(sandbox).toEqual(expect.arrayContaining(['allow-scripts', 'allow-same-origin', 'allow-downloads']));
   expect(sandbox.filter((t) => t.startsWith('allow-top-navigation'))).toEqual([]);
   await expect(frame).toHaveAttribute('allow', /screen-wake-lock/);
-  // Camera by default
-  await expect(page.getByTestId('desk-mode')).toHaveValue('camera');
+  // no Follow menu of its own: the desk's decides, and it opens on Camera (nothing attached in this project yet)
+  await expect(page.getByTestId('desk-mode')).toHaveCount(0);
   const d = desk(page);
   await expect(d.getByTestId('desk-connected')).toHaveText('open');
+  await expect(d.getByTestId('desk-follow')).toHaveValue('camera');
   await expect(page.getByTestId('desk-status')).toContainText('Opened from the brief');
   await expect(d.getByTestId('desk-shot')).toHaveCount(shots.length);
   await expect(d.getByTestId('desk-given')).toHaveText('none');
   const options = JSON.parse((await d.getByTestId('desk-options').textContent())!);
   expect(options).toEqual({
     hostName: 'Rideo',
-    modes: ['camera', 'motion', 'pose'],
+    modes: ['motion', 'pose', 'camera'],
     defaultMode: 'camera',
     readOnly: false,
   });
@@ -120,11 +125,11 @@ test('the desk connects, its Send attaches every shot’s clip and camera, and i
 
   // Send: every shot's camera clip attached as its motion reference, with the staged lens and move
   await d.getByTestId('desk-send').click();
-  await expect(d.getByTestId('desk-ack')).toContainText(`ok: Attached ${shots.length} reference`);
+  await expect(d.getByTestId('desk-ack')).toContainText(`ok: Attached ${shots.length} camera reference`);
   const last = shots.length;
-  await expect(page.getByTestId('toast').filter({ hasText: 'Attached' })).toContainText(
-    `S${last}: the camera does not show the planned layout`,
-  );
+  const attached = page.getByTestId('toast').filter({ hasText: 'Attached' });
+  await expect(attached).toContainText(`Attached ${shots.length} camera reference`);
+  await expect(attached).toContainText(`S${last}: the camera does not show the planned layout`);
   const docs = (await api.call<any>('GET', `/projects/${pid}/state`)).docs;
   for (const shot of docs.clips[clip.id].shots) {
     expect(shot.motionReference).toMatchObject({ mode: 'camera' });
@@ -203,14 +208,12 @@ test('the desk connects, its Send attaches every shot’s clip and camera, and i
   await storeAsAnotherSession(request, pid, clip.id, 'stored by another session');
   await desk(page).getByTestId('desk-edit').click();
   await page.getByTestId('desk-close').click();
-  await expect(page.getByTestId('desk-kept-notice')).toHaveText(
-    'Another session stored a newer desk state for this clip; it was kept',
-  );
+  await expect(page.getByTestId('desk-kept-notice')).toHaveText(CONFLICT_NOTICE);
   await expect(page.getByTestId('desk-kept')).toHaveAttribute('data-reason', 'conflict');
   await expect(page.getByTestId('desk-panel')).toBeVisible();
   await expect(page.getByTestId('desk-status')).toContainText('The desk was not stored');
   await expect(
-    page.getByTestId('toast').filter({ hasText: 'Another session stored a newer desk state' }).first(),
+    page.getByTestId('toast').filter({ hasText: 'Another session changed the stored desk state' }).first(),
   ).toBeVisible();
   await noSidewaysScroll(page);
   expect(await storedState(request, pid, clip.id)).toBe('stored by another session');
@@ -237,7 +240,9 @@ test('a partial result attaches the shots it has, and the desk says which shot i
   await expect(d.getByTestId('desk-connected')).toHaveText('open');
   await d.getByTestId('desk-send-part').click();
   const n = shots.length - 1;
-  await expect(d.getByTestId('desk-ack')).toContainText(`ok: Attached ${n} reference${n === 1 ? '' : 's'}.`);
+  await expect(d.getByTestId('desk-ack')).toContainText(
+    `ok: Attached ${n} camera reference${n === 1 ? '' : 's'}.`,
+  );
   // the desk's export_failed, named after the result, in a toast
   await expect(page.getByTestId('toast').filter({ hasText: 'was not rendered' })).toContainText(
     `S${shots.length} (${shots.at(-1).id}) was not rendered: the encoder stopped`,
@@ -266,8 +271,9 @@ test('a stored state the desk cannot read is kept until the person replaces it; 
   await expect(d.getByTestId('desk-connected')).toHaveText('open');
   await expect(page.getByTestId('desk-status')).toContainText('Opened from the brief');
   await expect(page.getByTestId('desk-kept')).toHaveAttribute('data-reason', 'unreadable');
+  // the desk's own message, as a sentence of its own
   const notice =
-    'The stored desk state was kept: the desk could not read it (the state was saved by a desk this one does not read)';
+    'The stored desk state was kept. The state was saved by a desk this one does not read. Changes made here are not stored until you replace it.';
   await expect(page.getByTestId('desk-kept-notice')).toHaveText(notice);
   await expect(page.getByTestId('toast').filter({ hasText: notice }).first()).toBeVisible();
   await noSidewaysScroll(page);
@@ -336,6 +342,9 @@ test('a stored state the desk cannot read is kept until the person replaces it; 
   await expect(page.getByTestId('desk-start-over-what')).toContainText(
     'What was staged only in the stored desk state is lost',
   );
+  await expect(page.getByTestId('desk-start-over-what')).toContainText(
+    'start over in the browser that has the newest work',
+  );
   await noSidewaysScroll(page);
   await page.getByTestId('desk-start-over-confirm').click();
   await expect(d.getByTestId('desk-connected')).toHaveText('open');
@@ -348,7 +357,7 @@ test('a stored state the desk cannot read is kept until the person replaces it; 
   expect(await storedState(request, pid, clip.id)).toBe(staged);
 });
 
-test('the Follow mode is the reference the shots get, and the browser remembers it', async ({
+test("the desk's own Follow menu decides the reference the shots get; the project remembers the mode, and a shot sent longer than its brief is refused", async ({
   page,
   request,
 }, testInfo) => {
@@ -356,24 +365,41 @@ test('the Follow mode is the reference the shots get, and the browser remembers 
   const api = new Api(request);
   const { pid, clip } = await planned(api, `Desk follow (${testInfo.project.name})`);
   await openDesk(page, pid);
-  await page.getByTestId('desk-mode').selectOption('pose');
   const d = desk(page);
   await expect(d.getByTestId('desk-connected')).toHaveText('open');
+  await expect(d.getByTestId('desk-follow')).toHaveValue('camera');
+  // the person picks Poses in the desk: its Send renders that mode only, and the shots get it
+  await d.getByTestId('desk-follow').selectOption('pose');
   await d.getByTestId('desk-send').click();
-  await expect(d.getByTestId('desk-ack')).toContainText('ok: Attached');
+  const n = clip.shots.length;
+  await expect(d.getByTestId('desk-ack')).toContainText(
+    `ok: Attached ${n} pose reference${n === 1 ? '' : 's'}.`,
+  );
+  await expect(page.getByTestId('toast').filter({ hasText: 'pose reference' }).first()).toBeVisible();
   const docs = (await api.call<any>('GET', `/projects/${pid}/state`)).docs;
   for (const shot of docs.clips[clip.id].shots) {
     expect(shot.motionReference.mode).toBe('pose');
     expect(docs.resources[shot.motionReference.resourceId].name).toMatch(/-pose\.mp4$/);
   }
+  // a shot the desk sent half a second longer than its brief: refused with what to do (the brief reached the plan)
+  await d.getByTestId('desk-send-longer').click();
+  const refused = 'S1: the clip has';
+  await expect(d.getByTestId('desk-ack')).toContainText(refused);
+  await expect(d.getByTestId('desk-ack')).toContainText(
+    "set its length back in the desk, or change the shot's duration in the studio",
+  );
+  await expect(
+    page.getByTestId('toast').filter({ hasText: 'set its length back in the desk' }).first(),
+  ).toBeVisible();
+  await noSidewaysScroll(page);
   await page.getByTestId('desk-close').click();
   await expect(page.getByTestId('desk-panel')).toBeHidden();
-  // remembered by this browser: the next desk opens on Poses
+  // remembered for the project: the next desk opens on Poses
   await page.reload();
   await page.getByTestId('storyboard-scene').first().getByTestId('open-desk').click();
-  await expect(page.getByTestId('desk-mode')).toHaveValue('pose');
-  const options = desk(page).getByTestId('desk-options');
-  await expect(options).toContainText('"defaultMode":"pose"');
+  await expect(desk(page).getByTestId('desk-connected')).toHaveText('open');
+  await expect(desk(page).getByTestId('desk-follow')).toHaveValue('pose');
+  await expect(desk(page).getByTestId('desk-options')).toContainText('"defaultMode":"pose"');
   await page.getByTestId('desk-close').click();
   await expect(page.getByTestId('desk-panel')).toBeHidden();
 });
