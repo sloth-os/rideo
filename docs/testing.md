@@ -142,8 +142,9 @@ only those names as extras, and reading verdicts that name a character instead o
   capabilities, `max_fps`, `off` and pinned models; the finishing filter for models and ffmpeg; the delivery
   encoders; ustar archives with long names and checksums); accounts (the PKCE authorization request, RS256 and ES256
   ID tokens and every rejection: signature, issuer, audience, expiry, issue time, nonce, malformed, an unknown key
-  read again from the JWKS; sessions by hash across a restart and their expiry; the audit log's filters; cookies
-  and safe return paths); notifications (per person, newest first, pushed to that person's tabs only, read marks
+  read again from the JWKS; sessions by hash across a restart and their expiry; the audit log's filters; cookies and
+  safe return paths; an MCP tool reached without a caller refused outside auth mode `none` while a recipe still runs it,
+  `mcp-principal.test.ts`); notifications (per person, newest first, pushed to that person's tabs only, read marks
   across a restart, the last 500); interchange (the default WebDAV root, embedded or external; review notes on
   takes as markers); the web's sign-in page; FCPXML and XML parsed as XML with awkward titles and labels; the
   inspector's transform keyframes and ramp presets, the transcript panel's filler and selection cuts, waveform
@@ -257,11 +258,14 @@ only those names as extras, and reading verdicts that name a character instead o
   `libraryAllows` for people, admins, the studio token and agent tokens with and without projects; a digest with and
   without `library`, still version 1; documents without `library` and `deskUnit` still parsing, and a pin changing no
   identity hash; the store on memory and file backends (versions written once, a leftover manifest skipped, two
-  versions at once, heads read once, the same bytes stored once) and the service on in-memory storage (`unchanged`,
-  `412` `library_conflict` for a stale `If-Match` and a stale `basedOn`, archive, permissions through real principals,
-  pins and detach, an approved clip's update planned for an editor, refused to them and done by a director) and its
-  uploads (`meta` first, a unit of 32 MiB + 1 byte refused with `413`, a unit whose prefix, header or kind is wrong,
-  thumbnails that are not PNG, over 64 KiB or over 256 px) ([the library](design/library.md#tests)).
+  versions at once, heads read once and read again after a read that failed, the same bytes stored once) and the service
+  on in-memory storage (`unchanged`, `412` `library_conflict` for a stale `If-Match` and a stale `basedOn`, archive, a
+  head it cannot read answered with a retryable `storage_error`, a save with `newItem` making a new item whatever
+  `itemId` names, permissions through real principals, pins and detach (counted under the item's kind), an approved
+  clip's update planned for an editor, refused to them and done by a director) and its uploads (`meta` first, a unit of
+  32 MiB + 1 byte refused with `413`, a unit whose prefix, header or kind is wrong, thumbnails that are not PNG, over
+  64 KiB or over 256 px, a client gone in the middle of a part leaving no temporary file, a raster picture known by its
+  signature and an SVG or a page not taken for one) ([the library](design/library.md#tests)).
 - **library units** (`packages/shared/test/desk-protocol.test.ts`, `desk-brief.test.ts`, `desk-units.test.ts`,
   `packages/web/test/desk-bridge.test.ts`): the new fixtures (valid ones parse, invalid ones refused but
   `state-units-bad-staged.json`, a state read with its units unknown) and the capability read leniently; the brief
@@ -416,7 +420,9 @@ only those names as extras, and reading verdicts that name a character instead o
   version with a stale `If-Match` and with a stale `basedOn` (`412` `library_conflict`), renamed, archived (gone from
   the default list, still served) and its uses; Mira saved from project A (`consent_required` until acknowledged), used
   in project B with the same id and seed and her references copied, a v2 from A making B's status `behind`, B's dry run
-  and update (lock + 1); a name conflict linking instead; a resource used as a new resource; a figure pinned on a
+  and update (lock + 1); a name conflict linking instead; a resource used as a new resource; an image resource that is
+  an SVG or a page refused (`payload`), a PNG kept as one whatever its part says, and a library file and a project's
+  media served with `nosniff` and a sandboxing policy; a figure pinned on a
   character and a set on a location, unpinned again; the audit events and the metrics. MCP's `library_*` tools give the
   same answers on the same server; with projects in browsers, the library stays in the data directory, an apply goes
   through the tab that holds the project and fails with `storage_offline` without it. The editor refused an approved
@@ -447,7 +453,11 @@ only those names as extras, and reading verdicts that name a character instead o
   becomes a membership at sign-in; what reviewers, editors, directors and outsiders may do (403s), studio visibility,
   admins and the studio token; agent tokens capped by role and projects over REST and MCP (commits by the agent on
   behalf of its owner, MCP sessions bound to their caller, revocation); people disabled by an admin; the audit log
-  for admins and directors; live subscriptions refused to people without access.
+  for admins and directors; live subscriptions refused to people without access; the guards decided by the matched route
+  however the path is percent-encoded (without a session, `/%61pi/projects`, `/%61pi/library/items`, `/%6dcp` and
+  `/%6detrics` answered `401`; a non-member under a project id with an escaped letter, its library routes included, and
+  an editor's `appro%76e` answered `403`); a library upload from a reviewer token answered `403` before its parts are
+  read (a person's for an item that is not there `404`), nothing written to the temporary folder.
 - **Installable app** (`pwa.test.ts`): devices subscribed (https only), a failed recipe pushed to them encrypted and
   VAPID-signed (decrypted as the device would), a device its push service forgot dropped, unsubscribing; the Inbox
   across projects (an agent's review and commit, the gate, today's failures).
