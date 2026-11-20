@@ -294,9 +294,11 @@ describe('accounts', () => {
   });
 
   it('answers a library upload it will refuse before reading its parts', async () => {
-    const ben = as({ cookie: users.ben });
-    // a reviewer token reads the library and may not publish to it
-    const reader = await ben<any>('POST', '/tokens', { name: 'Library reader', role: 'reviewer' });
+    // a reviewer token reads the library and may not publish to it (Ana's: Ben's tokens are counted below)
+    const reader = await as({ cookie: users.ana })<any>('POST', '/tokens', {
+      name: 'Library reader',
+      role: 'reviewer',
+    });
     const [item] = (await as({ token: reader.secret })<any>('GET', '/library/items')).items;
     expect(item).toBeDefined();
     const meta = {
