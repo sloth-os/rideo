@@ -1,5 +1,12 @@
 import { createHash } from 'node:crypto';
-import { type APIRequestContext, expect, type Page, type TestInfo, test } from '@playwright/test';
+import {
+  type APIRequestContext,
+  expect,
+  type Locator,
+  type Page,
+  type TestInfo,
+  test,
+} from '@playwright/test';
 import { Api } from './support/api';
 
 /**
@@ -30,6 +37,20 @@ async function noSidewaysScroll(page: Page) {
     () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
   );
   expect(overflow).toBeLessThanOrEqual(0);
+}
+
+/** Every name shown whole: visible, with nothing of it cut off (1 px for rounding). */
+async function namesWhole(names: Locator) {
+  await expect(names.first()).toBeVisible();
+  for (const name of await names.all()) {
+    await expect(name).toBeVisible();
+    const { text, shown, full } = await name.evaluate((e) => ({
+      text: e.textContent ?? '',
+      shown: e.clientWidth,
+      full: e.scrollWidth,
+    }));
+    expect(shown, `${text}: ${shown} of its ${full} px shown`).toBeGreaterThanOrEqual(full - 1);
+  }
 }
 
 /** A photo of a real person as one of the character's references, with its consent record. */
@@ -500,4 +521,66 @@ test('3D rows pin, move, change and unlink sets uploaded through the API; the Li
   await expect(picker).toContainText('No 3D props in the library');
   await expect(picker.getByTestId('desk-picker-item')).toHaveCount(0);
   await noSidewaysScroll(page);
+});
+
+test('on phones the Cast, Elements and Resources cards keep their names whole beside their badges and Save to library', async ({
+  browser,
+  request,
+}, testInfo) => {
+  test.skip(testInfo.project.name !== 'mobile', 'phone widths');
+  const api = new Api(request);
+  const pid = await api.storyProject(`Library phones (${runTag(testInfo)})`, { screenplay: true });
+  // A long name beside every badge a character card has: its role, locked and a real person
+  const long = await api.call<any>('POST', `/projects/${pid}/characters`, {
+    name: 'Seraphina Okonkwo-Delacroix',
+  });
+  await uploadPhoto(request, pid, long.id);
+  for (const r of (await docsOf(api, pid)).characters[long.id].references)
+    await api.call('PATCH', `/projects/${pid}/characters/${long.id}/references/${r.id}`, { approved: true });
+  await api.call('POST', `/projects/${pid}/characters/${long.id}/lock`);
+  // The writer's places and props in use, one of them locked (Unlock), and a prop nothing uses yet (Remove too)
+  const place = Object.values<any>((await docsOf(api, pid)).elements).find((e) => e.kind === 'location');
+  const ref = await request.post(`/api/projects/${pid}/elements/${place.id}/references`, {
+    multipart: { view: 'establishing', file: { name: 'place.png', mimeType: 'image/png', buffer: PHOTO } },
+  });
+  expect(ref.status(), await ref.text()).toBe(201);
+  for (const r of (await docsOf(api, pid)).elements[place.id].references)
+    await api.call('PATCH', `/projects/${pid}/elements/${place.id}/references/${r.id}`, { approved: true });
+  await api.call('POST', `/projects/${pid}/elements/${place.id}/lock`);
+  await api.call('POST', `/projects/${pid}/elements`, {
+    kind: 'prop',
+    name: "harbour master's storm lantern",
+    description: 'a brass storm lantern with a cracked green glass',
+  });
+  const still = await request.post(`/api/projects/${pid}/uploads`, {
+    multipart: { file: { name: 'harbour wall at dawn.png', mimeType: 'image/png', buffer: PHOTO } },
+  });
+  expect(still.status(), await still.text()).toBe(201);
+  await api.waitIdle(pid);
+
+  for (const [width, height] of [
+    [360, 740],
+    [390, 844],
+    [412, 915],
+  ] as const) {
+    const phone = await browser.newContext({ viewport: { width, height }, deviceScaleFactor: 1 });
+    const page = await phone.newPage();
+    for (const view of ['cast', 'elements', 'resources'] as const) {
+      await page.goto(`/p/${pid}/${view}`);
+      await expect(page.getByTestId('save-to-library').first()).toBeVisible();
+      await namesWhole(
+        view === 'cast'
+          ? page.getByTestId('character-name')
+          : view === 'elements'
+            ? page.getByTestId('element-name')
+            : page.getByTitle('harbour wall at dawn.png', { exact: true }),
+      );
+      await noSidewaysScroll(page);
+      // kept beside the run's other output, to look at (device pixel ratio 1, as the phone is)
+      const shot = testInfo.outputPath(`${view}-${width}x${height}.png`);
+      await page.screenshot({ path: shot, fullPage: true });
+      await testInfo.attach(`${view}-${width}x${height}`, { path: shot, contentType: 'image/png' });
+    }
+    await phone.close();
+  }
 });

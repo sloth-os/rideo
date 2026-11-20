@@ -59,18 +59,25 @@ function ElementCard({ e, inUse }: { e: Element; inUse: boolean }) {
       className="rounded-[var(--radius-card)] border border-border bg-surface"
     >
       <div className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-3">
-        <Icon className="size-4 text-muted" />
-        <h3 className="min-w-0 flex-1 truncate text-base font-semibold" data-testid="element-name">
-          {e.name}
-        </h3>
-        {inUse ? <Badge tone="accent">in use</Badge> : <Badge>unused</Badge>}
-        {locked ? (
-          <Badge tone="success" title={`Locked ${e.lock.lockedAt ?? ''}`}>
-            <Lock className="size-3" /> locked v{e.lock.version}
-          </Badge>
-        ) : (
-          <Badge tone="warning">unlocked</Badge>
-        )}
+        {/* the name keeps 16rem of the line (all of it on a phone): Save, Lock and Remove wrap below, the badges after it */}
+        <div className="flex min-w-0 grow basis-64 flex-wrap items-center gap-x-2 gap-y-1">
+          <div className="flex min-w-0 grow items-center gap-2">
+            <Icon className="size-4 shrink-0 text-muted" />
+            <h3 className="truncate text-base font-semibold" data-testid="element-name">
+              {e.name}
+            </h3>
+          </div>
+          <div className="flex items-center gap-2">
+            {inUse ? <Badge tone="accent">in use</Badge> : <Badge>unused</Badge>}
+            {locked ? (
+              <Badge tone="success" title={`Locked ${e.lock.lockedAt ?? ''}`}>
+                <Lock className="size-3" /> locked v{e.lock.version}
+              </Badge>
+            ) : (
+              <Badge tone="warning">unlocked</Badge>
+            )}
+          </div>
+        </div>
         <SaveToLibraryButton kind="element" entity={e} />
         {locked ? (
           <Button

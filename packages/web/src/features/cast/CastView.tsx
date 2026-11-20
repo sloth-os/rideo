@@ -84,8 +84,9 @@ function CharacterCard({ c }: { c: Character }) {
       className="rounded-[var(--radius-card)] border border-border bg-surface"
     >
       <div className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-3">
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
+        {/* the name keeps 16rem of the line (all of it on a phone): Save and Lock wrap below, the badges after it */}
+        <div className="min-w-0 grow basis-64">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
             <h3 className="truncate text-base font-semibold" data-testid="character-name">
               {c.name}
             </h3>
