@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import {
   compactIdentity,
   DESK_BRIEF_LIMITS,
+  type DeskUnitPin,
   deskBrief,
+  deskBriefPins,
   deskTimeOfDay,
   HostToDeskMessageSchema,
   headingInterior,
@@ -375,5 +377,123 @@ describe('deskBrief', () => {
     // only cast members of the brief, in the layout too (C16–C17 are past the 16)
     expect(brief.shots[0]!.castIds).toHaveLength(16);
     expect(brief.shots[0]!.layout.map((p) => p.castId)).toEqual(cast.slice(10, 16).map((c) => c.id));
+  });
+});
+
+describe('deskBrief with library units (docs/design/director-desk.md#pins-in-the-brief)', () => {
+  const pin = (kind: DeskUnitPin['kind'], n: number, overrides: Partial<DeskUnitPin> = {}): DeskUnitPin => ({
+    kind,
+    itemId: `lib_0000000000pin${n}`,
+    version: n,
+    sha256: String(n).repeat(64).slice(0, 64),
+    name: `Unit ${n}`,
+    actorKind: null,
+    heightM: null,
+    pinnedAt: '2026-11-01T10:00:00.000Z',
+    pinnedBy: { kind: 'user', id: 'usr_1', name: 'Ada' },
+    ...overrides,
+  });
+  const ALL = { units: { kinds: ['set', 'prop', 'figure'] as const } };
+
+  function pinned() {
+    const s = story();
+    const room = { ...s.room, deskUnit: pin('desk-set', 3) };
+    const lamp = { ...s.lamp, deskUnit: pin('desk-prop', 2) };
+    const mira = { ...s.mira, deskUnit: pin('desk-figure', 4, { actorKind: 'child', heightM: 1.24 }) };
+    const docs = {
+      ...s.docs,
+      characters: { ...s.docs.characters, [mira.id]: mira },
+      elements: { ...s.docs.elements, [room.id]: room, [lamp.id]: lamp },
+    };
+    return { ...s, docs, plain: s.docs, room, lamp, mira };
+  }
+
+  it('is the brief of before, byte for byte, without units: pins never reach a desk that did not announce them', () => {
+    const { docs, plain, clip } = pinned();
+    const before = JSON.stringify(deskBrief(plain, clip.id));
+    expect(before).toContain('"heightM":1.7');
+    expect(JSON.stringify(deskBrief(docs, clip.id))).toBe(before);
+    expect(JSON.stringify(deskBrief(docs, clip.id, {}))).toBe(before);
+    expect(JSON.stringify(deskBrief(docs, clip.id, { units: { kinds: [] } }))).toBe(before);
+  });
+
+  it("pins the scene's place on the set, props on their rows and figures on the cast, with the figure's kind and height", () => {
+    const { docs, clip, room, lamp, mira, pip, grain } = pinned();
+    const brief = deskBrief(docs, clip.id, ALL)!;
+    expect(brief.set.unit).toEqual({ ref: room.deskUnit.itemId, version: 3, sha256: room.deskUnit.sha256 });
+    // the location's row never carries a unit: the scene's place is its set
+    const row = (id: string) => brief.elements.find((e) => e.id === id)!;
+    expect(row(room.id)).not.toHaveProperty('unit');
+    expect(row(grain.id)).not.toHaveProperty('unit');
+    expect(row(lamp.id).unit).toEqual({
+      ref: lamp.deskUnit.itemId,
+      version: 2,
+      sha256: lamp.deskUnit.sha256,
+    });
+    const [m, p] = brief.cast;
+    expect(m).toMatchObject({ id: mira.id, kind: 'child', heightM: 1.24 });
+    expect(m!.unit).toEqual({ ref: mira.deskUnit.itemId, version: 4, sha256: mira.deskUnit.sha256 });
+    // a member without a figure pin as before: no unit, its height from its identity
+    expect(p).toMatchObject({ id: pip.id, kind: null, heightM: null });
+    expect(p).not.toHaveProperty('unit');
+    // in slot order, the order of `open.units`
+    expect(deskBriefPins(brief).map((x) => [x.slot, x.kind, x.pin.version])).toEqual([
+      ['set', 'set', 3],
+      [`cast:${mira.id}`, 'figure', 4],
+      [`el:${lamp.id}`, 'prop', 2],
+    ]);
+    const open = {
+      type: 'open',
+      scene: brief,
+      state: null,
+      options: { hostName: 'Rideo', modes: ['camera'], units: { version: 1, publish: true } },
+    };
+    expect(HostToDeskMessageSchema.safeParse(open).success).toBe(true);
+  });
+
+  it('takes the figure height only within 0.1–4 m, and none at all from a figure pin without one', () => {
+    const { docs, clip, mira } = pinned();
+    const height = (heightM: number | null) => {
+      const m = { ...mira, deskUnit: { ...mira.deskUnit, heightM } };
+      const brief = deskBrief({ ...docs, characters: { ...docs.characters, [m.id]: m } }, clip.id, ALL)!;
+      return brief.cast[0]!.heightM;
+    };
+    expect(height(0.1)).toBe(0.1);
+    expect(height(4)).toBe(4);
+    expect(height(0.09)).toBeNull();
+    expect(height(4.5)).toBeNull();
+    // the figure's own height or none: never the identity's 170 cm with a figure pinned
+    expect(height(null)).toBeNull();
+  });
+
+  it('leaves out the kinds the desk did not announce, and pins of another kind', () => {
+    const { docs, clip, room, mira, lamp } = pinned();
+    const sets = deskBrief(docs, clip.id, { units: { kinds: ['set'] } })!;
+    expect(sets.set.unit?.ref).toBe(room.deskUnit.itemId);
+    expect(sets.cast[0]).not.toHaveProperty('unit');
+    // without the figure kind the member is staged as before: its identity's height, no kind
+    expect(sets.cast[0]).toMatchObject({ kind: null, heightM: 1.7 });
+    expect(sets.elements.some((e) => 'unit' in e)).toBe(false);
+    const figures = deskBrief(docs, clip.id, { units: { kinds: ['figure'] } })!;
+    expect(figures.set).not.toHaveProperty('unit');
+    expect(figures.cast[0]!.unit?.ref).toBe(mira.deskUnit.itemId);
+    // a pin that is not the slot's kind is no pin for it
+    const odd = { ...lamp, deskUnit: pin('desk-set', 5) };
+    const brief = deskBrief({ ...docs, elements: { ...docs.elements, [odd.id]: odd } }, clip.id, ALL)!;
+    expect(brief.elements.find((e) => e.id === lamp.id)).not.toHaveProperty('unit');
+  });
+
+  it("pins no set without a scene location, and none from a location that is not the scene's", () => {
+    const { docs, clip, room } = pinned();
+    const sc = docs.screenplay!.scenes[0]!;
+    const away = deskBrief(
+      { ...docs, screenplay: { ...docs.screenplay!, scenes: [{ ...sc, locationId: null }] } },
+      clip.id,
+      ALL,
+    )!;
+    expect(away.set).not.toHaveProperty('unit');
+    // the room is still a row of the brief (a shot lists it), a location row: no unit there either
+    expect(away.elements.find((e) => e.id === room.id)).toMatchObject({ kind: 'location' });
+    expect(away.elements.find((e) => e.id === room.id)).not.toHaveProperty('unit');
   });
 });

@@ -26,6 +26,8 @@ export const PORTS = {
   /** Studios whose model a spec overloads until it is paused (docs/design/ai-gateway.md#outages): one per viewport. */
   outage: E2E_PORT + 11,
   outageMobile: E2E_PORT + 12,
+  /** The studio whose desk is the fake desk in units mode, `desk.html?units=1` (docs/design/director-desk.md#tests). */
+  units: E2E_PORT + 13,
 } as const;
 
 export const at = (port: number, path = '') => `http://127.0.0.1:${port}${path}`;

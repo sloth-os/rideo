@@ -140,9 +140,18 @@ console.log(
 // The fake 3D desk on its own origin: localhost against the studio's 127.0.0.1 (docs/design/director-desk.md#tests).
 const deskPage: Server = await startDeskPage({
   port: PORTS.desk,
-  frameAncestors: [`http://127.0.0.1:${PORTS.main}`, `http://localhost:${PORTS.main}`],
+  frameAncestors: [PORTS.main, PORTS.units].flatMap((port) => [
+    `http://127.0.0.1:${port}`,
+    `http://localhost:${port}`,
+  ]),
 });
 console.log(`rideo e2e fake desk on http://localhost:${PORTS.desk}/desk.html`);
+// Library units (docs/design/director-desk.md#library-units): a studio of its own whose desk is the fake desk in
+// units mode, so the main studio keeps the desk of before.
+await start(
+  'units studio',
+  await env(PORTS.units, { RIDEO_DESK_URL: `http://localhost:${PORTS.desk}/desk.html?units=1` }),
+);
 // The main studio last.
 await start(
   `main studio (gateway ${gateway.url})`,

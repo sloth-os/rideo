@@ -1,7 +1,14 @@
 import { compactIdentity } from '../prompt';
-import { type DeskBrief, DeskBriefSchema, type DeskTimeOfDay } from '../schemas/desk';
+import {
+  type DeskBrief,
+  type DeskBriefPin,
+  DeskBriefSchema,
+  type DeskTimeOfDay,
+  type DeskUnitFileKind,
+} from '../schemas/desk';
 import type { ProjectDocs } from '../schemas/documents';
 import type { ElementKind } from '../schemas/element';
+import type { DeskUnitKind, DeskUnitPin } from '../schemas/library-link';
 import type { ProjectSettings } from '../schemas/project';
 
 /**
@@ -172,13 +179,33 @@ function firsts(ids: Iterable<string | null | undefined>, keep: (id: string) => 
   return out;
 }
 
+/** What a brief is made with beyond the documents. */
+export interface DeskBriefOptions {
+  /**
+   * Library units are on for this open (docs/design/director-desk.md#pins-in-the-brief): the pins of the kinds the
+   * desk takes go in the brief, and a figure pin gives its cast member's kind and height. Without it the brief is what
+   * it was before units, byte for byte (`DeskService.brief` and `desk_brief` never pass it).
+   */
+  units?: { kinds: readonly DeskUnitFileKind[] };
+}
+
+/** The pin of an entity's 3D unit as the brief carries it, when it is of the library kind the slot takes. */
+function briefPin(pin: DeskUnitPin | null | undefined, kind: DeskUnitKind): DeskBriefPin | null {
+  return pin && pin.kind === kind ? { ref: pin.itemId, version: pin.version, sha256: pin.sha256 } : null;
+}
+
+/** A figure's height as a brief takes it: 0.1–4 m, else none. */
+const briefHeight = (m: number | null) => (m !== null && m >= 0.1 && m <= 4 ? m : null);
+
 /**
  * The `SceneBrief` of a clip (docs/design/director-desk.md#the-brief), or null for a clip that is not there or has
- * no shots. The same brief goes to the desk in the studio and to agents (`desk_brief`).
+ * no shots. The same brief goes to the desk in the studio and to agents (`desk_brief`); with `units` (an open with
+ * library units) it carries the pins of the entities it stages (docs/design/director-desk.md#pins-in-the-brief).
  */
 export function deskBrief(
   docs: Pick<ProjectDocs, 'project' | 'screenplay' | 'characters' | 'elements' | 'clips'>,
   clipId: string,
+  options: DeskBriefOptions = {},
 ): DeskBrief | null {
   // the project's own clips only: an id such as `constructor` names no clip
   const clip = Object.hasOwn(docs.clips, clipId) ? docs.clips[clipId] : undefined;
@@ -204,6 +231,10 @@ export function deskBrief(
   const inElements = new Set(elementIds);
   const place = scene ? clean(scene.location) || clean(location?.name) || clean(scene.heading) : '';
   const { fps, width, height } = deskFormat(docs.project.settings);
+  const kinds = new Set(options.units?.kinds ?? []);
+  // the scene's place is its set: only the location of `scene.locationId` gives the set its unit
+  const setPin =
+    kinds.has('set') && location?.kind === 'location' ? briefPin(location.deskUnit, 'desk-set') : null;
   const brief: DeskBrief = {
     id: clip.id,
     name: cutText(clean(clip.title), L.name) || `Scene ${clip.index + 1}`,
@@ -217,9 +248,11 @@ export function deskBrief(
       ),
       interior: scene ? headingInterior(scene.heading) : null,
       timeOfDay: scene ? deskTimeOfDay(clean(scene.timeOfDay) || headingTime(scene.heading)) : null,
+      ...(setPin ? { unit: setPin } : {}),
     },
     cast: castIds.map((id) => {
       const c = docs.characters[id]!;
+      const figure = kinds.has('figure') ? briefPin(c.deskUnit, 'desk-figure') : null;
       return {
         id: c.id,
         name: cutText(clean(c.name), 120) || c.id,
@@ -227,18 +260,22 @@ export function deskBrief(
           [compactIdentity(c), sentence(c.summary)].filter(Boolean).join(' '),
           L.castDescription,
         ),
-        // rideo has no species field: the desk reads it from the description
-        kind: null,
-        heightM: heightInMetres(c.identity.height),
+        // rideo has no species field: the desk reads it from the description, or from the figure a pin names
+        kind: figure ? (c.deskUnit?.actorKind ?? null) : null,
+        heightM: figure ? briefHeight(c.deskUnit?.heightM ?? null) : heightInMetres(c.identity.height),
+        ...(figure ? { unit: figure } : {}),
       };
     }),
     elements: elementIds.map((id) => {
       const e = docs.elements[id]!;
+      // props only: a location row never carries a unit (the scene's place is the set)
+      const prop = kinds.has('prop') && e.kind === 'prop' ? briefPin(e.deskUnit, 'desk-prop') : null;
       return {
         id: e.id,
         name: cutText(clean(e.name), 120) || e.id,
         description: cutText(e.description, L.elementDescription),
         kind: ELEMENT_KINDS[e.kind],
+        ...(prop ? { unit: prop } : {}),
       };
     }),
     shots: shots.map((s, index) => {

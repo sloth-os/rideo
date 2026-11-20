@@ -205,6 +205,113 @@ describe('the desk panel’s store and load (docs/design/director-desk.md#when-r
     expect(call(4)[1].headers).toMatchObject({ 'if-none-match': '*', 'x-desk-state-replace': '1' });
   });
 
+  it('sends what the state uses with its write (X-Desk-State-Units); no header when not known or too many rows', async () => {
+    render(<DeskPanel clip={clipA} onClose={() => undefined} />);
+    const row = (i: number) => ({
+      slot: `el:e${i}`,
+      ref: 'lib_0000000000lamp',
+      version: 2,
+      staged: 'unit' as const,
+      local: false,
+    });
+    fetchMock.mockImplementation(async () => saved(B));
+    await bridge().opts.store(STATE, { ifMatch: A }, undefined, [
+      { slot: 'set', ref: 'lib_0000000000set1', version: 3, staged: 'unit', local: false },
+      { ...row(1), staged: 'pending', why: 'missing' },
+    ]);
+    expect(call(0)[1].headers).toMatchObject({
+      'x-desk-state-units': 'set=lib_0000000000set1@3:unit, el:e1=lib_0000000000lamp@2:pending:missing',
+    });
+    // none used: '-'
+    await bridge().opts.store(STATE, { ifMatch: A }, undefined, []);
+    expect(call(1)[1].headers).toMatchObject({ 'x-desk-state-units': '-' });
+    // not known (a desk from before units), or more than 128 rows: the write goes on without the header
+    await bridge().opts.store(STATE, { ifMatch: A }, undefined, null);
+    await bridge().opts.store(STATE, { ifMatch: A });
+    await bridge().opts.store(
+      STATE,
+      { ifMatch: A },
+      undefined,
+      Array.from({ length: 129 }, (_, i) => row(i)),
+    );
+    for (const i of [2, 3, 4]) expect(call(i)[1].headers).not.toHaveProperty('x-desk-state-units');
+  });
+
+  it('offers library units: the brief with the pins asked for, who may publish, what the loaded state uses', () => {
+    const pinnedAt = '2026-11-01T10:00:00.000Z';
+    const place = f.element({
+      kind: 'location',
+      name: 'Harbor',
+      deskUnit: {
+        kind: 'desk-set',
+        itemId: 'lib_0000000000set1',
+        version: 3,
+        sha256: C,
+        name: 'Harbor',
+        actorKind: null,
+        heightM: null,
+        pinnedAt,
+        pinnedBy: { kind: 'user', id: 'usr_1', name: 'Ada' },
+      },
+    });
+    const scene = {
+      id: 'scn_0000000000000001',
+      index: 0,
+      beatId: null,
+      heading: 'EXT. HARBOR - DAY',
+      location: 'Harbor',
+      timeOfDay: 'day',
+      summary: '',
+      action: '',
+      dialogue: [],
+      characterIds: [],
+      locationId: place.id,
+      elementIds: [],
+      estDurationSec: 10,
+      continuity: '',
+    };
+    const units = [
+      { slot: 'set', ref: 'lib_0000000000set1', version: 3, staged: 'unit' as const, local: false },
+    ];
+    const clip = f.clip({
+      sceneId: scene.id,
+      shots: [f.shot()],
+      deskState: {
+        format: DESK_STATE_FORMAT,
+        version: DESK_STATE_VERSION,
+        media: f.media({ hash: A }),
+        updatedAt: pinnedAt,
+        units,
+      },
+    });
+    const docs = f.docs({
+      screenplay: f.screenplay({ scenes: [scene] }),
+      elements: { [place.id]: place },
+      clips: { [clip.id]: clip },
+    });
+    useProject.setState({
+      ...emptySlice,
+      projectId: docs.project.id,
+      docs,
+      workflow: evaluateWorkflow(docs),
+    });
+    render(<DeskPanel clip={clip} onClose={() => undefined} />);
+    const host = bridge().opts.units!;
+    // the brief of before without units; the scene's place pinned on the set with them
+    expect(bridge().opts.brief().set).not.toHaveProperty('unit');
+    expect(bridge().opts.brief({ units: { kinds: ['set'] } }).set.unit).toEqual({
+      ref: 'lib_0000000000set1',
+      version: 3,
+      sha256: C,
+    });
+    // without accounts the configured user may publish (the server decides anyway)
+    expect(host.mayPublish()).toBe(true);
+    // the rows recorded for the state the panel loaded; none known for another state
+    expect(host.storedUses(A)).toEqual(units);
+    expect(host.storedUses(B)).toBeNull();
+    expect(host.storedUses(null)).toBeNull();
+  });
+
   it('aborting the signal aborts the upload (closing waits for it at most 10 seconds)', async () => {
     render(<DeskPanel clip={clipA} onClose={() => undefined} />);
     fetchMock.mockImplementationOnce(

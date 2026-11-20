@@ -547,7 +547,7 @@ The bridge keeps each state's rows with its bytes and sends them with its write,
 `PUT …/desk-state` (rideo still never reads the state's bytes):
 
 ```
-X-Desk-State-Units: set=lib_0j8kc4n2q1h7wz3x@3:unit, cast:chr_0j8kc3v9m2a7mr5t@2:unit:local, el:ele_0j8kc3x0b5k9dn2p@1:pending:missing
+X-Desk-State-Units: set=lib_0j8kc4n2q1h7wz3x@3:unit, cast:chr_0j8kc3v9m2a7mr5t=lib_0j8kc4n2q1h7mira@2:unit:local, el:ele_0j8kc3x0b5k9dn2p=lib_0j8kc4n2q1h7lamp@1:pending:missing
 ```
 
 - A row is `<slot>=<ref>@<version>:<staged>[:local][:<why>]`, rows are joined by `, `, and `-` is none. No header
@@ -843,8 +843,11 @@ an `open` and why, and each publish's answer, to the browser's console (`[desk] 
   rows, `DELETE` clearing them; the embedding origins' preflight allows `x-desk-state-units` (`embedding.test.ts`).
 - **Library units, end to end** (`e2e/desk-units.spec.ts`, desktop and mobile, on the stack's units studio, whose
   `RIDEO_DESK_URL` is the fake desk's `desk.html?units=1`): the fake desk in units mode announces the capability,
-  shows its brief's pins and the units it got (version and bytes checked), sends `state.units` and has **Publish set**,
-  **Publish new version** and **Publish prop**. A scene at a pinned place opens with the set's pin and bytes; **Publish
-  set** on an unpinned place creates an item, links the place and is acked `linked`; **Publish new version** makes v2
-  and moves the pin; the state's units are recorded on the clip, and another scene at that place shows "3D: v2
-  available" until its desk opens again; no sideways scroll.
+  shows its brief's pins and the units it got (version and bytes checked), keeps a record per pinned slot inside its
+  state's bytes, sends `state.units` and has **Publish set**, **Publish new version** and **Publish prop**; in either
+  mode it lists every unit field an `open` carried. A scene whose place, cast member and prop are pinned opens with
+  their pins in slot order and their bytes; Close records the state's units on the clip (no badge), and the next open
+  sends no file for the pins that state uses; **Publish set** on an unpinned place creates an item, links the place in
+  one commit and is acked `linked`; **Publish new version** makes v2 and moves the pin; another scene at that place
+  shows "3D: v2 available" until its desk opens again with v2's bytes; an approved clip's desk may publish, and the
+  publish is acked not linked ("the scene is read-only"); no sideways scroll.

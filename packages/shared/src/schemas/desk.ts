@@ -1,9 +1,12 @@
 import { z } from 'zod';
+import { DESK_UNIT_FORMAT, DeskUnitMetaSchema } from './library';
+import { Sha256HexSchema } from './library-link';
 
 /**
  * The desk embed protocol, version 1 (docs/design/director-desk.md#the-protocol): the messages rideo and the
- * 3D-Editor's director's desk exchange, as the 3D-Editor's contract defines them. Rideo keeps its own copy of the
- * contract's fixtures (packages/shared/test/fixtures/desk-protocol/) and tests these schemas against them.
+ * 3D-Editor's director's desk exchange, as the 3D-Editor's contract defines them, with its additive library units
+ * (docs/design/director-desk.md#library-units). Rideo keeps its own copy of the contract's fixtures
+ * (packages/shared/test/fixtures/desk-protocol/) and tests these schemas against them.
  */
 
 export const DESK_PROTOCOL = '3d-desk' as const;
@@ -88,6 +91,150 @@ export const ArrayBufferSchema = z.custom<ArrayBuffer>(
   'an ArrayBuffer',
 );
 
+// Library units (docs/design/director-desk.md#library-units): additive to version 1, exchanged only when the desk
+// announced `ready.capabilities.units` and rideo's `open` carried `options.units`. A version of a library unit is
+// `{ref, version, sha256}`: the library item's id, its version and the sha256 of the unit file's bytes.
+
+/** The unit file's format version the desk reads (the 3D-Editor's `UNIT_DATA_VERSION`). */
+export const DESK_UNIT_DATA_VERSION = 1 as const;
+/** What a unit is, as its file says: a scene's set, a prop, a cast member's figure. */
+export const DESK_UNIT_FILE_KINDS = ['set', 'prop', 'figure'] as const;
+export const DeskUnitFileKindSchema = z.enum(DESK_UNIT_FILE_KINDS);
+export type DeskUnitFileKind = z.infer<typeof DeskUnitFileKindSchema>;
+
+/** The contract's bounds on library units (docs/design/director-desk.md#library-units). */
+export const DESK_UNIT_LIMITS = {
+  /** One unit file: the desk's `capabilities.units.maxBytes`. */
+  unitBytes: 32 * 1024 * 1024,
+  /** All the units of one `open`. */
+  openBytes: 48 * 1024 * 1024,
+  /** Units in one `open`: the set, 16 cast members and 64 elements. */
+  openUnits: 81,
+  /** A published unit's PNG thumbnail. */
+  thumbnailBytes: 64 * 1024,
+  /** A published unit's `meta`, as JSON in UTF-8. */
+  metaBytes: 16 * 1024,
+  /** Rows of `state.units`, and of `X-Desk-State-Units`. */
+  stateUnits: 128,
+  /** The `X-Desk-State-Units` header. */
+  headerBytes: 8 * 1024,
+} as const;
+
+/** The codes of a refused `unit-publish` (`unit-ack` `code`). */
+export const DESK_PUBLISH_REFUSALS = [
+  'refused',
+  'conflict',
+  'too_large',
+  'invalid',
+  'unavailable',
+  'failed',
+] as const;
+export type DeskPublishRefusal = (typeof DESK_PUBLISH_REFUSALS)[number];
+
+/** What a slot's pin is staged as: its unit, or the brief's words while it waits or after it was refused. */
+export const DESK_UNIT_STAGED = ['unit', 'pending', 'refused'] as const;
+export type DeskUnitStaged = (typeof DESK_UNIT_STAGED)[number];
+/** Why a pin waits (`pending`, tried again at the next open). */
+export const DESK_UNIT_PENDING_REASONS = ['missing', 'mismatch', 'unavailable'] as const;
+/** Why a pin was refused (`refused`, tried again only when the pin changes). */
+export const DESK_UNIT_REFUSED_REASONS = [
+  'unreadable',
+  'too_new',
+  'too_large',
+  'wrong_kind',
+  'figure_kind',
+  'figure_rig',
+  'over_budget',
+  'set_ground',
+] as const;
+
+/** A version of a library item: an integer from 1, the library's. */
+export const DeskUnitVersionSchema = z.number().int().min(1).max(1_000_000_000);
+
+/** A pin as the brief carries it: the library item (`ref`), its version and its unit file's sha256. */
+export const DeskBriefPinSchema = z.object({
+  ref: DeskIdSchema,
+  version: DeskUnitVersionSchema,
+  sha256: Sha256HexSchema,
+});
+export type DeskBriefPin = z.infer<typeof DeskBriefPinSchema>;
+
+/**
+ * `ready.capabilities.units` as rideo reads it: leniently. Kinds rideo does not know are dropped; a capability that
+ * lists no version 1 or no kind left is refused here, and the `ready` message reads it as absent ("no units").
+ */
+export const DeskUnitsCapabilitySchema = z
+  .object({
+    versions: z.array(z.number().int().positive()).min(1),
+    kinds: z
+      .array(z.string())
+      .transform((kinds) =>
+        kinds.filter((k): k is DeskUnitFileKind => (DESK_UNIT_FILE_KINDS as readonly string[]).includes(k)),
+      ),
+    maxBytes: z.number().int().positive(),
+    publish: z.boolean(),
+  })
+  .refine((c) => c.versions.includes(1) && c.kinds.length > 0, 'no units this studio takes');
+export type DeskUnitsCapability = z.infer<typeof DeskUnitsCapabilitySchema>;
+
+/** `open.options.units`: library units on for this open; `publish` false: the desk offers no Save to library. */
+export const DeskUnitsOptionSchema = z.object({ version: z.literal(1), publish: z.boolean() });
+export type DeskUnitsOption = z.infer<typeof DeskUnitsOptionSchema>;
+
+const unitBytesInRange = (b: ArrayBuffer) => b.byteLength >= 1 && b.byteLength <= DESK_UNIT_LIMITS.unitBytes;
+
+/** One entry of `open.units`: the unit file of a pinned version (transferred). */
+export const DeskOpenUnitSchema = z.object({
+  ref: DeskIdSchema,
+  version: DeskUnitVersionSchema,
+  sha256: Sha256HexSchema,
+  unit: z.object({
+    format: z.string().min(1).max(64),
+    version: z.number().int().positive(),
+    data: ArrayBufferSchema.refine(unitBytesInRange, '1 byte to 32 MiB'),
+  }),
+});
+export type DeskOpenUnit = z.infer<typeof DeskOpenUnitSchema>;
+
+/** The brief slot a published unit came from: exactly one of a cast member, an element and the set. */
+export const DeskUnitFromSchema = z
+  .object({ castId: DeskIdSchema.nullable(), elementId: DeskIdSchema.nullable(), set: z.boolean() })
+  .refine(
+    (f) => [f.castId !== null, f.elementId !== null, f.set].filter(Boolean).length === 1,
+    'exactly one of castId, elementId, set',
+  );
+export type DeskUnitFrom = z.infer<typeof DeskUnitFromSchema>;
+
+/** A slot of the brief: its set, a cast member (`cast:<id>`) or an element (`el:<id>`). */
+export const DESK_UNIT_SLOT_PATTERN = /^(set|cast:[A-Za-z0-9_.:-]{1,100}|el:[A-Za-z0-9_.:-]{1,100})$/;
+export const DeskUnitSlotSchema = z.string().regex(DESK_UNIT_SLOT_PATTERN, "'set', 'cast:<id>' or 'el:<id>'");
+
+/** Why a pin waits or was refused: a reason code, never `local` (what `X-Desk-State-Units` can carry). */
+const DeskUnitWhySchema = z
+  .string()
+  .regex(/^[a-z0-9][a-z0-9_-]{0,39}$/, 'a reason code')
+  .refine((why) => why !== 'local', 'a reason code');
+
+/** A row of `state.units`: a brief slot whose record has a pin, and what the scene holds for it. */
+export const DeskStateUnitSchema = z.object({
+  slot: DeskUnitSlotSchema,
+  ref: DeskIdSchema,
+  version: DeskUnitVersionSchema,
+  sha256: Sha256HexSchema,
+  staged: z.enum(DESK_UNIT_STAGED),
+  /** Staged `unit`, but the slot no longer holds a linked instance (made local in the desk). */
+  local: z.boolean(),
+  why: DeskUnitWhySchema.optional(),
+});
+export type DeskStateUnit = z.infer<typeof DeskStateUnitSchema>;
+
+/**
+ * What a stored state uses for a slot, as rideo records it (`clip.deskState.units`, the `X-Desk-State-Units` header's
+ * rows): a `state.units` row without its sha256 (a library version's file never changes).
+ */
+export const DeskStateUnitUseSchema = DeskStateUnitSchema.omit({ sha256: true });
+export type DeskStateUnitUse = z.infer<typeof DeskStateUnitUseSchema>;
+
 /** What rideo tells the desk about a scene (docs/design/director-desk.md#the-brief). */
 export const DeskBriefSchema = z
   .object({
@@ -100,6 +247,8 @@ export const DeskBriefSchema = z
       description: z.string().max(4000),
       interior: z.boolean().nullable(),
       timeOfDay: DeskTimeOfDaySchema.nullable(),
+      /** The scene's place's 3D set (library units only). */
+      unit: DeskBriefPinSchema.optional(),
     }),
     cast: z
       .array(
@@ -109,6 +258,8 @@ export const DeskBriefSchema = z
           description: z.string().max(4000),
           kind: z.string().max(60).nullable(),
           heightM: z.number().min(0.1).max(4).nullable(),
+          /** The character's 3D figure (library units only). */
+          unit: DeskBriefPinSchema.optional(),
         }),
       )
       .max(16),
@@ -119,6 +270,8 @@ export const DeskBriefSchema = z
           name: z.string().min(1).max(120),
           description: z.string().max(2000),
           kind: z.enum(['location', 'prop', 'other']),
+          /** A prop's 3D prop (library units only; a desk ignores one on a location, with a warning). */
+          unit: DeskBriefPinSchema.optional(),
         }),
       )
       .max(64),
@@ -191,6 +344,8 @@ export const DeskOpenOptionsSchema = z.object({
   modes: z.array(DeskModeSchema).optional(),
   defaultMode: DeskModeSchema.optional(),
   readOnly: z.boolean().optional(),
+  /** Library units on for this open: only to a desk that announced them. */
+  units: DeskUnitsOptionSchema.optional(),
 });
 export type DeskOpenOptions = z.infer<typeof DeskOpenOptionsSchema>;
 
@@ -283,6 +438,26 @@ export const DeskOpenMessageSchema = z.object({
   scene: DeskBriefSchema,
   state: DeskStateSchema.nullable(),
   options: DeskOpenOptionsSchema.optional(),
+  /**
+   * The unit files of the brief's pins (transferred), only with `options.units`: in slot order, each `ref@version`
+   * once, at most 48 MiB in all.
+   */
+  units: z
+    .array(DeskOpenUnitSchema)
+    .max(DESK_UNIT_LIMITS.openUnits)
+    .superRefine((units, ctx) => {
+      const seen = new Set<string>();
+      let bytes = 0;
+      units.forEach((u, i) => {
+        const key = `${u.ref}@${u.version}`;
+        if (seen.has(key)) ctx.addIssue({ code: 'custom', path: [i, 'ref'], message: `${key} is sent once` });
+        seen.add(key);
+        bytes += u.unit.data.byteLength;
+      });
+      if (bytes > DESK_UNIT_LIMITS.openBytes)
+        ctx.addIssue({ code: 'custom', message: 'the units of an open are at most 48 MiB in all' });
+    })
+    .optional(),
 });
 export const DeskExportMessageSchema = z.object({
   type: z.literal('export'),
@@ -303,12 +478,37 @@ export const DeskResultAckMessageSchema = z.object({
     .optional(),
 });
 
+/**
+ * The answer to a `unit-publish`, with its `id` (docs/design/director-desk.md#publishing-and-linking): `ok` with the
+ * item (`ref`), the version and whether it was `linked` to the entity the publish came from; else a `code`
+ * (`DESK_PUBLISH_REFUSALS`) and a `message`.
+ */
+export const DeskUnitAckMessageSchema = z
+  .object({
+    type: z.literal('unit-ack'),
+    id: DeskRequestIdSchema,
+    ok: z.boolean(),
+    ref: DeskIdSchema.optional(),
+    version: DeskUnitVersionSchema.optional(),
+    linked: z.boolean().optional(),
+    code: z.string().min(1).max(40).optional(),
+    message: z.string().max(2000).optional(),
+  })
+  .superRefine((m, ctx) => {
+    if (!m.ok) return;
+    for (const key of ['ref', 'version', 'linked'] as const)
+      if (m[key] === undefined)
+        ctx.addIssue({ code: 'custom', path: [key], message: 'required when ok is true' });
+  });
+export type DeskUnitAckMessage = z.infer<typeof DeskUnitAckMessageSchema>;
+
 export const HostToDeskMessageSchema = z.discriminatedUnion('type', [
   DeskOpenMessageSchema,
   DeskExportMessageSchema,
   DeskCancelMessageSchema,
   DeskSaveMessageSchema,
   DeskResultAckMessageSchema,
+  DeskUnitAckMessageSchema,
 ]);
 export type HostToDeskMessage = z.infer<typeof HostToDeskMessageSchema>;
 
@@ -327,6 +527,8 @@ export const DeskReadyMessageSchema = z.object({
       modes: z.array(DeskModeSchema),
     }),
     offline: z.boolean(),
+    /** Library units, read leniently: one rideo cannot use reads as absent, and `ready` is never refused for it. */
+    units: DeskUnitsCapabilitySchema.optional().catch(undefined),
   }),
 });
 export const DeskOpenedMessageSchema = z.object({
@@ -341,6 +543,11 @@ export const DeskStateMessageSchema = z.object({
   sceneId: DeskIdSchema,
   state: DeskStateSchema,
   shots: z.number().int().nonnegative(),
+  /**
+   * After an open with library units: what the state uses, one row per brief slot whose record has a pin. Read
+   * leniently: rows that do not validate, or more than 128, read as unknown (absent) and the state is kept.
+   */
+  units: z.array(DeskStateUnitSchema).max(DESK_UNIT_LIMITS.stateUnits).optional().catch(undefined),
 });
 export const DeskProgressMessageSchema = z.object({
   type: z.literal('progress'),
@@ -372,6 +579,40 @@ export const DeskCloseMessageSchema = z.object({
   reason: z.enum(['done', 'cancel']),
 });
 
+/**
+ * The desk's Save to library (docs/design/director-desk.md#publishing-and-linking), only after an open whose
+ * `options.units.publish` was true: a unit file for the library, a new item or a new version of `newVersionOf` (the
+ * version it was made from), from the brief slot `from` names. `unit.data` and `thumbnail.data` are transferred.
+ */
+export const DeskUnitPublishMessageSchema = z.object({
+  type: z.literal('unit-publish'),
+  id: DeskRequestIdSchema,
+  kind: DeskUnitFileKindSchema,
+  name: z.string().min(1).max(120),
+  description: z.string().max(2000).optional(),
+  newVersionOf: z.object({ ref: DeskIdSchema, version: DeskUnitVersionSchema }).optional(),
+  from: DeskUnitFromSchema.optional(),
+  unit: z.object({
+    format: z.literal(DESK_UNIT_FORMAT),
+    version: z.literal(DESK_UNIT_DATA_VERSION),
+    data: ArrayBufferSchema.refine(unitBytesInRange, '1 byte to 32 MiB'),
+  }),
+  /** The sha256 of `unit.data`. */
+  sha256: Sha256HexSchema,
+  thumbnail: z
+    .object({
+      mime: z.literal('image/png'),
+      data: ArrayBufferSchema.refine(
+        (b) => b.byteLength >= 1 && b.byteLength <= DESK_UNIT_LIMITS.thumbnailBytes,
+        '1 byte to 64 KiB',
+      ),
+    })
+    .nullable(),
+  /** The unit's facts, at most 16 KiB of JSON (the library keeps them with the version). */
+  meta: DeskUnitMetaSchema,
+});
+export type DeskUnitPublishMessage = z.infer<typeof DeskUnitPublishMessageSchema>;
+
 export const DeskToHostMessageSchema = z.discriminatedUnion('type', [
   DeskReadyMessageSchema,
   DeskOpenedMessageSchema,
@@ -380,6 +621,7 @@ export const DeskToHostMessageSchema = z.discriminatedUnion('type', [
   DeskResultMessageSchema,
   DeskErrorMessageSchema,
   DeskCloseMessageSchema,
+  DeskUnitPublishMessageSchema,
 ]);
 export type DeskToHostMessage = z.infer<typeof DeskToHostMessageSchema>;
 
@@ -392,6 +634,7 @@ export const DeskProtocolMessageSchema = z.discriminatedUnion('type', [
   DeskCancelMessageSchema,
   DeskSaveMessageSchema,
   DeskResultAckMessageSchema,
+  DeskUnitAckMessageSchema,
   DeskReadyMessageSchema,
   DeskOpenedMessageSchema,
   DeskStateMessageSchema,
@@ -399,6 +642,7 @@ export const DeskProtocolMessageSchema = z.discriminatedUnion('type', [
   DeskResultMessageSchema,
   DeskErrorMessageSchema,
   DeskCloseMessageSchema,
+  DeskUnitPublishMessageSchema,
 ]);
 export type DeskProtocolMessage = z.infer<typeof DeskProtocolMessageSchema>;
 
@@ -411,4 +655,5 @@ export const DESK_TO_HOST_TYPES: readonly string[] = [
   'result',
   'error',
   'close',
+  'unit-publish',
 ];

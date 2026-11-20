@@ -4,8 +4,12 @@ import {
   DESK_STATE_WRITE_INTERVAL_MS,
   DESK_STORE_RETRY_MS,
   type DeskBrief,
+  type DeskBriefOptions,
   type DeskResultMessage,
   type DeskState,
+  type DeskStateUnitUse,
+  type DeskUnitPublishMessage,
+  HostToDeskMessageSchema,
 } from '@rideo/shared';
 import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 import {
@@ -18,6 +22,8 @@ import {
   DeskStateConflict,
   type DeskStatus,
   type DeskStorePrecondition,
+  type DeskUnitPublishOutcome,
+  type DeskUnitsHost,
   deskUnreadableNotice,
   type StoredDeskState,
   sha256Hex,
@@ -145,6 +151,11 @@ function harness(
     applyResult?: (result: DeskResultMessage, opened: DeskOpenedWith) => Promise<DeskAck>;
     /** the states this tab sent for the clip, shared by the clip's panels (`deskStatesSent`) */
     sent?: Map<string, DeskSentState>;
+    /** the clip's brief (by default `brief()`), given the brief options of the open */
+    brief?: (options?: DeskBriefOptions) => DeskBrief;
+    /** library units: the studio offers them */
+    units?: DeskUnitsHost;
+    readOnly?: boolean;
   } = {},
 ) {
   let listener: ((e: MessageEvent) => void) | null = null;
@@ -167,25 +178,28 @@ function harness(
   const signals: (AbortSignal | undefined)[] = [];
   /** The state each write named as the one it replaces. */
   const preconditions: DeskStorePrecondition[] = [];
+  /** What each write said the state uses (`X-Desk-State-Units`). */
+  const unitsStored: (readonly DeskStateUnitUse[] | null | undefined)[] = [];
   const toasts: [string, string][] = [];
   let closed = 0;
   const bridge = new DeskBridge({
     url: DESK_URL,
     host,
     frame: () => deskWindow,
-    brief,
+    brief: opts.brief ?? brief,
     options: () => ({
       hostName: 'Rideo',
       modes: ['camera', 'motion', 'pose'],
       defaultMode: 'camera',
-      readOnly: false,
+      readOnly: opts.readOnly ?? false,
     }),
     load: opts.load ?? (async () => opts.stored ?? null),
-    store: async (s, precondition, signal) => {
+    store: async (s, precondition, signal, units) => {
       events.push(`store ${text(s.data)}`);
       stores.push(text(s.data));
       signals.push(signal);
       preconditions.push(precondition);
+      unitsStored.push(units);
       return opts.store ? opts.store(s, signal, precondition) : text(s.data);
     },
     clear: async () => {
@@ -210,6 +224,7 @@ function harness(
     },
     ...(opts.sha256 === null ? {} : { sha256: opts.sha256 ?? (async (data) => text(data)) }),
     ...(opts.sent ? { sent: opts.sent } : {}),
+    ...(opts.units ? { units: opts.units } : {}),
   });
   return {
     bridge,
@@ -227,6 +242,7 @@ function harness(
     stores,
     signals,
     preconditions,
+    unitsStored,
     toasts,
     closed: () => closed,
     last: () => statuses.at(-1) as DeskStatus,
@@ -1889,5 +1905,341 @@ describe("the desk bridge: the desk's errors (docs/design/director-desk.md#the-p
       { brief: brief(), retimed: [SHOT] },
       { brief: brief(), retimed: [] },
     ]);
+  });
+});
+
+describe('the desk bridge: library units (docs/design/director-desk.md#library-units)', () => {
+  const pin = (c: string, ref: string, version: number) => ({ ref, version, sha256: c.repeat(64) });
+  const PINS = {
+    set: pin('a', 'lib_000000000set1', 3),
+    mira: pin('b', 'lib_00000000mira1', 2),
+    lamp: pin('c', 'lib_00000000lamp1', 1),
+  };
+  /** The brief deskBrief makes: with the pins of the kinds announced when the open has units, without them else. */
+  const pinned = (options?: DeskBriefOptions): DeskBrief => {
+    const base = brief();
+    const kinds = new Set(options?.units?.kinds ?? []);
+    return {
+      ...base,
+      set: { ...base.set, ...(kinds.has('set') ? { unit: PINS.set } : {}) },
+      cast: [
+        {
+          id: 'chr_mira',
+          name: 'Mira',
+          description: '',
+          kind: null,
+          heightM: null,
+          ...(kinds.has('figure') ? { unit: PINS.mira } : {}),
+        },
+      ],
+      elements: [
+        {
+          id: 'ele_lamp',
+          name: 'Oil lamp',
+          description: '',
+          kind: 'prop',
+          ...(kinds.has('prop') ? { unit: PINS.lamp } : {}),
+        },
+      ],
+    };
+  };
+  const CAPABILITY = { versions: [1], kinds: ['set', 'prop', 'figure'], maxBytes: 33554432, publish: true };
+  const READY_UNITS = { ...READY, capabilities: { ...READY.capabilities, units: CAPABILITY } };
+  const ROW = (slot: string, p: { ref: string; version: number; sha256: string }, staged = 'unit') => ({
+    slot,
+    ...p,
+    staged,
+    local: false,
+    ...(staged === 'pending' ? { why: 'missing' } : {}),
+  });
+  const PUBLISH = (id: string, over: Record<string, unknown> = {}) => ({
+    type: 'unit-publish',
+    id,
+    kind: 'set',
+    name: 'Harbor',
+    from: { castId: null, elementId: null, set: true },
+    unit: { format: '3d-editor.desk-unit', version: 1, data: bytes(`unit ${id}`) },
+    sha256: 'd'.repeat(64),
+    thumbnail: null,
+    meta: {
+      dimensionsM: [24, 18, 9.5],
+      objects: 14,
+      triangles: 5120,
+      actor: null,
+      credits: [],
+      deskVersion: '0.2.0',
+      digest: 'e'.repeat(64),
+    },
+    ...over,
+  });
+  const outcome = (m: DeskUnitPublishMessage, linked = true): DeskUnitPublishOutcome => ({
+    ack: { type: 'unit-ack', id: m.id, ok: true, ref: 'lib_0000000harbor', version: 1, linked },
+    notice: `Saved Harbor v1 to the library; ${linked ? "linked to the scene's place (Harbor)" : 'not linked'}`,
+    level: linked ? 'success' : 'info',
+  });
+
+  /** The studio's side of units, recording what the bridge asks of it. */
+  function studio(over: Partial<DeskUnitsHost> = {}) {
+    const fetches: { slots: string[]; signal: AbortSignal }[] = [];
+    const publishes: [DeskUnitPublishMessage, { readOnly: boolean }][] = [];
+    const host: DeskUnitsHost = {
+      mayPublish: () => true,
+      storedUses: () => null,
+      fetch: async (pins, progress, signal) => {
+        fetches.push({ slots: pins.map((p) => p.slot), signal });
+        pins.forEach((_, i) => {
+          progress(i + 1, pins.length);
+        });
+        return {
+          units: pins.map((p) => ({
+            ref: p.pin.ref,
+            version: p.pin.version,
+            sha256: p.pin.sha256,
+            unit: { format: '3d-editor.desk-unit', version: 1, data: bytes(`file of ${p.pin.ref}`) },
+          })),
+          left: [],
+        };
+      },
+      publish: async (m, opened) => {
+        publishes.push([m, opened]);
+        return outcome(m);
+      },
+      ...over,
+    };
+    return { host, fetches, publishes };
+  }
+
+  /** Connected, and `ready` given (the desk's own capability), without its `opened` yet. */
+  async function ready(opts: Parameters<typeof harness>[0], readyMessage: unknown = READY_UNITS) {
+    const h = harness({ brief: pinned, ...opts });
+    h.bridge.start();
+    h.bridge.frameLoaded();
+    h.hello();
+    h.desk(readyMessage);
+    await flush();
+    return h;
+  }
+
+  it('gives a desk without the capability no options.units, no pins and no open.units: the open of before', async () => {
+    const s = studio();
+    const plain = await ready({ units: s.host, stored: stored('kept') }, READY);
+    const [open] = plain.opens();
+    expect(open!.message).not.toHaveProperty('units');
+    expect((open!.message as unknown as { options: object }).options).not.toHaveProperty('units');
+    expect(JSON.stringify((open!.message as unknown as { scene: unknown }).scene)).not.toContain('"unit"');
+    // only the state's copy is transferred
+    expect(open!.transfer).toHaveLength(1);
+    // a capability rideo cannot use (only a newer version) reads as none, and ready still opens
+    const newer = await ready(
+      { units: s.host },
+      { ...READY, capabilities: { ...READY.capabilities, units: { ...CAPABILITY, versions: [2] } } },
+    );
+    expect((newer.opens()[0]!.message as unknown as { options: object }).options).not.toHaveProperty('units');
+    // a studio without units gives a desk with them none either
+    const none = await ready({});
+    expect(none.opens()[0]!.message).not.toHaveProperty('units');
+    expect((none.opens()[0]!.message as unknown as { options: object }).options).not.toHaveProperty('units');
+    expect(s.fetches).toEqual([]);
+  });
+
+  it('gives a desk with units options.units with publish, the pins, then the files in slot order, transferred', async () => {
+    const s = studio();
+    const h = await ready({ units: s.host, stored: stored('kept') });
+    const [open] = h.opens();
+    const message = open!.message as unknown as {
+      options: { units: unknown };
+      scene: DeskBrief;
+      units: { ref: string; version: number; unit: { data: ArrayBuffer } }[];
+    };
+    expect(message.options.units).toEqual({ version: 1, publish: true });
+    expect(message.scene.set.unit).toEqual(PINS.set);
+    expect(message.scene.cast[0]!.unit).toEqual(PINS.mira);
+    expect(message.scene.elements[0]!.unit).toEqual(PINS.lamp);
+    expect(s.fetches[0]!.slots).toEqual(['set', 'cast:chr_mira', 'el:ele_lamp']);
+    expect(message.units.map((u) => [u.ref, u.version])).toEqual([
+      [PINS.set.ref, 3],
+      [PINS.mira.ref, 2],
+      [PINS.lamp.ref, 1],
+    ]);
+    // the state's copy and every file are transferred
+    expect(open!.transfer).toEqual([
+      (message as unknown as { state: DeskState }).state.data,
+      ...message.units.map((u) => u.unit.data),
+    ]);
+    expect(HostToDeskMessageSchema.safeParse(open!.message).success).toBe(true);
+    // the status line counted them as they came
+    const lines = h.statuses.map((st) => st.line);
+    expect(lines).toContain("Getting the scene's library units (0 of 3)…");
+    expect(lines).toContain("Getting the scene's library units (3 of 3)…");
+    // a person who may not publish: no Save to library in the desk
+    const reader = await ready({ units: studio({ mayPublish: () => false }).host });
+    expect((reader.opens()[0]!.message as unknown as { options: { units: unknown } }).options.units).toEqual({
+      version: 1,
+      publish: false,
+    });
+  });
+
+  it('sends no file for a pin the state handed over already uses: the stored rows, then the desk newest state rows', async () => {
+    const s = studio({
+      storedUses: (sha) =>
+        (sha === 'kept' ? [ROW('set', PINS.set)].map(({ sha256: _s, ...u }) => u) : null) as never,
+    });
+    const h = await ready({ units: s.host, stored: stored('kept') });
+    expect(s.fetches[0]!.slots).toEqual(['cast:chr_mira', 'el:ele_lamp']);
+    h.desk(OPENED);
+    // the desk's newest state uses the set and the figure; the prop waits
+    h.desk({
+      ...state('edited'),
+      units: [
+        ROW('set', PINS.set),
+        ROW('cast:chr_mira', PINS.mira),
+        ROW('el:ele_lamp', PINS.lamp, 'pending'),
+      ],
+    });
+    // the desk page loads again: its newest state goes back with the one file it still needs
+    h.hello();
+    h.bridge.frameLoaded();
+    h.desk(READY_UNITS);
+    await flush();
+    expect(s.fetches[1]!.slots).toEqual(['el:ele_lamp']);
+    const again = h.opens()[1]!.message as unknown as { units: { ref: string }[] };
+    expect(again.units.map((u) => u.ref)).toEqual([PINS.lamp.ref]);
+    // nothing to send: no units field at all
+    const all = studio({
+      storedUses: () =>
+        [ROW('set', PINS.set), ROW('cast:chr_mira', PINS.mira), ROW('el:ele_lamp', PINS.lamp)].map(
+          ({ sha256: _s, ...u }) => u,
+        ) as never,
+    });
+    const quiet = await ready({ units: all.host, stored: stored('kept') });
+    expect(all.fetches).toEqual([]);
+    expect(quiet.opens()[0]!.message).not.toHaveProperty('units');
+  });
+
+  it('opens without the files that did not come, and Close while they come stops them and sends no open', async () => {
+    const left = studio({
+      fetch: async () => ({ units: [], left: [{ slot: 'set', why: 'failed' }] }),
+    });
+    const h = await ready({ units: left.host });
+    expect(h.opens()).toHaveLength(1);
+    expect(h.opens()[0]!.message).not.toHaveProperty('units');
+
+    let signal: AbortSignal | null = null;
+    const slow = studio({
+      fetch: (_pins, _progress, s) =>
+        new Promise((resolve) => {
+          signal = s;
+          s.addEventListener('abort', () => resolve({ units: [], left: [] }));
+        }),
+    });
+    const closing = await ready({ units: slow.host });
+    expect(closing.last().line).toBe("Getting the scene's library units (0 of 3)…");
+    await closing.bridge.close();
+    expect((signal as AbortSignal | null)?.aborted).toBe(true);
+    expect(closing.opens()).toEqual([]);
+    expect(closing.closed()).toBe(1);
+  });
+
+  it('publishes one at a time in the order they come, each acked on its connection with a notice', async () => {
+    const waits: (() => void)[] = [];
+    const s = studio({
+      publish: (m, opened) =>
+        new Promise((resolve) => {
+          waits.push(() => resolve(outcome(m, !opened.readOnly)));
+        }),
+    });
+    const h = await ready({ units: s.host });
+    h.desk(OPENED);
+    h.desk(PUBLISH('pub-1'));
+    h.desk(PUBLISH('pub-2'));
+    await flush();
+    expect(waits).toHaveLength(1);
+    expect(h.last().line).toBe('Saving Harbor to the library…');
+    waits[0]!();
+    await flush();
+    expect(waits).toHaveLength(2);
+    const acks = () => h.posted().filter((m) => m.type === 'unit-ack');
+    expect(acks().map((a) => [a.id, a.ok, a.linked])).toEqual([['pub-1', true, true]]);
+    expect(h.toasts.at(-1)).toEqual([
+      "Saved Harbor v1 to the library; linked to the scene's place (Harbor)",
+      'success',
+    ]);
+    waits[1]!();
+    await flush();
+    expect(acks().map((a) => a.id)).toEqual(['pub-1', 'pub-2']);
+    // a publish that throws is answered failed, and the next goes on
+    const failing = studio({
+      publish: async () => {
+        throw new Error('the studio went away');
+      },
+    });
+    const f = await ready({ units: failing.host });
+    f.desk(OPENED);
+    f.desk(PUBLISH('pub-9'));
+    await flush();
+    expect(f.posted().filter((m) => m.type === 'unit-ack')).toEqual([
+      { type: 'unit-ack', id: 'pub-9', ok: false, code: 'failed', message: 'the studio went away' },
+    ]);
+  });
+
+  it('tells the publish the open was read-only (an approved clip): it is never linked', async () => {
+    const s = studio();
+    const h = await ready({ units: s.host, readOnly: true });
+    h.desk(OPENED);
+    h.desk(PUBLISH('pub-1'));
+    await flush();
+    expect(s.publishes[0]![1]).toEqual({ readOnly: true });
+  });
+
+  it('refuses a unit-publish at once on an open without units or without publish', async () => {
+    for (const [h, says] of [
+      [await ready({ units: studio().host }, READY), 'this open has no library units'],
+      [await ready({}), 'this open has no library units'],
+      [
+        await ready({ units: studio({ mayPublish: () => false }).host }),
+        'you may not publish to the library',
+      ],
+    ] as const) {
+      h.desk(OPENED);
+      h.desk(PUBLISH('pub-1'));
+      // synchronous: the desk never waits out its timeout
+      expect(h.posted().filter((m) => m.type === 'unit-ack')).toEqual([
+        { type: 'unit-ack', id: 'pub-1', ok: false, code: 'refused', message: says },
+      ]);
+    }
+  });
+
+  it("sends each state's units with its write, and none when the desk sent none", async () => {
+    const s = studio();
+    const h = await ready({ units: s.host });
+    h.desk(OPENED);
+    const rows = [ROW('set', PINS.set), ROW('el:ele_lamp', PINS.lamp, 'pending')];
+    h.desk({ ...state('edited'), units: rows });
+    const close = h.bridge.close();
+    await flush();
+    // the answer to Close's save is a state like any other: its own units with it
+    h.desk({ ...state('with units', h.posted().find((m) => m.type === 'save')?.id as string), units: rows });
+    await close;
+    expect(h.unitsStored).toEqual([
+      [
+        { slot: 'set', ref: PINS.set.ref, version: 3, staged: 'unit', local: false },
+        {
+          slot: 'el:ele_lamp',
+          ref: PINS.lamp.ref,
+          version: 1,
+          staged: 'pending',
+          local: false,
+          why: 'missing',
+        },
+      ],
+    ]);
+    // a desk from before units: no rows, the write says nothing of them
+    const old = await opened({});
+    old.desk(state('old'));
+    const done = old.bridge.close();
+    await flush();
+    old.desk(state('old', old.posted().find((m) => m.type === 'save')?.id as string));
+    await done;
+    expect(old.unitsStored).toEqual([null]);
   });
 });

@@ -1,11 +1,12 @@
 /**
  * The 3D-Editor's director's desk embedded in the studio (docs/design/director-desk.md): the brief rideo makes of a
- * clip, the plan of a desk's result, the desk's setting and the bridge's timings.
+ * clip, the plan of a desk's result, library units, the desk's setting and the bridge's timings.
  */
 import { cutText } from './brief';
 
 export * from './brief';
 export * from './result';
+export * from './units';
 
 /** No `hello` this long after the iframe's `load`: the desk did not answer (docs/design/director-desk.md#the-desk). */
 export const DESK_HELLO_TIMEOUT_MS = 15_000;

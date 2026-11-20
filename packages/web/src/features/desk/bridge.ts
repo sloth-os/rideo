@@ -10,16 +10,27 @@ import {
   DESK_STORE_RETRY_MS,
   DESK_TO_HOST_TYPES,
   type DeskBrief,
+  type DeskBriefOptions,
+  type DeskBriefPinSlot,
   DeskConnectSchema,
   type DeskErrorCode,
   DeskErrorMessageSchema,
   DeskHelloSchema,
   type DeskOpenOptions,
+  type DeskOpenUnit,
   type DeskResultMessage,
   type DeskState,
+  type DeskStateUnit,
+  type DeskStateUnitUse,
   DeskToHostMessageSchema,
+  type DeskUnitAckMessage,
+  type DeskUnitPublishMessage,
+  type DeskUnitsCapability,
+  type DeskUnitsOption,
+  deskBriefPins,
   deskOrigin,
   deskText,
+  deskUnitPinsToSend,
   type HostToDeskMessage,
   HostToDeskMessageSchema,
 } from '@rideo/shared';
@@ -113,17 +124,23 @@ export interface DeskBridgeOptions {
   };
   /** The iframe's window (`iframe.contentWindow`), once it has one. */
   frame: () => DeskWindow | null;
-  /** The clip's brief, as `open` sends it. */
-  brief: () => DeskBrief;
+  /** The clip's brief, as `open` sends it: with the pins of the kinds the desk announced when the open has units. */
+  brief: (options?: DeskBriefOptions) => DeskBrief;
   options: () => DeskOpenOptions;
   /** The stored state (`GET desk-state`), null when none is stored (`404`); any other failure rejects. */
   load: () => Promise<StoredDeskState | null>;
   /**
    * Stores a state (`PUT desk-state`) over the one the precondition names: the sha256 the server holds. Rejects with
    * `DeskStateConflict` when the server holds another state. `signal` aborts it (closing waits at most
-   * `DESK_CLOSE_STORE_TIMEOUT_MS`); a write on the way out of the panel has none.
+   * `DESK_CLOSE_STORE_TIMEOUT_MS`); a write on the way out of the panel has none. `units` is what the state uses of
+   * the library, as its `state` message said (`X-Desk-State-Units`); null when not known.
    */
-  store: (state: DeskState, precondition: DeskStorePrecondition, signal?: AbortSignal) => Promise<string>;
+  store: (
+    state: DeskState,
+    precondition: DeskStorePrecondition,
+    signal?: AbortSignal,
+    units?: readonly DeskStateUnitUse[] | null,
+  ) => Promise<string>;
   /** Clears the stored state (`DELETE desk-state`): Start over. */
   clear: () => Promise<void>;
   /**
@@ -145,6 +162,34 @@ export interface DeskBridgeOptions {
    * only its own.
    */
   sent?: Map<string, DeskSentState>;
+  /** Library units (docs/design/director-desk.md#library-units): without it, no open has them. */
+  units?: DeskUnitsHost;
+}
+
+/** What the bridge needs of the studio for library units (`features/desk/units.ts`). */
+export interface DeskUnitsHost {
+  /** Whether the person may publish to the library (`open.options.units.publish`); read at each open. */
+  mayPublish: () => boolean;
+  /** What the stored state of that sha256 uses (`clip.deskState.units`); null when not known. */
+  storedUses: (sha256: string | null) => readonly DeskStateUnitUse[] | null;
+  /** The files of the pins an open sends (`fetchDeskUnits`): `units` in slot order, the others left out and why. */
+  fetch: (
+    pins: readonly DeskBriefPinSlot[],
+    progress: (done: number, total: number) => void,
+    signal: AbortSignal,
+  ) => Promise<{ units: DeskOpenUnit[]; left: readonly { slot: string; why: string }[] }>;
+  /** A `unit-publish`, saved to the library and linked (`publishDeskUnit`). */
+  publish: (
+    message: DeskUnitPublishMessage,
+    opened: { readOnly: boolean },
+  ) => Promise<DeskUnitPublishOutcome>;
+}
+
+/** A publish's answer: the `unit-ack`, and what the panel's status line and toast say. */
+export interface DeskUnitPublishOutcome {
+  ack: DeskUnitAckMessage;
+  notice: string;
+  level: 'success' | 'info' | 'warning';
 }
 
 /**
@@ -308,6 +353,18 @@ export class DeskBridge {
   private sceneId: string | null = null;
   /** The newest state the desk sent, and whether it may differ from the stored one. */
   private latest: DeskState | null = null;
+  /** What the newest state uses of the library, as its `state` said; undefined when not known. */
+  private latestUnits: readonly DeskStateUnit[] | undefined = undefined;
+  /** The desk's library units capability (`ready`), and the `options.units` of this connection's `open`. */
+  private capability: DeskUnitsCapability | null = null;
+  private unitsOpen: DeskUnitsOption | null = null;
+  /** The open on this connection was read-only: a publish is never linked. */
+  private openReadOnly = false;
+  /** The open being prepared (its unit files fetched) on this port, and how its fetches are stopped. */
+  private preparing: DeskPort | null = null;
+  private unitsAbort: AbortController | null = null;
+  /** Publishes, one at a time in the order they come. */
+  private publishes: Promise<void> = Promise.resolve();
   private dirty = false;
   private lastWrite = Date.now();
   /** Writes that failed in a row: the backoff, and one toast per run of failures. */
@@ -552,6 +609,10 @@ export class DeskBridge {
     this.port?.close();
     this.port = null;
     this.ready = this.openSent = this.handedOver = false;
+    // the capability and the units are this connection's: a desk that loads again says them again
+    this.capability = this.unitsOpen = null;
+    this.unitsAbort?.abort();
+    this.unitsAbort = null;
   }
 
   /** The sha256 of a state's bytes; null where this page cannot hash (no crypto.subtle). */
@@ -655,6 +716,8 @@ export class DeskBridge {
     const m = parsed.data;
     switch (m.type) {
       case 'ready': {
+        // read leniently: a capability rideo cannot use is no units, never a refused ready
+        this.capability = m.capabilities.units ?? null;
         const exp = m.capabilities.export;
         this.set({
           exportUnavailable: exp.available
@@ -684,6 +747,8 @@ export class DeskBridge {
           return;
         }
         this.latest = m.state;
+        // what it uses goes with its bytes: rows that did not validate, or none, are not known
+        this.latestUnits = m.units;
         this.dirty = true;
         waiter?.(m.state);
         if (this.replaceSave && !this.kept) {
@@ -729,10 +794,60 @@ export class DeskBridge {
         if (FOR_THE_PERSON.has(m.code)) this.o.onToast(text, 'warning');
         return;
       }
+      case 'unit-publish': {
+        if (!this.o.units || !this.unitsOpen?.publish) {
+          // no desk should send one: answered at once, so it never waits out its timeout
+          this.log('refused a unit-publish on an open without units, or without publish', m.id);
+          this.post({
+            type: 'unit-ack',
+            id: m.id,
+            ok: false,
+            code: 'refused',
+            message: this.unitsOpen ? 'you may not publish to the library' : 'this open has no library units',
+          });
+          return;
+        }
+        const opened = { readOnly: this.openReadOnly };
+        this.publishes = this.publishes
+          .then(() => this.publishUnit(port, m, opened))
+          .catch((err: unknown) => this.log('a unit-publish was not answered', err));
+        return;
+      }
       case 'close':
         void this.finish();
         return;
     }
+  }
+
+  /** A `unit-publish`, published and linked; its `unit-ack` on the connection it came on, and a notice. */
+  private async publishUnit(
+    port: DeskPort,
+    message: DeskUnitPublishMessage,
+    opened: { readOnly: boolean },
+  ): Promise<void> {
+    this.show(`Saving ${deskText(message.name)} to the library…`);
+    let out: DeskUnitPublishOutcome;
+    try {
+      out = await this.o.units!.publish(message, opened);
+    } catch (err) {
+      const said = deskText(messageOf(err)).slice(0, 2000) || 'failed';
+      out = {
+        ack: { type: 'unit-ack', id: message.id, ok: false, code: 'failed', message: said },
+        notice: `Not saved to the library: ${said}`,
+        level: 'warning',
+      };
+    }
+    this.log('a unit-publish was answered', out.ack);
+    if (port === this.port && !this.disposed) {
+      try {
+        this.post(out.ack);
+      } catch (err) {
+        this.log('the unit-ack was not sent', err);
+      }
+    }
+    // the toast says it even after the panel closed
+    this.o.onToast(out.notice, out.level);
+    this.show(out.notice);
   }
 
   /**
@@ -742,13 +857,38 @@ export class DeskBridge {
    */
   private async open(port: DeskPort): Promise<void> {
     const loaded = await this.stored;
-    if (!loaded || port !== this.port || this.openSent || this.disposed || this.leaving) return;
+    if (
+      !loaded ||
+      port !== this.port ||
+      this.openSent ||
+      this.preparing === port ||
+      this.disposed ||
+      this.leaving
+    )
+      return;
+    // library units only for a desk that announced them, when the studio offers them
+    // (docs/design/director-desk.md#negotiation): else the open of before, byte for byte
+    const capability = this.o.units ? this.capability : null;
+    const units: DeskUnitsOption | null = capability
+      ? { version: 1, publish: this.o.units!.mayPublish() }
+      : null;
     let scene: DeskBrief;
     try {
-      scene = this.o.brief();
+      scene = capability ? this.o.brief({ units: { kinds: capability.kinds } }) : this.o.brief();
     } catch (err) {
       this.fail(messageOf(err));
       return;
+    }
+    let files: DeskOpenUnit[] = [];
+    if (units) {
+      this.preparing = port;
+      try {
+        files = await this.unitFiles(port, scene, loaded.state);
+      } finally {
+        if (this.preparing === port) this.preparing = null;
+      }
+      // Close, or a desk that loaded again, while the files came: this open is not sent
+      if (port !== this.port || this.openSent || this.disposed || this.leaving) return;
     }
     const source: DeskState | null =
       this.latest ??
@@ -756,8 +896,12 @@ export class DeskBridge {
         ? { format: DESK_STATE_FORMAT, version: DESK_STATE_VERSION, data: loaded.state.data }
         : null);
     const state = source ? { ...source, data: source.data.slice(0) } : null;
+    const options = { ...this.o.options(), ...(units ? { units } : {}) };
     try {
-      this.post({ type: 'open', scene, state, options: this.o.options() }, state ? [state.data] : []);
+      this.post({ type: 'open', scene, state, options, ...(files.length ? { units: files } : {}) }, [
+        ...(state ? [state.data] : []),
+        ...files.map((f) => f.unit.data),
+      ]);
     } catch (err) {
       this.fail(`The scene could not be sent to the desk: ${messageOf(err)}`);
       return;
@@ -766,8 +910,43 @@ export class DeskBridge {
     this.handedOver = state !== null;
     this.sceneId = scene.id;
     this.brief = scene;
+    this.unitsOpen = units;
+    this.openReadOnly = !!options.readOnly;
     // this connection's `opened` says which shots the brief retimed
     this.retimed = [];
+  }
+
+  /**
+   * The unit files an open sends (docs/design/director-desk.md#unit-bytes-in-open): every pin of the brief once per
+   * version, but those the state handed over already uses (the desk's newest state's rows, else the stored state's);
+   * the status line counts them as they come, and Close stops them. A file that does not come is left out (logged).
+   */
+  private async unitFiles(
+    port: DeskPort,
+    scene: DeskBrief,
+    stored: StoredDeskState | null,
+  ): Promise<DeskOpenUnit[]> {
+    const host = this.o.units!;
+    const uses = this.latest ? (this.latestUnits ?? null) : stored ? host.storedUses(this.storedSha) : null;
+    const pins = deskUnitPinsToSend(deskBriefPins(scene), uses);
+    if (!pins.length) return [];
+    const abort = new AbortController();
+    this.unitsAbort = abort;
+    const line = (done: number) => {
+      if (port === this.port && !this.disposed)
+        this.show(`Getting the scene's library units (${done} of ${pins.length})…`);
+    };
+    line(0);
+    try {
+      const got = await host.fetch(pins, line, abort.signal);
+      for (const left of got.left) this.log(`a library unit was left out of the open (${left.why})`, left);
+      return abort.signal.aborted ? [] : got.units;
+    } catch (err) {
+      this.log('the library units were not fetched', err);
+      return [];
+    } finally {
+      if (this.unitsAbort === abort) this.unitsAbort = null;
+    }
   }
 
   /**
@@ -801,6 +980,8 @@ export class DeskBridge {
     const signal = how.signal === undefined ? this.aborts.signal : (how.signal ?? undefined);
     const run = async (): Promise<StoreOutcome> => {
       const state = this.latest;
+      // what it uses, sent with it (`X-Desk-State-Units`); null when not known
+      const units = this.latestUnits ? this.latestUnits.map(({ sha256: _sha256, ...use }) => use) : null;
       if (!state || !this.dirty || !this.sceneId || this.kept) return 'skipped';
       // the 10 minutes' write waited for a write that started them again (a state came while that one was stored)
       if (how.interval && Date.now() - this.lastWrite < DESK_STATE_WRITE_INTERVAL_MS) {
@@ -824,7 +1005,7 @@ export class DeskBridge {
             ? { ...this.precondition(), replace: true }
             : this.precondition();
           if (sha !== null) this.remember(sha, since, 'ifMatch' in pre ? pre.ifMatch : null);
-          const stored = await this.o.store(state, pre, signal);
+          const stored = await this.o.store(state, pre, signal, units);
           this.storedSha = stored;
           if (sha !== null) this.answered(sha, since);
           this.passed(stored, since);

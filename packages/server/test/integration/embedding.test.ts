@@ -48,6 +48,8 @@ describe('embedding origins (docs/design/embedding.md#talking-to-a-server-on-ano
         'x-desk-state-format',
         'x-desk-state-version',
         'x-desk-state-replace',
+        // what the state uses of the library (docs/design/director-desk.md#what-a-stored-state-uses)
+        'x-desk-state-units',
         'if-match',
         'if-none-match',
       ]),

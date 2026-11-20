@@ -322,6 +322,7 @@ export type DeskStatePrecondition = ({ ifMatch: string } | { ifNoneMatch: '*' })
  * Stores a clip's desk state (`PUT …/desk-state`) over the state the precondition names. A `412`
  * `desk_state_conflict` (another session stored or restored another state, or cleared it) is an ApiError whose headers
  * carry the stored state's `ETag`. `signal` aborts the upload (closing the desk waits for it at most 10 seconds).
+ * `units` is the `X-Desk-State-Units` value (docs/design/director-desk.md#what-a-stored-state-uses); none: not known.
  */
 function saveDeskState(
   id: string,
@@ -329,12 +330,14 @@ function saveDeskState(
   state: DeskState,
   precondition: DeskStatePrecondition,
   signal?: AbortSignal,
+  units?: string,
 ): Promise<{ deskState: ClipDeskState }> {
   const named: Record<string, string> = {
     ...('ifMatch' in precondition
       ? { 'if-match': precondition.ifMatch === '*' ? '*' : `"${precondition.ifMatch}"` }
       : { 'if-none-match': '*' }),
     ...(precondition.replace ? { 'x-desk-state-replace': '1' } : {}),
+    ...(units !== undefined ? { 'x-desk-state-units': units } : {}),
   };
   return request<{ deskState: ClipDeskState }>(
     'PUT',

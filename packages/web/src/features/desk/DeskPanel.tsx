@@ -1,15 +1,17 @@
-import { type Clip, DESK_MODES, type DeskMode, deskBrief } from '@rideo/shared';
+import { type Clip, DESK_MODES, type DeskMode, deskBrief, formatDeskStateUnits } from '@rideo/shared';
 import { Box, RotateCw, Undo2, X } from 'lucide-react';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Badge, Button, Dialog } from '../../components/ui';
 import { ApiError, api, etagValue } from '../../lib/api';
+import { useAuth, useProjectRole } from '../../lib/auth';
 import { useConfig } from '../../lib/config';
 import { useProject } from '../../store/project';
 import { useUi } from '../../store/ui';
 import { uploadReference } from '../clips/reference-upload';
 import { DeskBridge, DeskStateConflict, type DeskStatus, deskStatesSent } from './bridge';
 import { applyDeskResult, pngToJpeg } from './results';
+import { deskPublishAllowed, fetchDeskUnits, publishDeskUnit } from './units';
 
 /** Where the desk's headers are explained (the timeout message links to it). */
 export const DESK_HEADERS_DOC =
@@ -78,6 +80,10 @@ export function DeskPanel({ clip, onClose }: { clip: Clip; onClose: () => void }
   // read when the desk opens: approved clips open read-only
   const opening = useRef({ readOnly, hostName: config?.brand.name || 'Rideo' });
   opening.current = { readOnly, hostName: config?.brand.name || 'Rideo' };
+  // a publish is linked only for a person who may edit the project (docs/design/director-desk.md#publishing-and-linking)
+  const access = useProjectRole(useProject((s) => s.docs?.project));
+  const mayEdit = useRef(access.can('project.edit'));
+  mayEdit.current = access.can('project.edit');
   const anchor = useRef<HTMLSpanElement>(null);
   const panel = useRef<HTMLDivElement>(null);
   const frame = useRef<HTMLIFrameElement>(null);
@@ -115,9 +121,9 @@ export function DeskPanel({ clip, onClose }: { clip: Clip; onClose: () => void }
       url,
       host: window,
       frame: () => frame.current?.contentWindow ?? null,
-      brief: () => {
+      brief: (options) => {
         const docs = useProject.getState().docs;
-        const brief = docs ? deskBrief(docs, clip.id) : null;
+        const brief = docs ? deskBrief(docs, clip.id, options) : null;
         if (!brief) throw new Error('The scene has no shots to stage: plan it first');
         return brief;
       },
@@ -129,10 +135,12 @@ export function DeskPanel({ clip, onClose }: { clip: Clip; onClose: () => void }
         readOnly: opening.current.readOnly,
       }),
       load: () => api.deskState(projectId, clip.id),
-      store: async (state, precondition, signal) => {
+      store: async (state, precondition, signal, units) => {
         try {
-          return (await api.saveDeskState(projectId, clip.id, state, precondition, signal)).deskState.media
-            .hash;
+          // what the state uses of the library goes with it; rows that do not fit, or none known: no header
+          const used = formatDeskStateUnits(units);
+          return (await api.saveDeskState(projectId, clip.id, state, precondition, signal, used)).deskState
+            .media.hash;
         } catch (err) {
           // another session changed the stored state (stored another, restored an older one) or cleared it: the bridge
           // keeps it
@@ -170,6 +178,24 @@ export function DeskPanel({ clip, onClose }: { clip: Clip; onClose: () => void }
       log: (message, data) => console.debug(`[desk] ${message}`, data ?? ''),
       // the states this tab sent for the clip outlive the panel: the next one knows them
       sent: deskStatesSent(`${projectId}/${clip.id}`),
+      // library units (docs/design/director-desk.md#library-units): offered to a desk that announces them
+      units: {
+        mayPublish: () => deskPublishAllowed(useAuth.getState().me),
+        storedUses: (sha256) => {
+          const stored = useProject.getState().docs?.clips[clip.id]?.deskState;
+          // what the stored state uses, when the record is of the state the panel loaded
+          return stored && sha256 && stored.media.hash === sha256 ? (stored.units ?? null) : null;
+        },
+        fetch: (pins, progress, signal) => fetchDeskUnits(pins, { onProgress: progress, signal }),
+        publish: (message, opened) =>
+          publishDeskUnit(message, {
+            projectId,
+            clipId: clip.id,
+            readOnly: opened.readOnly,
+            mayEdit: mayEdit.current,
+            docs: () => useProject.getState().docs,
+          }),
+      },
     });
     bridge.current = desk;
     desk.start();

@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { CameraMoveIdSchema } from '../directing';
 import { StageReviewSchema, StageVerdictSchema } from './ai-review';
 import { ActorSchema, IdSchema, IsoDateSchema, MediaRefSchema } from './common';
+import { DESK_UNIT_LIMITS, DeskStateUnitUseSchema } from './desk';
 import { FeedbackIssueSchema, FeedbackRecommendationSchema, FeedbackScoresSchema } from './feedback';
 import { ContentCredentialsStampSchema } from './provenance';
 import { FocusPointSchema } from './timeline';
@@ -449,6 +450,11 @@ export const ClipDeskStateSchema = z.object({
   version: z.number().int().nonnegative(),
   media: MediaRefSchema,
   updatedAt: IsoDateSchema,
+  /**
+   * What the state uses of the studio library, slot by slot, as the desk said when it was stored
+   * (docs/design/director-desk.md#what-a-stored-state-uses): absent or null when not known.
+   */
+  units: z.array(DeskStateUnitUseSchema).max(DESK_UNIT_LIMITS.stateUnits).nullable().optional(),
 });
 export type ClipDeskState = z.infer<typeof ClipDeskStateSchema>;
 

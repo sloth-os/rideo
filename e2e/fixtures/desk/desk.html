@@ -14,6 +14,7 @@
   <body>
     <p>Fake desk <span data-testid="desk-connected">waiting</span> · <span data-testid="desk-scene"></span></p>
     <p>Options: <code data-testid="desk-options"></code></p>
+    <p>Unit fields in the open: <code data-testid="desk-unit-fields">none</code></p>
     <p>Given state: <code data-testid="desk-given">none</code></p>
     <p>Current state: <code data-testid="desk-current"></code></p>
     <p>Retimed by the brief: <code data-testid="desk-retimed"></code></p>
@@ -38,6 +39,19 @@
       <button type="button" data-testid="desk-close-desk">Close</button>
     </p>
     <p>Rideo says: <span data-testid="desk-ack"></span></p>
+    <!-- library units (desk.html?units=1): the pins, the files the open brought, the record, publishing -->
+    <section data-testid="desk-units" hidden>
+      <p>Units option: <code data-testid="desk-units-option">none</code></p>
+      <ul data-testid="desk-pins"></ul>
+      <ul data-testid="desk-unit-files"></ul>
+      <p>Record: <code data-testid="desk-records"></code></p>
+      <p>
+        <button type="button" data-testid="desk-publish-set">Publish set</button>
+        <button type="button" data-testid="desk-publish-version">Publish new version</button>
+        <button type="button" data-testid="desk-publish-prop">Publish prop</button>
+      </p>
+      <p>Library says: <span data-testid="desk-unit-ack"></span></p>
+    </section>
     <script src="desk.js"></script>
   </body>
 </html>

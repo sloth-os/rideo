@@ -1,4 +1,5 @@
 import { isStale } from '../consistency';
+import { deskStateUses } from '../desk/units';
 import { newId } from '../ids';
 import {
   approvedReferences,
@@ -1132,10 +1133,11 @@ function applyMessage(
 
 /**
  * The library uses of a project's documents, as its digest keeps them (docs/design/library.md#where-it-is-used): a
- * `library` row per linked character, element and resource, a `deskUnit` row per pin; at most 1000, in a stable order.
+ * `library` row per linked character, element and resource, a `deskUnit` row per pin, a `deskState` row per version
+ * the clips' stored desk states use (`deskStateUses`); at most 1000, in a stable order.
  */
 export function libraryUses(
-  docs: Pick<ProjectDocs, 'characters' | 'elements' | 'resources'>,
+  docs: Pick<ProjectDocs, 'characters' | 'elements' | 'resources'> & Partial<Pick<ProjectDocs, 'clips'>>,
 ): DigestLibraryUse[] {
   const rows: DigestLibraryUse[] = [];
   const entity = (kind: LibraryEntityKind, e: { id: string; name: string }) => ({
@@ -1183,8 +1185,9 @@ export function libraryUses(
         via: 'library',
         entity: entity('resource', r),
       });
+  rows.push(...deskStateUses(docs.clips ?? {}));
   const key = (u: DigestLibraryUse) =>
-    `${u.itemId}\u0000${u.via}\u0000${u.entity?.kind ?? ''}\u0000${u.entity?.id ?? ''}`;
+    `${u.itemId}\u0000${u.via}\u0000${u.entity?.kind ?? ''}\u0000${u.entity?.id ?? ''}\u0000${String(u.version).padStart(4, '0')}`;
   return rows
     .sort((a, b) => (key(a) < key(b) ? -1 : key(a) > key(b) ? 1 : 0))
     .slice(0, LIBRARY_LIMITS.usesRows);

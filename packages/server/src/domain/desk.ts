@@ -9,8 +9,11 @@ import {
   DESK_STATE_MAX_BYTES,
   DESK_STATE_VERSION,
   type DeskBrief,
+  DeskStateUnitsError,
+  type DeskStateUnitUse,
   deskBrief,
   docPath,
+  parseDeskStateUnits,
 } from '@rideo/shared';
 import { AppError, invalid, notFound, toAppError, tooLarge } from '../errors';
 import { sha256File } from '../util/crypto';
@@ -35,6 +38,11 @@ export interface DeskStateUpload {
    * The write is a commit of its own, never coalesced into the tip, so the history keeps the state it replaces.
    */
   replace?: boolean;
+  /**
+   * `X-Desk-State-Units`: what the state uses of the studio library, as the desk said
+   * (docs/design/director-desk.md#what-a-stored-state-uses); absent when not known.
+   */
+  units?: string | undefined;
   body: Readable;
 }
 
@@ -151,7 +159,9 @@ export class DeskService extends Service {
    * `If-None-Match`) that does not name the stored state is a `412` `desk_state_conflict`, checked again in the
    * transaction; a write without one replaces whatever is stored. Each write is a commit, coalesced per clip and author,
    * but for a Replace (`upload.replace`), which is a commit of its own and never amends the tip: the history keeps the
-   * state it replaces even when the tip is that state's commit by the same author a moment ago.
+   * state it replaces even when the tip is that state's commit by the same author a moment ago. The rows of
+   * `X-Desk-State-Units` are kept with the state (`units`; none without the header: not known), and a header that does
+   * not parse is refused before the body is read; the same bytes again keep the stored rows too.
    */
   async saveState(
     actor: Actor,
@@ -180,6 +190,13 @@ export class DeskService extends Service {
         ),
         'format',
       );
+    let units: DeskStateUnitUse[] | null;
+    try {
+      units = parseDeskStateUnits(upload.units);
+    } catch (err) {
+      if (!(err instanceof DeskStateUnitsError)) throw err;
+      throw refuse(invalid(`X-Desk-State-Units: ${err.message}`), 'units');
+    }
     if (upload.contentLength !== undefined && upload.contentLength > DESK_STATE_MAX_BYTES)
       throw refuse(tooLarge('a desk state is at most 64 MiB'), 'size');
     let clip: Clip;
@@ -245,6 +262,8 @@ export class DeskService extends Service {
             version: DESK_STATE_VERSION,
             media,
             updatedAt: new Date().toISOString(),
+            // what it uses, beside it: none without the header (not known)
+            ...(units ? { units } : {}),
           };
           tx.set(docPath.clip(clipId), current);
           return { deskState: current.deskState, changed: true };
@@ -266,6 +285,7 @@ export class DeskService extends Service {
             version: DESK_STATE_VERSION,
             path: media.path,
             replace: !!upload.replace,
+            units: units ? units.length : 'unknown',
           },
           'desk state saved',
         );

@@ -14,6 +14,7 @@ import {
 } from '@rideo/shared';
 import * as f from '@rideo/shared/testing';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { DESK_UNIT_MAGIC } from '../../src/domain/library-files';
 import { ApiError, type Stack, startStack } from '../helpers/stack';
 import { attachWorkspace, type WorkspaceClient } from '../helpers/workspace-client';
 
@@ -677,5 +678,137 @@ describe('the setting (docs/design/director-desk.md#the-setting)', () => {
     expect((await stack.api<any>('GET', '/config')).features.desk).toEqual({
       url: 'https://desk.example.com/desk.html',
     });
+  });
+});
+
+describe('library units: what a stored state uses (docs/design/director-desk.md#what-a-stored-state-uses)', () => {
+  const UNITS = 'x-desk-state-units';
+  const stored = async (pid: string, clipId: string) =>
+    (await stack.api<any>('GET', `/projects/${pid}/state`)).docs.clips[clipId].deskState as Clip['deskState'];
+
+  it('keeps the rows with the state, none for -, unknown without the header, and clears them with it', async () => {
+    const { pid, clip, mira } = await seeded(stack);
+    const logged = vi.spyOn(stack.server.studio.deps.log, 'info');
+    const rows = `set=lib_0j8kc4n2q1h7wz3x@3:unit, cast:${mira.id}=lib_0j8kc4n2q1h7mira@2:unit:local, el:ele_0j8kc3x0b5k9dn2p=lib_0j8kc4n2q1h7lamp@1:pending:missing`;
+    const res = await put(stack, pid, clip.id, bytes('state with units'), { [UNITS]: rows });
+    expect(res.status).toBe(200);
+    const units = [
+      { slot: 'set', ref: 'lib_0j8kc4n2q1h7wz3x', version: 3, staged: 'unit', local: false },
+      { slot: `cast:${mira.id}`, ref: 'lib_0j8kc4n2q1h7mira', version: 2, staged: 'unit', local: true },
+      {
+        slot: 'el:ele_0j8kc3x0b5k9dn2p',
+        ref: 'lib_0j8kc4n2q1h7lamp',
+        version: 1,
+        staged: 'pending',
+        local: false,
+        why: 'missing',
+      },
+    ];
+    expect(((await res.json()) as any).deskState.units).toEqual(units);
+    expect((await stored(pid, clip.id))!.units).toEqual(units);
+    const saved = logged.mock.calls
+      .filter((c) => c[1] === 'desk state saved')
+      .map((c) => (c[0] as any).units);
+    expect(saved).toEqual([3]);
+
+    // the same bytes again keep the record, the rows included, whatever the header says
+    const head = (await stack.api<any>('GET', `/projects/${pid}/state`)).head.commit;
+    expect((await put(stack, pid, clip.id, bytes('state with units'), { [UNITS]: '-' })).status).toBe(200);
+    expect((await put(stack, pid, clip.id, bytes('state with units'))).status).toBe(200);
+    expect((await stored(pid, clip.id))!.units).toEqual(units);
+    expect((await stack.api<any>('GET', `/projects/${pid}/state`)).head.commit).toBe(head);
+
+    // `-`: none; no header: not known (no field at all, as before units)
+    expect((await put(stack, pid, clip.id, bytes('state without units'), { [UNITS]: '-' })).status).toBe(200);
+    expect((await stored(pid, clip.id))!.units).toEqual([]);
+    expect((await put(stack, pid, clip.id, bytes('a state of an old desk'))).status).toBe(200);
+    expect(await stored(pid, clip.id)).not.toHaveProperty('units');
+    expect(
+      logged.mock.calls.filter((c) => c[1] === 'desk state saved').map((c) => (c[0] as any).units),
+    ).toEqual([3, 0, 'unknown']);
+    logged.mockRestore();
+
+    // DELETE clears them with the state
+    expect((await put(stack, pid, clip.id, bytes('again'), { [UNITS]: rows })).status).toBe(200);
+    await stack.api('DELETE', `/projects/${pid}/clips/${clip.id}/desk-state`);
+    expect(await stored(pid, clip.id)).toBeNull();
+  });
+
+  it('refuses a header that does not parse with 422 before the body is kept, counted and logged', async () => {
+    const { pid, clip } = await seeded(stack);
+    expect(
+      (await put(stack, pid, clip.id, bytes('kept'), { [UNITS]: 'set=lib_0j8kc4n2q1h7wz3x@1:unit' })).status,
+    ).toBe(200);
+    const before = await stored(pid, clip.id);
+    const refused = await metric('rideo_desk_state_saves_total', '{outcome="refused"}');
+    const logged = vi.spyOn(stack.server.studio.deps.log, 'info');
+    const files = vi.spyOn(stack.server.studio.deps.media, 'putFile');
+    const many = Array.from({ length: 129 }, (_, i) => `el:e${i}=lib_0j8kc4n2q1h7wz3x@1:unit`).join(', ');
+    for (const bad of [
+      'set=lib_0j8kc4n2q1h7wz3x@1:words',
+      'set=lib_0j8kc4n2q1h7wz3x',
+      'set=lib_0j8kc4n2q1h7wz3x@1:unit, set=lib_0j8kc4n2q1h7wz3x@2:unit',
+      many,
+      `el:${'x'.repeat(90)}=lib_0j8kc4n2q1h7wz3x@1:unit, `.repeat(90).slice(0, -2),
+    ]) {
+      const res = await put(stack, pid, clip.id, bytes('never kept'), { [UNITS]: bad });
+      const body = (await res.json()) as { code: string; detail: string };
+      expect([res.status, body.code], bad.slice(0, 60)).toEqual([422, 'validation_error']);
+      expect(body.detail).toMatch(/^X-Desk-State-Units: /);
+    }
+    expect(files).not.toHaveBeenCalled();
+    files.mockRestore();
+    expect(await metric('rideo_desk_state_saves_total', '{outcome="refused"}')).toBe(refused + 5);
+    const reasons = logged.mock.calls
+      .filter((c) => c[1] === 'desk state refused')
+      .map((c) => (c[0] as any).reason);
+    expect(reasons).toEqual(['units', 'units', 'units', 'units', 'units']);
+    logged.mockRestore();
+    expect(await stored(pid, clip.id)).toEqual(before);
+  });
+
+  it("lists the clips whose stored state uses a library version where it is used ('deskState')", async () => {
+    const { pid, clip } = await seeded(stack);
+    const json = Buffer.from(JSON.stringify({ format: '3d-editor.desk-unit', version: 1, kind: 'set' }));
+    const prefix = Buffer.alloc(16);
+    DESK_UNIT_MAGIC.copy(prefix, 0);
+    prefix[8] = 1;
+    prefix.writeUInt32LE(json.length, 12);
+    const unit = Buffer.concat([prefix, json, Buffer.from('lamp room set '.repeat(32))]);
+    const meta = {
+      kind: 'desk-set',
+      name: 'Lamp room set',
+      unit: {
+        format: '3d-editor.desk-unit',
+        formatVersion: 1,
+        meta: {
+          dimensionsM: [8, 6, 4],
+          objects: 3,
+          triangles: 1200,
+          actor: null,
+          credits: [],
+          deskVersion: '1.4.0',
+          digest: 'c'.repeat(64),
+        },
+      },
+    };
+    const form = new FormData();
+    form.append('meta', JSON.stringify(meta));
+    form.append(
+      'payload',
+      new Blob([new Uint8Array(unit)], { type: 'application/octet-stream' }),
+      'unit.bin',
+    );
+    const created = await fetch(`${stack.url}/api/library/items`, { method: 'POST', body: form });
+    expect(created.status).toBe(201);
+    const itemId = ((await created.json()) as { item: { id: string } }).item.id;
+    const header = `set=${itemId}@1:unit`;
+    expect(
+      (await put(stack, pid, clip.id, bytes('a state at the lamp room'), { [UNITS]: header })).status,
+    ).toBe(200);
+    const uses = await stack.api<any>('GET', `/library/items/${itemId}/uses`);
+    expect(uses.projects.find((p: any) => p.projectId === pid)?.uses).toEqual([
+      { itemId, version: 1, via: 'deskState', clips: 1, approved: 0 },
+    ]);
   });
 });

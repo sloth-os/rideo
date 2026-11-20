@@ -11,10 +11,56 @@
 // from the brief, and no `state` until an edit or a `save`: opening cannot replace the host's copy); one that starts
 // with `retimed` was staged before the brief retimed the first shot: `opened` lists that shot in `changes.retimed`, and
 // its Update shots brings it to the brief (an edit, so a `state` follows) and off the list, as the real desk's does.
+//
+// With `?units=1` it speaks library units (docs/design/director-desk.md#library-units): its `ready` announces them, and
+// an open with `options.units` shows the brief's pins and the unit files it got (their bytes checked against their
+// sha256), keeps a record per pinned slot (staged `unit` when the file came, or when the given state already held that
+// version; `pending` `missing` else) inside its state's bytes, sends `units` with every state, and its Publish set,
+// Publish new version and Publish prop send `unit-publish` with a real unit file; a linked `unit-ack` puts the
+// published version in the record, as the real desk adopts it. What it saw is on `window.__desk` for the specs, and
+// in either mode it lists every unit field an `open` carried (none for a desk from before units).
 (() => {
   const $ = (id) => document.querySelector(`[data-testid="${id}"]`);
   const encode = (text) => new TextEncoder().encode(text).buffer;
   const decode = (buffer) => new TextDecoder().decode(buffer);
+  const UNITS = new URLSearchParams(location.search).get('units') === '1';
+  /** Library units on this open (`options.units` given), the brief's pins, the record per slot, what it saw. */
+  let unitsOn = false;
+  let pins = [];
+  let records = {};
+  let publishes = 0;
+  const seen = { option: null, pins: [], files: [], acks: [], published: [], unitFields: [] };
+  window.__desk = seen;
+  const hex = async (data) =>
+    [...new Uint8Array(await crypto.subtle.digest('SHA-256', data))]
+      .map((b) => b.toString(16).padStart(2, '0'))
+      .join('');
+  /** A unit file as the 3D-Editor writes one: `3DUNIT\r\n`, container 1, the header's length at 12, its JSON at 16. */
+  const unitFile = (kind, body) => {
+    const json = new TextEncoder().encode(
+      JSON.stringify({ format: '3d-editor.desk-unit', version: 1, kind }),
+    );
+    const text = new TextEncoder().encode(body);
+    const out = new Uint8Array(16 + json.length + text.length);
+    out.set(new TextEncoder().encode('3DUNIT\r\n'), 0);
+    out[8] = 1;
+    new DataView(out.buffer).setUint32(12, json.length, true);
+    out.set(json, 16);
+    out.set(text, 16 + json.length);
+    return out.buffer;
+  };
+  /** The brief's pins in slot order: the set, the cast, the elements. */
+  const pinsOf = (s) => [
+    ...(s.set.unit ? [{ slot: 'set', kind: 'set', ...s.set.unit }] : []),
+    ...s.cast.filter((c) => c.unit).map((c) => ({ slot: `cast:${c.id}`, kind: 'figure', ...c.unit })),
+    ...s.elements.filter((e) => e.unit).map((e) => ({ slot: `el:${e.id}`, kind: 'prop', ...e.unit })),
+  ];
+  /** The state's rows: one per pinned slot of the record, in slot order. */
+  const rows = () =>
+    pins
+      .map((p) => records[p.slot])
+      .filter(Boolean)
+      .map((r) => ({ ...r }));
   let port = null;
   let scene = null;
   let current = '';
@@ -41,22 +87,105 @@
     type: 'state',
     ...(id ? { id } : {}),
     sceneId: scene.id,
-    state: { format: '3d-editor.desk-state', version: 1, data: encode(current) },
+    // with units, the record goes inside the state's bytes, as the real desk keeps it in the scene
+    state: {
+      format: '3d-editor.desk-state',
+      version: 1,
+      data: encode(unitsOn ? `${current}\n#units ${JSON.stringify(records)}` : current),
+    },
     shots: scene.shots.length,
+    ...(unitsOn ? { units: rows() } : {}),
   });
   const show = () => {
     $('desk-current').textContent = current;
     $('desk-retimed').textContent = retimed.join(', ');
+    if (unitsOn)
+      $('desk-records').textContent = rows()
+        .map((r) => `${r.slot}=${r.ref}@${r.version}:${r.staged}${r.why ? `:${r.why}` : ''}`)
+        .join(', ');
   };
 
+  /** The pins of an open with units: what the files brought and what the given record held decide each slot. */
+  const stageUnits = async (m, given) => {
+    unitsOn = UNITS && !!m.options?.units;
+    seen.option = m.options?.units ?? null;
+    $('desk-units-option').textContent = JSON.stringify(seen.option ?? 'none');
+    if (!unitsOn) return given;
+    const [text, saved] = given?.includes('\n#units ') ? given.split('\n#units ') : [given, null];
+    const before = saved ? JSON.parse(saved) : {};
+    pins = pinsOf(m.scene);
+    seen.pins = pins.map((p) => `${p.slot} ${p.ref}@${p.version}`);
+    seen.files = [];
+    for (const u of m.units ?? [])
+      seen.files.push({
+        ref: u.ref,
+        version: u.version,
+        bytes: u.unit.data.byteLength,
+        ok: (await hex(u.unit.data)) === u.sha256,
+        sha256: u.sha256,
+      });
+    records = {};
+    for (const p of pins) {
+      const file = seen.files.find(
+        (f) => f.ref === p.ref && f.version === p.version && f.sha256 === p.sha256,
+      );
+      const held = before[p.slot];
+      const staged =
+        file?.ok || (held && held.staged === 'unit' && held.ref === p.ref && held.version === p.version);
+      records[p.slot] = {
+        slot: p.slot,
+        ref: p.ref,
+        version: p.version,
+        sha256: p.sha256,
+        staged: staged ? 'unit' : 'pending',
+        local: false,
+        ...(staged ? {} : { why: 'missing' }),
+      };
+    }
+    $('desk-pins').replaceChildren(
+      ...seen.pins.map((t) => {
+        const li = document.createElement('li');
+        li.dataset.testid = 'desk-pin';
+        li.textContent = t;
+        return li;
+      }),
+    );
+    $('desk-unit-files').replaceChildren(
+      ...seen.files.map((f) => {
+        const li = document.createElement('li');
+        li.dataset.testid = 'desk-unit-file';
+        li.textContent = `${f.ref}@${f.version} ${f.bytes} bytes ${f.ok ? 'sha256 ok' : 'sha256 wrong'}`;
+        return li;
+      }),
+    );
+    return text;
+  };
+
+  let queue = Promise.resolve();
   const onPort = (event) => {
-    const m = event.data;
+    queue = queue.then(() => handle(event.data)).catch((err) => console.error(err));
+  };
+  /** Every library-unit field an `open` carries, in either mode: a desk from before units must see none. */
+  const unitFieldsOf = (m) => [
+    ...(m.options && 'units' in m.options ? ['options.units'] : []),
+    ...('units' in m ? ['units'] : []),
+    ...(m.scene?.set && 'unit' in m.scene.set ? ['set.unit'] : []),
+    ...(m.scene?.cast ?? []).filter((c) => 'unit' in c).map((c) => `cast.unit (${c.id})`),
+    ...(m.scene?.elements ?? []).filter((e) => 'unit' in e).map((e) => `elements.unit (${e.id})`),
+  ];
+  const handle = async (m) => {
     if (!m || typeof m !== 'object') return;
     if (m.type === 'open') {
       if (scene)
         return port.postMessage({ type: 'error', code: 'busy', message: 'The scene is open already.' });
+      seen.unitFields = unitFieldsOf(m);
+      $('desk-unit-fields').textContent = seen.unitFields.join(', ') || 'none';
       scene = m.scene;
-      const given = m.state ? decode(m.state.data) : null;
+      const given = UNITS
+        ? await stageUnits(m, m.state ? decode(m.state.data) : null)
+        : m.state
+          ? decode(m.state.data)
+          : null;
       // a state this desk cannot read: the brief is staged, and the host is told
       const unreadable = given?.startsWith('unreadable') ?? false;
       if (unreadable)
@@ -96,8 +225,86 @@
       port.postMessage(stateOf(m.id));
     } else if (m.type === 'result-ack') {
       $('desk-ack').textContent = `${m.ok ? 'ok' : 'refused'}: ${m.message ?? ''}`;
+    } else if (m.type === 'unit-ack') {
+      seen.acks.push(m);
+      const sent = seen.published.find((p) => p.id === m.id);
+      $('desk-unit-ack').textContent = m.ok
+        ? `${m.id}: ${m.ref} v${m.version} ${m.linked ? 'linked' : `not linked (${m.message ?? ''})`}`
+        : `${m.id}: refused ${m.code}: ${m.message ?? ''}`;
+      // linked: the published objects become an instance of that version, and the record holds the pin
+      if (m.ok && m.linked && sent && unitsOn) {
+        records[sent.slot] = {
+          slot: sent.slot,
+          ref: m.ref,
+          version: m.version,
+          sha256: sent.sha256,
+          staged: 'unit',
+          local: false,
+        };
+        if (!pins.some((p) => p.slot === sent.slot))
+          pins.push({
+            slot: sent.slot,
+            kind: sent.kind,
+            ref: m.ref,
+            version: m.version,
+            sha256: sent.sha256,
+          });
+        current = `${current} +published${publishes}`;
+        show();
+        port.postMessage(stateOf());
+      }
     }
   };
+
+  /** A `unit-publish`: a real unit file of the kind, from the slot it came from; `version` makes it the set's next. */
+  const publish = async (kind, from, slot, newVersionOf) => {
+    if (!scene || !unitsOn) return;
+    const n = ++publishes;
+    const data = unitFile(kind, `${kind} of ${scene.id}, publish ${n}`);
+    const sha256 = await hex(data);
+    const id = `pub-${n}`;
+    seen.published.push({ id, slot, kind, sha256 });
+    port.postMessage(
+      {
+        type: 'unit-publish',
+        id,
+        kind,
+        name: kind === 'set' ? 'Harbor set' : 'Brass lamp',
+        description: `Published from ${scene.name}`,
+        ...(newVersionOf ? { newVersionOf } : {}),
+        from,
+        unit: { format: '3d-editor.desk-unit', version: 1, data },
+        sha256,
+        thumbnail: null,
+        meta: {
+          dimensionsM: [12, 9, 4],
+          objects: 3,
+          triangles: 1200,
+          actor: null,
+          credits: [],
+          deskVersion: '0.0.0-e2e',
+          digest: sha256,
+        },
+      },
+      [data],
+    );
+  };
+  $('desk-publish-set').addEventListener('click', () =>
+    publish('set', { castId: null, elementId: null, set: true }, 'set', null),
+  );
+  // the next version of the set the record holds
+  $('desk-publish-version').addEventListener('click', () => {
+    const held = records.set;
+    if (held)
+      publish('set', { castId: null, elementId: null, set: true }, 'set', {
+        ref: held.ref,
+        version: held.version,
+      });
+  });
+  $('desk-publish-prop').addEventListener('click', () => {
+    const prop = scene?.elements.find((e) => e.kind === 'prop');
+    if (prop) publish('prop', { castId: null, elementId: prop.id, set: false }, `el:${prop.id}`, null);
+  });
 
   window.addEventListener('message', (event) => {
     const m = event.data;
@@ -120,9 +327,13 @@
           modes: ['motion', 'pose', 'camera'],
         },
         offline: true,
+        ...(UNITS
+          ? { units: { versions: [1], kinds: ['set', 'prop', 'figure'], maxBytes: 33554432, publish: true } }
+          : {}),
       },
     });
   });
+  if (UNITS) $('desk-units').hidden = false;
 
   $('desk-edit').addEventListener('click', () => {
     if (!scene) return;

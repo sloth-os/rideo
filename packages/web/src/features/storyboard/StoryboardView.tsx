@@ -49,6 +49,7 @@ import { useProject } from '../../store/project';
 import { reportError, useUi } from '../../store/ui';
 import { AiReviewPanel, ReviewCard } from '../ai-review/AiReviewPanel';
 import { DeskPanel } from '../desk/DeskPanel';
+import { DeskUnitBadge } from '../desk/DeskUnitBadge';
 
 // The player pulls in mediabunny (WebCodecs); load it only when an animatic exists.
 const AnimaticPlayer = lazy(() => import('./AnimaticPlayer').then((m) => ({ default: m.AnimaticPlayer })));
@@ -353,10 +354,14 @@ function SceneRow({
       data-testid={production ? 'production-scene' : 'storyboard-scene'}
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h3 className="min-w-0 text-[13px] font-semibold">
-          {title}
-          <span className="ml-2 font-normal text-muted">{formatDuration(duration)}</span>
-        </h3>
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <h3 className="min-w-0 text-[13px] font-semibold">
+            {title}
+            <span className="ml-2 font-normal text-muted">{formatDuration(duration)}</span>
+          </h3>
+          {/* the scene's library units against its stored desk state (docs/design/director-desk.md#drift-the-storyboard-badge) */}
+          {desk && clip ? <DeskUnitBadge clipId={clip.id} /> : null}
+        </div>
         {desk ? (
           <Button
             size="sm"

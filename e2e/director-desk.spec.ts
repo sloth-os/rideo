@@ -1,5 +1,6 @@
 import { type APIRequestContext, expect, type Page, test } from '@playwright/test';
 import { Api } from './support/api';
+import { libraryUnit, pinUnit } from './support/desk-units';
 import { PORTS } from './support/ports';
 
 /**
@@ -501,6 +502,36 @@ test('an approved clip opens read-only, and its result is refused', async ({ pag
   await expect(page.getByTestId('toast').filter({ hasText: 'is approved' }).first()).toBeVisible();
   const docs = (await api.call<any>('GET', `/projects/${pid}/state`)).docs;
   for (const shot of docs.clips[clip.id].shots) expect(shot.motionReference).toBeNull();
+  await page.getByTestId('desk-close').click();
+  await expect(page.getByTestId('desk-panel')).toBeHidden();
+});
+
+test('a desk from before units gets no unit field, though the scene’s place pins a library set', async ({
+  page,
+  request,
+}, testInfo) => {
+  test.setTimeout(180_000);
+  const api = new Api(request);
+  const { pid, clip } = await planned(api, `Desk before units (${testInfo.project.name})`);
+  const docs = (await api.call<any>('GET', `/projects/${pid}/state`)).docs;
+  const scene = docs.screenplay.scenes.find((s: any) => s.id === clip.sceneId);
+  const set = await libraryUnit(request, 'set', 'Old harbor');
+  await pinUnit(api, pid, set, { kind: 'element', id: scene.locationId });
+  expect(
+    (await api.call<any>('GET', `/projects/${pid}/state`)).docs.elements[scene.locationId].deskUnit,
+  ).toMatchObject({ itemId: set.id, version: 1 });
+
+  await openDesk(page, pid);
+  const d = desk(page);
+  await expect(d.getByTestId('desk-connected')).toHaveText('open');
+  // the messages of before: no options.units, no pin in the brief, no open.units
+  await expect(d.getByTestId('desk-unit-fields')).toHaveText('none');
+  expect(JSON.parse((await d.getByTestId('desk-options').textContent())!)).toEqual({
+    hostName: 'Rideo',
+    modes: ['motion', 'pose', 'camera'],
+    defaultMode: 'camera',
+    readOnly: false,
+  });
   await page.getByTestId('desk-close').click();
   await expect(page.getByTestId('desk-panel')).toBeHidden();
 });
