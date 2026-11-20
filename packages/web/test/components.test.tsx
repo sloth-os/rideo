@@ -1,10 +1,12 @@
 import { evaluateWorkflow, type Job } from '@rideo/shared';
 import * as f from '@rideo/shared/testing';
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { useState } from 'react';
 import { MemoryRouter } from 'react-router';
 import { afterEach, describe, expect, it } from 'vitest';
 import { ConsistencyBadge, QualityBadge } from '../src/components/ConsistencyBadge';
 import { JobRow } from '../src/components/JobProgress';
+import { Dialog } from '../src/components/ui';
 import { WorkflowStepper } from '../src/components/WorkflowStepper';
 import { LoginPage } from '../src/features/account/LoginPage';
 import { LineageBadge, MultiShotBadge } from '../src/features/clips/TakeActions';
@@ -227,5 +229,49 @@ describe('LoginPage', () => {
       '/api/auth/login?returnTo=%2Fp%2Fprj_0000000000aaaa',
     );
     expect(screen.getByTestId('login-error').textContent).toBe('may not join');
+  });
+});
+
+describe('Dialog', () => {
+  const open = () => screen.queryAllByRole('dialog').map((d) => d.getAttribute('aria-label'));
+
+  it('closes only the dialog on top on Escape, then the one under it', () => {
+    function TwoDialogs() {
+      const [under, setUnder] = useState(true);
+      const [over, setOver] = useState(true);
+      return (
+        <>
+          <Dialog open={under} onClose={() => setUnder(false)} title="Under">
+            <p>the picker</p>
+          </Dialog>
+          <Dialog open={over} onClose={() => setOver(false)} title="Over">
+            <p>its plan</p>
+          </Dialog>
+        </>
+      );
+    }
+    render(<TwoDialogs />);
+    expect(open()).toEqual(['Under', 'Over']);
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(open()).toEqual(['Under']);
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(open()).toEqual([]);
+  });
+
+  it('leaves the focus in the field being typed in when the page renders again', () => {
+    function Typing() {
+      const [name, setName] = useState('');
+      return (
+        <Dialog open onClose={() => setName('')} title="Add character">
+          <input aria-label="Name" value={name} onChange={(e) => setName(e.target.value)} />
+        </Dialog>
+      );
+    }
+    render(<Typing />);
+    const field = screen.getByLabelText('Name');
+    field.focus();
+    fireEvent.change(field, { target: { value: 'M' } });
+    fireEvent.change(field, { target: { value: 'Mi' } });
+    expect(document.activeElement).toBe(field);
   });
 });
