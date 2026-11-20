@@ -19,7 +19,6 @@ import {
   entitySnapshot,
   isDeskUnitKind,
   isRealPersonSnapshot,
-  kindFromMime,
   LIBRARY_LIMITS,
   type LibraryAction,
   type LibraryApplyDocs,
@@ -75,7 +74,7 @@ import type { Tx } from '../vcs/repo';
 import { Service } from './base';
 import type { Deps } from './deps';
 import { elementIdentityHash } from './elements';
-import { fileHead, pngSize, rasterImageMime, readDeskUnitHeader } from './library-files';
+import { pngSize, readDeskUnitHeader, resourceFileMime, resourceTypeRefusal } from './library-files';
 import { LibraryStore } from './library-store';
 import { identityHash } from './story';
 import { voiceIdentityHash } from './voices';
@@ -497,23 +496,18 @@ export class LibraryService extends Service {
         throw this.refused('resource', 'payload', invalid(`not a 3D LUT: ${(err as Error).message}`));
       }
       mime = 'application/x-cube';
-    } else if (r.kind === 'image') {
-      // a picture is what its bytes are, never the type the part claims: a page or an SVG served from the library
-      // would run in the studio's origin
-      const raster = rasterImageMime(await fileHead(file.path, 16));
-      if (!raster)
+    } else {
+      // kept under the type it is served with: a picture by its bytes, never the type the part claims; a video or a
+      // sound under one type of its kind, never a list a browser would read as its last type
+      const kept = await resourceFileMime(r.kind, mime, file.path);
+      if (!kept)
         throw this.refused(
           'resource',
           'payload',
-          invalid('an image resource is a PNG, JPEG, WebP, GIF, BMP or TIFF file', [{ reason: 'payload' }]),
+          invalid(resourceTypeRefusal(r.kind, mime), [{ reason: 'payload' }]),
         );
-      mime = raster;
-    } else if (kindFromMime(mime) !== r.kind)
-      throw this.refused(
-        'resource',
-        'payload',
-        invalid(`a ${r.kind} resource needs a ${r.kind} file, not ${mime}`),
-      );
+      mime = kept;
+    }
     const hash = await sha256File(file.path);
     const probe = r.kind === 'lut' ? {} : await this.deps.media.probeRef(file.path, mime);
     if (await this.store.putFile(file.path, hash, file.size, mime))
@@ -826,15 +820,28 @@ export class LibraryService extends Service {
         `${entity.name} shows a real person: confirm that the consent covers using this likeness or voice in other projects of the studio (acknowledgeConsent)`,
         consentSubjects(kind, payload),
       );
-    // the files, project → library (each once)
+    // the files, project → library (each once); a resource's file under the type the library keeps it with, as an
+    // upload's (a picture by its bytes, a video or a sound under one type of its kind), checked before it is copied
+    const resource = kind === 'resource' ? (entity as Resource) : null;
+    const saved = resource ? (payload as ResourceSnapshot).media : null;
     const locals = new Map<string, string>();
     let bytes = 0;
     for (const f of snap.files) {
       if (locals.has(f.hash)) continue;
       const local = await this.deps.media.localPath(projectId, f);
       locals.set(f.hash, local);
+      let mime = f.mime;
+      if (resource && saved && f.hash === saved.hash) {
+        const kept = await resourceFileMime(resource.kind, f.mime, local);
+        if (!kept)
+          throw invalid(
+            `${entity.name} cannot be saved to the library: ${resourceTypeRefusal(resource.kind, f.mime)}`,
+            [{ reason: 'payload' }],
+          );
+        saved.mime = mime = kept;
+      }
       bytes += f.size;
-      if (await this.store.putFile(local, f.hash, f.size, f.mime))
+      if (await this.store.putFile(local, f.hash, f.size, mime))
         this.deps.metrics.libraryBytes.inc({ op: 'from_project' }, f.size);
     }
     if (kind === 'resource') {
@@ -886,10 +893,23 @@ export class LibraryService extends Service {
       (tx) => {
         const path = ENTITY_PATH[kind](entity.id);
         const cur = tx.require<LibraryEntity>(path, `${kind} ${entity.id}`);
+        // the resource takes the type its file was saved with (a PNG the project called a JPEG is a PNG), so the
+        // project agrees with its version and is not counted as edited here
+        const media = saved ? (cur as Resource).media : null;
+        const retyped =
+          media && saved && media.hash === saved.hash && media.mime !== saved.mime
+            ? { ...media, mime: saved.mime }
+            : null;
         const was = cur.library;
-        if (was && was.itemId === link.itemId && was.version === link.version && was.digest === link.digest)
+        if (
+          !retyped &&
+          was &&
+          was.itemId === link.itemId &&
+          was.version === link.version &&
+          was.digest === link.digest
+        )
           return;
-        tx.set(path, { ...cur, library: link });
+        tx.set(path, { ...cur, ...(retyped ? { media: retyped } : {}), library: link });
       },
       { message: `Save ${entity.name} to the library (v${out.version.version})` },
     );

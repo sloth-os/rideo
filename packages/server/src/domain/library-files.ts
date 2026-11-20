@@ -1,5 +1,5 @@
 import { open } from 'node:fs/promises';
-import { LIBRARY_LIMITS } from '@rideo/shared';
+import { LIBRARY_LIMITS, type ResourceKind } from '@rideo/shared';
 import { invalid } from '../errors';
 
 /**
@@ -90,6 +90,45 @@ export function rasterImageMime(head: Buffer): string | null {
   if (ascii.startsWith('BM') && head.length >= 14) return 'image/bmp';
   if (ascii.startsWith('II*\0') || ascii.startsWith('MM\0*')) return 'image/tiff';
   return null;
+}
+
+/** RFC 6838's restricted name: a subtype is one token, so no list, space, quote or parameter follows the type. */
+const MEDIA_SUBTYPE = /^[a-z0-9][a-z0-9!#$&^_.+-]{0,126}$/;
+
+/**
+ * The type a video or an audio resource is kept and served with (docs/design/library.md#surfaces): the type its client
+ * gave, when it is one `video/…` or `audio/…` of the resource's kind once its parameters are dropped (`video/mp4;
+ * codecs=…` is `video/mp4`); null for anything else, a list such as `video/mp4, text/html` among it (a browser reads a
+ * list as its last type).
+ */
+export function mediaResourceMime(kind: 'video' | 'audio', declared: string): string | null {
+  const essence = (declared.split(';', 1)[0] ?? '').trim().toLowerCase();
+  const slash = essence.indexOf('/');
+  if (slash < 0 || essence.slice(0, slash) !== kind) return null;
+  return MEDIA_SUBTYPE.test(essence.slice(slash + 1)) ? essence : null;
+}
+
+/**
+ * The type a resource's file is kept and served with in the library (docs/design/library.md#surfaces), or null when
+ * the library does not take it under the type it was given: a picture is what its bytes are, never its given type (a
+ * page or an SVG served from the library would run in the studio's origin); a video or a sound keeps its one type
+ * (`mediaResourceMime`); a LUT is `application/x-cube`. For an upload and for Save to library alike.
+ */
+export async function resourceFileMime(
+  kind: ResourceKind,
+  declared: string,
+  path: string,
+): Promise<string | null> {
+  if (kind === 'image') return rasterImageMime(await fileHead(path, 16));
+  if (kind === 'lut') return 'application/x-cube';
+  return mediaResourceMime(kind, declared);
+}
+
+/** Why the library does not take a resource's file under the type it was given (`reason: payload`). */
+export function resourceTypeRefusal(kind: ResourceKind, declared: string): string {
+  return kind === 'image'
+    ? 'an image resource is a PNG, JPEG, WebP, GIF, BMP or TIFF file'
+    : `a ${kind} resource has one ${kind}/… type, not ${JSON.stringify(declared)}`;
 }
 
 /** The first `n` bytes of a file (fewer when it is shorter). */

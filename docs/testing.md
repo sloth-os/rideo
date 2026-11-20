@@ -274,7 +274,8 @@ only those names as extras, and reading verdicts that name a character instead o
   old take an approved clip holds) and its uploads (`meta` first, a unit of 32 MiB + 1 byte refused with `413`, a unit
   whose prefix, header or kind is wrong, thumbnails that are not PNG, over 64 KiB or over 256 px, a client gone in the
   middle of a part leaving no temporary file, a raster picture known by its signature and an SVG or a page not taken for
-  one) ([the library](design/library.md#tests)).
+  one, a video or an audio resource kept under one type of its kind without its parameters and a list such as
+  `video/mp4, text/html` refused) ([the library](design/library.md#tests)).
 - **library units** (`packages/shared/test/desk-protocol.test.ts`, `desk-brief.test.ts`, `desk-units.test.ts`,
   `packages/web/test/desk-bridge.test.ts`): the new fixtures (valid ones parse, invalid ones refused but
   `state-units-bad-staged.json`, a state read with its units unknown) and the capability read leniently; the brief
@@ -436,7 +437,9 @@ only those names as extras, and reading verdicts that name a character instead o
   in project B with the same id and seed and her references copied, a v2 from A making B's status `behind`, B's dry run
   and update (lock + 1); a name conflict linking instead; a resource used as a new resource; an image resource that is
   an SVG or a page refused (`payload`), a PNG kept as one whatever its part says, and a library file and a project's
-  media served with `nosniff` and a sandboxing policy; a figure pinned on a
+  media served with `nosniff` and a sandboxing policy; Save to library of a project's SVG refused (`payload`, nothing
+  copied), of a PNG the project called a JPEG kept as `image/png` with the project's resource retyped in the same commit
+  (not edited here), and a video whose type is a list refused saved (nothing copied) or uploaded; a figure pinned on a
   character and a set on a location, unpinned again; the audit events and the metrics. MCP's `library_*` tools give the
   same answers on the same server; with projects in browsers, the library stays in the data directory, an apply goes
   through the tab that holds the project and fails with `storage_offline` without it. The editor refused an approved

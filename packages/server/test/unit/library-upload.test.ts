@@ -11,6 +11,7 @@ import { loadConfig } from '../../src/config';
 import type { LibraryUploadFiles } from '../../src/domain/library';
 import {
   DESK_UNIT_MAGIC,
+  mediaResourceMime,
   pngSize,
   rasterImageMime,
   readDeskUnitHeader,
@@ -335,6 +336,32 @@ describe('what rideo reads of a unit file and a thumbnail', () => {
     expect(pages.map((p) => rasterImageMime(Buffer.from(p)))).toEqual(pages.map(() => null));
   });
 
+  it('takes a video or an audio type as one type of its kind, parameters dropped', () => {
+    expect([
+      mediaResourceMime('video', 'video/mp4'),
+      mediaResourceMime('video', ' Video/MP4 ; codecs="avc1.42E01E, mp4a.40.2"'),
+      mediaResourceMime('video', 'video/x-matroska'),
+      mediaResourceMime('audio', 'audio/mpeg;rate=44100'),
+      mediaResourceMime('audio', 'audio/vnd.wave'),
+    ]).toEqual(['video/mp4', 'video/mp4', 'video/x-matroska', 'audio/mpeg', 'audio/vnd.wave']);
+    const refused: ['video' | 'audio', string][] = [
+      ['video', 'video/mp4, text/html'],
+      ['video', 'video/mp4,text/html'],
+      ['video', 'video/mp4 text/html'],
+      ['video', 'video/"mp4"'],
+      ['video', 'video/'],
+      ['video', 'video'],
+      ['video', '/mp4'],
+      ['video', 'text/html'],
+      ['video', 'audio/mpeg'],
+      ['video', 'image/svg+xml'],
+      ['video', ''],
+      ['audio', 'audio/*'],
+      ['audio', `audio/${'a'.repeat(128)}`],
+    ];
+    expect(refused.map(([kind, mime]) => mediaResourceMime(kind, mime))).toEqual(refused.map(() => null));
+  });
+
   it('answers byte ranges as HTTP does', () => {
     expect(byteRange('bytes=0-9', 100)).toEqual({ start: 0, end: 9 });
     expect(byteRange('bytes=90-', 100)).toEqual({ start: 90, end: 99 });
@@ -442,5 +469,46 @@ describe('the service checks an upload', () => {
       height: 144,
     });
     expect((await lib.fileInfo(ok.item.id, 1, ok.version.thumbnail!.hash)).mime).toBe('image/png');
+  });
+
+  it('keeps a video or an audio resource only under one type of its kind, without its parameters', async () => {
+    const lib = studio.library;
+    const resource = async (kind: 'video' | 'audio', mime: string) => {
+      const u = await upload(
+        { kind: 'resource', name: 'Take', resource: { kind, role: 'reference', name: 'take' } },
+        Buffer.from(`${kind} bytes, not decoded here`),
+      );
+      return { ...u, payload: { ...u.payload, mime } };
+    };
+    // a list is read by a browser as its last type: `text/html` here
+    const refused = [
+      ['video', 'video/mp4, text/html'],
+      ['video', 'video/mp4,text/html'],
+      ['video', 'text/html'],
+      ['video', 'audio/mpeg'],
+      ['video', 'video/'],
+      ['video', 'video/mp4 text/html'],
+      ['video', 'application/octet-stream'],
+      ['audio', 'audio/mpeg, image/svg+xml'],
+      ['audio', 'video/mp4'],
+    ] as const;
+    for (const [kind, mime] of refused)
+      expect(`${mime}: ${await outcome(lib.create(actor, await resource(kind, mime)))}`).toBe(
+        `${mime}: 422 payload`,
+      );
+    expect(studio.deps.metrics.library.get({ event: 'refused', kind: 'resource' })).toBe(refused.length);
+    expect((await lib.list({ archived: false, sort: 'updated', limit: 100 })).items).toEqual([]);
+
+    const kept = async (kind: 'video' | 'audio', mime: string) => {
+      const out = await lib.create(actor, await resource(kind, mime));
+      const media = (out.version.payload as { media: { hash: string; mime: string } }).media;
+      return [media.mime, (await lib.fileInfo(out.item.id, 1, media.hash)).mime];
+    };
+    expect(await kept('video', 'Video/MP4; codecs="avc1.42E01E"')).toEqual(['video/mp4', 'video/mp4']);
+    expect(await kept('video', 'video/vnd.dlna.mpeg-tts')).toEqual([
+      'video/vnd.dlna.mpeg-tts',
+      'video/vnd.dlna.mpeg-tts',
+    ]);
+    expect(await kept('audio', 'audio/mpeg')).toEqual(['audio/mpeg', 'audio/mpeg']);
   });
 });

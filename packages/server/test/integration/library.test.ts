@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -8,7 +8,7 @@ import type { Character, LibraryItem, LibraryUploadResult, ProjectDocs } from '@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { DESK_UNIT_MAGIC } from '../../src/domain/library-files';
 import { sha256 } from '../../src/util/crypto';
-import { ff, makeStill, uploadReady } from '../helpers/media';
+import { ff, makeFootage, makeStill, uploadReady } from '../helpers/media';
 import { ApiError, type Stack, startStack } from '../helpers/stack';
 import { attachWorkspace, WorkspaceApiError, type WorkspaceClient } from '../helpers/workspace-client';
 
@@ -551,6 +551,116 @@ describe('the studio library', () => {
       library: ['image/png', 'nosniff', "default-src 'none'; sandbox"],
       project: ['image/png', 'nosniff', "default-src 'none'; sandbox"],
     });
+  });
+
+  it('keeps a resource saved from a project or uploaded only as a raster picture or one type of its kind', async () => {
+    const save = (id: string) =>
+      call(stack, 'POST', `/projects/${a}/library/save`, {
+        body: JSON.stringify({ entity: { kind: 'resource', id } }),
+      });
+    const refusal = (r: Awaited<ReturnType<typeof call>>) => [
+      r.status,
+      r.json.code,
+      r.json.errors,
+      r.json.detail,
+    ];
+    // the bytes Save copied from projects into the library
+    const copied = async () =>
+      metric(await (await fetch(`${stack.url}/metrics`)).text(), 'rideo_library_bytes_total', {
+        op: 'from_project',
+      });
+    const before = await copied();
+
+    // a project's SVG reference stays the project's: in the library it would be a page
+    const svgFile = join(dir, 'logo.svg');
+    await writeFile(
+      svgFile,
+      '<svg xmlns="http://www.w3.org/2000/svg"><script>fetch("/api/projects")</script></svg>',
+    );
+    const svg = await uploadReady(stack, a, svgFile, {
+      mime: 'image/svg+xml',
+      name: 'logo.svg',
+      role: 'reference',
+    });
+    expect(refusal(await save(svg.id))).toEqual([
+      422,
+      'validation_error',
+      [{ reason: 'payload' }],
+      'logo.svg cannot be saved to the library: an image resource is a PNG, JPEG, WebP, GIF, BMP or TIFF file',
+    ]);
+    expect(await copied()).toBe(before);
+
+    // a PNG the project calls a JPEG is saved as the PNG it is, and the project's resource says so in the same commit
+    const chart = await uploadReady(stack, a, await makeStill(dir, 'chart.png', 'olive'), {
+      mime: 'image/jpeg',
+      name: 'chart.jpg',
+      role: 'reference',
+    });
+    expect(chart.media.mime).toBe('image/jpeg');
+    const saved = await save(chart.id);
+    expect(saved.status).toBe(201);
+    const media = saved.json.version.payload.media as { hash: string; mime: string };
+    expect(media).toMatchObject({ hash: chart.media.hash, mime: 'image/png' });
+    const file = await call(
+      stack,
+      'GET',
+      `/library/items/${saved.json.item.id}/versions/1/files/${media.hash}`,
+    );
+    const inA = (await stack.api<{ docs: ProjectDocs }>('GET', `/projects/${a}/state`)).docs.resources[
+      chart.id
+    ]!;
+    const row = (await stack.api<any>('GET', `/projects/${a}/library`)).links.find(
+      (l: any) => l.entity.id === chart.id,
+    );
+    expect({
+      served: file.headers.get('content-type'),
+      project: [inA.media.mime, inA.media.hash, inA.library?.version],
+      row: [row.state, row.modified],
+    }).toEqual({
+      served: 'image/png',
+      project: ['image/png', chart.media.hash, 1],
+      row: ['current', false],
+    });
+    const afterChart = await copied();
+    expect(afterChart).toBeGreaterThan(before);
+
+    // a video whose type is a list, which a browser reads as its last type (text/html), is neither saved nor uploaded
+    const footage = await makeFootage(dir);
+    const listed = await uploadReady(stack, a, footage, {
+      mime: 'video/mp4,text/html',
+      name: 'take.mp4',
+      role: 'reference',
+    });
+    expect(listed.media.mime).toBe('video/mp4,text/html');
+    expect(refusal(await save(listed.id))).toEqual([
+      422,
+      'validation_error',
+      [{ reason: 'payload' }],
+      'take.mp4 cannot be saved to the library: a video resource has one video/… type, not "video/mp4,text/html"',
+    ]);
+    expect(await copied()).toBe(afterChart);
+    const upload = (type: string) => {
+      const f = new FormData();
+      f.append(
+        'meta',
+        JSON.stringify({
+          kind: 'resource',
+          name: 'Take',
+          resource: { kind: 'video', role: 'reference', name: 'take.mp4' },
+        }),
+      );
+      f.append(
+        'payload',
+        new Blob([new Uint8Array(Buffer.from('<script>alert(1)</script>'))], { type }),
+        'take.mp4',
+      );
+      return call(stack, 'POST', '/library/items', { body: f });
+    };
+    const refusedUpload = await upload('video/mp4,text/html');
+    expect(refusedUpload.status).toBe(422);
+    expect(refusedUpload.json.errors).toEqual([{ reason: 'payload' }]);
+    const keptUpload = await upload('video/mp4');
+    expect([keptUpload.status, keptUpload.json.version.payload.media.mime]).toEqual([201, 'video/mp4']);
   });
 
   it('pins a figure on a character and a set on a location, then removes the pin', async () => {

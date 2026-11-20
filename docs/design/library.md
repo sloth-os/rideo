@@ -208,7 +208,11 @@ itemId?, newItem?, name?, description?, tags?, note?, basedOn?, acknowledgeConse
   (`412` `library_conflict`; the dialog then offers **Update…** first, **Save anyway** as the next version, or **Save
   as a new item**).
 - **What is saved** is the entity as it is at the project's tip ([a version](#a-version)); its files are copied from
-  the project's media into `library/files` (each once).
+  the project's media into `library/files` (each once). A resource's file is kept under the type an upload of it would
+  get ([surfaces](#surfaces)): a resource the library would refuse as an upload, a project's SVG or a video whose type
+  is a list among them, is not saved (`422`, `reason: payload`, nothing copied), and a PNG the project called a JPEG is
+  saved as `image/png`, the project's resource taking that type in the same commit, so it is not counted as edited
+  here.
 - **The project** records the link in the same request, one commit: `Save Mira to the library (v2)`, with
   `entity.library.mode` `saved`. A save that changes nothing (`unchanged`) still links.
 - **Real people.** A version whose approved references or cloned voice show a real person needs
@@ -495,7 +499,10 @@ files are removed and nothing is published. A unit file whose prefix or header i
 not `3d-editor.desk-unit`, or whose header `kind` is not the item's (`set`, `prop`, `figure` for `desk-set`,
 `desk-prop`, `desk-figure`) is `422`. A thumbnail must carry the PNG signature and an `IHDR` of at most 256 × 256. An
 image resource is taken by its bytes: a PNG, JPEG, WebP, GIF, BMP or TIFF (the stills rideo's media probe reads), kept
-with that type whatever its part says; anything else, an SVG or a page among them, is `422` (`reason: payload`).
+with that type whatever its part says; anything else, an SVG or a page among them, is `422` (`reason: payload`). A
+video or an audio resource is kept under one type of its kind, its parameters dropped (`video/mp4; codecs=…` is kept
+as `video/mp4`); anything else, another kind's type or a list such as `video/mp4, text/html` (a browser reads a list as
+its last type) among them, is `422` (`reason: payload`). A LUT is read as a `.cube` and kept as `application/x-cube`.
 
 **The file route** serves any file a version names, with `Range` (`206`), `ETag` (its sha256), `304` on `If-None-Match`,
 and `Cache-Control: private, max-age=31536000, immutable`: a version's files never change, so the browser's HTTP cache
@@ -510,7 +517,7 @@ page runs nothing of it in the studio's origin. A sha256 the version does not na
 | `library_conflict` | 412 | an `If-Match` (MCP `expectedRev`) that is not the item's revision (the answer's `ETag` is the current one); a new version whose `basedOn` is not the item's latest (`errors: [{latest}]`) |
 | `conflict` | 409 | Use in project when the item's id is taken in the project (`errors: [{reason: "exists", entityId}]`) or its name is (`{reason: "name", entityId}`); a pin, or an update or link whose version carries one, with `replacePin: false` on an entity that pins another item (`{reason: "pinned", itemId}`); an archived item applied to an entity that does not use it |
 | `not_found` | 404 | the item, the version, a file the version does not name, the target entity |
-| `validation_error` | 422 | a body, query or `meta` that fails its schema, parts out of order; a unit file that is not one or not of the item's kind; an image resource whose bytes are not a raster picture (`reason: payload`); a thumbnail that is not a PNG or over 256 px; a 3D item applied without a target or to the wrong one (a set on a prop, anything on a style); a version of another kind than its item |
+| `validation_error` | 422 | a body, query or `meta` that fails its schema, parts out of order; a unit file that is not one or not of the item's kind; an image resource whose bytes are not a raster picture, or a video or an audio resource without one type of its kind, uploaded or saved from a project (`reason: payload`); a thumbnail that is not a PNG or over 256 px; a 3D item applied without a target or to the wrong one (a set on a prop, anything on a style); a version of another kind than its item |
 | `validation_error` | 413 | a part over its limit: a unit over 32 MiB, a thumbnail over 64 KiB, a resource file over its kind's limit |
 | `forbidden` | 403 | `libraryAllows` refuses; the project's permission (read, edit, approve when the plan lists approved clips) |
 | `consent_required` | 422 | a real-person version saved or applied without `acknowledgeConsent` |
@@ -734,19 +741,23 @@ existing `412` conflict, whose **Replace** would drop the server's change unless
   (`413`), 3D meta over 16 KiB (`422`), a unit with a wrong magic, container, codec, header, format, version or kind
   (`422`), thumbnails that are not PNG or over 256 px (`422`), a client that goes away in the middle of a part (the
   receive rejects, no temporary file left), a raster picture known by its signature (PNG, JPEG, WebP, GIF, BMP, TIFF)
-  and an SVG, a page or a video not taken for one, byte ranges.
+  and an SVG, a page or a video not taken for one, a video or an audio resource kept under one type of its kind
+  (parameters dropped, `Video/MP4; codecs=…` kept as `video/mp4`) and a list, a bare `video/`, another kind's type or
+  `application/octet-stream` refused (`payload`, counted), byte ranges.
 - **Integration** (`library.test.ts`, REST and MCP on one server): a desk set uploaded, listed, read, served with
   `Range`, `304` and `HEAD`, a new version with a stale `If-Match` and with a stale `basedOn`, renamed, archived (gone
   from the default list, still served), its uses; Mira saved from project A (`consent_required` until acknowledged),
   used in project B with the same id and seed and her references copied, a v2 from A making B's status `behind`, B's dry
   run and update (lock + 1); a name conflict linking instead; a resource used as a new resource; an image resource that
   is an SVG or a page refused (`payload`), a PNG kept as one whatever its part says, and a library file and a project's
-  media served with `nosniff` and a sandboxing policy; a figure pinned on a character and a set on a location, detached;
-  the audit events and the metrics. MCP's `library_*` tools give the same answers as the routes. With projects in
-  browsers: the library in the data directory, an apply through the tab that holds the project, `storage_offline`
-  without it. With accounts (`accounts.test.ts`): the library and its project routes kept to their callers however the
-  path is percent-encoded, and an upload from a reviewer token answered `403` (an item that is not there `404`) before
-  its parts are read, nothing written to the temporary folder.
+  media served with `nosniff` and a sandboxing policy; Save to library of a project's SVG refused (`payload`, nothing
+  copied), of a PNG the project called a JPEG saved as `image/png` with the project's resource retyped in the same
+  commit (its row not edited here), and a video whose type is a list refused whether saved (nothing copied) or uploaded;
+  a figure pinned on a character and a set on a location, detached; the audit events and the metrics. MCP's `library_*`
+  tools give the same answers as the routes. With projects in browsers: the library in the data directory, an apply
+  through the tab that holds the project, `storage_offline` without it. With accounts (`accounts.test.ts`): the library
+  and its project routes kept to their callers however the path is percent-encoded, and an upload from a reviewer token
+  answered `403` (an item that is not there `404`) before its parts are read, nothing written to the temporary folder.
 - **Unit (web)** (`packages/web/test/library-ui.test.tsx`): the rows' texts ("Library: Mira v2 · v3 available", "edited
   here", "3D set: none", a missing pin), the plan in words (lock versions, stale takes, the approval warning in the
   plan's verb for a use, an update and a link, and who may confirm, local edits, files), refusals in words by code (a
