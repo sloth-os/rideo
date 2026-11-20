@@ -9,7 +9,9 @@ import {
   type DeskState,
   type DeskStateUnitUse,
   type DeskUnitPublishMessage,
+  formatDeskStateUnits,
   HostToDeskMessageSchema,
+  parseDeskStateUnits,
 } from '@rideo/shared';
 import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 import {
@@ -145,7 +147,12 @@ function harness(
     /** null: the bridge's own sha256 (crypto.subtle); by default the fake states' "hash" is their text */
     sha256?: ((data: ArrayBuffer) => Promise<string>) | null;
     /** what a write does after it was counted; by default it succeeds with the text as the sha256 */
-    store?: (state: DeskState, signal?: AbortSignal, precondition?: DeskStorePrecondition) => Promise<string>;
+    store?: (
+      state: DeskState,
+      signal?: AbortSignal,
+      precondition?: DeskStorePrecondition,
+      units?: readonly DeskStateUnitUse[] | null,
+    ) => Promise<string>;
     /** what Start over's DELETE does; by default it succeeds */
     clear?: () => Promise<void>;
     applyResult?: (result: DeskResultMessage, opened: DeskOpenedWith) => Promise<DeskAck>;
@@ -200,7 +207,7 @@ function harness(
       signals.push(signal);
       preconditions.push(precondition);
       unitsStored.push(units);
-      return opts.store ? opts.store(s, signal, precondition) : text(s.data);
+      return opts.store ? opts.store(s, signal, precondition, units) : text(s.data);
     },
     clear: async () => {
       events.push('clear');
@@ -2241,5 +2248,23 @@ describe('the desk bridge: library units (docs/design/director-desk.md#library-u
     old.desk(state('old', old.posted().find((m) => m.type === 'save')?.id as string));
     await done;
     expect(old.unitsStored).toEqual([null]);
+  });
+
+  it('stores a state whose units name a slot twice with its units not known: no header the server refuses', async () => {
+    // the write as DeskPanel and the server make it: the units' header, refused when it does not parse
+    const h = await ready({
+      units: studio().host,
+      store: async (s, _signal, _precondition, units) => {
+        parseDeskStateUnits(formatDeskStateUnits(units));
+        return text(s.data);
+      },
+    });
+    h.desk(OPENED);
+    h.desk({ ...state('edited'), units: [ROW('set', PINS.set), ROW('set', { ...PINS.set, version: 4 })] });
+    await vi.advanceTimersByTimeAsync(DESK_STATE_WRITE_INTERVAL_MS);
+    expect(h.stores).toEqual(['edited']);
+    expect(h.unitsStored).toEqual([null]);
+    expect(h.toasts).toEqual([]);
+    expect(h.last().line).toBe('Desk stored');
   });
 });

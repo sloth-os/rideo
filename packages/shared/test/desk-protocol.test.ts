@@ -239,6 +239,21 @@ describe('library units in the protocol (docs/design/director-desk.md#library-un
     expect((DeskToHostMessageSchema.parse(odd) as any).units).toBeUndefined();
   });
 
+  it('reads state.units naming a slot twice as units not known (no header could carry them); the state still parses', () => {
+    const good = DeskToHostMessageSchema.parse(fixture('state-units.json')) as any;
+    const [mira, kite, set] = good.units;
+    const twice = DeskToHostMessageSchema.safeParse({
+      ...good,
+      units: [mira, kite, set, { ...set, version: 4 }],
+    });
+    expect(twice.success).toBe(true);
+    expect((twice.data as any).units).toBeUndefined();
+    expect((twice.data as any).state.data).toBeInstanceOf(ArrayBuffer);
+    // each slot once, in another order: read as they come
+    const shuffled = DeskToHostMessageSchema.parse({ ...good, units: [set, mira, kite] }) as any;
+    expect(shuffled.units.map((u: { slot: string }) => u.slot)).toEqual([set.slot, mira.slot, kite.slot]);
+  });
+
   it('carries the pins and the unit files of an open, with real sha256 values', () => {
     const open = fixture('open-units.json');
     const parsed = HostToDeskMessageSchema.parse(open) as any;

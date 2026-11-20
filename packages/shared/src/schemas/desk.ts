@@ -544,10 +544,23 @@ export const DeskStateMessageSchema = z.object({
   state: DeskStateSchema,
   shots: z.number().int().nonnegative(),
   /**
-   * After an open with library units: what the state uses, one row per brief slot whose record has a pin. Read
-   * leniently: rows that do not validate, or more than 128, read as unknown (absent) and the state is kept.
+   * After an open with library units: what the state uses, one row per brief slot whose record has a pin, each slot
+   * once. Read leniently: rows that do not validate, name a slot twice (no `X-Desk-State-Units` could carry them) or
+   * are more than 128 read as unknown (absent) and the state is kept.
    */
-  units: z.array(DeskStateUnitSchema).max(DESK_UNIT_LIMITS.stateUnits).optional().catch(undefined),
+  units: z
+    .array(DeskStateUnitSchema)
+    .max(DESK_UNIT_LIMITS.stateUnits)
+    .superRefine((rows, ctx) => {
+      const slots = new Set<string>();
+      rows.forEach((row, i) => {
+        if (slots.has(row.slot))
+          ctx.addIssue({ code: 'custom', path: [i, 'slot'], message: `${row.slot} is named twice` });
+        slots.add(row.slot);
+      });
+    })
+    .optional()
+    .catch(undefined),
 });
 export const DeskProgressMessageSchema = z.object({
   type: z.literal('progress'),

@@ -538,10 +538,11 @@ approved, read-only clip may publish; it is never linked.
 
 ### What a stored state uses
 
-After an open with units, every `state` carries `units`: one row per brief slot whose record has a pin, sorted by slot
-(`set`, `cast:<characterId>`, `el:<elementId>`), at most 128, each `{slot, ref, version, sha256, staged: 'unit' |
-'pending' | 'refused', local, why?}`. Rideo reads it leniently: rows that do not validate, or more than 128, read as
-"unknown", and the state is stored all the same.
+After an open with units, every `state` carries `units`: one row per brief slot whose record has a pin, each slot once,
+sorted by slot (`set`, `cast:<characterId>`, `el:<elementId>`), at most 128, each `{slot, ref, version, sha256, staged:
+'unit' | 'pending' | 'refused', local, why?}`. Rideo reads it leniently: rows that do not validate, rows that name a
+slot twice (no header below could carry them) or more than 128 rows read as "unknown", and the state is stored all the
+same; rows in another order are read as they come.
 
 The bridge keeps each state's rows with its bytes and sends them with its write, as a header of the existing streamed
 `PUT …/desk-state` (rideo still never reads the state's bytes):
@@ -551,8 +552,8 @@ X-Desk-State-Units: set=lib_0j8kc4n2q1h7wz3x@3:unit, cast:chr_0j8kc3v9m2a7mr5t=l
 ```
 
 - A row is `<slot>=<ref>@<version>:<staged>[:local][:<why>]`, rows are joined by `, `, and `-` is none. No header
-  means unknown; rows that would not fit (more than 128, over 8 KiB) are left out of the write, which goes on with the
-  units unknown.
+  means unknown; rows that would not fit (more than 128, over 8 KiB, a slot named twice) are left out of the write,
+  which goes on with the units unknown.
 - The server keeps them on the clip, beside the state they describe; `DELETE …/desk-state` clears them with it:
 
   ```ts
@@ -826,18 +827,20 @@ an `open` and why, and each publish's answer, to the browser's console (`[desk] 
   through the API, the v1 fake desk still gets no unit field: no `options.units`, no pin in the brief, no `open.units`.
 - **Library units, unit (shared and web):** the protocol's schemas against the new fixtures (`desk-protocol.test.ts`:
   every valid one parses, every invalid one is refused) and the capability read leniently (only version 2, garbage,
-  only unknown kinds: no units, and `ready` still parses); the brief (`desk-brief.test.ts`) without units the same byte
-  for byte even when entities are pinned, and with units `set.unit` from the scene's location only, prop pins, figure
-  pins with the figure's kind and height (null outside 0.1–4 m), kinds the desk did not announce left out, no unit on
-  a location row; `X-Desk-State-Units` formatted and parsed (`-`, no header, `local`, a reason; 129 rows, over 8 KiB and
-  bad syntax refused) and `deskUnitDrift` for every status and the badge's order (`desk-units.test.ts`); the bridge
-  (`desk-bridge.test.ts`): a desk without the capability gets no `options.units`, no pins and no `open.units`; a desk
-  with units gets `options.units` with `publish`, then `open.units` in slot order, fetched 2 at a time, once per
-  version, without the pins the stored state uses, a file that does not match or does not arrive left out, 48 MiB
-  never passed, the buffers transferred; `unit-publish` saving a new item, a new version with `basedOn` and the same
-  bytes again, linked by the rule's cases (read-only, no permission to edit, another pin, a `409` on the link: each
-  `linked: false` with its reason), every refusal mapped to its code, publishes one at a time, a publish on an open
-  without units refused at once; each state's units sent with its write, and none when they do not fit.
+  only unknown kinds: no units, and `ready` still parses), `state.units` too (rows that do not validate, 129 rows, a
+  slot named twice: units not known, and the state still parses); the brief (`desk-brief.test.ts`) without units the
+  same byte for byte even when entities are pinned, and with units `set.unit` from the scene's location only, prop
+  pins, figure pins with the figure's kind and height (null outside 0.1–4 m), kinds the desk did not announce left out,
+  no unit on a location row; `X-Desk-State-Units` formatted and parsed (`-`, no header, `local`, a reason; 129 rows,
+  over 8 KiB and bad syntax refused, rows naming a slot twice no header) and `deskUnitDrift` for every status and the
+  badge's order (`desk-units.test.ts`); the bridge (`desk-bridge.test.ts`): a desk without the capability gets no
+  `options.units`, no pins and no `open.units`; a desk with units gets `options.units` with `publish`, then
+  `open.units` in slot order, fetched 2 at a time, once per version, without the pins the stored state uses, a file
+  that does not match or does not arrive left out, 48 MiB never passed, the buffers transferred; `unit-publish` saving
+  a new item, a new version with `basedOn` and the same bytes again, linked by the rule's cases (read-only, no
+  permission to edit, another pin, a `409` on the link: each `linked: false` with its reason), every refusal mapped to
+  its code, publishes one at a time, a publish on an open without units refused at once; each state's units sent with
+  its write, and none when they do not fit or name a slot twice (the state stored with its units unknown).
 - **Library units, integration** (`desk.test.ts`): `X-Desk-State-Units` kept on the clip with its state (`-` as none,
   no header as unknown), a header that does not parse refused with `422` and counted, the same bytes again keeping the
   rows, `DELETE` clearing them; the embedding origins' preflight allows `x-desk-state-units` (`embedding.test.ts`).

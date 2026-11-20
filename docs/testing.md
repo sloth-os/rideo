@@ -265,7 +265,8 @@ only those names as extras, and reading verdicts that name a character instead o
   `packages/web/test/desk-bridge.test.ts`): the new fixtures (valid ones parse, invalid ones are refused) and the
   capability read leniently; the brief unchanged byte for byte without units and, with them, the set from the scene's
   location, props, figures with their kind and height, only the kinds the desk announced; `X-Desk-State-Units`
-  formatted and parsed; `deskUnitDrift` for every status; the bridge sending no unit field to a desk without the
+  formatted and parsed, and `state.units` that name a slot twice read as not known and sent as no header (the state
+  stored all the same); `deskUnitDrift` for every status; the bridge sending no unit field to a desk without the
   capability, `open.units` in slot order without the pins the stored state uses (2 fetches at a time, sha256 checked,
   never past 48 MiB), `unit-publish` saved, linked by the contract's rule and acknowledged with the mapped codes, one
   at a time ([library units](design/director-desk.md#tests)).

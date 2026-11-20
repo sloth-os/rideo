@@ -83,8 +83,8 @@ const formatRow = (u: DeskStateUnitUse) =>
 
 /**
  * The `X-Desk-State-Units` value of what a state uses: its rows joined by `, `, `-` for none, and no header
- * (undefined) when not known, or when the rows do not fit (more than 128, over 8 KiB): the write goes on with the
- * units unknown.
+ * (undefined) when not known, or when the rows do not fit (more than 128, over 8 KiB, a slot named twice, which
+ * `parseDeskStateUnits` refuses): the write goes on with the units unknown.
  */
 export function formatDeskStateUnits(
   rows: readonly DeskStateUnitUse[] | null | undefined,
@@ -92,6 +92,7 @@ export function formatDeskStateUnits(
   if (!rows) return undefined;
   if (rows.length === 0) return '-';
   if (rows.length > DESK_UNIT_LIMITS.stateUnits) return undefined;
+  if (new Set(rows.map((r) => r.slot)).size < rows.length) return undefined;
   const value = rows.map(formatRow).join(', ');
   return value.length > DESK_UNIT_LIMITS.headerBytes ? undefined : value;
 }

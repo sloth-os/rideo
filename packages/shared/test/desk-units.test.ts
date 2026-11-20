@@ -107,6 +107,13 @@ describe('X-Desk-State-Units (docs/design/director-desk.md#what-a-stored-state-u
     expect(formatDeskStateUnits(big.slice(0, 60))!.length).toBeLessThanOrEqual(8192);
   });
 
+  it('gives no header for rows that name a slot twice, which the server refuses; each slot once in any order is one', () => {
+    const twice: DeskStateUnitUse[] = [ROWS[2]!, ROWS[0]!, { ...ROWS[0]!, version: 4 }];
+    expect(formatDeskStateUnits(twice)).toBeUndefined();
+    const once = [ROWS[2]!, ROWS[0]!];
+    expect(parseDeskStateUnits(formatDeskStateUnits(once))).toEqual(once);
+  });
+
   it('refuses what does not parse: bad syntax, a staging or reason it does not know, a slot named twice', () => {
     for (const bad of [
       '',
