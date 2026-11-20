@@ -165,6 +165,23 @@ describe('edit suggestions', () => {
     });
     expect(s.map((x) => x.params.kind)).toEqual(['cut', 'cut', 'tighten_silence', 'cut', 'fade']);
     expect(s.every((x) => x.source === 'rules' && x.status === 'pending')).toBe(true);
+    expect(s.find((x) => x.params.kind === 'tighten_silence')?.description).toBe('Tighten the 3.0s pause');
+  });
+
+  it('names a long pause with the definite article, whatever its length sounds like', () => {
+    const pauses = ruleSuggestions({
+      durationSec: 60,
+      silences: [
+        { start: 5, end: 13 },
+        { start: 20, end: 31 },
+        { start: 40, end: 41.5 },
+      ],
+      blackSegments: [],
+    })
+      .filter((x) => x.params.kind === 'tighten_silence')
+      .map((x) => x.description);
+    // "an 8.0s", "an 11.0s" but "a 1.5s": the article follows the spoken number, so the text names the pause instead
+    expect(pauses).toEqual(['Tighten the 8.0s pause', 'Tighten the 11.0s pause', 'Tighten the 1.5s pause']);
   });
 
   it('validates LLM suggestions against the schema and the footage length', () => {

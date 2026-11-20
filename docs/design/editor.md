@@ -332,8 +332,8 @@ one. Then the browser takes one 320 px JPEG per scene (at most 12) and, when the
 configured, a mono 16 kHz speech track (`-vn -ac 1 -ar 16000 -b:a 48k speech.mp3`). The results are
 uploaded, and the server's `analysis.suggest` job runs the AI part: transcript (STT via the proxy), the
 vision LLM's summary and suggestions from the signals and thumbnails, plus the deterministic rule-based
-suggestions (`ruleSuggestions` in `shared/src/story/normalize.ts`: cut black, tighten long silences, fade
-in/out), which exist even without an LLM.
+suggestions (`ruleSuggestions` in `shared/src/story/normalize.ts`: cut black, tighten long silences ("Tighten the
+8.0s pause": the definite article, which fits any length), fade in/out), which exist even without an LLM.
 
 ## Rendering
 

@@ -556,7 +556,8 @@ export function ruleSuggestions(input: {
     else if (len > 1.2)
       add(
         { kind: 'tighten_silence', start: s.start, end: s.end, keepSec: 0.4 },
-        `Tighten a ${len.toFixed(1)}s pause`,
+        // the definite article fits every length ("a 8.0s" would not: the article follows the spoken number)
+        `Tighten the ${len.toFixed(1)}s pause`,
         'Long silence slows the pace.',
         0.7,
       );
