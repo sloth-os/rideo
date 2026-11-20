@@ -1344,7 +1344,7 @@ function buildServer(studio: Studio): McpServer {
   // Frontend control
   tool(
     'ui_sessions',
-    'Open browser sessions with what each user is looking at.',
+    'Open browser tabs you may see (your own, and those on projects you may read, showing only those projects), with what each user is looking at.',
     { projectId: z.string().optional() },
     async (a) => studio.ui.sessions(a.projectId),
     ro,
@@ -1368,7 +1368,7 @@ function buildServer(studio: Studio): McpServer {
   );
   tool(
     'ui_notify',
-    'Show a toast in the browser.',
+    'Show a toast in the browser: in the tabs on projectId, or without one in your own tabs.',
     {
       message: z.string().max(2000),
       level: z.enum(['info', 'success', 'warning', 'error']).optional(),
