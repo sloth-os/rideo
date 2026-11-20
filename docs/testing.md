@@ -275,11 +275,13 @@ starts, a file or a folder (by its newest file) more than a day old removed and 
   answered with a retryable `storage_error`, a save with `newItem` making a new item whatever `itemId` names,
   permissions through real principals, pins and detach (counted under the item's kind), an approved clip's update
   planned for an editor, refused to them and done by a director, and so a Use in project of a character used again whose
-  old take an approved clip holds) and its uploads (`meta` first, a unit of 32 MiB + 1 byte refused with `413`, a unit
-  whose prefix, header or kind is wrong, thumbnails that are not PNG, over 64 KiB or over 256 px, a client gone in the
-  middle of a part leaving no temporary file, a raster picture known by its signature and an SVG or a page not taken for
-  one, a video or an audio resource kept under one type of its kind without its parameters and a list such as
-  `video/mp4, text/html` refused) ([the library](design/library.md#tests)).
+  old take an approved clip holds, a video resource's poster saved by its bytes: a PNG the project called a JPEG as
+  `image/png`, one that is not a raster picture left out) and its uploads (`meta` first, a unit of 32 MiB + 1 byte
+  refused with `413`, a unit whose prefix, header or kind is wrong, thumbnails that are not PNG, over 64 KiB or over 256
+  px, a client gone in the middle of a part leaving no temporary file, a raster picture known by its signature and an
+  SVG or a page not taken for one, a video or an audio resource kept under one type of its kind without its parameters
+  and a list such as `video/mp4, text/html` refused, saying "an audio resource" or "a video resource") ([the
+  library](design/library.md#tests)).
 - **library units** (`packages/shared/test/desk-protocol.test.ts`, `desk-brief.test.ts`, `desk-units.test.ts`,
   `packages/web/test/desk-bridge.test.ts`): the new fixtures (valid ones parse, invalid ones refused but
   `state-units-bad-staged.json`, a state read with its units unknown) and the capability read leniently; the brief

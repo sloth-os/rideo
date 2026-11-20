@@ -297,8 +297,18 @@ describe('moving, duplicating (docs/design/editing-tools.md#moving-items)', () =
     expect(video(t, O)).toMatchObject({ start: 8, transitionIn: null });
     // kinds stay apart; the target needs its index or start
     expect(() => apply(t, [{ op: 'move', itemId: O, trackId: MUSIC, start: 1 }])).toThrow(
-      'a video item cannot move to a audio track',
+      'a video item cannot move to an audio track',
     );
+    const sound = f.media({ path: 'media/music/sting.mp3', mime: 'audio/mpeg', durationSec: 4 });
+    expect(() =>
+      apply(t, [
+        {
+          op: 'insert',
+          trackId: PRIMARY,
+          item: { kind: 'audio', source: { type: 'media', media: sound }, start: 0, in: 0, out: 2 },
+        },
+      ]),
+    ).toThrow('cannot insert an audio item into a video track');
     expect(() => apply(t, [{ op: 'move', itemId: O, trackId: PRIMARY }])).toThrow('needs index');
     expect(() => apply(t, [{ op: 'move', itemId: A, trackId: OVERLAY2 }])).toThrow('needs start');
   });

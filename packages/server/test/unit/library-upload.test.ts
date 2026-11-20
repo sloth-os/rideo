@@ -498,6 +498,18 @@ describe('the service checks an upload', () => {
       );
     expect(studio.deps.metrics.library.get({ event: 'refused', kind: 'resource' })).toBe(refused.length);
     expect((await lib.list({ archived: false, sort: 'updated', limit: 100 })).items).toEqual([]);
+    // the refusal names the kind with the article it is read with
+    const refusal = async (kind: 'video' | 'audio', mime: string) =>
+      lib.create(actor, await resource(kind, mime)).then(
+        () => 'ok',
+        (err: AppError) => err.message,
+      );
+    expect(await refusal('audio', 'video/mp4')).toBe(
+      'an audio resource has one audio/… type, not "video/mp4"',
+    );
+    expect(await refusal('video', 'audio/mpeg')).toBe(
+      'a video resource has one video/… type, not "audio/mpeg"',
+    );
 
     const kept = async (kind: 'video' | 'audio', mime: string) => {
       const out = await lib.create(actor, await resource(kind, mime));

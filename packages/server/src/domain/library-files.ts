@@ -1,5 +1,5 @@
 import { open } from 'node:fs/promises';
-import { LIBRARY_LIMITS, type ResourceKind } from '@rideo/shared';
+import { LIBRARY_LIMITS, type ResourceKind, withArticle } from '@rideo/shared';
 import { invalid } from '../errors';
 
 /**
@@ -128,7 +128,7 @@ export async function resourceFileMime(
 export function resourceTypeRefusal(kind: ResourceKind, declared: string): string {
   return kind === 'image'
     ? 'an image resource is a PNG, JPEG, WebP, GIF, BMP or TIFF file'
-    : `a ${kind} resource has one ${kind}/… type, not ${JSON.stringify(declared)}`;
+    : `${withArticle(kind)} resource has one ${kind}/… type, not ${JSON.stringify(declared)}`;
 }
 
 /** The first `n` bytes of a file (fewer when it is shorter). */

@@ -16,6 +16,8 @@ import {
   newId,
   type ProjectAccess,
   ProjectAccessSchema,
+  type Resource,
+  type ResourceSnapshot,
 } from '@rideo/shared';
 import * as f from '@rideo/shared/testing';
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -353,9 +355,21 @@ const as = <T>(p: Principal, fn: () => Promise<T>) => principalContext.run(p, fn
 
 async function projectWith(
   s: Studio,
-  docs: { characters?: Character[]; elements?: Element[]; clips?: Clip[]; access?: ProjectAccess },
+  docs: {
+    characters?: Character[];
+    elements?: Element[];
+    clips?: Clip[];
+    resources?: Resource[];
+    access?: ProjectAccess;
+    /** The project's id, when its media is stored before it is made. */
+    id?: string;
+  },
 ) {
-  const project = { ...f.project(), ...(docs.access ? { access: docs.access } : {}) };
+  const project = {
+    ...f.project(),
+    ...(docs.id ? { id: docs.id } : {}),
+    ...(docs.access ? { access: docs.access } : {}),
+  };
   const h = s.deps.projects.handle(project.id);
   await h.repo.init(
     {
@@ -363,6 +377,7 @@ async function projectWith(
       ...Object.fromEntries((docs.characters ?? []).map((c) => [`characters/${c.id}.json`, c])),
       ...Object.fromEntries((docs.elements ?? []).map((e) => [`elements/${e.id}.json`, e])),
       ...Object.fromEntries((docs.clips ?? []).map((c) => [`clips/${c.id}.json`, c])),
+      ...Object.fromEntries((docs.resources ?? []).map((r) => [`resources/${r.id}.json`, r])),
     },
     author,
     'Create project',
@@ -803,5 +818,64 @@ describe('the library service', () => {
       lock: { locked: true, version: 2 },
       library: { itemId: id, version: 1, mode: 'used' },
     });
+  });
+
+  it("keeps a video's poster by its bytes: a PNG the project called a JPEG as a PNG, a page not at all", async () => {
+    const lib = studio.library;
+    const media = studio.deps.media;
+    // the save copies through the media store's temporary folder, made at startup
+    await media.init();
+    const pid = newId('project');
+    // a video resource whose poster the project recorded as a JPEG, whatever its bytes are
+    const take = async (name: string, poster: Buffer): Promise<Resource> => {
+      const file = await media.putBuffer(pid, Buffer.from(`${name}: video bytes, not decoded here`), {
+        kind: 'uploads',
+        name,
+        mime: 'video/mp4',
+        probe: false,
+      });
+      const frame = await media.putBuffer(pid, poster, {
+        kind: 'posters',
+        name: `${name}-poster`,
+        mime: 'image/jpeg',
+        probe: false,
+      });
+      return {
+        id: newId('resource'),
+        kind: 'video',
+        role: 'reference',
+        name: `${name}.mp4`,
+        media: { ...file, poster: { path: frame.path, mime: 'image/jpeg' } },
+        createdAt: NOW,
+        origin: 'upload',
+        status: 'ready',
+      };
+    };
+    const png = Buffer.from(f.pngBytes(64, 36));
+    const page = Buffer.from('<html><script>fetch("/api/projects")</script></html>');
+    const still = await take('still', png);
+    const paged = await take('paged', page);
+    await projectWith(studio, { id: pid, resources: [still, paged] });
+    const saved = async (r: Resource) => {
+      const out = await lib.save(actor, pid, { entity: { kind: 'resource', id: r.id } });
+      return { out, media: (out.version.payload as ResourceSnapshot).media };
+    };
+
+    // a PNG is kept as the PNG it is, served as one
+    const kept = await saved(still);
+    expect(kept.media.poster).toEqual({ hash: sha256(png), mime: 'image/png', size: png.length });
+    expect((await lib.fileInfo(kept.out.item.id, 1, sha256(png))).mime).toBe('image/png');
+    // a poster that is not a raster picture is left out: the video is saved without it, and the library never holds it
+    const dropped = await saved(paged);
+    expect(dropped.media.hash).toBe(paged.media.hash);
+    expect(dropped.media.poster).toBeUndefined();
+    expect(await code(lib.fileInfo(dropped.out.item.id, 1, sha256(page)))).toBe('not_found');
+    expect(await lib.store.hasFile(sha256(page))).toBe(false);
+    // the project's own posters are left as they are
+    const docs = await studio.deps.projects.docs(pid);
+    expect([docs.resources[still.id]?.media.poster, docs.resources[paged.id]?.media.poster]).toEqual([
+      still.media.poster,
+      paged.media.poster,
+    ]);
   });
 });

@@ -62,6 +62,7 @@ import {
   slugify,
   thumbnailSource,
   versionFiles,
+  withArticle,
 } from '@rideo/shared';
 import type { z } from 'zod';
 import { currentPrincipal, type Principal } from '../auth/context';
@@ -74,7 +75,14 @@ import type { Tx } from '../vcs/repo';
 import { Service } from './base';
 import type { Deps } from './deps';
 import { elementIdentityHash } from './elements';
-import { pngSize, readDeskUnitHeader, resourceFileMime, resourceTypeRefusal } from './library-files';
+import {
+  fileHead,
+  pngSize,
+  rasterImageMime,
+  readDeskUnitHeader,
+  resourceFileMime,
+  resourceTypeRefusal,
+} from './library-files';
 import { LibraryStore } from './library-store';
 import { identityHash } from './story';
 import { voiceIdentityHash } from './voices';
@@ -388,7 +396,9 @@ export class LibraryService extends Service {
       throw this.refused(
         upload.meta.kind,
         'kind',
-        invalid(`${item.name} is a ${item.kind} item, not a ${upload.meta.kind}`, [{ reason: 'kind' }]),
+        invalid(`${item.name} is ${withArticle(item.kind)} item, not ${withArticle(upload.meta.kind)}`, [
+          { reason: 'kind' },
+        ]),
       );
     const draft = await this.uploadDraft(upload.meta, upload, item.name);
     return this.publishVersion(actor, item.id, draft, ifMatch);
@@ -487,7 +497,11 @@ export class LibraryService extends Service {
     const r = meta.resource!;
     const limit = RESOURCE_BYTES[r.kind];
     if (file.size > limit)
-      throw this.refused('resource', 'size', tooLarge(`a ${r.kind} resource is at most ${limit} bytes`));
+      throw this.refused(
+        'resource',
+        'size',
+        tooLarge(`${withArticle(r.kind)} resource is at most ${limit} bytes`),
+      );
     let mime = file.mime || 'application/octet-stream';
     if (r.kind === 'lut') {
       try {
@@ -654,7 +668,9 @@ export class LibraryService extends Service {
       const item = await this.get(itemId);
       this.precondition(item, ifMatch);
       if (item.kind !== draft.kind)
-        throw invalid(`${item.name} is a ${item.kind} item, not a ${draft.kind}`, [{ reason: 'kind' }]);
+        throw invalid(`${item.name} is ${withArticle(item.kind)} item, not ${withArticle(draft.kind)}`, [
+          { reason: 'kind' },
+        ]);
       const current = item.history.find((h) => h.version === item.current);
       if (current?.digest === draft.digest) {
         this.deps.metrics.library.inc({ event: 'unchanged', kind: item.kind });
@@ -798,7 +814,9 @@ export class LibraryService extends Service {
     const item = linkedId ? await this.store.item(linkedId) : null;
     if (input.itemId && !input.newItem && !item) throw notFound(`library item ${input.itemId}`);
     if (item && item.kind !== kind)
-      throw invalid(`a ${kind} is saved as a ${kind} item, not into ${item.name} (a ${item.kind})`);
+      throw invalid(
+        `${withArticle(kind)} is saved as ${withArticle(kind)} item, not into ${item.name} (${withArticle(item.kind)})`,
+      );
     const snap = entitySnapshot(kind, entity);
     const schema =
       kind === 'character'
@@ -846,8 +864,8 @@ export class LibraryService extends Service {
     }
     if (kind === 'resource') {
       const poster = (entity as Resource).media.poster;
-      if (poster) {
-        const stored = await this.storePoster(projectId, poster);
+      const stored = poster ? await this.storePoster(projectId, poster) : null;
+      if (stored) {
         (payload as ResourceSnapshot).media.poster = stored;
         bytes += stored.size;
       }
@@ -929,18 +947,34 @@ export class LibraryService extends Service {
     return { ...out, commit: commit?.id ?? null };
   }
 
-  private async storePoster(projectId: string, poster: { path: string; mime: string }) {
+  /**
+   * A video resource's poster into the library, taken by its bytes as an image resource is: kept under the type of the
+   * raster picture it is, whatever the project recorded, or left out (null) when it is not one, so the version is
+   * saved without it and the library never serves those bytes (docs/design/library.md#save-to-library).
+   */
+  private async storePoster(
+    projectId: string,
+    poster: { path: string; mime: string },
+  ): Promise<{ hash: string; mime: string; size: number } | null> {
     const res = await this.deps.media.stream(projectId, poster.path);
     if (!res)
       throw new AppError('storage_error', `the poster ${poster.path} is missing from storage`, [], true);
     const tmp = this.deps.media.tmp(extFor(poster.mime, poster.path));
     try {
       await pipeline(res.stream, createWriteStream(tmp));
+      const mime = rasterImageMime(await fileHead(tmp, 16));
+      if (!mime) {
+        this.deps.log.warn(
+          { projectId, poster: poster.path, recorded: poster.mime },
+          'library save left out a poster that is not a raster picture',
+        );
+        return null;
+      }
       const hash = await sha256File(tmp);
       const size = (await stat(tmp)).size;
-      if (await this.store.putFile(tmp, hash, size, poster.mime))
+      if (await this.store.putFile(tmp, hash, size, mime))
         this.deps.metrics.libraryBytes.inc({ op: 'from_project' }, size);
-      return { hash, mime: poster.mime, size };
+      return { hash, mime, size };
     } finally {
       await rm(tmp, { force: true });
     }

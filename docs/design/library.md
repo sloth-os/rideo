@@ -212,7 +212,10 @@ itemId?, newItem?, name?, description?, tags?, note?, basedOn?, acknowledgeConse
   get ([surfaces](#surfaces)): a resource the library would refuse as an upload, a project's SVG or a video whose type
   is a list among them, is not saved (`422`, `reason: payload`, nothing copied), and a PNG the project called a JPEG is
   saved as `image/png`, the project's resource taking that type in the same commit, so it is not counted as edited
-  here.
+  here. A video resource's poster is taken by its bytes as an image resource is: kept with the type of the raster
+  picture it is (a PNG poster the project called a JPEG is kept as `image/png`; the project's own poster is left as it
+  is), and left out of the version when it is not a raster picture: the save goes on without it, and the version's
+  thumbnail is drawn from the video.
 - **The project** records the link in the same request, one commit: `Save Mira to the library (v2)`, with
   `entity.library.mode` `saved`. A save that changes nothing (`unchanged`) still links.
 - **Real people.** A version whose approved references or cloned voice show a real person needs
@@ -443,8 +446,9 @@ hides what a person may not do):
 | Where-used rows | at most 1000 a project |
 
 Character, element and resource versions get a thumbnail the server makes: a PNG of at most 256 px a side from the
-first approved reference (by view priority), an image resource's picture or a video resource's poster; audio and LUTs
-have none. 3D units bring the desk's own (rendered in the browser when it publishes).
+first approved reference (by view priority), an image resource's picture or a video resource's poster (the video's first
+frame when the version has none); audio and LUTs have none. 3D units bring the desk's own (rendered in the browser when
+it publishes).
 
 ## Surfaces
 
@@ -738,14 +742,16 @@ existing `412` conflict, whose **Replace** would drop the server's change unless
   (no lock or identity hash moved), status and uses following the pin, detach (counted under the detached item's kind: a
   pin's unit, a link's item); an update whose approved clip goes stale planned for an editor, refused to them (`403`,
   audited) and done by a director (lock + 1), and so is a Use in project of a character used again whose old take an
-  approved clip holds. Uploads (`library-upload.test.ts`): the multipart parts in order, `meta` not first, bad `meta`, a
-  unit of 32 MiB + 1 byte (`413`, counted, its temporary file removed), a thumbnail over 64 KiB and `meta` over 32 KiB
-  (`413`), 3D meta over 16 KiB (`422`), a unit with a wrong magic, container, codec, header, format, version or kind
-  (`422`), thumbnails that are not PNG or over 256 px (`422`), a client that goes away in the middle of a part (the
-  receive rejects, no temporary file left), a raster picture known by its signature (PNG, JPEG, WebP, GIF, BMP, TIFF)
-  and an SVG, a page or a video not taken for one, a video or an audio resource kept under one type of its kind
-  (parameters dropped, `Video/MP4; codecs=…` kept as `video/mp4`) and a list, a bare `video/`, another kind's type or
-  `application/octet-stream` refused (`payload`, counted), byte ranges.
+  approved clip holds; a video resource saved with a PNG poster the project called a JPEG (the version's poster
+  `image/png`) and with a poster that is not a raster picture (saved without it). Uploads (`library-upload.test.ts`):
+  the multipart parts in order, `meta` not first, bad `meta`, a unit of 32 MiB + 1 byte (`413`, counted, its temporary
+  file removed), a thumbnail over 64 KiB and `meta` over 32 KiB (`413`), 3D meta over 16 KiB (`422`), a unit with a
+  wrong magic, container, codec, header, format, version or kind (`422`), thumbnails that are not PNG or over 256 px
+  (`422`), a client that goes away in the middle of a part (the receive rejects, no temporary file left), a raster
+  picture known by its signature (PNG, JPEG, WebP, GIF, BMP, TIFF) and an SVG, a page or a video not taken for one, a
+  video or an audio resource kept under one type of its kind (parameters dropped, `Video/MP4; codecs=…` kept as
+  `video/mp4`) and a list, a bare `video/`, another kind's type or `application/octet-stream` refused (`payload`,
+  counted, the message naming the kind with its article: "an audio resource has one audio/… type"), byte ranges.
 - **Integration** (`library.test.ts`, REST and MCP on one server): a desk set uploaded, listed, read, served with
   `Range`, `304` and `HEAD`, a new version with a stale `If-Match` and with a stale `basedOn`, renamed, archived (gone
   from the default list, still served), its uses; Mira saved from project A (`consent_required` until acknowledged),

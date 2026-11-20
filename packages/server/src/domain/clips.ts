@@ -24,6 +24,7 @@ import {
   takeState,
   takeSwapOps,
   voicesNotReady,
+  withArticle,
 } from '@rideo/shared';
 import { AppError, invalid, notFound } from '../errors';
 import type { Tx } from '../vcs/repo';
@@ -107,10 +108,10 @@ export function assertDirectingResources(
   resource: (id: string | null | undefined) => Resource | null | undefined,
 ): void {
   const need = (id: string | null | undefined, kind: Resource['kind'], what: string) => {
-    if (!id) throw invalid(`${what}: choose a ${kind} resource`);
+    if (!id) throw invalid(`${what}: choose ${withArticle(kind)} resource`);
     const r = resource(id);
     if (!r) throw notFound(`resource ${id}`);
-    if (r.kind !== kind) throw invalid(`${what} must be a ${kind} resource, not ${r.kind}`);
+    if (r.kind !== kind) throw invalid(`${what} must be ${withArticle(kind)} resource, not ${r.kind}`);
     if (r.status !== 'ready') throw invalid(`${what}: resource ${r.name} is not ready`);
   };
   if (shot.startFrame?.mode === 'resource') need(shot.startFrame.resourceId, 'image', 'the start frame');

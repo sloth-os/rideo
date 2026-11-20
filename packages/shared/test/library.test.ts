@@ -810,6 +810,19 @@ describe('planApply', () => {
     ).toBe('element_locked');
   });
 
+  it('names both kinds with their articles when a version is applied to another kind of entity', () => {
+    const { mira, v, item } = miraItem();
+    const harbor = f.element();
+    const docs = docsWith({ characters: { [mira.id]: mira }, elements: { [harbor.id]: harbor } });
+    expect(() => planApply(ctx(docs, item, v, { target: { kind: 'element', id: harbor.id } }))).toThrow(
+      'a library character applies to a character, not to an element',
+    );
+    const place = version('lib_0000000000harb00', 'element', elementSnapshot(harbor).payload);
+    expect(() =>
+      planApply(ctx(docs, itemOf(place), place, { target: { kind: 'character', id: mira.id } })),
+    ).toThrow('a library element applies to an element, not to a character');
+  });
+
   it('bumps a voice lock whose voice changed and stales the takes that spoke with it', () => {
     const voiceOld: Voice = {
       description: 'warm',

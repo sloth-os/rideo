@@ -17,6 +17,7 @@ import {
   type VideoItem,
 } from '../schemas/timeline';
 import { deepClone } from '../util/canonical-json';
+import { withArticle } from '../util/text';
 import { sourceAtLocal, timeMapOf } from './ramp';
 
 const EPS = 1e-6;
@@ -283,7 +284,10 @@ function applyOne(
       const track = findTrack(t, op.trackId, i);
       guard(track, i);
       if (op.item.kind !== track.kind) {
-        throw new TimelineOpError(`cannot insert a ${op.item.kind} item into a ${track.kind} track`, i);
+        throw new TimelineOpError(
+          `cannot insert ${withArticle(op.item.kind)} item into ${withArticle(track.kind)} track`,
+          i,
+        );
       }
       const base: Record<string, unknown> = { ...op.item, id: op.item.id ?? gen('item') };
       if (base.kind === 'video') {
@@ -325,7 +329,10 @@ function applyOne(
         // To another track of the same kind (docs/design/editing-tools.md#moving-items)
         guard(target, i);
         if (target.kind !== found.track.kind)
-          throw new TimelineOpError(`a ${found.item.kind} item cannot move to a ${target.kind} track`, i);
+          throw new TimelineOpError(
+            `${withArticle(found.item.kind)} item cannot move to ${withArticle(target.kind)} track`,
+            i,
+          );
         const item = found.item;
         // Leaving a track is a remove from it; joining one, an insert into it
         found.track.items.splice(found.index, 1);

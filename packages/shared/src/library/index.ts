@@ -41,6 +41,7 @@ import { type DeskUnitPin, deskUnitKindFor, type LibraryOrigin } from '../schema
 import type { Resource } from '../schemas/resource';
 import { canonicalJson } from '../util/canonical-json';
 import { slugify } from '../util/hash';
+import { withArticle } from '../util/text';
 
 /**
  * The studio library's pure rules (docs/design/library.md): snapshots of a project's entities, the snapshot digest,
@@ -816,7 +817,7 @@ function targetOf(ctx: LibraryApplyContext, kind: 'character' | 'element') {
   if (target.kind !== kind)
     throw new LibraryError(
       'validation_error',
-      `a library ${kind} applies to a ${kind}, not to a ${target.kind}`,
+      `a library ${kind} applies to ${withArticle(kind)}, not to ${withArticle(target.kind)}`,
     );
   return target.id;
 }
