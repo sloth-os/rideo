@@ -298,6 +298,16 @@ export function libraryErrorText(err: unknown): string {
   }
 }
 
+/**
+ * A manager's change refused (the Library page's `PATCH` with the item's revision as `If-Match`): its `412` is a change
+ * made meanwhile, which the page has reloaded; not a version saved meanwhile, as the same code means for a save.
+ */
+export function changeErrorText(err: unknown): string {
+  return err instanceof ApiError && err.code === 'library_conflict'
+    ? 'Someone changed this item meanwhile: it was reloaded, try again.'
+    : libraryErrorText(err);
+}
+
 /** Tags typed as "season 1, harbour town": each one checked; the ones that are not tags. */
 export function parseTags(text: string): { tags: string[]; invalid: string[] } {
   const tags: string[] = [];

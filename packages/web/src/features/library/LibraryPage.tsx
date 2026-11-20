@@ -20,6 +20,7 @@ import { libraryApi } from './api';
 import { unitLine } from './DeskPicker';
 import { Chips, LibraryFilters, LibraryThumb, useDebounced, useLibraryList } from './parts';
 import {
+  changeErrorText,
   deskMoves,
   KIND_CHIPS,
   KIND_LABEL,
@@ -148,14 +149,17 @@ function ItemDetail({ itemId, onChanged }: { itemId: string; onChanged: () => vo
     () => libraryApi.uses(itemId).then(setUses, (err) => setError(libraryErrorText(err))),
     [itemId],
   );
-  const load = useCallback(async () => {
+  /** Reads the item (and its current version); false when it could not, the error said. */
+  const load = useCallback(async (): Promise<boolean> => {
     try {
       const it = await libraryApi.get(itemId);
       setItem(it);
       setError(null);
       libraryApi.version(itemId, it.current).then(setVersion, () => setVersion(null));
+      return true;
     } catch (err) {
       setError(libraryErrorText(err));
+      return false;
     }
   }, [itemId]);
   useEffect(() => {
@@ -182,8 +186,8 @@ function ItemDetail({ itemId, onChanged }: { itemId: string; onChanged: () => vo
       if (change.current !== undefined)
         libraryApi.version(item.id, next.current).then(setVersion, () => undefined);
     } catch (err) {
-      setError(libraryErrorText(err));
-      await load();
+      // the item as it is now, then what was refused (reading it clears the error)
+      if (await load()) setError(changeErrorText(err));
       throw err;
     } finally {
       setBusy(false);

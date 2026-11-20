@@ -693,7 +693,8 @@ existing `412` conflict, whose **Replace** would drop the server's change unless
   confirm, local edits, files), refusals in words by code, tags checked, the moves of **Use v3 in all N projects**
   (pins at another version only, reviewers skipped, a refusal listed and the loop going on), and the dialogs on a
   mocked API: Save with the consent box, a `412` offering Save anyway, the plan's approval warning, the picker's "Link
-  to the existing Mira".
+  to the existing Mira"; on the Library page, **Make current** and **Archive** with the item's revision as `If-Match`,
+  and a change made meanwhile (`412`) reloading the item and saying so.
 - **End to end** (`e2e/library.spec.ts`, desktop and mobile): Mira saved from episode 1 through the consent dialog, used
   in episode 2 (the same id and seed, checked through the API), the writer of episode 2 keeping her (its scenes cast
   her id), a project with a Mira of its own offered "Link to the existing Mira" (its plan, then linked and locked), a

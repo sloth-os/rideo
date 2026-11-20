@@ -277,8 +277,9 @@ only those names as extras, and reading verdicts that name a character instead o
 - **the studio library's pages** (`library-ui.test.tsx`): the library and 3D rows' texts (available, edited here, none,
   a pin the studio lacks), an apply's plan in words (lock versions, stale takes, the approval warning and who may
   confirm), refusals in words by their code, tags, the loop of "Use v3 in all N projects" (pins at another version,
-  reviewers skipped, refusals listed), and the Save, plan and Use from library dialogs on a mocked API (the consent box,
-  a `412` offering Save anyway, "Link to the existing Mira") ([the library](design/library.md#tests)).
+  reviewers skipped, refusals listed), the Save, plan and Use from library dialogs on a mocked API (the consent box,
+  a `412` offering Save anyway, "Link to the existing Mira"), and the Library page's changes with the item's revision
+  (Make current, Archive; a change made meanwhile reloaded and said) ([the library](design/library.md#tests)).
 
 - **web, settings, workspace and library** (`settings.test.tsx`, `workspace.test.ts`, `runtime.test.ts`,
   `embed.test.tsx`, `library-build.test.ts`, `pwa.test.tsx`): the Settings page (sections from the table and the

@@ -921,4 +921,69 @@ describe('the Library page', () => {
     expect(patch.body).toEqual({ archived: true });
     expect(patch.headers['if-match']).toBe('"r5"');
   });
+
+  it('makes a version current with the item’s revision, and says so after reloading when it changed meanwhile', async () => {
+    const mira = head({ current: 3 });
+    let reads = 0;
+    serve([
+      ['GET', /^\/api\/library\/items\?/, () => [200, { items: [summary(mira)], next: null }]],
+      [
+        'GET',
+        /^\/api\/library\/items\/lib_0000000000mira$/,
+        // read again after the refused change: the item as someone else left it
+        () => [200, ++reads === 1 ? mira : { ...mira, current: 2, rev: 7, description: 'Changed elsewhere' }],
+      ],
+      [
+        'GET',
+        /^\/api\/library\/items\/lib_0000000000mira\/uses$/,
+        () => [200, { incomplete: false, projects: [] }],
+      ],
+      [
+        'PATCH',
+        /^\/api\/library\/items\/lib_0000000000mira$/,
+        (s) =>
+          s.body.current === 2
+            ? [200, { ...mira, current: 2, rev: 6 }]
+            : [
+                412,
+                {
+                  type: 'about:blank',
+                  title: 'x',
+                  status: 412,
+                  detail: 'Mira changed meanwhile: its revision is 7',
+                  code: 'library_conflict',
+                  errors: [{ rev: 7, latest: 3 }],
+                },
+              ],
+      ],
+    ]);
+    render(
+      <MemoryRouter initialEntries={[`/library/${MIRA_ITEM}`]}>
+        <Routes>
+          <Route path="/library/:itemId?" element={<LibraryPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    const detail = await screen.findByTestId('library-detail');
+    const versions = () => within(detail).getAllByTestId('library-version');
+    expect(within(versions()[0]!).queryByTestId('library-make-current')).toBeNull();
+    fireEvent.click(within(versions()[1]!).getByTestId('library-make-current'));
+    await waitFor(() => expect(within(versions()[1]!).getByText('current')).toBeTruthy());
+    const made = calls('PATCH', /lib_0000000000mira$/)[0]!;
+    expect(made.body).toEqual({ current: 2 });
+    expect(made.headers['if-match']).toBe('"r5"');
+    // v3 again, with the revision the change answered; the item changed meanwhile
+    fireEvent.click(within(versions()[0]!).getByTestId('library-make-current'));
+    expect((await screen.findByTestId('library-error')).textContent).toBe(
+      'Someone changed this item meanwhile: it was reloaded, try again.',
+    );
+    expect(calls('PATCH', /lib_0000000000mira$/)[1]!.headers['if-match']).toBe('"r6"');
+    expect(calls('GET', /lib_0000000000mira$/)).toHaveLength(2);
+    // the field takes the reloaded value on its next render
+    await waitFor(() =>
+      expect((within(detail).getByLabelText('Description') as HTMLTextAreaElement).value).toBe(
+        'Changed elsewhere',
+      ),
+    );
+  });
 });
