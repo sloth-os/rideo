@@ -69,7 +69,7 @@ import { z } from 'zod';
 import { currentPrincipal, type Principal } from '../auth/context';
 import type { ProjectState } from '../domain/projects';
 import type { Studio } from '../domain/studio';
-import { invalid, toAppError } from '../errors';
+import { AppError, invalid, toAppError } from '../errors';
 import { VERSION } from '../http/app';
 import type { AuthedRequest } from '../http/auth-routes';
 import {
@@ -288,14 +288,23 @@ function buildServer(studio: Studio): McpServer {
     ) => {
       const actor = actorOf();
       const projectId = (args as { projectId?: string }).projectId;
-      if (projectId && !annotations.readOnlyHint && /^prj_/.test(projectId)) {
-        studio.deps.hub.activity(projectId, actor, `tool:${name}`, `${actor.name} → ${name}`);
-      }
       try {
+        // A call has a caller: outside auth mode none the app refuses /mcp without one. One that reaches a tool
+        // without one all the same is refused, not run as the studio (docs/design/mcp.md#transport-and-auth).
+        const principal = currentPrincipal();
+        if (!principal && studio.deps.accounts.mode !== 'none')
+          throw new AppError(
+            'unauthorized',
+            studio.deps.accounts.mode === 'oidc'
+              ? 'Sign in, or send an agent token'
+              : 'Missing or invalid bearer token',
+          );
+        if (projectId && !annotations.readOnlyHint && /^prj_/.test(projectId))
+          studio.deps.hub.activity(projectId, actor, `tool:${name}`, `${actor.name} → ${name}`);
         // The same permissions as REST (docs/design/accounts.md#users-roles-and-projects).
         if (projectId && /^prj_/.test(projectId))
           await studio.deps.accounts.authorize(
-            currentPrincipal() ?? studio.deps.accounts.studioPrincipal(),
+            principal ?? studio.deps.accounts.studioPrincipal(),
             projectId,
             TOOL_PERMISSIONS[name] ?? (annotations.readOnlyHint ? 'project.read' : 'project.edit'),
           );

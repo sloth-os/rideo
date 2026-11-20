@@ -15,7 +15,9 @@ resulting change streams live to the frontend.
   of the token's owner, within the token's role and projects, with the same permissions as REST (approval tools
   need `project.approve`, settings, branches and access `project.manage`, comments and review decisions
   `project.comment`). A session stays bound to the caller that
-  opened it (403 for anyone else).
+  opened it (403 for anyone else). Outside auth mode `none` every call has a caller: the app refuses `/mcp` without
+  one (401), and a tool reached without one all the same answers `unauthorized` rather than running as the studio.
+  Recipe steps, which run their tools inside jobs rather than over `/mcp`, are not affected.
 - Clients that only support stdio can bridge with `npx mcp-remote http://HOST:8787/mcp`.
 - Under a subpath the endpoint is `<base>/mcp` ([subpath](subpath.md)). When projects live in browsers, an agent
   reaches the projects of browsers that have a studio tab open; `?workspace=ws_…` on the URL (the Overview's command
