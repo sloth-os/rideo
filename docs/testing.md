@@ -464,8 +464,11 @@ only those names as extras, and reading verdicts that name a character instead o
   for admins and directors; live subscriptions refused to people without access; the guards decided by the matched route
   however the path is percent-encoded (without a session, `/%61pi/projects`, `/%61pi/library/items`, `/%6dcp` and
   `/%6detrics` answered `401`; a non-member under a project id with an escaped letter, its library routes included, and
-  an editor's `appro%76e` answered `403`); a library upload from a reviewer token answered `403` before its parts are
-  read (a person's for an item that is not there `404`), nothing written to the temporary folder.
+  an editor's `appro%76e` answered `403`); a malformed project id (`not-an-id`, another case, too short, another kind's
+  id, an escaped path) answered `422 validation_error` to a member, a non-member, an admin and the studio token on every
+  project route, the library's included, before any permission is asked; a library upload from a reviewer token answered
+  `403` before its parts are read (a person's for an item that is not there `404`), nothing written to the temporary
+  folder.
 - **Installable app** (`pwa.test.ts`): devices subscribed (https only), a failed recipe pushed to them encrypted and
   VAPID-signed (decrypted as the device would), a device its push service forgot dropped, unsubscribing; the Inbox
   across projects (an agent's review and commit, the gate, today's failures).

@@ -9,7 +9,8 @@ token. Every route except `/api/health`, `/api/ready`, `/api/auth/*`, the guest 
 detection tool) needs one (401). Project routes also need a permission of the caller's role in the
 project (`project.read` for reads, `project.edit` for writes, `project.approve` for approvals, `project.manage` for
 settings, access and branches; `project.comment` for review comments and decisions): 403 `forbidden` otherwise, and
-the project list only shows readable projects.
+the project list only shows readable projects. A project route whose `:id` is not a project id (`prj_…`) answers 422
+`validation_error` to every caller, before any permission is asked.
 
 Errors are RFC 9457 problem details (`application/problem+json`) with a stable `code`:
 

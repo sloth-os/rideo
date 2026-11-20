@@ -44,7 +44,7 @@ import { registerLibraryRoutes } from './library-routes';
 import { registerPerformanceRoutes } from './performance-routes';
 import { registerPushRoutes } from './push-routes';
 import { registerReviewRoutes } from './review-routes';
-import { registerRoutes } from './routes';
+import { IdParam, registerRoutes } from './routes';
 import { registerSearchRoutes } from './search-routes';
 import { requestWorkspace } from './workspace-request';
 
@@ -258,14 +258,15 @@ export async function buildServer(
       );
   });
   // Every project route needs its permission (ROUTE_PERMISSIONS, docs/design/accounts.md#users-roles-and-projects): the
-  // matched route's pattern and its `:id`, decoded as the handler reads them, whatever the URL's percent-escapes.
+  // matched route's pattern and its `:id`, decoded as the handler reads them, whatever the URL's percent-escapes. The
+  // `:id` is checked first, as the handlers check it: a malformed one answers 422 to every caller.
   const PROJECT_ROUTE = '/api/projects/:id';
   app.addHook('preHandler', async (req) => {
     const route = req.routeOptions?.url;
     if (!route || (route !== PROJECT_ROUTE && !route.startsWith(`${PROJECT_ROUTE}/`))) return;
     const principal = (req as AuthedRequest).principal;
     if (!principal) throw unauthorized();
-    const projectId = (req.params as { id: string }).id;
+    const projectId = IdParam.parse(req.params ?? {}).id;
     const permission = routePermission(req.method, route.slice(PROJECT_ROUTE.length));
     await accounts().authorize(principal, projectId, permission);
     if (permission === 'project.approve') (req as { approval?: string }).approval = projectId;

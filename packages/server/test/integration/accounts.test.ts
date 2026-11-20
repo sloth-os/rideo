@@ -253,6 +253,55 @@ describe('accounts', () => {
     expect(Object.values(state.docs.characters).map((c: any) => c.name)).not.toContain('Ghost');
   });
 
+  it('answers a malformed project id 422 before it asks who may use the project, whoever calls', async () => {
+    /** `<status> <code>` of a request to a project route as someone. */
+    const outcome = async (auth: Auth, method: string, path: string, body?: unknown) => {
+      try {
+        await as(auth)(method, `/projects/${path}`, body);
+        return 'ok';
+      } catch (err) {
+        return `${(err as ApiError).status} ${(err as ApiError).body?.code}`;
+      }
+    };
+    const callers: Record<string, Auth> = {
+      dora: { cookie: users.dora },
+      ana: { cookie: users.ana },
+      mira: { cookie: users.mira },
+      studio: { token: 'studio-token' },
+    };
+    // not an id, another case, too short, another kind's id, and one the router decodes to a path
+    const ids = [
+      'not-an-id',
+      'PRJ_0123456789abcdef',
+      'prj_short',
+      'chr_0123456789abcdef',
+      'prj_bad%2F..%2Fx',
+    ];
+    const seen: Record<string, string[]> = {};
+    for (const [who, auth] of Object.entries(callers)) {
+      const answers = new Set<string>();
+      for (const id of ids) {
+        answers.add(await outcome(auth, 'GET', `${id}/state`));
+        answers.add(await outcome(auth, 'POST', `${id}/characters`, { name: 'Ghost' }));
+        answers.add(await outcome(auth, 'PATCH', id, { title: 'Ghost film' }));
+        answers.add(await outcome(auth, 'GET', `${id}/access`));
+        answers.add(await outcome(auth, 'GET', `${id}/comments`));
+      }
+      seen[who] = [...answers];
+    }
+    expect(seen).toEqual({
+      dora: ['422 validation_error'],
+      ana: ['422 validation_error'],
+      mira: ['422 validation_error'],
+      studio: ['422 validation_error'],
+    });
+    // a well-formed id of a project the caller is not a member of: 403
+    expect(await outcome(callers.dora!, 'GET', `${pid}/state`)).toBe('403 forbidden');
+    expect(await outcome(callers.dora!, 'POST', `${pid}/characters`, { name: 'Ghost' })).toBe(
+      '403 forbidden',
+    );
+  });
+
   it('keeps the studio library and its project routes to their callers, however the path is percent-encoded', async () => {
     const ana = as({ cookie: users.ana });
     const state = await ana<any>('GET', `/projects/${pid}/state`);
@@ -281,11 +330,18 @@ describe('accounts', () => {
       },
       // a member reads it under the same escaped id
       ana: await rawStatus('GET', `/api/projects/${escaped}/library`, { cookie: users.ana }),
+      // a malformed project id is 422 before anyone is asked about the project
+      malformed: {
+        dora: await rawStatus('GET', '/api/projects/not-an-id/library', { cookie: users.dora }),
+        ana: await rawStatus('POST', '/api/projects/prj_short/library/save', { cookie: users.ana }, {}),
+        mira: await rawStatus('GET', '/api/projects/chr_0123456789abcdef/library', { cookie: users.mira }),
+      },
     };
     expect(seen).toEqual({
       nobody: { list: 401, archive: 401 },
       dora: { status: 403, save: 403, apply: 403, detach: 403 },
       ana: 200,
+      malformed: { dora: 422, ana: 422, mira: 422 },
     });
     // nothing changed: Keeper is still linked to Ana's item, which is not archived
     const status = await ana<any>('GET', `/projects/${pid}/library`);

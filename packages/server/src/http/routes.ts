@@ -72,7 +72,8 @@ import type { Detection, Studio } from '../domain/studio';
 import { AppError, invalid } from '../errors';
 import type { AuthedRequest } from './auth-routes';
 
-const IdParam = z.object({ id: z.string().regex(/^prj_[0-9a-z]{10,32}$/) });
+/** A project route's `:id`, as the handlers read it (the app's permission hook checks it first, with this). */
+export const IdParam = z.object({ id: z.string().regex(/^prj_[0-9a-z]{10,32}$/) });
 
 function parse<T>(schema: z.ZodType<T>, value: unknown): T {
   return schema.parse(value ?? {});
