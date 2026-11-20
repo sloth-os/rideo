@@ -99,7 +99,9 @@ describe('MCP tools reached without a caller', () => {
       library: { error: true, body: expect.objectContaining({ code: 'unauthorized' }) },
     });
     // A recipe's step runs its tool from the registry, without a request: unchanged
-    const listed = (await toolRegistry(studio).get('project_list')!.run({}, recipe)) as { id: string }[];
+    const listed = (await toolRegistry(studio)
+      .get('project_list')!
+      .run({} as never, recipe)) as { id: string }[];
     expect(listed.map((p) => p.id)).toEqual([project.id]);
   });
 
