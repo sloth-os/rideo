@@ -38,14 +38,26 @@ export const ELEMENT_CHIPS: { id: ElementKind | 'all'; label: string }[] = [
   { id: 'style', label: 'Styles' },
 ];
 
+/** An item's kind in a word; an element's own kind (`ELEMENT_LABEL`) once its version says it. */
 export const KIND_LABEL: Record<LibraryKind, string> = {
   character: 'Character',
-  element: 'Place or prop',
+  element: 'Element',
   resource: 'Resource',
   'desk-set': '3D set',
   'desk-prop': '3D prop',
   'desk-figure': '3D figure',
 };
+
+export const ELEMENT_LABEL: Record<ElementKind, string> = {
+  location: 'Location',
+  prop: 'Prop',
+  style: 'Style',
+};
+
+/** "Style" for a style element (its kind read from a version), else the item's kind: "Element", "3D set". */
+export function itemKindLabel(kind: LibraryKind, elementKind?: ElementKind | null): string {
+  return kind === 'element' && elementKind ? ELEMENT_LABEL[elementKind] : KIND_LABEL[kind];
+}
 
 /** The 3D row's label of each pin kind. */
 export const DESK_LABEL: Record<DeskUnitKind, string> = {
@@ -54,18 +66,28 @@ export const DESK_LABEL: Record<DeskUnitKind, string> = {
   'desk-figure': '3D figure',
 };
 
-const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+/** "1 object", "3 objects". */
+export const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
 /**
  * The library row of a linked entity: "Library: Mira v2 · v3 available". `link` is the project status's row for it
- * (null until the status arrives, or when the studio does not have the item).
+ * (null until the status arrives, or when the studio does not have the item). `here` names the project's resource that
+ * already holds the item's current version, when one does (a resource's other version is another resource): "Library:
+ * Moodboard still v1 · v2 is in this project: Moodboard still B".
  */
-export function libraryRowText(version: number, link: LibraryLinkStatus | null | undefined): string {
+export function libraryRowText(
+  version: number,
+  link: LibraryLinkStatus | null | undefined,
+  here?: string | null,
+): string {
   if (!link) return `Library: v${version}`;
   if (link.state === 'missing' || !link.item) return `Library: v${version} (not in this studio's library)`;
   const parts = [`Library: ${link.item.name} v${version}`];
-  if (link.state === 'behind') parts.push(`v${link.item.current} available`);
-  if (link.state === 'ahead') parts.push(`the library's current version is v${link.item.current}`);
+  const current = link.item.current;
+  const inProject = here ? `v${current} is in this project: ${here}` : null;
+  if (link.state === 'behind') parts.push(inProject ?? `v${current} available`);
+  if (link.state === 'ahead')
+    parts.push(`the library's current version is v${current}`, ...(inProject ? [inProject] : []));
   if (link.modified) parts.push(`edited here since v${version}`);
   if (link.item.archived) parts.push('archived');
   return parts.join(' · ');

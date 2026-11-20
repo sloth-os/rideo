@@ -3,11 +3,13 @@ import {
   type Character,
   characterSnapshot,
   type Element,
+  elementSnapshot,
   type LibraryApplyPlan,
   type LibraryItem,
   type LibraryLinkStatus,
   type LibraryUses,
   type ProjectDocs,
+  type Resource,
 } from '@rideo/shared';
 import * as f from '@rideo/shared/testing';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
@@ -138,7 +140,8 @@ interface Sent {
   headers: Record<string, string>;
 }
 type Answer = [number, unknown?];
-type Served = [method: string, path: RegExp, answer: (sent: Sent) => Answer];
+/** A route: its method, path and answer, and how many milliseconds the answer takes (none by default). */
+type Served = [method: string, path: RegExp, answer: (sent: Sent) => Answer, delayMs?: number];
 
 let sent: Sent[] = [];
 function serve(routes: Served[]) {
@@ -155,6 +158,7 @@ function serve(routes: Served[]) {
       };
       sent.push(s);
       const route = routes.find(([m, p]) => m === s.method && p.test(s.path));
+      if (route?.[3]) await new Promise((r) => setTimeout(r, route[3]));
       const [status, body] = route
         ? route[2](s)
         : [404, { type: 'about:blank', title: 'Not found', status: 404, detail: s.path, code: 'not_found' }];
@@ -191,6 +195,11 @@ describe('the rows and the plan in words', () => {
     expect(libraryRowText(3, link({ version: 3, state: 'current' }))).toBe('Library: Mira v3');
     expect(libraryRowText(4, link({ version: 4, state: 'ahead' }))).toBe(
       "Library: Mira v4 · the library's current version is v3",
+    );
+    // a resource whose offered version another resource of the project already holds
+    expect(libraryRowText(2, link(), 'Mira B')).toBe('Library: Mira v2 · v3 is in this project: Mira B');
+    expect(libraryRowText(4, link({ version: 4, state: 'ahead' }), 'Mira B')).toBe(
+      "Library: Mira v4 · the library's current version is v3 · v3 is in this project: Mira B",
     );
     expect(libraryRowText(2, link({ state: 'missing', item: null }))).toBe(
       "Library: v2 (not in this studio's library)",
@@ -645,6 +654,66 @@ describe('the library on a project’s cards', () => {
     ])
       expect((screen.getByTestId(id) as HTMLButtonElement).disabled, id).toBe(true);
   });
+
+  it('says a resource’s newer version is already in the project instead of offering to add it again', async () => {
+    const MOOD = 'lib_0000000000mood';
+    const linked = (version: number) => ({
+      itemId: MOOD,
+      version,
+      digest: hex(version),
+      mode: 'used' as const,
+      at,
+      by: { kind: 'user' as const, id: 'u1' },
+    });
+    const still = (id: string, name: string, version: number) =>
+      ({
+        id,
+        kind: 'image',
+        role: 'reference',
+        name,
+        media: f.imageMedia(),
+        createdAt: at,
+        origin: 'library',
+        status: 'ready',
+        library: linked(version),
+      }) as Resource;
+    const v1 = still('res_000000000000r1', 'Moodboard still', 1);
+    const v2 = still('res_000000000000r2', 'Moodboard still B', 2);
+    serve([
+      statusRoute([
+        link({
+          entity: { kind: 'resource', id: v1.id, name: v1.name },
+          itemId: MOOD,
+          version: 1,
+          item: { name: 'Moodboard still', kind: 'resource', current: 2, archived: false },
+        }),
+      ]),
+    ]);
+    const rows = (resources: Resource[]) =>
+      render(
+        <LibraryProvider
+          projectId={PID}
+          docs={f.docs({ project: f.project({ id: PID }), resources: f.byId(resources) })}
+        >
+          <div data-testid="v1">
+            <LibraryRows kind="resource" entity={v1} />
+          </div>
+        </LibraryProvider>,
+      );
+    // without v2 in the project the row offers it
+    rows([v1]);
+    const row = within(screen.getByTestId('v1'));
+    expect(await row.findByText('Library: Moodboard still v1 · v2 available')).toBeTruthy();
+    expect(row.getByTestId('library-use-version').textContent).toBe('Use v2');
+    cleanup();
+    // once a resource holds v2, the row names it and adds no other copy
+    rows([v1, v2]);
+    const again = within(screen.getByTestId('v1'));
+    expect(
+      await again.findByText('Library: Moodboard still v1 · v2 is in this project: Moodboard still B'),
+    ).toBeTruthy();
+    expect(again.queryByTestId('library-use-version')).toBeNull();
+  });
 });
 
 describe('Save to library', () => {
@@ -761,7 +830,8 @@ describe('Save to library', () => {
 });
 
 describe('Use from library', () => {
-  it('uses the chosen items one after the other and offers to link a clash to the project’s own', async () => {
+  /** A project with a Mira of its own and a library Mira (a real person): using her is refused, name taken. */
+  function clash() {
     const own = f.character({ id: 'chr_00000000ownmira', name: 'Mira', library: undefined });
     const item = head({ realPerson: true });
     serve([
@@ -799,6 +869,13 @@ describe('Use from library', () => {
         <UseFromLibraryButton kind="character" />
       </LibraryProvider>,
     );
+    return own;
+  }
+
+  const dialogs = () => screen.queryAllByRole('dialog').map((d) => d.getAttribute('aria-label'));
+
+  it('uses the chosen items one after the other and offers to link a clash to the project’s own', async () => {
+    const own = clash();
     fireEvent.click(screen.getByTestId('use-from-library'));
     const check = (await screen.findByTestId('use-item-check')) as HTMLInputElement;
     expect(calls('GET', /^\/api\/library\/items\?/)[0]!.path).toContain('kinds=character');
@@ -821,6 +898,115 @@ describe('Use from library', () => {
       target: { kind: 'character', id: own.id },
       dryRun: true,
     });
+  });
+
+  it('closes only the plan opened over the picker on Escape, and the picker keeps its results', async () => {
+    clash();
+    fireEvent.click(screen.getByTestId('use-from-library'));
+    fireEvent.click(await screen.findByTestId('use-item-check'));
+    fireEvent.click(screen.getByTestId('use-consent-check'));
+    fireEvent.click(screen.getByTestId('use-submit'));
+    fireEvent.click(await screen.findByTestId('use-link-existing'));
+    await screen.findByText('Link Mira to the library (v3)');
+    expect(dialogs()).toEqual(['Use characters from the library', 'Link Mira to the library (v3)']);
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(dialogs()).toEqual(['Use characters from the library']);
+    expect(screen.getByTestId('use-result').textContent).toContain(
+      'Mira: a character named Mira is already in this project',
+    );
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(dialogs()).toEqual([]);
+  });
+
+  /** Ada and Mira in the library, each with a tag of her own; the list answers the search and the tag asked. */
+  function twoInTheLibrary() {
+    const ada = head({ id: 'lib_00000000000ada', name: 'Ada', tags: ['tag-a'] });
+    const mira = head({ name: 'Mira', tags: ['tag-m'] });
+    serve([
+      statusRoute([]),
+      [
+        'GET',
+        /^\/api\/library\/items\?/,
+        (s) => {
+          const query = new URL(s.path, 'http://localhost').searchParams;
+          const words = (query.get('q') ?? '').toLowerCase();
+          const tag = query.get('tag');
+          const items = [ada, mira].filter(
+            (i) => (!words || i.name.toLowerCase().includes(words)) && (!tag || i.tags.includes(tag)),
+          );
+          return [200, { items: items.map(summary), next: null }];
+        },
+      ],
+      [
+        'POST',
+        /\/library\/apply$/,
+        (s) => [
+          200,
+          {
+            plan: plan({
+              mode: 'create',
+              keepsLibraryId: true,
+              entity: {
+                kind: 'character',
+                id: 'chr_00000000000new',
+                name: s.body.itemId === ada.id ? 'Ada' : 'Mira',
+                exists: false,
+              },
+            }),
+            applied: true,
+            entity: { kind: 'character', id: 'chr_00000000000new' },
+            commit: null,
+          },
+        ],
+      ],
+    ]);
+    render(
+      <LibraryProvider projectId={PID} docs={docsWith([])}>
+        <UseFromLibraryButton kind="character" />
+      </LibraryProvider>,
+    );
+    return { ada, mira };
+  }
+
+  const row = (name: string) =>
+    within(screen.getAllByTestId('use-item').find((r) => r.textContent?.includes(name))!);
+
+  it('keeps what was checked under another search, and uses every checked item', async () => {
+    const { ada, mira } = twoInTheLibrary();
+    fireEvent.click(screen.getByTestId('use-from-library'));
+    await waitFor(() => expect(screen.getAllByTestId('use-item')).toHaveLength(2));
+    fireEvent.click(row('Ada').getByTestId('use-item-check'));
+    fireEvent.change(screen.getByTestId('use-search'), { target: { value: 'Mira' } });
+    await waitFor(() => expect(screen.getAllByTestId('use-item')).toHaveLength(1));
+    fireEvent.click(row('Mira').getByTestId('use-item-check'));
+    expect(screen.getByTestId('use-submit').textContent).toBe('Use 2');
+    // the item checked under the other search is named, so that "Use 2" adds up
+    expect(screen.getByTestId('use-checked-elsewhere').textContent).toBe('Also checked: Ada');
+    fireEvent.click(screen.getByTestId('use-submit'));
+    await waitFor(() => expect(screen.getAllByTestId('use-result')).toHaveLength(2));
+    expect(calls('POST', /\/library\/apply$/).map((c) => c.body.itemId)).toEqual([ada.id, mira.id]);
+    // nothing stays checked once used
+    expect(screen.queryByTestId('use-checked-elsewhere')).toBeNull();
+    expect(screen.getAllByTestId('use-result').map((r) => r.textContent)).toEqual([
+      'Ada: Ada is in the project (v3, the same id and seed)',
+      'Mira: Mira is in the project (v3, the same id and seed)',
+    ]);
+  });
+
+  it('keeps what was checked under another tag, and uses every checked item', async () => {
+    const { ada, mira } = twoInTheLibrary();
+    fireEvent.click(screen.getByTestId('use-from-library'));
+    await waitFor(() => expect(screen.getAllByTestId('use-item')).toHaveLength(2));
+    fireEvent.change(screen.getByTestId('use-tag'), { target: { value: 'tag-a' } });
+    await waitFor(() => expect(screen.getAllByTestId('use-item')).toHaveLength(1));
+    fireEvent.click(row('Ada').getByTestId('use-item-check'));
+    fireEvent.change(screen.getByTestId('use-tag'), { target: { value: 'tag-m' } });
+    await waitFor(() => expect(screen.getByTestId('use-item').textContent).toContain('Mira'));
+    fireEvent.click(row('Mira').getByTestId('use-item-check'));
+    expect(screen.getByTestId('use-submit').textContent).toBe('Use 2');
+    fireEvent.click(screen.getByTestId('use-submit'));
+    await waitFor(() => expect(screen.getAllByTestId('use-result')).toHaveLength(2));
+    expect(calls('POST', /\/library\/apply$/).map((c) => c.body.itemId)).toEqual([ada.id, mira.id]);
   });
 });
 
@@ -985,5 +1171,152 @@ describe('the Library page', () => {
         'Changed elsewhere',
       ),
     );
+  });
+
+  const page = (itemId: string) =>
+    render(
+      <MemoryRouter initialEntries={[`/library/${itemId}`]}>
+        <Routes>
+          <Route path="/library/:itemId?" element={<LibraryPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+  /** A version of an item as the studio answers it, with `kind` and `payload` of its own. */
+  const versionOf = (item: LibraryItem, kind: string, payload: unknown) => ({
+    kind,
+    itemId: item.id,
+    version: item.current,
+    digest: hex(item.current),
+    thumbnail: null,
+    basedOn: null,
+    note: '',
+    source: null,
+    realPerson: false,
+    bytes: 78,
+    createdBy: author,
+    createdAt: at,
+    payload,
+  });
+
+  it('shows no action bar to someone who may not manage the item and has no pins to move', async () => {
+    useAuth.setState({
+      me: {
+        mode: 'oidc',
+        user: { id: 'usr_0000000000cleo', name: 'Cleo' },
+        admin: false,
+        token: null,
+      } as unknown as AuthMe,
+    });
+    const mira = head();
+    serve([
+      ['GET', /^\/api\/library\/items\?/, () => [200, { items: [summary(mira)], next: null }]],
+      ['GET', /^\/api\/library\/items\/lib_0000000000mira$/, () => [200, mira]],
+      [
+        'GET',
+        /^\/api\/library\/items\/lib_0000000000mira\/uses$/,
+        () => [200, { incomplete: false, projects: [] }],
+      ],
+    ]);
+    page(MIRA_ITEM);
+    await screen.findByTestId('library-uses');
+    expect(screen.queryByTestId('library-archive')).toBeNull();
+    expect(screen.queryByTestId('library-actions')).toBeNull();
+  });
+
+  it('says one object and one credit in the singular', async () => {
+    const lamp = head({ id: 'lib_000000000lampp', kind: 'desk-prop', name: 'Lamp' });
+    const unit = {
+      format: '3d-editor.desk-unit',
+      formatVersion: 1,
+      payload: { name: 'lamp', hash: hex(1), mime: 'application/octet-stream', size: 78 },
+      meta: {
+        dimensionsM: [1, 1, 1],
+        objects: 1,
+        triangles: 12,
+        actor: null,
+        credits: [{ name: 'Brass lamp', author: 'A. Modeller', license: 'CC-BY-4.0' }],
+        deskVersion: '0.0.0-test',
+        digest: hex(2),
+      },
+    };
+    serve([
+      ['GET', /^\/api\/library\/items\?/, () => [200, { items: [summary(lamp)], next: null }]],
+      ['GET', /^\/api\/library\/items\/lib_000000000lampp$/, () => [200, lamp]],
+      [
+        'GET',
+        /^\/api\/library\/items\/lib_000000000lampp\/versions\/1$/,
+        () => [200, versionOf(lamp, 'desk-prop', unit)],
+      ],
+      [
+        'GET',
+        /^\/api\/library\/items\/lib_000000000lampp\/uses$/,
+        () => [200, { incomplete: false, projects: [] }],
+      ],
+    ]);
+    page(lamp.id);
+    const facts = await screen.findByTestId('library-facts');
+    expect(facts.textContent).toBe('1 × 1 × 1 m · 78 B · 1 object · 1 credit');
+  });
+
+  it('calls a style a style, in the list and on the item', async () => {
+    const noir = head({ id: 'lib_000000000noirr', kind: 'element', name: 'Moody noir' });
+    const style = f.element({ id: 'ele_0000000000noir', kind: 'style', name: 'Moody noir', references: [] });
+    const version = versionOf(noir, 'element', elementSnapshot(style).payload);
+    serve([
+      ['GET', /^\/api\/library\/items\?/, () => [200, { items: [summary(noir)], next: null }]],
+      ['GET', /^\/api\/library\/items\/lib_000000000noirr$/, () => [200, noir]],
+      ['GET', /^\/api\/library\/items\/lib_000000000noirr\/versions\/1$/, () => [200, version]],
+      [
+        'GET',
+        /^\/api\/library\/items\/lib_000000000noirr\/uses$/,
+        () => [200, { incomplete: false, projects: [] }],
+      ],
+    ]);
+    page(noir.id);
+    const detail = await screen.findByTestId('library-detail');
+    expect(await within(detail).findByText('Style')).toBeTruthy();
+    await waitFor(() => expect(screen.getByTestId('library-item').textContent).toContain('Style · v1'));
+    expect(screen.queryByText(/Place or prop/)).toBeNull();
+  });
+
+  it('says when it cannot read where an item is used, keeps saying it when the item arrives, and tries again', async () => {
+    const crate = head({ id: 'lib_00000000crate1', kind: 'desk-prop', name: 'Crate' });
+    const offline = {
+      type: 'about:blank',
+      title: 'offline',
+      status: 503,
+      detail: 'the tab is closed',
+      code: 'storage_offline',
+    };
+    for (const [itemDelay, usesDelay] of [
+      [80, 0],
+      [0, 80],
+    ]) {
+      let usesAsked = 0;
+      serve([
+        ['GET', /^\/api\/library\/items\?/, () => [200, { items: [summary(crate)], next: null }]],
+        ['GET', /^\/api\/library\/items\/lib_00000000crate1$/, () => [200, crate], itemDelay],
+        [
+          'GET',
+          /^\/api\/library\/items\/lib_00000000crate1\/uses$/,
+          () => (usesAsked++ === 0 ? [503, offline] : [200, { incomplete: false, projects: [] }]),
+          usesDelay,
+        ],
+      ]);
+      page(crate.id);
+      const failed = await screen.findByTestId('library-uses-error');
+      // the item arriving after the failure does not wipe it
+      await new Promise((r) => setTimeout(r, 150));
+      expect(screen.getByTestId('library-uses-error').textContent).toBe(failed.textContent);
+      expect(failed.textContent).toContain(
+        'The project is kept in a browser tab that is closed: open the project there and try again.',
+      );
+      fireEvent.click(screen.getByTestId('library-uses-retry'));
+      expect((await screen.findByTestId('library-uses')).textContent).toContain('No project uses it yet.');
+      expect(screen.queryByTestId('library-uses-error')).toBeNull();
+      expect(calls('GET', /\/uses$/)).toHaveLength(2);
+      cleanup();
+    }
   });
 });

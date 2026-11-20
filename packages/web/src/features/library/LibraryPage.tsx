@@ -18,17 +18,18 @@ import { AppHeader } from '../workspace/AppHeader';
 import { mayManage } from './access';
 import { libraryApi } from './api';
 import { unitLine } from './DeskPicker';
-import { Chips, LibraryFilters, LibraryThumb, useDebounced, useLibraryList } from './parts';
+import { Chips, LibraryFilters, LibraryThumb, useDebounced, useElementKinds, useLibraryList } from './parts';
 import {
   changeErrorText,
   deskMoves,
+  itemKindLabel,
   KIND_CHIPS,
-  KIND_LABEL,
   libraryErrorText,
   type MoveResult,
   moveEverywhere,
   moveEverywhereLabel,
   parseTags,
+  plural,
   usageText,
 } from './words';
 
@@ -48,6 +49,7 @@ export function LibraryPage() {
   const query = useDebounced(q);
   const kinds = KIND_CHIPS.find((c) => c.id === chip)?.kinds ?? null;
   const list = useLibraryList({ kinds, q: query, tag: tag || null, archived, sort: 'name' });
+  const elementKinds = useElementKinds(list.items);
   const reloadList = list.reload;
   return (
     <div className="min-h-full">
@@ -106,7 +108,7 @@ export function LibraryPage() {
                         {item.name}
                       </span>
                       <span className="block truncate text-[11px] text-muted">
-                        {KIND_LABEL[item.kind]} · v{item.current}
+                        {itemKindLabel(item.kind, elementKinds[item.id])} · v{item.current}
                         {item.tags.length ? ` · ${item.tags.join(', ')}` : ''}
                       </span>
                     </span>
@@ -141,14 +143,16 @@ function ItemDetail({ itemId, onChanged }: { itemId: string; onChanged: () => vo
   const [item, setItem] = useState<LibraryItem | null>(null);
   const [version, setVersion] = useState<LibraryVersion | null>(null);
   const [uses, setUses] = useState<LibraryUses | null>(null);
+  /** Why where it is used could not be read: its own, so that reading the item does not clear it. */
+  const [usesError, setUsesError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [results, setResults] = useState<MoveResult[]>([]);
   const [tagDraft, setTagDraft] = useState('');
-  const loadUses = useCallback(
-    () => libraryApi.uses(itemId).then(setUses, (err) => setError(libraryErrorText(err))),
-    [itemId],
-  );
+  const loadUses = useCallback(() => {
+    setUsesError(null);
+    return libraryApi.uses(itemId).then(setUses, (err) => setUsesError(libraryErrorText(err)));
+  }, [itemId]);
   /** Reads the item (and its current version); false when it could not, the error said. */
   const load = useCallback(async (): Promise<boolean> => {
     try {
@@ -176,6 +180,7 @@ function ItemDetail({ itemId, onChanged }: { itemId: string; onChanged: () => vo
     );
   const manage = mayManage(me, item.ownerId);
   const desk = isDeskUnitKind(item.kind);
+  const elementKind = version?.kind === 'element' ? version.payload.kind : null;
   const patch = async (change: LibraryItemPatch) => {
     setBusy(true);
     try {
@@ -194,6 +199,8 @@ function ItemDetail({ itemId, onChanged }: { itemId: string; onChanged: () => vo
     }
   };
   const moves = uses ? deskMoves(uses, item.current) : [];
+  // On a phone the actions sit in a bar at the bottom: none for someone with nothing to do here
+  const hasActions = (desk && moves.length > 0) || manage;
   const runMoves = async (which: typeof moves) => {
     setBusy(true);
     setResults([]);
@@ -265,7 +272,11 @@ function ItemDetail({ itemId, onChanged }: { itemId: string; onChanged: () => vo
     </>
   );
   return (
-    <div className="space-y-4 pb-24 md:pb-0" data-testid="library-detail" data-item-id={item.id}>
+    <div
+      className={cx('space-y-4', hasActions && 'pb-24 md:pb-0')}
+      data-testid="library-detail"
+      data-item-id={item.id}
+    >
       <Link
         to="/library"
         className="inline-flex items-center gap-1 text-[13px] text-muted md:hidden"
@@ -293,7 +304,7 @@ function ItemDetail({ itemId, onChanged }: { itemId: string; onChanged: () => vo
               </h2>
             )}
             <div className="flex flex-wrap items-center gap-1.5">
-              <Badge>{KIND_LABEL[item.kind]}</Badge>
+              <Badge>{itemKindLabel(item.kind, elementKind)}</Badge>
               <Badge tone="accent">current v{item.current}</Badge>
               {item.archived ? <Badge testid="library-archived">archived</Badge> : null}
               {item.realPerson ? (
@@ -401,6 +412,8 @@ function ItemDetail({ itemId, onChanged }: { itemId: string; onChanged: () => vo
         <h3 className="mb-2 text-[11px] font-medium tracking-wide text-muted uppercase">Used in</h3>
         <UsedIn
           uses={uses}
+          error={usesError}
+          onRetry={() => void loadUses()}
           desk={desk}
           current={item.current}
           busy={busy}
@@ -425,12 +438,14 @@ function ItemDetail({ itemId, onChanged }: { itemId: string; onChanged: () => vo
           </ul>
         ) : null}
       </Card>
-      <div
-        className="fixed inset-x-0 bottom-0 z-20 flex flex-wrap justify-end gap-2 border-t border-border bg-surface px-3 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] md:static md:z-auto md:border-0 md:bg-transparent md:p-0"
-        data-testid="library-actions"
-      >
-        {actions}
-      </div>
+      {hasActions ? (
+        <div
+          className="fixed inset-x-0 bottom-0 z-20 flex flex-wrap justify-end gap-2 border-t border-border bg-surface px-3 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] md:static md:z-auto md:border-0 md:bg-transparent md:p-0"
+          data-testid="library-actions"
+        >
+          {actions}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -463,8 +478,8 @@ function VersionFacts({ kind, version }: { kind: LibraryKind; version: LibraryVe
             dimensionsM: meta.dimensionsM,
           },
         }),
-        `${meta.objects} objects`,
-        meta.credits.length ? `${meta.credits.length} credits` : '',
+        plural(meta.objects, 'object'),
+        meta.credits.length ? plural(meta.credits.length, 'credit') : '',
       ]
         .filter(Boolean)
         .join(' · ');
@@ -481,6 +496,8 @@ const ENTITY_VIEW = { character: 'cast', element: 'elements', resource: 'resourc
 
 function UsedIn({
   uses,
+  error,
+  onRetry,
   desk,
   current,
   busy,
@@ -488,6 +505,9 @@ function UsedIn({
   onUse,
 }: {
   uses: LibraryUses | null;
+  /** Why it could not be read, with Try again. */
+  error: string | null;
+  onRetry: () => void;
   desk: boolean;
   current: number;
   busy: boolean;
@@ -495,6 +515,17 @@ function UsedIn({
   moves: string[];
   onUse: (projectId: string) => void;
 }) {
+  if (error)
+    return (
+      <div className="flex flex-wrap items-center gap-2">
+        <p className="min-w-0 flex-1 text-[13px] text-danger" role="alert" data-testid="library-uses-error">
+          Could not read where it is used. {error}
+        </p>
+        <Button size="sm" onClick={onRetry} data-testid="library-uses-retry">
+          Try again
+        </Button>
+      </div>
+    );
   if (!uses) return <Spinner />;
   return (
     <div className="space-y-2" data-testid="library-uses">

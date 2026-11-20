@@ -28,15 +28,17 @@ interface Outcome {
 /**
  * Use from library (docs/design/library.md#cast-elements-and-resources): the view's kind only (in Elements, chips for
  * locations, props and styles), filtered by tag and searchable, archived items left out; several items at once, used
- * one after the other with each result listed. An item whose id or name the project already has offers "Link to the
- * existing Mira" (its plan first); a real person asks for the consent before anything is used.
+ * one after the other with each result listed. What is checked stays checked under another search, tag or chip. An
+ * item whose id or name the project already has offers "Link to the existing Mira" (its plan first); a real person asks
+ * for the consent before anything is used.
  */
 export function UsePicker({ entityKind, onClose }: { entityKind: EntityKind; onClose: () => void }) {
   const scope = useLibraryScope();
   const [q, setQ] = useState('');
   const [tag, setTag] = useState('');
   const [elementKind, setElementKind] = useState<ElementKind | 'all'>('all');
-  const [selected, setSelected] = useState<string[]>([]);
+  /** The checked items, in the order they were checked, whatever the list shows now. */
+  const [selected, setSelected] = useState<ReadonlyMap<string, LibraryItemSummary>>(() => new Map());
   const [consent, setConsent] = useState(false);
   const [busy, setBusy] = useState(false);
   const [outcomes, setOutcomes] = useState<Outcome[]>([]);
@@ -60,10 +62,16 @@ export function UsePicker({ entityKind, onClose }: { entityKind: EntityKind; onC
   const shown = list.items.filter(
     (i) => entityKind !== 'element' || elementKind === 'all' || kinds[i.id] === elementKind,
   );
-  const chosen = list.items.filter((i) => selected.includes(i.id));
+  const chosen = [...selected.values()];
   const needsConsent = chosen.some((i) => i.realPerson);
-  const toggle = (id: string) =>
-    setSelected((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
+  /** The checked items the list does not show now (another search, tag or chip). */
+  const hidden = chosen.filter((i) => !shown.some((s) => s.id === i.id));
+  const toggle = (item: LibraryItemSummary) =>
+    setSelected((s) => {
+      const next = new Map(s);
+      if (!next.delete(item.id)) next.set(item.id, item);
+      return next;
+    });
   const entityName = (kind: EntityKind, id: string) =>
     kind === 'character'
       ? docs.characters[id]?.name
@@ -96,7 +104,7 @@ export function UsePicker({ entityKind, onClose }: { entityKind: EntityKind; onC
       }
       setOutcomes([...results]);
     }
-    setSelected([]);
+    setSelected(new Map());
     setBusy(false);
     scope.refresh();
   };
@@ -140,10 +148,10 @@ export function UsePicker({ entityKind, onClose }: { entityKind: EntityKind; onC
             <PickRow
               key={item.id}
               item={item}
-              checked={selected.includes(item.id)}
+              checked={selected.has(item.id)}
               inProject={used.has(item.id)}
               elementKind={kinds[item.id] ?? null}
-              onToggle={() => toggle(item.id)}
+              onToggle={() => toggle(item)}
             />
           ))}
         </ul>
@@ -151,6 +159,11 @@ export function UsePicker({ entityKind, onClose }: { entityKind: EntityKind; onC
           <Button size="sm" variant="ghost" onClick={list.loadMore}>
             Show more
           </Button>
+        ) : null}
+        {hidden.length ? (
+          <p className="text-[12px] text-muted" data-testid="use-checked-elsewhere">
+            Also checked: {hidden.map((i) => i.name).join(', ')}
+          </p>
         ) : null}
         {needsConsent ? (
           <label

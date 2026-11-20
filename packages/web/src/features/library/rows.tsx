@@ -82,6 +82,13 @@ export function LibraryRow({ kind, entity }: { kind: EntityKind; entity: Entity 
   const origin = entity.library;
   const link = scope.linkOf(kind, entity.id);
   const offered = offeredVersion(link);
+  // Using a resource's other version adds another resource: once one holds it, the row names that one instead
+  const holder =
+    kind === 'resource' && offered
+      ? Object.values(scope.docs.resources).find(
+          (r) => r.id !== entity.id && r.library?.itemId === origin.itemId && r.library.version === offered,
+        )
+      : undefined;
   const run = async (fn: () => Promise<string>) => {
     setBusy(true);
     try {
@@ -97,7 +104,7 @@ export function LibraryRow({ kind, entity }: { kind: EntityKind; entity: Entity 
     <div className={rowClass} data-testid="library-row">
       <LibraryBig className="size-3.5 shrink-0 text-muted" aria-hidden />
       <span className="min-w-0 flex-1 break-words" data-testid="library-row-text">
-        {libraryRowText(origin.version, link)}
+        {libraryRowText(origin.version, link, holder?.name)}
       </span>
       {offered && kind !== 'resource' ? (
         <Button
@@ -117,7 +124,7 @@ export function LibraryRow({ kind, entity }: { kind: EntityKind; entity: Entity 
           Update…
         </Button>
       ) : null}
-      {offered && kind === 'resource' ? (
+      {offered && kind === 'resource' && !holder ? (
         <Button
           size="sm"
           className="h-7"

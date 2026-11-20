@@ -275,9 +275,24 @@ test('Mira saved in episode 1 is used in episode 2 with her id and seed, kept by
   // other runs keep their Miras in the shared library: wait for the search to leave this run's one
   await expect(picker.getByTestId('use-item')).toHaveCount(1);
   await picker.getByTestId('use-item-check').check();
+  // what is checked stays checked under another search, named while the list hides it
+  await page.getByTestId('use-search').fill(`${tag} no-such-word`);
+  await expect(picker.getByTestId('use-item')).toHaveCount(0);
+  await expect(page.getByTestId('use-checked-elsewhere')).toHaveText('Also checked: Mira');
+  await page.getByTestId('use-search').fill(tag);
+  await expect(picker.getByTestId('use-item-check')).toBeChecked();
+  await expect(page.getByTestId('use-checked-elsewhere')).toHaveCount(0);
   await page.getByTestId('use-consent-check').check();
   await page.getByTestId('use-submit').click();
   await expect(page.getByTestId('use-result')).toContainText(
+    'a character named Mira is already in this project',
+  );
+  await page.getByTestId('use-link-existing').click();
+  await expect(page.getByTestId('library-plan')).toBeVisible();
+  // Escape closes the plan only: the picker stays open with its result, and offers the link again
+  await page.keyboard.press('Escape');
+  await expect(page.getByTestId('library-plan')).toHaveCount(0);
+  await expect(picker.getByTestId('use-result')).toContainText(
     'a character named Mira is already in this project',
   );
   await page.getByTestId('use-link-existing').click();
