@@ -1,6 +1,6 @@
 import type { ServerMessage } from '@rideo/shared';
 import { describe, expect, it } from 'vitest';
-import { LiveHub, type LiveSocket } from '../../src/live/hub';
+import { LiveHub, type LiveSocket, type UiReach } from '../../src/live/hub';
 
 class FakeSocket implements LiveSocket {
   readyState = 1;
@@ -69,7 +69,7 @@ describe('live hub', () => {
     expect(hub.sessionsFor('p1')[0]).toMatchObject({ sessionId: id, presence: { route: '/p/p1/cast' } });
     const pending = hub.sendUi(
       { issuedBy: actor, projectId: 'p1', action: 'navigate', params: { view: 'clips' } },
-      1000,
+      { timeoutMs: 1000 },
     );
     await new Promise((r) => setTimeout(r, 5));
     const ui = s.sent.find((m) => m.type === 'ui') as Extract<ServerMessage, { type: 'ui' }>;
@@ -79,13 +79,95 @@ describe('live hub', () => {
     expect(res.acked).toEqual([{ sessionId: id, ok: true }]);
     const none = await hub.sendUi(
       { issuedBy: actor, projectId: 'nobody', action: 'notify', params: { message: 'hi' } },
-      50,
+      { timeoutMs: 50 },
     );
     expect(none.delivered).toEqual([]);
     s.receive({ type: 'ping' });
     expect(s.sent.at(-1)).toEqual({ type: 'pong' });
     s.close();
     expect(hub.sessionsFor()).toHaveLength(0);
+    hub.close();
+  });
+
+  // docs/design/realtime-sync.md#who-sees-and-steers-which-tabs
+  it('keeps a tab present only on a project it may follow, deciding claims in the order they come', async () => {
+    const hub = new LiveHub();
+    const asked: string[] = [];
+    const gates = new Map<string, () => void>();
+    const authorize = async (projectId: string) => {
+      asked.push(projectId);
+      if (projectId === 'p-slow') await new Promise<void>((r) => gates.set(projectId, r));
+      return projectId !== 'p-closed';
+    };
+    const tab = new FakeSocket();
+    const id = hub.attach(tab, undefined, { userId: 'u1', authorize });
+    const presence = (projectId: string | null) =>
+      tab.receive({ type: 'presence', projectId, route: projectId ? `/p/${projectId}/story` : '/' });
+    const where = () => hub.sessionsFor().find((s) => s.sessionId === id)?.presence?.projectId;
+    const tick = () => new Promise((r) => setTimeout(r, 5));
+
+    // a slow answer for an older claim never replaces the newer one
+    presence('p-slow');
+    presence('p-open');
+    await tick();
+    expect(where()).toBe('p-open');
+    gates.get('p-slow')!();
+    await tick();
+    expect(where()).toBe('p-open');
+    // refused like a follow: present nowhere, and the project's commands do not reach it
+    presence('p-closed');
+    await tick();
+    expect(tab.sent.at(-1)).toEqual({ type: 'error', message: 'forbidden: you may not follow p-closed' });
+    expect(where()).toBeUndefined();
+    expect(hub.isSubscribed(id, 'p-closed')).toBe(false);
+    const sent = await hub.sendUi(
+      { issuedBy: actor, projectId: 'p-closed', action: 'notify', params: { message: 'secret' } },
+      { timeoutMs: 20 },
+    );
+    expect(sent.delivered).toEqual([]);
+    // no project, or one it follows: nothing to ask
+    presence(null);
+    expect(hub.sessionsFor()[0]?.presence).toMatchObject({ projectId: null, route: '/' });
+    tab.receive({ type: 'subscribe', projectId: 'p-followed' });
+    await tick();
+    const before = asked.length;
+    presence('p-followed');
+    expect(where()).toBe('p-followed');
+    expect(asked.length).toBe(before);
+    hub.close();
+  });
+
+  it('sends a UI command to the tabs on its project, a session id only narrowing; without accounts as before', async () => {
+    const hub = new LiveHub();
+    const tabs = ['u1', 'u1', 'u2'].map((userId) => {
+      const socket = new FakeSocket();
+      return { socket, id: hub.attach(socket, undefined, { userId }) };
+    });
+    const [mine, mineHome, theirs] = tabs as [(typeof tabs)[0], (typeof tabs)[0], (typeof tabs)[0]];
+    mine.socket.receive({ type: 'subscribe', projectId: 'p1' });
+    theirs.socket.receive({ type: 'presence', projectId: 'p2', route: '/p/p2/cast' });
+    const send = (cmd: { projectId?: string; sessionId?: string }, reach?: UiReach) =>
+      hub
+        .sendUi(
+          { issuedBy: actor, action: 'notify', params: { message: 'x' }, ...cmd },
+          { reach, timeoutMs: 5 },
+        )
+        .then((r) => r.delivered.sort());
+
+    // a person's command: the tabs on its project, or without a project the person's own
+    expect(await send({ projectId: 'p1' }, { userId: 'u1' })).toEqual([mine.id]);
+    expect(await send({ projectId: 'p1', sessionId: theirs.id }, { userId: 'u1' })).toEqual([]);
+    expect(await send({ projectId: 'p2', sessionId: theirs.id }, { userId: 'u1' })).toEqual([theirs.id]);
+    expect(await send({}, { userId: 'u1' })).toEqual([mine.id, mineHome.id].sort());
+    expect(await send({ sessionId: theirs.id }, { userId: 'u1' })).toEqual([]);
+    expect(await send({ sessionId: mineHome.id }, { userId: 'u1' })).toEqual([mineHome.id]);
+    // nobody named: no tab without a project
+    expect(await send({})).toEqual([]);
+    expect(await send({}, { userId: null })).toEqual([]);
+    // auth mode none: a session id reaches its tab wherever it is, no project every tab
+    expect(await send({ projectId: 'p1', sessionId: theirs.id }, { everyone: true })).toEqual([theirs.id]);
+    expect(await send({}, { everyone: true })).toEqual(tabs.map((t) => t.id).sort());
+    expect(await send({ projectId: 'p2' }, { everyone: true })).toEqual([theirs.id]);
     hub.close();
   });
 

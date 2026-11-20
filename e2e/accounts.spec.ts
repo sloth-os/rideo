@@ -1,4 +1,5 @@
 import { expect, type Page, test } from '@playwright/test';
+import { connectAgent } from './support/mcp';
 
 /** Accounts, roles and teams (docs/design/accounts.md) on the e2e stack's second server, desktop and phone. */
 const ACCOUNTS = `http://127.0.0.1:${Number(process.env.RIDEO_E2E_PORT ?? 8797) + 1}`;
@@ -74,4 +75,52 @@ test('people sign in, share a project with roles, create agent tokens and read t
 
   await menu(page, 'sign-out');
   await expect(page).toHaveURL(/\/login/);
+});
+
+// docs/design/realtime-sync.md#who-sees-and-steers-which-tabs
+test("an agent's UI commands reach the tabs of the people on its project, no one else's", async ({
+  page,
+  browser,
+}, testInfo) => {
+  const outsider = testInfo.project.name === 'mobile' ? 'ben@studio.test' : 'cleo@studio.test';
+  // Mira directs a project and has it open
+  await page.goto(
+    `${ACCOUNTS}/api/auth/login?login_hint=${encodeURIComponent('mira@studio.test')}&returnTo=%2F`,
+  );
+  await expect(page.getByTestId('user-menu')).toBeVisible();
+  const project = await (
+    await page.request.post(`${ACCOUNTS}/api/projects`, {
+      data: { kind: 'story', title: `Steered film (${testInfo.project.name})` },
+    })
+  ).json();
+  await page.goto(`${ACCOUNTS}/p/${project.id}/overview`);
+  await expect(page.getByTestId('live-status')).toHaveAttribute('data-status', 'live');
+  // someone who is not a member opens the same address: refused, and present nowhere
+  const other = await browser.newContext({ viewport: page.viewportSize() ?? undefined });
+  const op = await other.newPage();
+  await op.goto(
+    `${ACCOUNTS}/api/auth/login?login_hint=${encodeURIComponent(outsider)}&returnTo=${encodeURIComponent(`/p/${project.id}/overview`)}`,
+  );
+  await expect(op.getByTestId('live-status')).toHaveAttribute('data-status', 'live');
+
+  // Mira's agent, with a token of hers
+  const token = await (
+    await page.request.post(`${ACCOUNTS}/api/tokens`, {
+      data: { name: `Steering agent (${testInfo.project.name})`, role: 'director' },
+    })
+  ).json();
+  const agent = await connectAgent(ACCOUNTS, { authorization: `Bearer ${token.secret}` });
+  try {
+    await expect
+      .poll(async () => (await agent.call<any[]>('ui_sessions', { projectId: project.id })).length)
+      .toBe(1);
+    const told = await agent.call('ui_notify', { projectId: project.id, message: 'For the director' });
+    expect(told.delivered).toHaveLength(1);
+    await expect(page.getByTestId('toast').filter({ hasText: 'For the director' })).toBeVisible();
+    await op.waitForTimeout(500);
+    await expect(op.getByTestId('toast').filter({ hasText: 'For the director' })).toHaveCount(0);
+  } finally {
+    await agent.client.close();
+    await other.close();
+  }
 });

@@ -58,9 +58,9 @@ MCP, the live WebSocket and editor jobs:
 
 | Permission | Minimal role | Covers |
 |---|---|---|
-| `project.read` | reviewer | state, documents, media, history, jobs, exports, live updates |
+| `project.read` | reviewer | state, documents, media, history, jobs, exports, live updates, presence on it ([live UI](realtime-sync.md#who-sees-and-steers-which-tabs)) |
 | `project.comment` | reviewer | review comments and annotations ([review](review.md)) |
-| `project.edit` | editor | documents, timeline, uploads, generation, exports, editor jobs |
+| `project.edit` | editor | documents, timeline, uploads, generation, exports, editor jobs, agents' `ui_*` commands to its tabs |
 | `project.approve` | director | workflow gates, clip approvals, take overrides |
 | `project.manage` | director | settings, access (members, visibility), branches, deletion |
 

@@ -606,7 +606,7 @@ export function createStudio(
     deps: handlerDeps,
     ...services,
     history: new HistoryService(deps),
-    ui: new UiService(hub),
+    ui: new UiService(hub, accounts),
     // The caller of the request being handled (docs/design/accounts.md), else the configured user.
     userActor: () =>
       currentPrincipal()?.actor ?? { kind: 'user', id: config.user.id, name: config.user.name },

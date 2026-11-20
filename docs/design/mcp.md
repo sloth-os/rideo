@@ -280,17 +280,23 @@ its job begins and before that step runs ([agents](agents.md#recipes)).
 
 ### Frontend control
 
-These tools act on the user's open browser tabs through the live channel (see
-[realtime-sync](realtime-sync.md)). Without a `sessionId`, a command goes to every session viewing the
-project. The result lists which sessions acknowledged it within 3 s.
+These tools act on open browser tabs through the live channel (see
+[realtime-sync](realtime-sync.md#ui-commands)). A command goes to every tab on its project (subscribed to it or present
+on it); a `sessionId` picks one of those tabs. The result lists which sessions acknowledged it within 3 s (`ok: false`
+with the reason when a tab did not carry it out). Outside auth mode `none` they stay within the projects their caller
+may use ([who sees and steers which tabs](realtime-sync.md#who-sees-and-steers-which-tabs)): a command needs
+`project.edit` on its project and reaches no tab elsewhere, whatever `sessionId` names (`delivered: []`); `ui_notify`
+without a `projectId` reaches only the caller's own tabs; `ui_sessions` lists the caller's own tabs and those on
+projects it may read, each showing only those projects. In auth mode `none`, as before, a `sessionId` reaches its tab
+wherever it is, `ui_notify` without a project reaches every tab, and `ui_sessions` lists them all.
 
 | Tool | Arguments | Browser effect |
 |---|---|---|
-| `ui_sessions` | `projectId?` | – (lists sessions with route, selection, viewport, editor engine and current editor job) |
-| `ui_navigate` | `projectId`, `view` (`overview`, `story`, `cast`, `elements`, `resources`, `clips`, `editor`, `analysis`, `history`, `exports`), `params?` | route change |
-| `ui_focus` | `projectId`, `target {kind: scene, character, element, clip, shot, take, timeline-item, commit, job; id}` | scrolls to and highlights the entity |
-| `ui_notify` | `message`, `level?`, `projectId?` | toast |
-| `ui_player` | `projectId`, `action` (`play`, `pause`, `seek`), `time?` | editor/preview playback |
+| `ui_sessions` | `projectId?` | – (lists the sessions the caller may see, with route, selection, viewport, editor engine and current editor job) |
+| `ui_navigate` | `projectId`, `view` (`overview`, `story`, `cast`, `elements`, `resources`, `clips`, `editor`, `analysis`, `history`, `exports`), `params?`, `sessionId?` | route change |
+| `ui_focus` | `projectId`, `target {kind: scene, character, element, clip, shot, take, timeline-item, commit, job; id}`, `sessionId?` | scrolls to and highlights the entity |
+| `ui_notify` | `message`, `level?`, `projectId?`, `sessionId?` | toast |
+| `ui_player` | `projectId`, `action` (`play`, `pause`, `seek`), `time?`, `sessionId?` | editor/preview playback |
 
 ## Resources
 

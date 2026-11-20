@@ -131,7 +131,7 @@ RIDEO_TEST_WEBDAV_URL=http://rideo:rideo@localhost:8080/ npx vitest run --projec
   calls made again while the provider turns them away for load (`503`, `429` with its `Retry-After`, a dropped
   connection, mm-gateway's `upstream_error` and `generation_service_error`), giving up after the retries, never for
   `400`, `504` or mm-gateway's `provider_not_configured`, a
-  timeout or failed connection made a retryable `llm_error` for the job, and a cancelled job not waiting; live hub sequencing, replay and resync, and job heartbeats on the live channel (leased, lost, cancelled); config parsing (TTS, speaker-check and audio-visual endpoints); the vision judge told who is absent and counting
+  timeout or failed connection made a retryable `llm_error` for the job, and a cancelled job not waiting; live hub sequencing, replay and resync, and job heartbeats on the live channel (leased, lost, cancelled); presence claims decided in the order they come and refused on a project the tab may not follow, and UI commands only to the tabs on their project, a session id narrowing and, without accounts, reaching its tab anywhere as before (`hub.test.ts`); config parsing (TTS, speaker-check and audio-visual endpoints); the vision judge told who is absent and counting
 only those names as extras, and reading verdicts that name a character instead of its id with strays dropped
 (`judge.test.ts`); gateway output downloads made again after a dropped connection or a `5xx`, then a retryable
 `gateway_error`, and a `404` failing at once (`media-download.test.ts`); the scratch directory swept when the server
@@ -202,7 +202,8 @@ starts, a file or a folder (by its newest file) more than a day old removed and 
   refused edit dropped and one that no longer applies skipped, live timeline commits held back while edits are
   pending, a reload keeping the shown timeline), live client
   (sequence dedupe, UI-command acks, restart resync, job heartbeats sent when open and their answers handed on), UI
-  command dispatch, the limited media fetch (`media-fetch.test.ts`: at most its limit at once, a slot handed on when a
+  command dispatch (a command for another project than the tab shows, or for a project on a page of none, left alone
+  and refused so the tab acknowledges it `ok: false`; in auth mode none carried out as before, `ui-commands.test.ts`), the limited media fetch (`media-fetch.test.ts`: at most its limit at once, a slot handed on when a
   body ends, fails, is cancelled or aborted, a waiting request dropped when aborted), lane media read only once a block
   comes on screen (`editor-depth.test.tsx`), WebCodecs codec/container
   selection, render engine choice, the editor-job worker against a fake API (claims only with a project and a
@@ -588,7 +589,15 @@ starts, a file or a folder (by its newest file) more than a day old removed and 
   through tools (including designing, picking and locking a voice, importing a screenplay and reading the
   storyboard and the shot list), and asserts that a WebSocket subscriber
   received the matching `commit`, `job` and
-  `activity` events and that `ui_*` commands reach a fake browser session with acks.
+  `activity` events and that `ui_*` commands reach a fake browser session with acks; in auth mode none a session id
+  reaches a tab on no project and a toast without a project every tab, as before.
+- **Live UI with accounts** (`live-ui.test.ts`) with the mock identity provider, two people each directing their own
+  projects: a tab claiming a project its person may not follow is refused twice (follow and presence) and gets none of
+  that project's commands; `ui_sessions` lists to each caller its own tabs and those on projects it may read, showing
+  only those projects (a tab followed on a readable project but present on another shows no presence), and refuses a
+  project the caller may not read; a session id never takes a command to a tab on another project, from the caller's
+  project or without one, directly, through an agent token or from a recipe run on the caller's project, while
+  `ui_notify` without a project reaches the caller's own tabs.
 - **WebDAV editing** (`webdav-sync.test.ts`): the work tree appears behind the commits; edit `screenplay.json` through
   the WebDAV client and sync (a commit by `webdav`); an invalid edit raises a `sync-issue`; the inbox import creates
   resources.

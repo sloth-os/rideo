@@ -85,6 +85,9 @@ type Recipe = {
     id stored before the rule passes only when it is that project. The job refuses before its first step;
   - before each step: its `projectId` with every placeholder filled in, an earlier step's result included, must be the
     run's project, or the job fails there, before the step runs.
+- **Tabs.** Outside auth mode `none` a `ui_*` step reaches only the tabs on the run's project: its `sessionId` (a
+  parameter, say) picks one of them and never a tab elsewhere, and `ui_sessions` shows those tabs with that project
+  alone ([who sees and steers which tabs](realtime-sync.md#who-sees-and-steers-which-tabs)).
 - **Tools a recipe may not use.** A step may not run a recipe (`recipe_run`), nor use a
   [studio library](library.md#surfaces) tool but `library_status`: not those that change the library or a project
   through it (`library_save`, `library_update`, `library_apply`, `library_detach`), nor those that read the library or
