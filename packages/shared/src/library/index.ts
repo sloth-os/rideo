@@ -852,12 +852,20 @@ function resolveCharacter(
         { reason: 'name', entityId: named.id },
       ]);
   }
-  // outfits keep the target's ids where they are the same outfit (by id, else by name): shots name outfits by id
+  // outfits keep the target's ids where they are the same outfit (shots name outfits by id): the same id first, then
+  // the same name among the target's outfits no id claimed; each is claimed once, so no two outfits share an id
   const outfitIds = new Map<string, string>();
+  const claimed = new Set<string>();
+  for (const w of payload.wardrobe)
+    if (base?.wardrobe.some((x) => x.id === w.id)) {
+      outfitIds.set(w.id, w.id);
+      claimed.add(w.id);
+    }
+  const outfitName = (n: string) => n.trim().toLowerCase();
   for (const w of payload.wardrobe) {
-    const same =
-      base?.wardrobe.find((x) => x.id === w.id) ??
-      base?.wardrobe.find((x) => x.name.trim().toLowerCase() === w.name.trim().toLowerCase());
+    if (outfitIds.has(w.id)) continue;
+    const same = base?.wardrobe.find((x) => !claimed.has(x.id) && outfitName(x.name) === outfitName(w.name));
+    if (same) claimed.add(same.id);
     outfitIds.set(w.id, same?.id ?? w.id);
   }
   const versionRefs: CharacterReference[] = payload.references.map((r) => ({

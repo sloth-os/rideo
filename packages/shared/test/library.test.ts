@@ -681,6 +681,55 @@ describe('planApply', () => {
     expect(CharacterSchema.parse(out.write!.doc).library).toMatchObject({ version: 2, mode: 'updated' });
   });
 
+  it('keeps every outfit its own id when one was renamed and a new one took its old name', () => {
+    const dress = newId('wardrobe');
+    const base = f.character({
+      wardrobe: [{ id: dress, name: 'Dress', description: 'red dress', default: true }],
+    });
+    const v1 = version('lib_0000000000mira00', 'character', characterSnapshot(base).payload);
+    const linked = {
+      ...base,
+      lock: { ...base.lock, identityHash: identity.character(base) },
+      library: {
+        itemId: v1.itemId,
+        version: 1,
+        digest: v1.digest,
+        mode: 'used' as const,
+        at: NOW,
+        by: actor,
+      },
+    };
+    const docs = docsWith({ characters: { [base.id]: linked } });
+    // saved in another episode: the dress became a coat, and a new dress was added with a reference wearing it
+    const coat = { id: dress, name: 'Coat', description: 'long grey coat', default: true };
+    const blue = { id: newId('wardrobe'), name: 'Dress', description: 'blue dress' };
+    const worn = f.reference({ view: 'full_body', wardrobeId: blue.id });
+    const apply = (wardrobe: Character['wardrobe'], references = [...base.references, worn]) => {
+      const v2 = version(
+        v1.itemId,
+        'character',
+        characterSnapshot({ ...base, wardrobe, references }).payload,
+        2,
+      );
+      const out = applyVersion({
+        ...ctx(docs, itemOf(v2), v2, { target: { kind: 'character', id: base.id } }),
+        copied: new Map(references.map((r) => [r.media.hash, r.media])),
+      });
+      return CharacterSchema.parse(out.write!.doc);
+    };
+    for (const wardrobe of [
+      [coat, blue],
+      [blue, coat],
+    ]) {
+      const doc = apply(wardrobe);
+      expect(doc.wardrobe.map((w) => [w.id, w.name])).toEqual(wardrobe.map((w) => [w.id, w.name]));
+      expect(doc.references.find((r) => r.id === worn.id)!.wardrobeId).toBe(blue.id);
+    }
+    // an outfit whose id was minted again (a writer's merge) still takes the target's by name
+    const again = { ...blue, id: newId('wardrobe') };
+    expect(apply([again], base.references).wardrobe.map((w) => w.id)).toEqual([dress]);
+  });
+
   it('refuses relock: false on a locked target and an unlocked version onto a locked one', () => {
     const { mira, v, item } = miraItem();
     const docs = docsWith({ characters: { [mira.id]: mira } });

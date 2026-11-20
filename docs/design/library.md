@@ -261,7 +261,10 @@ sha256) and copies the others. Every apply is one commit:
 
 **Update and link** replace the target's library-owned content: name, role, summary, identity, wardrobe,
 personality, references, voice and seed for a character; name, description, aliases, references and seed for an
-element; and the 3D pin when the version has one (a version without a pin leaves the entity's pin as it is). When the
+element; and the 3D pin when the version has one (a version without a pin leaves the entity's pin as it is). Shots
+name outfits by id, so an outfit of the version keeps the target's id when it is the same outfit: the same id, else the
+same name as a target outfit no other outfit of the version took; every outfit keeps an id of its own, and the
+references that wear it follow it. When the
 target and the version are both locked and `relock` is on (the default), the lock version stays when the identity hash
 is unchanged and goes up by one otherwise: the rules R2 and E2 already use, so R6, E6 and V6 make exactly the takes that
 used the old identity stale. `relock: false` on a locked target, or an unlocked version applied onto a locked target,
