@@ -51,10 +51,13 @@ ride alone", put pandas in its reference.
 
 A shot's **elements** are its scene's location plus its own `elementIds`. Like the cast, the element library is
 defined up front: `screenplay.generate` asks the writer for **every location and prop of the whole film** (the
-full outline, not only the written scenes) and creates draft (unlocked) elements for them; scenes link to
-them by name or alias (case-insensitive). `screenplay.extend` reuses those names; a name it still introduces
-becomes a new draft element. The shot planner (`clip.plan`) receives the scene's props and returns, per
-shot, the props visible in it.
+full outline, not only the written scenes) and creates draft (unlocked) elements for the new ones; scenes link to
+them by name or alias (case-insensitive). The locations and props the project already has (used from the
+[studio library](library.md), made by hand, or kept from an earlier screenplay) are listed to the writer with their
+aliases, and it keeps their names, so a new episode's scenes link to the library's places instead of inventing new
+ones ([the project's names](continuity.md#storytelling)). `screenplay.extend` gets the same list and reuses those
+names; a name it still introduces becomes a new draft element. The shot planner (`clip.plan`) receives the scene's
+props and returns, per shot, the props visible in it.
 
 ## Rules
 

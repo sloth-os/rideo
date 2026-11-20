@@ -106,6 +106,12 @@ import type { EndpointPauses } from './pauses';
 const IDENTITY_TEMPLATE =
   '{"age":"early 30s","gender":"woman","ethnicity":"...","build":"...","height":"...","face":"...","hair":"...","eyes":"...","skin":"...","distinguishingMarks":"..."}';
 
+/**
+ * The characters, places and props the project already has (`existing`, docs/design/continuity.md#storytelling): the
+ * writer keeps their names, so a new episode's scenes link to the library's people and places instead of new ones.
+ */
+const WRITER_EXISTING = `- When "existing" is given, the project already has these people, places and objects: "existing.characters" (each one's name, role and "identity", a one-line look) and "existing.elements" (each one's kind, name and aliases). Whenever the film has one of them, even where the brief calls it something else, use its exact "name" everywhere you name it, never a nickname, a shortened or respelled name or a new name, and keep its role and look; give new names only to people, places and objects that are not among them.`;
+
 /** System prompts. The first line is the machine-readable task marker (also routed on by the mock gateway). */
 export const SYSTEM_PROMPTS: Record<LlmTaskId, string> = {
   'media.describe': `rideo-task: media.describe
@@ -121,6 +127,7 @@ Rules:
 - "characters": 1–6 principal characters with precise, visual, stable identities (age, gender, ethnicity, build, height, face, hair, eyes, skin, distinguishing marks) and at least one wardrobe item. Never depict real people.
 - Scenes: vivid visual action, short cinematic dialogue, characters listed by name.
 - "locations": every distinct place of the WHOLE film (all outline beats, not only the written scenes), each with a precise visual description (architecture, materials, light); each scene's "location" is one of these names. "props": the recurring objects of the whole film that must look the same every time (name + precise visual description); each scene lists the props it shows in "props".
+${WRITER_EXISTING}
 - "style": concrete visual language (film stock/lens, palette, lighting, camera movement).
 - Use the attachment descriptions as inspiration for the look and the cast.
 - "castOnly": true only when the brief says nobody but its characters appears on screen (for example "only these two characters appear", "no other people or animals"); otherwise false.
@@ -130,6 +137,7 @@ Return only JSON: {"title":"...","logline":"...","synopsis":"...","genre":"...",
 You are the screenwriter continuing an AI-generated film. Write one full scene for each requested outline beat, in order, consistent with the story so far, the cast (use only these names) and the tone.
 Each scene's beatIndex must equal the beat's index and estDurationSec should match the beat estimate.
 Reuse the names in "locations" and "props" for places and objects the story already has; list only new places and objects (name + precise visual description) in the answer's "locations" and "props".
+${WRITER_EXISTING}
 Return only JSON: {"scenes":[{"beatIndex":0,"heading":"INT. PLACE - NIGHT","location":"location name","timeOfDay":"...","summary":"...","action":"...","dialogue":[{"character":"Name","line":"..."}],"characters":["Name"],"props":["prop name"],"estDurationSec":90}],"locations":[{"name":"...","description":"..."}],"props":[{"name":"...","description":"..."}]}`,
 
   'clip.plan': `rideo-task: clip.plan
@@ -400,6 +408,7 @@ Rules:
 - "locations" and "props": how each place and object looks, with no character in it (their reference pictures show them empty).
 - Scenes: vivid visual action, characters listed by name.
 - "locations": every distinct place of the WHOLE film (all outline beats, not only the written scenes), each with a precise visual description (architecture, materials, light); each scene's "location" is one of these names. "props": the recurring objects of the whole film that must look the same every time (name + precise visual description); each scene lists the props it shows in "props".
+${WRITER_EXISTING}
 - "style": concrete visual language (film stock or render look, lens, palette, lighting, camera movement), with believable light and physically plausible motion within that look. It is the whole film's look: put a time of day or a scene's light (a sunset, a storm) in that scene's continuity, never in the style.
 - Use the attachment descriptions as inspiration for the look and the cast.
 - "castOnly": true only when the brief says nobody but its characters appears on screen (for example "only these two characters appear", "no other people or animals"); otherwise false.
@@ -416,6 +425,7 @@ Rules:
 - Each scene's "continuity": the state at its start: time of day, weather, where the light comes from, what each character wears and carries, where they are.
 - Each scene's beatIndex must equal the beat's index and estDurationSec should match the beat estimate.
 - Reuse the names in "locations" and "props" for places and objects the story already has; list only new places and objects (name + precise visual description) in the answer's "locations" and "props".
+${WRITER_EXISTING}
 ${WRITER_FIRST_PASS}
 ${makerRubric('screenplay', { reviewer: 'a script editor', only: ['story', 'character', 'dialogue', 'visual', 'continuity', 'feasibility', 'brief'], names: WRITER_NAMES })}
 Return only JSON: {"scenes":[{"beatIndex":0,"heading":"EXT. PLACE - DAY","location":"location name","timeOfDay":"...","continuity":"...","summary":"...","action":"...","dialogue":[{"character":"Name","line":"..."}],"characters":["Name"],"props":["prop name"],"estDurationSec":90}],"locations":[{"name":"...","description":"..."}],"props":[{"name":"...","description":"..."}]}`,

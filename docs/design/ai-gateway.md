@@ -285,8 +285,8 @@ Every LLM use is a **task** with an id, a zod output schema, a system prompt and
 | Task | Input | Output (validated) |
 |---|---|---|
 | `media.describe` | user images + video keyframes | `{summary, style, setting, people[{label, description, identity}]}` |
-| `screenplay.generate` | prompt, attachment descriptions, target/pilot length, language, aspect | `{title, logline, synopsis, genre, tone, style, characters[], locations[], props[], outline[], scenes[]}` (scenes name their `location` and `props`) |
-| `screenplay.extend` | story so far (summaries), cast, outline beats to write | `{scenes[]}` |
+| `screenplay.generate` | prompt, attachment descriptions, target/pilot length, language, aspect; the project's characters and places when it has any (`existing`: name, role and a one-line look; kind, name and aliases), whose names the writer keeps ([continuity](continuity.md#storytelling)) | `{title, logline, synopsis, genre, tone, style, characters[], locations[], props[], outline[], scenes[]}` (scenes name their `location` and `props`) |
+| `screenplay.extend` | story so far (summaries), cast, outline beats to write, the project's characters and places (`existing`) | `{scenes[], locations[], props[]}` (only the places and props the story did not have) |
 | `clip.plan` | scene (with its location and props), cast, style, video model limits | `{shots[]}` (each with the `props` visible in it) |
 | `character.describe` | one photo | `{identity, summary, wardrobe[]}` |
 | `consistency.judge` | references per character (and per element when `judgeElements`), the scene reference frame (quality checks), candidate frames | `{frames[{index, characters[{characterId, present, identityScore, outfitScore, issues}], elements?[{elementId, present, score, issues}], physics?{score, issues}, continuity?{score, issues}}]}` ([quality checks](continuity.md#quality-checks-in-the-gate)) |
@@ -362,3 +362,9 @@ answered whole, and `counters.lastMaxTokens[task]` records each task's limit.
 `holdChat(marker)` holds every chat call that mentions the marker (a task's `rideo-task: <id>` line) until its
 `release()`, as a model still answering does, and `held()` counts the calls it holds, so tests can change documents
 while a review is waiting for its model. `metadata.mock_fail: "<code>"` fails a task with that code. `refuseOutputs(n)` fails the next n image or video tasks as a provider's moderation refusing its output does (`provider_error`, `OutputImageSensitiveContentDetected`).
+
+**The mock writer keeps the project's names** as the real one is told to (`existing`,
+[continuity](continuity.md#storytelling)): in `screenplay.generate` the project's first two characters (by role) lead
+the cast under their exact names and roles, stock characters fill it to two under first names none of them has, and the
+scenes are set among the project's locations and props first, under their names; neither task introduces again a
+place or prop the project has (by name or alias). Without `existing` its answers are as before.

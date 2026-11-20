@@ -8,6 +8,7 @@ import type { PlannedPlacement, Shot } from '../schemas/clip';
 import type { TimeRange } from '../schemas/common';
 import { type Element, type ElementKind, elementIndex } from '../schemas/element';
 import type {
+  ExistingNames,
   LlmCharacter,
   LlmElement,
   LlmIdentity,
@@ -47,7 +48,11 @@ export function identityFromLlm(i: Partial<LlmIdentity>): Identity {
   };
 }
 
-/** Merges LLM characters into the cast: existing characters keep id, seed, references and lock (locked ones stay untouched). */
+/**
+ * Merges LLM characters into the cast: an existing character keeps its id, seed, references, lock and every field the
+ * writer does not write (a library link, a 3D pin); a locked one stays untouched, and so does a locked voice (rule V2,
+ * docs/design/dialogue.md#rules).
+ */
 export function mergeCharacters(llm: LlmCharacter[], existing: Character[]): Character[] {
   const byName = nameIndex(existing);
   const out: Character[] = [];
@@ -74,7 +79,7 @@ export function mergeCharacters(llm: LlmCharacter[], existing: Character[]): Cha
               identity: identityFromLlm(c.identity),
               wardrobe: wardrobe.length ? wardrobe : current.wardrobe,
               ...(c.personality ? { personality: c.personality } : {}),
-              ...(c.voice ? { voice: newVoice(c.voice) } : {}),
+              ...(c.voice && !current.voice?.lock.locked ? { voice: newVoice(c.voice) } : {}),
             },
       );
       continue;
@@ -142,6 +147,88 @@ export function mergeElements(
     for (const p of s.props) add('prop', p);
   }
   return out;
+}
+
+/**
+ * How much of the project the writer is told (docs/design/continuity.md#storytelling): at most 40 characters and 80
+ * locations and props, each look at most 160 characters, each element with at most 5 aliases of at most 160 characters
+ * together.
+ */
+export const EXISTING_NAMES_LIMITS = { characters: 40, elements: 80, line: 160, aliases: 5 } as const;
+
+const ROLE_RANK: Record<string, number> = { protagonist: 0, antagonist: 1, supporting: 2, minor: 3 };
+const KIND_RANK: Record<string, number> = { location: 0, prop: 1 };
+
+/** One line of text, cut to `max` characters with an ellipsis. */
+function oneLine(text: string | undefined, max: number): string {
+  const line = (text ?? '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/[.;,\s]+$/, '');
+  return line.length <= max ? line : `${line.slice(0, max - 1).trimEnd()}…`;
+}
+
+/** A character's look in one line: age and gender, ethnicity, build, hair and marks, else its summary. */
+export function lookLine(
+  c: Pick<Character, 'identity' | 'summary'>,
+  max: number = EXISTING_NAMES_LIMITS.line,
+): string {
+  const i = c.identity;
+  const parts = [`${i.age ?? ''} ${i.gender ?? ''}`, i.ethnicity, i.build, i.hair, i.distinguishingMarks]
+    .map((p) => oneLine(p, max))
+    .filter(Boolean);
+  return oneLine(parts.length ? parts.join(', ') : c.summary, max);
+}
+
+function byName(a: { name: string }, b: { name: string }): number {
+  const x = a.name.trim().toLowerCase();
+  const y = b.name.trim().toLowerCase();
+  return x < y ? -1 : x > y ? 1 : 0;
+}
+
+/** An element's first aliases within the bounds: at most 5, of at most 160 characters together (longer ones skipped). */
+function aliasesWithin(aliases: string[]): string[] {
+  const { aliases: most, line } = EXISTING_NAMES_LIMITS;
+  const out: string[] = [];
+  let used = 0;
+  for (const alias of aliases.map((a) => a.trim()).filter(Boolean)) {
+    if (out.length === most) break;
+    if (used + alias.length > line) continue;
+    out.push(alias);
+    used += alias.length;
+  }
+  return out;
+}
+
+/**
+ * What the writer is told about the characters, places and props the project already has (a library's cast, an earlier
+ * screenplay's): the names it keeps for every person, place or object of its film that is one of them
+ * (docs/design/continuity.md#storytelling). Characters by role, the locked ones first, then by name; locations before
+ * props, the locked ones first, then by name; styles are left out (no scene names one). Undefined when the project has
+ * none, so a new project's input is as before.
+ */
+export function existingNames(
+  characters: Pick<Character, 'name' | 'role' | 'identity' | 'summary' | 'lock'>[],
+  elements: Pick<Element, 'kind' | 'name' | 'aliases' | 'lock'>[],
+): ExistingNames | undefined {
+  const limits = EXISTING_NAMES_LIMITS;
+  const locked = (x: { lock: { locked: boolean } }) => (x.lock.locked ? 0 : 1);
+  const cast = [...characters]
+    .sort(
+      (a, b) => (ROLE_RANK[a.role] ?? 4) - (ROLE_RANK[b.role] ?? 4) || locked(a) - locked(b) || byName(a, b),
+    )
+    .slice(0, limits.characters)
+    .map((c) => ({ name: c.name.trim(), role: c.role, identity: lookLine(c) }));
+  const places = elements
+    .filter((e) => e.kind === 'location' || e.kind === 'prop')
+    .sort((a, b) => KIND_RANK[a.kind]! - KIND_RANK[b.kind]! || locked(a) - locked(b) || byName(a, b))
+    .slice(0, limits.elements)
+    .map((e) => ({
+      kind: e.kind as 'location' | 'prop',
+      name: e.name.trim(),
+      aliases: aliasesWithin(e.aliases),
+    }));
+  return cast.length || places.length ? { characters: cast, elements: places } : undefined;
 }
 
 export function sceneFromLlm(

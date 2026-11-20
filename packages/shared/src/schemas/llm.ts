@@ -494,6 +494,17 @@ export interface MakerFacts {
   castOnly?: boolean;
 }
 
+/**
+ * The project's characters, places and props, whose exact names the writer keeps for the ones its film has
+ * (docs/design/continuity.md#storytelling), built by `existingNames`: absent from an input when the project has none.
+ */
+export interface ExistingNames {
+  /** Each character's name, role and look in one line. */
+  characters: { name: string; role: string; identity: string }[];
+  /** Locations and props (no scene names a style): kind, name and aliases. */
+  elements: { kind: 'location' | 'prop'; name: string; aliases: string[] }[];
+}
+
 export interface ScreenplayGenerateInput extends DialogueDirection, MakerFacts {
   prompt: string;
   targetDurationSec: number;
@@ -501,6 +512,8 @@ export interface ScreenplayGenerateInput extends DialogueDirection, MakerFacts {
   language: string;
   aspectRatio: string;
   attachments: { kind: 'image' | 'video'; description: string }[];
+  /** The project's characters and places before the screenplay is written (a library's cast, say). */
+  existing?: ExistingNames;
 }
 
 export interface ScreenplayExtendInput extends DialogueDirection, MakerFacts {
@@ -512,6 +525,8 @@ export interface ScreenplayExtendInput extends DialogueDirection, MakerFacts {
   /** Existing locations and props: reuse these names. */
   locations: { name: string; description: string }[];
   props: { name: string; description: string }[];
+  /** The project's characters and places with their roles, looks and aliases: their names are kept. */
+  existing?: ExistingNames;
   previousScenes: { index: number; heading: string; summary: string }[];
   beats: { index: number; title: string; summary: string; estDurationSec: number; purpose?: string }[];
   /** Version 2: the user's brief, the last written scene in full and the beats after the requested ones. */

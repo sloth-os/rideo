@@ -29,8 +29,10 @@ RIDEO_TEST_WEBDAV_URL=http://rideo:rideo@localhost:8080/ npx vitest run --projec
 ### Unit
 
 - **shared**: every zod schema (including rejection cases); timeline reducer (every op, ripple and magnetic
-  invariants, invalid ops); `activeAt` for transitions; story assembly; suggestion application; workflow
-  evaluator for every requirement; prompt compiler determinism and reference selection under
+  invariants, invalid ops); `activeAt` for transitions; story assembly (the project's names the writer is told,
+  `existingNames`: one-line entries within their bounds, none for a new project; the writer's merge keeping the ids,
+  seeds, references, locks, library links, 3D pins and locked voices of the entities it matches); suggestion
+  application; workflow evaluator for every requirement; prompt compiler determinism and reference selection under
   `max_input_images`; watermark core (DCT orthonormality, CRC, layout determinism, embed/extract round trip
   on synthetic frames, PSNR ≥ 45 dB, no false positive on unmarked frames); JSON diff; canonical JSON;
   media planners and parsers (probe banners from FFmpeg 4.4 and the 5.1 wasm core, analysis logs including
@@ -122,7 +124,8 @@ RIDEO_TEST_WEBDAV_URL=http://rideo:rideo@localhost:8080/ npx vitest run --projec
   `client` lane: claim order, leases, heartbeats, expiry and session release, cancel, staged files);
   consistency gate scoring, preconditions R1/R2, stale detection R6, override rules R8, fail-closed R9; LLM
   adapters' request shapes and JSON repair (and audio parts for the speaker check, video parts for the audio-visual
-  model); streamed chat completions (deltas joined, the usage of the last event, a refused `stream` asked again
+  model); the writer's prompts of both versions reading `existing` and keeping its names (`writer-names.test.ts`);
+  streamed chat completions (deltas joined, the usage of the last event, a refused `stream` asked again
   without it but an "upstream" error not, a stream gone quiet ended by the timeout, a streamed error retryable); the
   proxy client waiting for slow headers only as long as the call's timeout and still sending multipart uploads; LLM
   calls made again while the provider turns them away for load (`503`, `429` with its `Retry-After`, a dropped
@@ -477,6 +480,11 @@ only those names as extras, and reading verdicts that name a character instead o
   the keyframe and the video three times each, and the kept take names the extra.
 - **Re-check** (in `continuity.test.ts`): takes made with the judge off are `unverified`; with the judge back,
   `consistency.recheck` turns them `passed` from their evidence frames without a new generation.
+- **The project's names** (`writer-names.test.ts`): a new project's writer gets no `existing`; a project that holds a
+  locked character and a location with an alias before its screenplay gets them in `existing` for
+  `screenplay.generate` and `screenplay.extend`, and the mock writer, which keeps those names as the real one is told
+  to, makes scenes that link to them: one character of that name, unchanged (same id, seed and lock), the first scene
+  at that place, and no second element for it.
 - **Observability** (`observability.test.ts`): a clip generated on the mock fills `job.usage`, the project's
   `.rideo/usage.json` (priced with `RIDEO_PRICES`) and `/metrics`; `GET /insights` and MCP `project_insights`.
 - **Interchange** (`interchange.test.ts`): an edit project's cut handed off in the four formats (the OTIO's clip URL
