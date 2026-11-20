@@ -444,7 +444,7 @@ export const LibrarySaveInputSchema = z.object({
   entity: LibraryEntityRefSchema,
   /** A new version of this item (default: the item the entity is linked to). */
   itemId: LibraryItemIdSchema.optional(),
-  /** A new item even when the entity is linked. */
+  /** A new item even when the entity is linked, whatever `itemId` names (it wins over `itemId`). */
   newItem: z.boolean().optional(),
   name: z.string().trim().min(1).max(LIBRARY_LIMITS.name).optional(),
   description: z.string().max(LIBRARY_LIMITS.description).optional(),
