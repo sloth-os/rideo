@@ -744,8 +744,9 @@ interface LockOutcome {
 
 /**
  * The lock an apply leaves (docs/design/library.md#use-in-project-update-and-link-apply): a create is locked only if
- * the version was saved locked, above every version the project recorded; an update relocks with the existing rule
- * (the version kept when the identity hash is unchanged, else raised); `relock: false` on a locked entity, or an
+ * the version was saved locked, and locked or not it is above every version the project recorded (an unlocked one that
+ * nothing recorded starts at 0), so no old take of that id is current by accident; an update relocks with the existing
+ * rule (the version kept when the identity hash is unchanged, else raised); `relock: false` on a locked entity, or an
  * unlocked version onto a locked one, is refused.
  */
 function relock(
@@ -768,7 +769,7 @@ function relock(
           },
           from: null,
         }
-      : { lock: { locked: false, version: recorded }, from: null };
+      : { lock: { locked: false, version: recorded > 0 ? recorded + 1 : 0 }, from: null };
   }
   if (current.locked && !ctx.input.relock) throw refuse('relock it (relock: true) or unlock it first');
   if (current.locked && !versionLocked)
@@ -965,9 +966,12 @@ function resolveCharacter(
     base.library?.itemId === ctx.item.id &&
     base.library.version === ctx.version.version;
   const localChanges = localEdits(ctx, 'character', base, mode);
-  const stale = base
-    ? staleness(ctx.docs, { characters: { ...ctx.docs.characters, [id]: next }, elements: ctx.docs.elements })
-    : { staleTakes: 0, approvedClips: [] };
+  // a create counts too: takes that recorded this id before (the character removed and used again, or an episode
+  // copied from another) go stale once it is back
+  const stale = staleness(ctx.docs, {
+    characters: { ...ctx.docs.characters, [id]: next },
+    elements: ctx.docs.elements,
+  });
   return {
     plan: {
       mode,
@@ -1079,9 +1083,10 @@ function resolveElement(ctx: LibraryApplyContext, payload: ElementSnapshot, medi
     lock === base.lock &&
     base.library?.itemId === ctx.item.id &&
     base.library.version === ctx.version.version;
-  const stale = base
-    ? staleness(ctx.docs, { characters: ctx.docs.characters, elements: { ...ctx.docs.elements, [id]: next } })
-    : { staleTakes: 0, approvedClips: [] };
+  const stale = staleness(ctx.docs, {
+    characters: ctx.docs.characters,
+    elements: { ...ctx.docs.elements, [id]: next },
+  });
   return {
     plan: {
       mode,

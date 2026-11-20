@@ -736,4 +736,72 @@ describe('the library service', () => {
     });
     expect(after.lock.identityHash).toBe(identityHash(after));
   });
+
+  it('asks a director to use a character again whose old take an approved clip holds, never an editor', async () => {
+    const lib = studio.library;
+    // the apply copies through the media store's temporary folder, made at startup
+    await studio.deps.media.init();
+    // Mira's reference is in the library, so the director's apply can copy it into the project
+    const bytes = Buffer.from('mira front reference');
+    const hash = sha256(bytes);
+    const local = join(await tmpDir(), 'mira.png');
+    await writeFile(local, bytes);
+    await lib.store.putFile(local, hash, bytes.length, 'image/png');
+    const base = f.character({
+      references: [f.reference({ media: f.imageMedia({ hash, size: bytes.length }) })],
+    });
+    const mira: Character = { ...base, lock: { ...base.lock, identityHash: identityHash(base) } };
+    const id = newId('libraryItem');
+    const payload = characterSnapshot(mira).payload;
+    const v1 = await lib.store.writeVersion(id, 1, () => ({
+      itemId: id,
+      version: 1,
+      kind: 'character',
+      digest: libraryDigest('character', payload, sha256),
+      payload,
+      thumbnail: null,
+      basedOn: null,
+      note: '',
+      source: null,
+      realPerson: false,
+      bytes: bytes.length,
+      createdBy: author,
+      createdAt: NOW,
+    }));
+    await lib.store.saveHead(
+      headOf(v1, { kind: 'character', name: 'Mira', entityId: mira.id, ownerId: 'usr_ana1234567' }),
+    );
+    // Mira was removed from the project, and an approved clip keeps the take that recorded her at lock 1
+    const clip = f.clip({ status: 'approved', title: 'Opening', shots: [f.readyShot([mira])] });
+    const access = ProjectAccessSchema.parse({
+      members: [
+        { userId: 'usr_ana1234567', role: 'director' },
+        { userId: 'usr_ben1234567', role: 'editor' },
+      ],
+    });
+    const pid = await projectWith(studio, { clips: [clip], access });
+    const input = { itemId: id };
+
+    const plan = await as(person('usr_ben1234567'), () => lib.apply(actor, pid, { ...input, dryRun: true }));
+    expect(plan.plan).toMatchObject({
+      mode: 'create',
+      needs: 'project.approve',
+      staleTakes: 1,
+      lock: { locked: true, from: null, to: 2 },
+    });
+    expect(plan.plan.approvedClips).toEqual([{ id: clip.id, index: 0, title: 'Opening' }]);
+    expect(await code(as(person('usr_ben1234567'), () => lib.apply(actor, pid, input)))).toBe('forbidden');
+    const denied = await studio.deps.accounts.audit.query({ type: 'auth.denied', limit: 5 });
+    expect(denied[0]).toMatchObject({
+      projectId: pid,
+      detail: { permission: 'project.approve', role: 'editor' },
+    });
+    expect((await studio.deps.projects.docs(pid)).characters[mira.id]).toBeUndefined();
+    const done = await as(person('usr_ana1234567'), () => lib.apply(actor, pid, input));
+    expect(done).toMatchObject({ applied: true, plan: { mode: 'create', needs: 'project.approve' } });
+    expect((await studio.deps.projects.docs(pid)).characters[mira.id]).toMatchObject({
+      lock: { locked: true, version: 2 },
+      library: { itemId: id, version: 1, mode: 'used' },
+    });
+  });
 });

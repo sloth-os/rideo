@@ -202,10 +202,11 @@ weakening the invariant:
   projects (`consent_required` until then; [consent records](provenance.md#consent-records)).
 - **Use from library** in the Cast view (`library_apply`) copies the character into a project with the item's `chr_`
   id when no character there has it, the same seed and the same wardrobe and reference ids, so the identity fragment,
-  the references chosen and the judge are the same in every episode (R3). The copy is locked only if the version was,
-  at a lock version this project never recorded for that id (1 + the highest of its takes and boards; the voice lock
-  likewise from take audio and dubs), so a take made from an earlier character of the same id is never current by
-  accident (R6, R9). A taken id or name answers `409` `conflict`, and the picker offers to link the existing
+  the references chosen and the judge are the same in every episode (R3). The copy is locked only if the version was;
+  locked or not, it gets a lock version this project never recorded for that id (1 + the highest of its takes and
+  boards; the voice lock likewise from take audio and dubs), so a take made from an earlier character of the same id
+  is never current by accident (R6, R9), and an approved clip holding one makes the Use need a director
+  (`project.approve`). A taken id or name answers `409` `conflict`, and the picker offers to link the existing
   character instead.
 - **Update** to another version relocks as R2 does: the lock version goes up only when `identityHash` changes, so R6
   (and V6 for the voice) marks exactly the takes made from the old identity stale. When an approved clip uses them,

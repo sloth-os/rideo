@@ -18,6 +18,7 @@ import {
   ElementSnapshotSchema,
   elementSnapshot,
   isRealPersonSnapshot,
+  isStale,
   LibraryApplyInputSchema,
   LibraryError,
   type LibraryItem,
@@ -503,7 +504,9 @@ describe('planApply', () => {
       keepsLibraryId: true,
       entity: { id: mira.id, exists: false },
       lock: { locked: true, to: 4 },
-      staleTakes: 0,
+      // that take is stale once Mira is back at 4; its clip is not approved, so an editor may
+      staleTakes: 1,
+      approvedClips: [],
       needs: 'project.edit',
     });
     const out = applyVersion({
@@ -516,6 +519,75 @@ describe('planApply', () => {
     expect(doc.lock).toMatchObject({ locked: true, version: 4, identityHash: identity.character(doc) });
     expect(doc.library).toMatchObject({ itemId: item.id, version: 1, digest: v.digest, mode: 'used' });
     expect(out.message).toBe('Use Mira from the library (v1)');
+  });
+
+  it('counts the takes a create makes stale, and asks a director when an approved clip holds one', () => {
+    const { mira, v, item } = miraItem();
+    // Mira was removed here (or the episode was copied from another): an approved clip keeps a take that recorded her
+    const approved = f.clip({ shots: [f.readyShot([mira])], status: 'approved', title: 'Harbor dawn' });
+    expect(planApply(ctx(docsWith({ clips: { [approved.id]: approved } }), item, v))).toMatchObject({
+      mode: 'create',
+      lock: { locked: true, from: null, to: 2 },
+      staleTakes: 1,
+      approvedClips: [{ id: approved.id, index: 0, title: 'Harbor dawn' }],
+      needs: 'project.approve',
+    });
+    // an element alike
+    const harbor = f.element({ name: 'Harbor' });
+    const ev = version('lib_0000000000harb00', 'element', elementSnapshot(harbor).payload);
+    const take = f.take({ elementLocks: { [harbor.id]: 1 } });
+    const docks = f.clip({
+      status: 'approved',
+      title: 'Docks',
+      shots: [f.shot({ elementIds: [harbor.id], takes: [take], selectedTakeId: take.id, status: 'ready' })],
+    });
+    expect(
+      planApply(ctx(docsWith({ clips: { [docks.id]: docks } }), itemOf(ev, { entityId: harbor.id }), ev)),
+    ).toMatchObject({
+      mode: 'create',
+      lock: { locked: true, from: null, to: 2 },
+      staleTakes: 1,
+      approvedClips: [{ id: docks.id, index: 0, title: 'Docks' }],
+      needs: 'project.approve',
+    });
+  });
+
+  it('creates a version saved unlocked above every version the project recorded too, its voice likewise', () => {
+    const voice: Voice = {
+      description: 'warm',
+      provider: 'elevenlabs',
+      voiceId: 'v1',
+      source: 'designed',
+      sample: f.media({ mime: 'audio/wav' }),
+      candidates: [],
+      lock: { locked: false, version: 0 },
+    };
+    const mira = f.character({ lock: { locked: false, version: 0 }, voice });
+    const v = version('lib_0000000000mira00', 'character', characterSnapshot(mira).payload);
+    const item = itemOf(v, { entityId: mira.id });
+    // a take of an earlier Mira of the same id, made while she was unlocked at 3, that spoke with her voice at 2
+    const old = f.take({
+      characterLocks: { [mira.id]: 3 },
+      audio: { mode: 'tts', dialogue: null, lines: [], voiceLocks: { [mira.id]: 2 }, lipSync: 'none' },
+    });
+    const shot = f.shot({ characterIds: [mira.id], takes: [old], selectedTakeId: old.id });
+    const clip = f.clip({ shots: [shot] });
+    const docs = docsWith({ clips: { [clip.id]: clip } });
+    expect(planApply(ctx(docs, item, v))).toMatchObject({
+      lock: { locked: false, from: null, to: 4 },
+      voiceLock: { locked: false, from: null, to: 3 },
+    });
+    const out = applyVersion({
+      ...ctx(docs, item, v),
+      copied: new Map([...mira.references.map((r) => r.media), voice.sample!].map((m) => [m.hash, m])),
+    });
+    const doc = CharacterSchema.parse(out.write!.doc);
+    expect(doc.lock).toEqual({ locked: false, version: 4 });
+    expect(doc.voice!.lock).toEqual({ locked: false, version: 3 });
+    // the old take is no take of this Mira, locked or not
+    expect(isStale(old, shot, { [doc.id]: doc })).toBe(true);
+    // where nothing recorded the id, an unlocked one starts at 0 as any new character
+    expect(planApply(ctx(docsWith(), item, v)).lock).toEqual({ locked: false, from: null, to: 0 });
   });
 
   it('refuses a create whose id or name is taken, and only warns for an alias', () => {

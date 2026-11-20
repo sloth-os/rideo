@@ -247,11 +247,13 @@ sha256) and copies the others. Every apply is one commit:
   project has: `409` `conflict` `{reason: "name", entityId}`, with the same offer. An alias that collides only warns.
 - **Copied as they are**: the seed, the wardrobe ids, the reference ids, the approved references (approved), the
   consent records, the voice, and the 3D pin (with the apply's `pinnedAt` and `pinnedBy`).
-- **Lock versions are the project's.** The entity is locked only if the version was saved locked, at
-  `lock.version` = 1 + the highest version any take or board of this project recorded for that id (`characterLocks`,
-  `elementLocks`), with `identityHash` computed again; the voice lock the same way, from the `voiceLocks` of take
-  audio and dubs. A take of the project made from an older entity of the same id is therefore never current by
-  accident (R6, E6, V6, R9).
+- **Lock versions are the project's.** The entity is locked only if the version was saved locked (with
+  `identityHash` computed again). Locked or not, its `lock.version` is 1 + the highest version any take or board of
+  this project recorded for that id (`characterLocks`, `elementLocks`); an unlocked one that nothing recorded starts at
+  0, as any new entity. The voice lock follows the same rule, from the `voiceLocks` of take audio and dubs. A take of
+  the project made from an older entity of the same id (one removed and used again, or an episode copied from another)
+  is therefore never current by accident (R6, E6, V6, R9): the plan counts it in `staleTakes`, and an approved clip
+  that holds one needs a director, as for an update.
 - **Resources** always become a new resource (new id, origin `library`): shots name resources by id for start
   frames, end frames and motion references, so a library resource is never swapped under a shot.
 - **Files** are copied from `library/files` into the project's media under their usual names (`media/refs/…`,

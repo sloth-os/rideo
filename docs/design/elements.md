@@ -129,9 +129,11 @@ element once, in versions, for every project of the studio.
   (`element.library`).
 - **Use from library** in the Elements view (`library_apply`) copies an element into the project with the item's
   `ele_` id when no element of the project has it, and the same seed and reference ids: scenes, prompts, the judge and
-  the desk see the same place in every episode. It is locked at a lock version this project never recorded for that id
-  (1 + the highest of its takes and boards), so no older take passes as current (E6). A taken id, or a kind and name
-  another element has, answers `409` `conflict`, and the picker offers to link the existing element instead.
+  the desk see the same place in every episode. It is locked only if the version was; locked or not, it gets a lock
+  version this project never recorded for that id (1 + the highest of its takes and boards), so no older take passes
+  as current (E6), and an approved clip holding one makes the Use need a director (`project.approve`). A taken id, or
+  a kind and name another element has, answers `409` `conflict`, and the picker offers to link the existing element
+  instead.
 - **Update** to another version replaces the library-owned fields (name, description, aliases, references, seed).
   Relocking follows E2: the lock version goes up only when `identityHash` changes, and E6 marks exactly the takes that
   used the old one stale; when an approved clip uses them, the update needs a director (`project.approve`).
