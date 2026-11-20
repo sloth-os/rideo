@@ -40,6 +40,7 @@ import { type AuthedRequest, registerAuthRoutes } from './auth-routes';
 import { applyBasePath, injectBase, requestBase } from './base-path';
 import { registerBrandRoutes } from './brand-routes';
 import { effectiveConfig, StudioHost } from './host';
+import { registerLibraryRoutes } from './library-routes';
 import { registerPerformanceRoutes } from './performance-routes';
 import { registerPushRoutes } from './push-routes';
 import { registerReviewRoutes } from './review-routes';
@@ -473,6 +474,7 @@ export async function buildServer(
   registerRoutes(app, studio);
   registerReviewRoutes(app, studio);
   registerBrandRoutes(app, studio);
+  registerLibraryRoutes(app, studio);
   registerSearchRoutes(app, studio);
   registerPerformanceRoutes(app, studio);
   registerPushRoutes(app, studio);

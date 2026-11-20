@@ -201,8 +201,8 @@ studio token, unscoped editor tokens; manage: the owner or an admin); the projec
 
 | Tool | Arguments |
 |---|---|
-| `library_list` | `kinds?` (`character`, `element`, `resource`, `desk-set`, `desk-prop`, `desk-figure`), `kind?`, `tag?`, `q?`, `archived?`, `sort?`, `limit?`, `cursor?` → `{items, next}` (read-only) |
-| `library_get` | `itemId`, `version?` → the item with its history, and that version's manifest when `version` is given (read-only) |
+| `library_list` | `kinds?` (`character`, `element`, `resource`, `desk-set`, `desk-prop`, `desk-figure`), `kind?`, `tag?`, `q?`, `archived?` (`true` lists archived items too), `sort?`, `limit?`, `cursor?` → `{items, next}` (read-only) |
+| `library_get` | `itemId`, `version?` → `{item, version?}`: the item with its history, and that version's manifest when `version` is given (read-only) |
 | `library_update` | `itemId`, `name?`, `description?`, `tags?`, `current?`, `archived?`, `expectedRev?` → the item (its owner or an admin; `library_conflict` for a stale `expectedRev`) |
 | `library_uses` | `itemId` → `{incomplete, projects}`: where it is used, in the projects the caller may read (read-only) |
 | `library_save` | `projectId`, `entity` (`{kind: "character" \| "element" \| "resource", id}`), `itemId?`, `newItem?`, `name?`, `description?`, `tags?`, `note?`, `basedOn?`, `acknowledgeConsent?` → `{item, version, unchanged, commit}` |

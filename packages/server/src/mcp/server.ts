@@ -31,6 +31,11 @@ import {
   isTerminalJob,
   LanguageCodeSchema,
   LENS_PRESETS,
+  LibraryApplyInputSchema,
+  LibraryDetachInputSchema,
+  LibraryItemPatchSchema,
+  LibraryListInputSchema,
+  LibrarySaveInputSchema,
   LoudnessTargetSchema,
   MotionReferenceSchema,
   type Permission,
@@ -1450,6 +1455,82 @@ function buildServer(studio: Studio): McpServer {
         await rm(tmp, { force: true });
       }
     },
+  );
+
+  // The studio library (docs/design/library.md#surfaces): the LibraryService REST calls too; no tool uploads bytes
+  tool(
+    'library_list',
+    "The studio library: characters, elements (places, props, styles), resources and the director's desk's 3D sets, props and figures that the studio's projects share, in versions. Summaries with their current version (3D units: its unit file's sha256, size, actor kind and height). Filter by kinds, kind, tag or words (q); archived: true lists archived items too; pages of limit items, the next one from cursor (the answer's next).",
+    LibraryListInputSchema.shape,
+    async (a) => studio.library.list(LibraryListInputSchema.parse(a)),
+    ro,
+  );
+  tool(
+    'library_get',
+    "A library item with its history (every version: number, digest, note, who made it and when, its rev for library_update's expectedRev); with version, also that version's manifest (its snapshot and files).",
+    {
+      itemId: z.string().describe('Library item id (lib_…)'),
+      version: z.number().int().min(1).max(1000).optional(),
+    },
+    async (a) => ({
+      item: await studio.library.get(a.itemId),
+      ...(a.version ? { version: await studio.library.version(a.itemId, a.version) } : {}),
+    }),
+    ro,
+  );
+  tool(
+    'library_update',
+    "Change a library item (its owner or an admin): name, description, tags, the current version (the one Use in project takes; projects keep theirs), archived (hidden from pickers, still served). expectedRev: the item's rev as you read it (library_conflict when it changed meanwhile).",
+    {
+      itemId: z.string().describe('Library item id (lib_…)'),
+      expectedRev: z.number().int().min(1).optional(),
+      ...LibraryItemPatchSchema.shape,
+    },
+    (a, actor) => {
+      const { itemId, expectedRev, ...patch } = a;
+      return studio.library.update(actor, itemId, LibraryItemPatchSchema.parse(patch), expectedRev);
+    },
+  );
+  tool(
+    'library_uses',
+    "Where a library item is used: the projects you may read, each with its uses (library links, 3D pins, what the clips' stored desk states use) and the version each uses. incomplete: a project could not be read, or projects live in browsers.",
+    { itemId: z.string().describe('Library item id (lib_…)') },
+    async (a) => studio.library.uses(a.itemId),
+    ro,
+  );
+  tool(
+    'library_save',
+    'Save a character, element or resource of the project to the studio library: a new item, or a new version of the item it is linked to (itemId for another, newItem for a new one). Its approved references and files are copied into the library and the entity is linked (one commit). A real person needs acknowledgeConsent (consent_required otherwise); basedOn: the version it was made from (library_conflict when the item has a later one); unchanged when nothing changed since the current version.',
+    { projectId: PROJECT, ...LibrarySaveInputSchema.shape },
+    (a, actor) => {
+      const { projectId, ...input } = a;
+      return studio.library.save(actor, projectId, LibrarySaveInputSchema.parse(input));
+    },
+  );
+  tool(
+    'library_apply',
+    "Apply a library version to the project (one commit): without target, Use in project (a new character or element keeping the library's id and seed, or a new resource); with a target, update or link it (its lock relocked: the version kept when its identity is unchanged, else raised, takes made with the old identity go stale), or pin a 3D unit on it (a set on a location, a prop on a prop, a figure on a character; replacePin: false refuses to re-point another item's pin). dryRun answers the plan only. conflict (exists, name, pinned, archived), forbidden when the plan lists approved clips and you are no director, consent_required for a real person without acknowledgeConsent.",
+    { projectId: PROJECT, ...LibraryApplyInputSchema.shape },
+    (a, actor) => {
+      const { projectId, ...input } = a;
+      return studio.library.apply(actor, projectId, LibraryApplyInputSchema.parse(input));
+    },
+  );
+  tool(
+    'library_detach',
+    "Unlink an entity from the library (what: library; it stays as it is, the project's own) or remove its 3D pin (what: deskUnit; its scenes go back to the words at their next Update shots). One commit.",
+    { projectId: PROJECT, ...LibraryDetachInputSchema.shape },
+    (a, actor) => {
+      const { projectId, ...input } = a;
+      return studio.library.detach(actor, projectId, LibraryDetachInputSchema.parse(input));
+    },
+  );
+  tool(
+    'library_status',
+    "The project's library links and 3D pins, each current, behind (a newer version is current), ahead or missing (not in this studio's library), and whether a linked entity was edited here since its version.",
+    { projectId: PROJECT },
+    async (a) => studio.library.status(a.projectId),
+    ro,
   );
 
   // Brand kits (docs/design/brand-kits.md)

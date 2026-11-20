@@ -437,6 +437,27 @@ export class Metrics {
   readonly brand = this.add(
     new Counter('rideo_brand_total', 'Brand kits created, applied, removed and files added'),
   );
+  /** The studio library (docs/design/library.md#observability). */
+  readonly library = this.add(
+    new Counter(
+      'rideo_library_total',
+      'Library operations by event (created, version, unchanged, conflict, refused, saved, used, updated, linked, pinned, detached, archived, unarchived, current) and kind',
+    ),
+  );
+  readonly libraryBytes = this.add(
+    new Counter(
+      'rideo_library_bytes_total',
+      'Bytes written to the library (upload, from_project) and copied into projects (to_project), by op',
+    ),
+  );
+  readonly libraryApplySeconds = this.add(
+    new Histogram(
+      'rideo_library_apply_seconds',
+      'How long a library save or apply took, by op',
+      [0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10, 30, 60],
+    ),
+  );
+  readonly libraryItems = this.add(new Gauge('rideo_library_items', 'Items in the studio library, by kind'));
   /** Recipe steps run (docs/design/agents.md#recipes). */
   readonly recipeSteps = this.add(
     new Counter('rideo_recipe_steps_total', 'Recipe steps run by tool and outcome'),

@@ -1,7 +1,9 @@
 import { z } from 'zod';
+import { libraryUses } from '../library';
 import { ProjectAccessSchema } from '../schemas/accounts';
 import { IsoDateSchema } from '../schemas/common';
 import type { ProjectDocs } from '../schemas/documents';
+import { DigestLibraryUseSchema } from '../schemas/library';
 import { ProjectSummarySchema } from '../schemas/project';
 import type { CommitSummary } from '../schemas/vcs';
 import { evaluateWorkflow } from '../workflow';
@@ -40,6 +42,11 @@ export const ProjectDigestSchema = z.object({
   agents: z
     .array(z.object({ id: z.string(), message: z.string(), at: IsoDateSchema, agent: z.string() }))
     .max(50),
+  /**
+   * Where the project uses the studio library (docs/design/library.md#where-it-is-used): links, pins and what the
+   * clips' stored desk states use. Absent: not computed yet (a digest from before the field is completed when asked).
+   */
+  library: z.array(DigestLibraryUseSchema).max(1000).optional(),
 });
 export type ProjectDigest = z.infer<typeof ProjectDigestSchema>;
 
@@ -104,5 +111,6 @@ export function projectDigest(input: {
         deciders: r.decisions.map((d) => d.author.id),
       })),
     agents: input.agents.slice(0, DIGEST_AGENT_COMMITS),
+    library: libraryUses(docs),
   };
 }

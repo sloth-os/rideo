@@ -35,6 +35,8 @@ export const ID_PREFIXES = {
   recipe: 'rcp',
   brandKit: 'bkt',
   feedback: 'fbk',
+  /** An item of the studio library (docs/design/library.md#the-item). */
+  libraryItem: 'lib',
 } as const;
 
 export type IdKind = keyof typeof ID_PREFIXES;

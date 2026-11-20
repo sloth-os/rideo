@@ -82,6 +82,10 @@ export const AuditEventTypeSchema = z.enum([
   'project.approval',
   /** docs/design/settings.md#surfaces: the keys that changed, never the values. */
   'settings.update',
+  /** docs/design/library.md#audit: a version published, a version applied, an item changed by its manager. */
+  'library.publish',
+  'library.apply',
+  'library.change',
 ]);
 export type AuditEventType = z.infer<typeof AuditEventTypeSchema>;
 

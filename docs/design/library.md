@@ -105,6 +105,10 @@ type LibraryItem = {
     realPerson: boolean; bytes: number; createdBy: Author; createdAt: string;
   }[];
   thumbnail: { version: number; hash: string; mime: 'image/png'; width?: number; height?: number } | null;
+  unit: {                             // 3D units: the current version's unit file; null for the other kinds
+    sha256: string; bytes: number; format: string; formatVersion: number;
+    actorKind: string | null; heightM: number | null; dimensionsM?: [number, number, number];
+  } | null;
   realPerson: boolean;                // the current version shows a real person (a likeness or a cloned voice)
   archived: boolean;                  // hidden from pickers; still served; pins and links keep working
   ownerId: string;                    // who created it (an agent token's owner for agents)
@@ -113,9 +117,9 @@ type LibraryItem = {
 };
 ```
 
-The list answers summaries: the head without `history`, with `versions` (how many) and, for 3D units, the current
-version's `unit: {sha256, bytes, format, formatVersion, actorKind, heightM, dimensionsM?}`, so a picker shows a
-figure's kind and height and a unit's size without reading a manifest.
+The list answers summaries: the head without `history`, with `versions` (how many); a 3D unit's `unit` is the
+current version's file, so a picker shows a figure's kind and height and a unit's size without reading a manifest.
+The list leaves archived items out unless `archived` is `true` (then it lists them too).
 
 ### A version
 
@@ -224,7 +228,10 @@ acknowledgeConsent?, dryRun?}` applies a version (`version`, else the item's `cu
 
 An archived item cannot be applied to an entity that does not use it yet (`409` `conflict`): unarchive it first; the
 entities that use it can still move to another of its versions. `replacePin` (default `true`) lets a pin replace
-another item's pin on its target. `dryRun: true` answers the plan and writes nothing. Every apply is one commit:
+another item's pin on its target. `dryRun: true` answers the plan and writes nothing; it asks for neither
+`acknowledgeConsent` nor `project.approve` (the plan's `realPerson` and `needs` say what the apply will ask), so an
+editor sees the plan of an update a director has to make. An apply reuses the files the project already holds (by
+sha256) and copies the others. Every apply is one commit:
 `Use Mira from the library (v2)`, `Update Mira from the library (v2 → v3)`, `Link Mira to the library (v3)`,
 `Use the 3D set Harbor v3 for Harbor`.
 
@@ -646,22 +653,29 @@ existing `412` conflict, whose **Replace** would drop the server's change unless
   `character_locked`, `element_locked`, `voice_locked`; 3D items onto the right targets only; `replacePin: false`
   refused on another pin; a version without a pin keeping the entity's; resources always created; archived items
   refused); `libraryAllows` for every kind of caller (`accounts.test.ts`); digests with and without `library`, still
-  version 1 (`digest.test.ts`); old documents without `library` and `deskUnit` parsing, the new fields round-tripping,
-  a pin changing no identity hash (`documents.test.ts`).
-- **Unit (server):** the store (`library-store.test.ts`, memory and file backends): v1, v2, `unchanged`, a stale
-  `If-Match` and a stale `basedOn` answered `412` `library_conflict` with the latest, two versions at once both kept, a
-  leftover manifest skipped, the same bytes stored once; uploads (`library-upload.test.ts`): `meta` not first, a unit
-  of 32 MiB + 1 byte (`413`, counted, its temporary file removed), a unit with a wrong magic, header, format or kind
-  (`422`), thumbnails that are not PNG (`422`), over 64 KiB (`413`) or 256 px (`422`), meta over 16 KiB.
-- **Integration** (`library.test.ts`): a desk set uploaded, listed, read, served with `Range` and `304`, a new version
-  with a stale `If-Match` and with a stale `basedOn`, renamed, archived (gone from the default list, still served),
-  its uses; Mira saved from project A (`consent_required` until acknowledged), used in project B with the same id and
-  seed and her references copied, a v2 from A making B's status `behind`, B's dry run, B's update refused for an editor
-  while an approved clip uses her (`403`, audited) and done by a director (lock + 1, the old takes stale); a name
-  conflict linking instead; a resource used as a new resource; a figure pinned on a character and a set on a location;
-  detach; the audit events and the metrics. MCP gives the same answers (`mcp.test.ts`), a project-scoped token cannot
-  publish (`accounts.test.ts`), and a browser project's library files land in the data directory, its apply goes
-  through the tab and fails with `storage_offline` without it (`browser-storage.test.ts`).
+  version 1 (`digest.test.ts`); old documents without `library` and `deskUnit` parsing and the new fields
+  round-tripping (`documents.test.ts`); a pin changing no identity hash (`library.test.ts`, and with the server's own
+  hashes in `library-store.test.ts`).
+- **Unit (server):** the store (`library-store.test.ts`, memory and file backends): versions written once, a leftover
+  manifest skipped, two versions at once both kept (the item's lock in one server, `If-None-Match` across two), heads
+  read once with an invalid one skipped, the same bytes stored once, a file failing its hash check; the service on
+  in-memory storage: v1, v2, `unchanged`, a stale `If-Match` and a stale `basedOn` answered `412` `library_conflict`
+  with the latest, rename, current version, archive; `libraryAllows` through real principals (people, admins, scoped,
+  reviewer and editor tokens, an admin's token); a set pinned on a location and a figure on a character (no lock or
+  identity hash moved), status and uses following the pin, detach; an update whose approved clip goes stale planned
+  for an editor, refused to them (`403`, audited) and done by a director (lock + 1). Uploads
+  (`library-upload.test.ts`): the multipart parts in order, `meta` not first, bad `meta`, a unit of 32 MiB + 1 byte
+  (`413`, counted, its temporary file removed), a thumbnail over 64 KiB and `meta` over 32 KiB (`413`), 3D meta over
+  16 KiB (`422`), a unit with a wrong magic, container, codec, header, format, version or kind (`422`), thumbnails
+  that are not PNG or over 256 px (`422`), byte ranges.
+- **Integration** (`library.test.ts`, REST and MCP on one server): a desk set uploaded, listed, read, served with
+  `Range`, `304` and `HEAD`, a new version with a stale `If-Match` and with a stale `basedOn`, renamed, archived (gone
+  from the default list, still served), its uses; Mira saved from project A (`consent_required` until acknowledged),
+  used in project B with the same id and seed and her references copied, a v2 from A making B's status `behind`, B's
+  dry run and update (lock + 1); a name conflict linking instead; a resource used as a new resource; a figure pinned on
+  a character and a set on a location, detached; the audit events and the metrics. MCP's `library_*` tools give the
+  same answers as the routes. With projects in browsers: the library in the data directory, an apply through the
+  tab that holds the project, `storage_offline` without it.
 - **End to end** (`e2e/library.spec.ts`, desktop and mobile): Mira saved from episode 1 through the consent dialog, used
   in episode 2 (the same id and seed, checked through the API), a v2 published from episode 1, the update in episode 2
   with its plan and the approval warning; the Library page listing, filtering by kind and tag, archiving; the 3D row's

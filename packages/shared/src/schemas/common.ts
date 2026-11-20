@@ -143,6 +143,8 @@ export const ERROR_CODES = [
   'storage_offline',
   /** docs/design/director-desk.md#when-rideo-stores-it */
   'desk_state_conflict',
+  /** docs/design/library.md#errors: an `If-Match` or `basedOn` that is not the item's */
+  'library_conflict',
   'internal_error',
 ] as const;
 export const ErrorCodeSchema = z.enum(ERROR_CODES);

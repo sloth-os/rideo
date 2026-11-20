@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { IdSchema, IsoDateSchema, MediaRefSchema } from './common';
+import { LibraryOriginSchema } from './library-link';
 
 /** `lut`: a `.cube` 3D LUT (docs/design/editor.md#luts). */
 export const ResourceKindSchema = z.enum(['image', 'video', 'audio', 'lut']);
@@ -24,13 +25,16 @@ export const ResourceSchema = z.object({
   name: z.string().min(1).max(300),
   media: MediaRefSchema,
   createdAt: IsoDateSchema,
-  origin: z.enum(['upload', 'generated', 'inbox', 'url']),
+  /** `library`: used from the studio library (docs/design/library.md#use-in-project-update-and-link-apply). */
+  origin: z.enum(['upload', 'generated', 'inbox', 'url', 'library']),
   status: z.enum(['processing', 'ready', 'failed']).default('ready'),
   error: z.string().max(2000).optional(),
   notes: z.string().max(4000).optional(),
   generation: z
     .object({ prompt: z.string().max(4000), model: z.string().optional(), taskId: z.string().optional() })
     .optional(),
+  /** The library version it came from or was saved as (docs/design/library.md#copy-on-apply). */
+  library: LibraryOriginSchema.nullable().optional(),
 });
 export type Resource = z.infer<typeof ResourceSchema>;
 

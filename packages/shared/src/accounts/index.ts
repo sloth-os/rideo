@@ -92,3 +92,20 @@ export function routePermission(method: string, rest: string): Permission {
   if (rule) return rule.permission;
   return m === 'GET' || m === 'HEAD' || m === 'OPTIONS' ? 'project.read' : 'project.edit';
 }
+
+/** What a caller does with the studio library (docs/design/library.md#permissions). */
+export type LibraryAction = 'read' | 'publish' | 'manage';
+
+/**
+ * The studio library's permissions (docs/design/library.md#permissions): any caller reads; people, the studio and
+ * agent tokens of role editor or higher that are not limited to projects publish; the item's owner (the person, or
+ * that person's unscoped editor tokens) or an admin (never through a token) manages it.
+ */
+export function libraryAllows(subject: AccessSubject, action: LibraryAction, ownerId?: string): boolean {
+  if (action === 'read') return true;
+  const token = subject.token;
+  if (token && (token.projectIds !== null || RANK[token.role] < RANK.editor)) return false;
+  if (action === 'publish') return true;
+  if (subject.admin && !token) return true;
+  return ownerId !== undefined && ownerId === subject.userId;
+}

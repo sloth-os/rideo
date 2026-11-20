@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { CharacterLockSchema } from './character';
 import { IdSchema, IsoDateSchema, MediaRefSchema } from './common';
+import { DeskUnitPinSchema, LibraryOriginSchema } from './library-link';
 
 /** Locations, props and styles kept consistent like characters (docs/design/elements.md). */
 export const ElementKindSchema = z.enum(['location', 'prop', 'style']);
@@ -44,6 +45,13 @@ export const ElementSchema = z.object({
   references: z.array(ElementReferenceSchema).default([]),
   seed: z.number().int().nonnegative().max(0xffffffff),
   lock: CharacterLockSchema,
+  /** The library version it came from or was saved as (docs/design/library.md#copy-on-apply); not identity. */
+  library: LibraryOriginSchema.nullable().optional(),
+  /**
+   * A location's 3D set or a prop's 3D prop from the library (docs/design/library.md#pins-on-entities); a style has
+   * none. Not identity.
+   */
+  deskUnit: DeskUnitPinSchema.nullable().optional(),
 });
 export type Element = z.infer<typeof ElementSchema>;
 

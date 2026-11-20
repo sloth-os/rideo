@@ -85,6 +85,7 @@ import { InboxService } from './inbox';
 import { InsightsService } from './insights';
 import { InterchangeService } from './interchange';
 import { jobNotice, jobRecipient } from './job-notices';
+import { LibraryService } from './library';
 import { LocalizationService } from './localization';
 import { PerformanceService } from './performance';
 import { ProjectService } from './projects';
@@ -123,6 +124,8 @@ export interface Studio {
   interchange: InterchangeService;
   recipes: RecipeService;
   brand: BrandService;
+  /** The studio library (docs/design/library.md): one service behind REST and MCP. */
+  library: LibraryService;
   search: SearchService;
   performance: PerformanceService;
   /** The 3D-Editor's director's desk: briefs and desk states (docs/design/director-desk.md#surfaces). */
@@ -390,6 +393,7 @@ export function createStudio(
     inbox: new InboxService(deps),
     push,
     brand: new BrandService(deps),
+    library: new LibraryService(deps),
     editor: new EditorService(deps),
     feedback: new FeedbackService(deps, { clips: clipService, projects: projectService }),
     aiReviews: new AiReviewService(deps, {

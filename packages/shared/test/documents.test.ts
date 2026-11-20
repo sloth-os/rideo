@@ -163,3 +163,47 @@ describe('screenplay markdown', () => {
     expect(slugify('Élan — Vital!')).toBe('elan-vital');
   });
 });
+
+describe('library fields on documents (docs/design/library.md#on-the-entities)', () => {
+  it('reads documents written before the fields and keeps the new ones', () => {
+    const by = { kind: 'user' as const, id: 'usr_0000000000aaaa', name: 'Sam' };
+    const c = f.character();
+    expect(validateDoc(docPath.character(c.id), c)).not.toHaveProperty('library');
+    const linked = {
+      ...c,
+      library: {
+        itemId: 'lib_0000000000mira00',
+        version: 1,
+        digest: 'd'.repeat(64),
+        mode: 'saved',
+        at: '2026-11-20T00:00:00.000Z',
+        by,
+      },
+      deskUnit: null,
+    };
+    expect(validateDoc(docPath.character(c.id), linked)).toEqual(linked);
+    const e = f.element();
+    const pinned = {
+      ...e,
+      library: null,
+      deskUnit: {
+        kind: 'desk-set',
+        itemId: 'lib_0000000000harb00',
+        version: 3,
+        sha256: 'e'.repeat(64),
+        name: 'Harbor',
+        actorKind: null,
+        heightM: null,
+        pinnedAt: '2026-11-20T00:00:00.000Z',
+        pinnedBy: by,
+      },
+    };
+    expect(validateDoc(docPath.element(e.id), pinned)).toEqual(pinned);
+    expect(() =>
+      validateDoc(docPath.element(e.id), { ...pinned, deskUnit: { ...pinned.deskUnit, sha256: 'short' } }),
+    ).toThrow(DocValidationError);
+    expect(() =>
+      validateDoc(docPath.character(c.id), { ...linked, library: { ...linked.library, mode: 'borrowed' } }),
+    ).toThrow(DocValidationError);
+  });
+});

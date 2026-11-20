@@ -255,10 +255,12 @@ only those names as extras, and reading verdicts that name a character instead o
   items onto their kinds of target only, `replacePin: false`, resources always created, archived items refused);
   `libraryAllows` for people, admins, the studio token and agent tokens with and without projects; a digest with and
   without `library`, still version 1; documents without `library` and `deskUnit` still parsing, and a pin changing no
-  identity hash; the store (versions, `unchanged`, `412` `library_conflict` for a stale `If-Match` and a stale
-  `basedOn`, two versions at once, a leftover manifest skipped, the same bytes stored once) and its uploads (`meta`
-  first, a unit of 32 MiB + 1 byte refused with `413`, a unit whose prefix, header or kind is wrong, thumbnails that are
-  not PNG, over 64 KiB or over 256 px) ([the library](design/library.md#tests)).
+  identity hash; the store on memory and file backends (versions written once, a leftover manifest skipped, two
+  versions at once, heads read once, the same bytes stored once) and the service on in-memory storage (`unchanged`,
+  `412` `library_conflict` for a stale `If-Match` and a stale `basedOn`, archive, permissions through real principals,
+  pins and detach, an approved clip's update planned for an editor, refused to them and done by a director) and its
+  uploads (`meta` first, a unit of 32 MiB + 1 byte refused with `413`, a unit whose prefix, header or kind is wrong,
+  thumbnails that are not PNG, over 64 KiB or over 256 px) ([the library](design/library.md#tests)).
 - **library units** (`packages/shared/test/desk-protocol.test.ts`, `desk-brief.test.ts`, `desk-units.test.ts`,
   `packages/web/test/desk-bridge.test.ts`): the new fixtures (valid ones parse, invalid ones are refused) and the
   capability read leniently; the brief unchanged byte for byte without units and, with them, the set from the scene's
@@ -400,16 +402,15 @@ only those names as extras, and reading verdicts that name a character instead o
   (`-` as none, no header as unknown), a header that does not parse refused with `422` and counted, the same bytes
   again keeping the rows, a `DELETE` clearing them; the embedding origins' preflight allowing `x-desk-state-units`
   (`embedding.test.ts`).
-- **Library** (`library.test.ts`): a desk set uploaded, listed, read, served with `Range` and `304`, a new version
-  with a stale `If-Match` and with a stale `basedOn` (`412` `library_conflict`), renamed, archived (gone from the
-  default list, still served) and its uses; Mira saved from project A (`consent_required` until acknowledged), used in
-  project B with the same id and seed and her references copied, a v2 from A making B's status `behind`, B's dry run,
-  B's update refused for an editor while an approved clip uses her (`403`, audited) and done by a director (lock + 1,
-  the old takes stale); a name conflict linking instead; a resource used as a new resource; a figure pinned on a
+- **Library** (`library.test.ts`): a desk set uploaded, listed, read, served with `Range`, `304` and `HEAD`, a new
+  version with a stale `If-Match` and with a stale `basedOn` (`412` `library_conflict`), renamed, archived (gone from
+  the default list, still served) and its uses; Mira saved from project A (`consent_required` until acknowledged), used
+  in project B with the same id and seed and her references copied, a v2 from A making B's status `behind`, B's dry run
+  and update (lock + 1); a name conflict linking instead; a resource used as a new resource; a figure pinned on a
   character and a set on a location, unpinned again; the audit events and the metrics. MCP's `library_*` tools give the
-  same answers (`mcp.test.ts`); a token limited to some projects cannot publish (`accounts.test.ts`); a browser
-  project's apply goes through its tab and fails with `storage_offline` without it, the library staying in the data
-  directory (`browser-storage.test.ts`).
+  same answers on the same server; with projects in browsers, the library stays in the data directory, an apply goes
+  through the tab that holds the project and fails with `storage_offline` without it. The editor refused an approved
+  clip's update and the scoped token refused publishing are unit tests (`library-store.test.ts`).
 - **Take editing** (`take-editing.test.ts`): a relit take is a verified, watermarked derived take that keeps the
   sound and dialogue, signed as an AI edit with its parent as ingredient; a new-angle edit; an extension from the
   last frame (+N s, trimmed to what was asked); generative extend after a take (a signed, watermarked extension
