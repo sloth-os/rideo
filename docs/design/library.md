@@ -463,11 +463,13 @@ type LibraryUploadMeta = {
 };
 ```
 
-Each part is counted as it streams to a temporary file: a part over its limit is `413`, `meta` that is not first or
-does not validate is `422`. An upload the client abandons in the middle ends there: its temporary files are removed
-and nothing is published. A unit file whose prefix or header is not a desk unit's, whose `format` is not
-`3d-editor.desk-unit`, or whose header `kind` is not the item's (`set`, `prop`, `figure` for `desk-set`, `desk-prop`,
-`desk-figure`) is `422`. A thumbnail must carry the PNG signature and an `IHDR` of at most 256 × 256.
+An upload that is refused whatever its parts is answered before they are read, and nothing of it is written: a caller
+who may not publish gets `403` `forbidden`, a new version of an item that is not there `404`; the rest of the request is
+read and thrown away. Each part is counted as it streams to a temporary file: a part over its limit is `413`, `meta`
+that is not first or does not validate is `422`. An upload the client abandons in the middle ends there: its temporary
+files are removed and nothing is published. A unit file whose prefix or header is not a desk unit's, whose `format` is
+not `3d-editor.desk-unit`, or whose header `kind` is not the item's (`set`, `prop`, `figure` for `desk-set`,
+`desk-prop`, `desk-figure`) is `422`. A thumbnail must carry the PNG signature and an `IHDR` of at most 256 × 256.
 
 **The file route** serves any file a version names, with `Range` (`206`), `ETag` (its sha256), `304` on
 `If-None-Match`, and `Cache-Control: private, max-age=31536000, immutable`: a version's files never change, so the
@@ -688,8 +690,10 @@ existing `412` conflict, whose **Replace** would drop the server's change unless
   used in project B with the same id and seed and her references copied, a v2 from A making B's status `behind`, B's
   dry run and update (lock + 1); a name conflict linking instead; a resource used as a new resource; a figure pinned on
   a character and a set on a location, detached; the audit events and the metrics. MCP's `library_*` tools give the
-  same answers as the routes. With projects in browsers: the library in the data directory, an apply through the
-  tab that holds the project, `storage_offline` without it.
+  same answers as the routes. With projects in browsers: the library in the data directory, an apply through the tab
+  that holds the project, `storage_offline` without it. With accounts (`accounts.test.ts`): the library and its project
+  routes kept to their callers however the path is percent-encoded, and an upload from a reviewer token answered `403`
+  (an item that is not there `404`) before its parts are read, nothing written to the temporary folder.
 - **Unit (web)** (`packages/web/test/library-ui.test.tsx`): the rows' texts ("Library: Mira v2 · v3 available", "edited
   here", "3D set: none", a missing pin), the plan in words (lock versions, stale takes, the approval warning and who may
   confirm, local edits, files), refusals in words by code, tags checked, the moves of **Use v3 in all N projects**

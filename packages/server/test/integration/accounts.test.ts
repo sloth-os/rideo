@@ -1,3 +1,5 @@
+import { watch } from 'node:fs';
+import { join } from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { type RunningMockIdp, startMockIdp } from '@rideo/mock-gateway';
@@ -289,6 +291,68 @@ describe('accounts', () => {
     const status = await ana<any>('GET', `/projects/${pid}/library`);
     expect(status.links.map((l: any) => [l.entity.id, l.itemId])).toEqual([[keeper.id, saved.item.id]]);
     expect((await ana<any>('GET', `/library/items/${saved.item.id}`)).archived).toBe(false);
+  });
+
+  it('answers a library upload it will refuse before reading its parts', async () => {
+    const ben = as({ cookie: users.ben });
+    // a reviewer token reads the library and may not publish to it
+    const reader = await ben<any>('POST', '/tokens', { name: 'Library reader', role: 'reviewer' });
+    const [item] = (await as({ token: reader.secret })<any>('GET', '/library/items')).items;
+    expect(item).toBeDefined();
+    const meta = {
+      kind: 'desk-set',
+      name: 'Harbor',
+      unit: {
+        format: '3d-editor.desk-unit',
+        formatVersion: 1,
+        meta: {
+          dimensionsM: [40, 30, 12],
+          objects: 22,
+          triangles: 48_000,
+          actor: null,
+          credits: [],
+          deskVersion: '1.4.0',
+          digest: 'c'.repeat(64),
+        },
+      },
+    };
+    const upload = (payload: number, order: 'meta first' | 'payload first' = 'meta first') => {
+      const f = new FormData();
+      const file = new Blob([new Uint8Array(payload)], { type: 'application/octet-stream' });
+      if (order === 'payload first') f.append('payload', file, 'unit.bin');
+      f.append('meta', JSON.stringify(meta));
+      if (order === 'meta first') f.append('payload', file, 'unit.bin');
+      return f;
+    };
+    const post = async (path: string, auth: Auth, body: FormData) => {
+      const headers: Record<string, string> = auth.token
+        ? { authorization: `Bearer ${auth.token}` }
+        : { cookie: auth.cookie! };
+      const res = await fetch(`${stack.url}/api${path}`, { method: 'POST', headers, body });
+      await res.body?.cancel();
+      return res.status;
+    };
+    // what the uploads write to the temporary folder while they are answered
+    const tmp = join(stack.dataDir, 'tmp');
+    const written: string[] = [];
+    const watcher = watch(tmp, (_event, name) => name && written.push(name));
+    const reviewer = { token: reader.secret };
+    const seen = {
+      reviewer: {
+        outOfOrder: await post('/library/items', reviewer, upload(64, 'payload first')),
+        overLimit: await post('/library/items', reviewer, upload(33 * 1024 * 1024)),
+        version: await post(`/library/items/${item.id}/versions`, reviewer, upload(64, 'payload first')),
+      },
+      // a person who may publish: an item that is not there is 404 whatever the parts
+      ana: await post(
+        '/library/items/lib_0000000000000000/versions',
+        { cookie: users.ana },
+        upload(64, 'payload first'),
+      ),
+    };
+    watcher.close();
+    expect(seen).toEqual({ reviewer: { outOfOrder: 403, overLimit: 403, version: 403 }, ana: 404 });
+    expect(written).toEqual([]);
   });
 
   it('lets agents act for their owner within a token’s scope, over REST and MCP', async () => {

@@ -252,6 +252,14 @@ export class LibraryService extends Service {
     );
   }
 
+  /**
+   * Whether the caller may publish (`forbidden` otherwise), for the upload routes to ask before they read the parts;
+   * `create` and `addVersion` ask again.
+   */
+  async assertPublish(itemId?: string): Promise<void> {
+    await this.allow('publish', undefined, itemId ? { itemId } : {});
+  }
+
   /** Counts and logs a refused upload; returns the error to throw. */
   refused(kind: string, reason: string, err: AppError): AppError {
     this.deps.metrics.library.inc({ event: 'refused', kind });

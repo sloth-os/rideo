@@ -228,7 +228,10 @@ export function registerLibraryRoutes(app: FastifyInstance, studio: Studio): voi
   };
 
   app.get('/api/library/items', async (req) => studio.library.list(parse(LibraryListQuerySchema, req.query)));
+  // An upload that will be refused whatever its parts (who calls, which item) is answered before they are read: the
+  // rest of the request is read and thrown away, nothing is written
   app.post('/api/library/items', async (req, reply) => {
+    await studio.library.assertPublish();
     const upload = await receive(req);
     try {
       const out = await studio.library.create(actor(), upload);
@@ -251,6 +254,8 @@ export function registerLibraryRoutes(app: FastifyInstance, studio: Studio): voi
   });
   app.post('/api/library/items/:itemId/versions', async (req, reply) => {
     const id = item(req);
+    await studio.library.assertPublish(id);
+    await studio.library.get(id);
     const upload = await receive(req);
     try {
       const out = await conflicts(reply, () =>
