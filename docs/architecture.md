@@ -41,7 +41,7 @@ flowchart LR
     REST[REST /api]
     LIVE[Live hub /api/live WS]
     MCP[MCP /mcp]
-    SVC[Application services<br/>projects · story · clips · timeline · analysis · export · history · workflow]
+    SVC[Application services<br/>projects · story · clips · timeline · analysis · export · history · workflow · library]
     JOBS[Job queue + handlers<br/>server lanes · client lane]
     CONS[Consistency engine]
     WM[Watermark service]
@@ -137,7 +137,7 @@ uploads the outputs and completes it. See [editor](design/editor.md#editor-jobs)
 .
 ├── packages
 │   ├── shared/src
-│   │   ├── schemas/        zod: media, project, screenplay, character, clip, timeline, resource, analysis, export, job, editor, vcs, events, live
+│   │   ├── schemas/        zod: media, project, screenplay, character, clip, timeline, resource, analysis, export, job, editor, vcs, events, live, library
 │   │   ├── timeline/       ops reducer, queries, story assembly, suggestion application
 │   │   ├── workflow/       declarative stage tables + evaluator
 │   │   ├── prompt/         identity + shot prompt compiler

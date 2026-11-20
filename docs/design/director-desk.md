@@ -39,7 +39,7 @@ reaches a prompt but the shot's motion reference and its camera.
 |---|---|---|
 | Owns | the brief (made from its documents), the desk state (stored as it is given, never read), the shots' motion references and cameras | the staging, the rendering and encoding of the clips, its working copy of the scene |
 | Runs | the bridge in the studio tab (`postMessage` to the iframe), the desk-state and brief routes and one MCP tool on the server | in the iframe: in the browser, with no server of its own needed |
-| Never | sends the desk a URL, a token or media; reads the state's bytes | calls rideo's server, sends anything rideo did not give it |
+| Never | sends the desk a URL, a token or media (the units of the [library](#library-units) go as bytes in `open`); reads the state's bytes | calls rideo's server, sends anything rideo did not give it |
 
 The desk is optional. Without [`RIDEO_DESK_URL`](#the-setting) there is no desk, and nothing else changes. It is a
 person's tool in the browser; agents work from the same brief with the 3D-Editor's own MCP tools
@@ -116,16 +116,21 @@ the person edits, so opening cannot replace rideo's copy.
 | `save` | when the person closes the panel: the desk answers `state` with the same `id` (rideo waits at most 5 seconds, then stores the newest state the desk sent); also when the person replaces a [kept](#when-rideo-stores-it) state and the desk sent none yet: rideo waits for the answer (or an `error`) however long the desk takes, and the first state that comes after Replace is stored at once |
 | `export` | never on its own: the person presses **Send** in the desk |
 | `result-ack` | after each `result`: what was attached and what was refused, shot by shot |
+| `unit-ack` | after each `unit-publish`: whether the unit was saved to the library, its item and version, and whether it was linked ([publishing and linking](#publishing-and-linking)) |
+
+With library units on, `open` also carries `options.units` and the pinned units (`units`), and `state` carries what
+the scene uses (`units`): [library units](#library-units).
 
 | The desk sends | Rideo |
 |---|---|
-| `ready` | sends `open`; when `capabilities.export.available` is false, says why under the panel's title ("This browser cannot render the reference clips: …"): staging still works |
+| `ready` | sends `open`, with library units when `capabilities.units` allows them ([negotiation](#negotiation)); when `capabilities.export.available` is false, says why under the panel's title ("This browser cannot render the reference clips: …"): staging still works |
 | `opened` | shows the desk ("Opened from the stored desk", "… from this browser's copy", "… from the brief") and keeps the shots the brief retimed (`changes.retimed`) for the refusals of [a result](#the-result) whose shot carries no `brief_length` issue; the desk itself lists the brief's changes and offers to update its shots (**Update shots**) |
 | `state` | keeps the newest (a state of another scene is ignored), and stores it ([when](#when-rideo-stores-it)) |
 | `progress` | shows the export's phase and count under the title |
 | `result` | applies it ([the result](#the-result)) and answers `result-ack` |
 | `error` | shows its message under the title; the errors meant for the person (`state_unreadable`, `export_failed`, `export_unavailable`, `out_of_memory`, `invalid_scene`) as a toast too, while the desk's answers to rideo's own requests (`not_open` for a `save` that came while the desk was still staging, `bad_message`, `unsupported_version`, `busy`, `cancelled`) go to the status line and the browser's console only. `state_unreadable` (the desk could not read the state rideo handed over) keeps the stored state: the panel says so with the desk's own message and stores nothing on its own ([a stored state that is kept](#the-desk)), in one toast however often the desk says it again (a desk page that loads again is handed the state again); `export_failed` after a `result` names the shots the desk left out of it |
 | `close` | stores the last state (unless the stored one [is kept](#when-rideo-stores-it)) and closes the panel |
+| `unit-publish` | saves the unit to the library, links it by the contract's rule and answers `unit-ack` ([publishing and linking](#publishing-and-linking)) |
 
 Rideo speaks version 1. A desk that offers no version rideo speaks is not connected: "This desk speaks protocol
 versions …; this studio speaks 1". Every message is validated with zod in both directions (`packages/shared`, the
@@ -168,6 +173,7 @@ brief.
 | `shots[].framing`, `movement` | `camera.framing`, `camera.movement` | the same words |
 | `shots[].move`, `lensMm` | `camera.move`, `camera.lensMm` | null when unset; the move library is the same 20 moves ([directing](directing.md#move-library)) |
 | `shots[].layout` | `shot.layout` | `characterId` → `castId`, entries whose character is in the shot's own `castIds` ([following the shot plan](#following-the-shot-plan)): a character taken out of a shot after planning (`shot_update` changes `characterIds`, never the layout) is not staged in it from a stale entry |
+| `set.unit`, `cast[].unit`, `elements[].unit` | the entities' 3D pins | only in an open with library units, and then a figure pin also gives `cast[].kind` and `heightM` ([pins in the brief](#pins-in-the-brief)) |
 
 Nothing else goes: no reference images, voices, lines, takes, frames, URLs or tokens. Rideo's ids (`clp_…`, `sht_…`,
 `chr_…`, `ele_…`) fit the protocol's id pattern as they are.
@@ -416,6 +422,194 @@ state is stored in every storage mode (the embedded WebDAV, an external server, 
 A state is stored for any clip, approved or not (it is the desk's working copy, not the film), and a clip planned
 again keeps it: the desk lists the shots the new plan added and removed when it opens.
 
+## Library units
+
+The episodes of a season share their 3D sets, props and figures through the studio [library](library.md): the desk
+saves a set, a prop or an actor's figure as a **unit** (a file of its own, `3d-editor.desk-unit` version 1), rideo
+keeps it in the library and **pins** a version of it on the entity that uses it (a location's set, a prop, a
+character's figure), and every scene that stages that entity gets the unit when its desk opens. It is an additive,
+negotiated extension of protocol version 1, owned like the rest by the 3D-Editor
+([library units](https://github.com/sloth-os/3D-Editor/blob/main/docs/embedding.md#library-units)). Rideo mirrors its
+schemas in `packages/shared/src/schemas/desk.ts`, inside the closed unions (so `post()` still validates every message
+rideo sends), with message ids of `DeskRequestIdSchema`, and keeps a verbatim copy of its fixtures in
+`packages/shared/test/fixtures/desk-protocol/`: valid `ready-units.json`, `open-units.json`,
+`open-units-figure-hints.json`, `unit-publish-set.json`, `unit-publish-figure-new-version.json`,
+`unit-ack-linked.json`, `unit-ack-unlinked.json`, `unit-ack-refused.json` and `state-units.json`; invalid
+`open-units-bad-pin.json`, `unit-publish-two-from.json`, `unit-publish-bad-sha.json`,
+`unit-publish-thumbnail-too-large.json`, `unit-ack-ok-without-ref.json` and `state-units-bad-staged.json`.
+
+A unit version is `{ref, version, sha256}` everywhere: `ref` is the library item's id (`lib_…`), `version` its
+integer version (1, 2, …) and `sha256` the hash of the unit file's bytes
+([the three hashes](library.md#the-three-hashes)).
+
+### Negotiation
+
+| Field | What rideo does |
+|---|---|
+| `ready.capabilities.units` `{versions, kinds, maxBytes, publish}` | reads it leniently: kinds it does not know are dropped; a capability that is malformed, or lists no version 1 or no kind left, reads as "no units", and `ready` is never refused for it |
+| `open.options.units` `{version: 1, publish}` | sent only to a desk that announced units; `publish` is whether the person may publish to the library (`libraryAllows(…, 'publish')`): without it the desk offers no Save to library |
+
+Without both, nothing of this section is exchanged:
+
+| Desk | Studio | What happens |
+|---|---|---|
+| from before units (no capability) | this one | no `options.units`, no pins in the brief, no `open.units`: the messages of before, byte for byte |
+| with units | from before units (no `options.units`) | the desk sends no `unit-publish` and no `state.units`, and shows no Library tab |
+| with units | this one | everything below |
+
+### Pins in the brief
+
+`deskBrief(docs, clipId, {units: {kinds}})` adds the pins when the open has units, for the kinds the desk announced
+(`set`, `prop`, `figure`); without `units` the brief is what it was, byte for byte. A pin is `{ref, version, sha256}`,
+taken from the entity's `deskUnit` ([pins](library.md#pins-on-entities)):
+
+| Brief | From | Rule |
+|---|---|---|
+| `set.unit` | the `deskUnit` of the scene's location (`scene.locationId`), a `desk-set` | the scene's place is its set: a location row of `elements[]` never carries a unit (a desk ignores one, with a warning) |
+| `elements[].unit` | a prop element's `deskUnit`, a `desk-prop` | props only |
+| `cast[].unit` | the character's `deskUnit`, a `desk-figure` | |
+| `cast[].kind`, `cast[].heightM` | that figure pin's `actorKind` and `heightM` | members with a figure pin only (the others as in [the brief](#the-brief)); `heightM` only within 0.1–4 m, else null. A stand-in staged before the unit arrives then already has the figure's rig, and the unit changes its look, not its build |
+
+The brief agents read (`desk-brief`, `desk_brief`) carries no pins: the 3D-Editor's `desk_stage_brief` has no way to
+get the units' bytes in P0.
+
+### Unit bytes in `open`
+
+The desk never asks for a unit: rideo knows which units a brief names and pushes them in `open.units` (transferred,
+like the state), once it has loaded the stored state and before it posts `open`:
+
+- **Which**: every pin of the brief, in slot order (the set, the cast, the elements), once per `ref@version`, except a
+  pin the stored state already uses: a row of `clip.deskState.units` with the same slot, `ref` and `version`, staged
+  `unit` (the desk needs no unit for a slot whose record already has that pin). When the stored state's units are not
+  known, every pin goes.
+- **From where**: `GET /api/library/items/:itemId/versions/:version/files/:sha256`, at most 2 at a time. The route is
+  immutable, so the browser's HTTP cache serves a unit the next time.
+- **Checked**: the bytes' sha256 (WebCrypto) must be the pin's; a file that does not match is left out.
+- **Bounded**: at most 48 MiB in all: the first unit that would pass it, and every one after it, is left out.
+- **Never held up**: a fetch that fails (offline, an answer other than `200`, an item this studio does not have) or
+  receives nothing for 30 seconds is left out. Meanwhile the status line says "Getting the scene's library units (2 of
+  3)…", and **Close** works throughout.
+
+A unit left out is no error: the desk stages its slot from the brief's words and records the pin `pending`
+(`missing`), and the next open sends it again ([when a unit does not arrive](#when-a-unit-does-not-arrive)). The desk
+keeps the units it got only while the scene is open, for its **Update shots**.
+
+### Publishing and linking
+
+The desk's **Save to library…** sends `unit-publish`, only when `options.units.publish` was true: its `kind` (`set`,
+`prop`, `figure`), `name`, `description`, `newVersionOf` (`{ref, version}`, the version it was made from; none for a
+new item), `from` (the brief slot it came from: `{set: true}`, `{castId}` or `{elementId}`), the unit file and its
+`sha256` (transferred), a PNG `thumbnail` (at most 64 KiB, or null) and `meta`. The bridge takes one publish at a
+time, in the order they come:
+
+1. **Checks** the bytes' sha256 against `sha256`: a mismatch is refused (`invalid`) and nothing is uploaded.
+2. **Publishes** through the library ([uploads](library.md#surfaces)): a new item (`POST /api/library/items`) or, with
+   `newVersionOf`, a new version of that item with `basedOn` = `newVersionOf.version`
+   (`POST /api/library/items/:itemId/versions`). The kind `set`, `prop` or `figure` is the item kind `desk-set`,
+   `desk-prop` or `desk-figure`, and the digest the server computed must be the message's `sha256` again. Bytes equal
+   to the item's current version publish nothing new and answer that version.
+3. **Links**, by the contract's rule: only when (a) the open is not read-only, (b) the person may edit the project,
+   and (c) the entity `from` names has no pin, or pins the same item (a new version moves its pin; a publish never
+   re-points an entity that uses another item). The entity is the scene's location for `{set: true}`, the character for
+   `{castId}`, the prop element for `{elementId}`. The link is an apply in mode `pin` with `replacePin: false`
+   (`POST /api/projects/:id/library/apply`), one commit; its `409` `{reason: "pinned"}` (someone pinned another item
+   meanwhile) is (c) again.
+4. **Answers** `unit-ack` with the message's `id`: `{ok: true, ref, version, linked, message?}`, where `linked: false`
+   carries the reason: "the scene is read-only", "you may not edit this project", "Harbor uses another library set
+   (Old harbor)", "the scene has no place". The desk adopts the published objects as an instance of that version, and
+   writes the pin into its record, only when `linked` is true.
+
+A refusal is `{ok: false, code, message}`, by what the library answered:
+
+| The library answered | `code` |
+|---|---|
+| `412` `library_conflict`: another version came after `newVersionOf` (the message names the latest) | `conflict` |
+| `413` | `too_large` |
+| `422` (`validation_error`, `consent_required`), or a sha256 that does not match | `invalid` |
+| `403` | `refused` |
+| `503`, or the studio is offline | `unavailable` |
+| anything else | `failed` |
+
+A `unit-publish` on an open without units (no desk should send one) is answered `{ok: false, code: "refused"}` at
+once, so the desk never waits out its timeout of 120 s plus 10 s per MiB of the unit. The panel says what happened, in
+its status line and a toast: "Saved Harbor v3 to the library; linked to the scene's place (Harbor)", "Saved Harbor v1
+to the library; not linked: Harbor uses another library set (Old harbor)", "Not saved to the library: …". An
+approved, read-only clip may publish; it is never linked.
+
+### What a stored state uses
+
+After an open with units, every `state` carries `units`: one row per brief slot whose record has a pin, sorted by slot
+(`set`, `cast:<characterId>`, `el:<elementId>`), at most 128, each `{slot, ref, version, sha256, staged: 'unit' |
+'pending' | 'refused', local, why?}`. Rideo reads it leniently: rows that do not validate, or more than 128, read as
+"unknown", and the state is stored all the same.
+
+The bridge keeps each state's rows with its bytes and sends them with its write, as a header of the existing streamed
+`PUT …/desk-state` (rideo still never reads the state's bytes):
+
+```
+X-Desk-State-Units: set=lib_0j8kc4n2q1h7wz3x@3:unit, cast:chr_0j8kc3v9m2a7mr5t@2:unit:local, el:ele_0j8kc3x0b5k9dn2p@1:pending:missing
+```
+
+- A row is `<slot>=<ref>@<version>:<staged>[:local][:<why>]`, rows are joined by `, `, and `-` is none. No header
+  means unknown; rows that would not fit (more than 128, over 8 KiB) are left out of the write, which goes on with the
+  units unknown.
+- The server keeps them on the clip, beside the state they describe; `DELETE …/desk-state` clears them with it:
+
+  ```ts
+  clip.deskState: {
+    format: string; version: number; media: MediaRef; updatedAt: string;
+    units?: { slot: string; ref: string; version: number; staged: 'unit' | 'pending' | 'refused';
+              local: boolean; why?: string }[] | null;   // absent or null: not known
+  } | null
+  ```
+
+- A header that does not parse is refused with `422` (counted `refused`, logged with the reason `units`). The same
+  bytes again change nothing, the stored rows included. The embedding origins' CORS allows `x-desk-state-units`.
+
+### Drift: the Storyboard badge
+
+`deskUnitDrift(docs, clipId)` (shared, pure) compares the pins of the clip's brief with what its stored state uses,
+slot by slot:
+
+| Status | When | Badge |
+|---|---|---|
+| `current` | the state's row has the pin's item and version, staged `unit` | – |
+| `update` | the row names another version or another item, or the slot has no row (the pin came after the state) | "3D: v3 available" |
+| `pending` | the row is the pin's, staged `pending` | "3D: waiting" |
+| `refused` | the row is the pin's, staged `refused` | "3D: can't use Harbor v3" |
+| `local` | the person made that slot local in the desk | – |
+| `unknown` | the stored state's units are not known (a state from before units, or written without the header) | – |
+| `approved` | the clip is approved and its state does not use the pinned version | "approved: keeps v2" |
+
+A clip without a stored state has no rows: its first open stages with the pins. The badge names the first slot that
+needs attention, in the order can't use, waiting, available, approved, and its tooltip lists every pinned slot with
+its status and reason. Opening the desk on a scene with `update` rows brings the new pins and their units, and the
+desk's banner offers **Update shots**.
+
+### When a unit does not arrive
+
+| The desk's reason | Its record | `state.units` | Drift | What to do |
+|---|---|---|---|---|
+| placed | `unit` | `unit` | `current` | – |
+| `missing`: rideo did not send it (offline, the fetch failed, past the 48 MiB of an open, an item this studio does not have) | `pending` | `pending:missing` | `pending` | open the scene again once online; past 48 MiB, use fewer or smaller units |
+| `mismatch`: the bytes are not the pin's | `pending` | `pending:mismatch` | `pending` | open the scene again |
+| `unavailable`: the desk could not use it this time | `pending` | `pending:unavailable` | `pending` | open the scene again |
+| `unreadable`, `too_new` (a newer desk's), `too_large` (over 32 MiB) | `refused` | `refused:<why>` | `refused` | pin another version |
+| `wrong_kind` (not the slot's kind), `figure_kind` (the desk has no actor of that kind), `figure_rig` (another rig), `over_budget` (the scene's units pass what the desk takes), `set_ground` (the set's ground is not at height 0) | `refused` | `refused:<why>` | `refused` | pin another unit, or save one that fits from the desk |
+| made local in the desk | `unit` | `unit:local` | `local` | – |
+| a desk from before units, or no header | – | – | `unknown` | – |
+
+`pending` pins are tried again at every open, `refused` ones only when the pin changes, so a unit that can never be
+placed does not bring the banner back at every open.
+
+### Old desks and old studios
+
+- A desk from before units never sees a unit field ([negotiation](#negotiation)).
+- A state whose document holds unit instances is written as container version 2. A desk from before units (one cached
+  offline, say) answers `state_unreadable` for it, and rideo keeps the stored state
+  ([a stored state that is kept](#the-desk)).
+- A studio from before units never sends `options.units`, and a desk with units works for it as before.
+
 ## Agents
 
 `GET /api/projects/:id/clips/:clipId/desk-brief` and the MCP tool `desk_brief` (`projectId`, `clipId`, read-only)
@@ -423,24 +617,31 @@ return the clip's brief. An agent stages it with the 3D-Editor's MCP tool `desk_
 and attaches each clip with rideo's own tools: `resource_add` (the clip as an https or `data:` URI; a video added that
 way is probed by an open studio tab, `media.process`) and `shot_update` with `motionReference` and `camera` (the
 camera fields it names, `{lensMm, move}`: the shot's framing and movement stay as planned). The desk state has no MCP
-tool: it is the browser desk's opaque bytes, up to 64 MiB, and agents work from the brief.
+tool: it is the browser desk's opaque bytes, up to 64 MiB, and agents work from the brief. Agents pin library units on
+entities and move those pins with the library's tools (`library_apply`, `library_detach`, `library_status`,
+[the library](library.md#surfaces)); the brief they read carries no pins ([pins in the brief](#pins-in-the-brief)).
 
 ## Surfaces
 
 | REST | MCP |
 |---|---|
 | `GET /api/projects/:id/clips/:clipId/desk-brief` → the `SceneBrief` | `desk_brief` |
-| `GET` / `PUT` / `DELETE /api/projects/:id/clips/:clipId/desk-state` | – (opaque bytes, [above](#agents)) |
+| `GET` / `PUT` / `DELETE /api/projects/:id/clips/:clipId/desk-state` (`PUT` with `X-Desk-State-Units`, [what a stored state uses](#what-a-stored-state-uses)) | – (opaque bytes, [above](#agents)) |
+| `GET /api/library/items/:itemId/versions/:version/files/:sha256`: the units of `open` | – (bytes) |
+| `POST /api/library/items`, `POST /api/library/items/:itemId/versions`: a `unit-publish` | – (bytes) |
+| `POST /api/projects/:id/library/apply` (mode `pin`): the link after a publish, the 3D row | `library_apply` |
+| `POST /api/projects/:id/library/detach` (`deskUnit`): unpin | `library_detach` |
 
-REST and MCP call the same `DeskService` (`packages/server/src/domain/desk.ts`). The desk's URL reaches browsers in
-`GET /api/config` (`features.desk`).
+REST and MCP call the same `DeskService` (`packages/server/src/domain/desk.ts`); the library's routes and tools call
+`LibraryService` ([the library](library.md#surfaces)). The desk's URL reaches browsers in `GET /api/config`
+(`features.desk`).
 
 | Error | When |
 |---|---|
 | `not_found` (404) | the project, the clip (any id, `constructor` and `__proto__` too: clips are looked up as the project's own), or a desk state to read when the clip names none |
 | `storage_error` (503) | the clip names a desk state whose file cannot be read: retry later, or `DELETE` the state when its file is gone for good |
 | `desk_state_conflict` (412) | a `PUT` whose `If-Match` or `If-None-Match` does not name the stored state (another session stored one, restored an older one or cleared it): the answer's `ETag` is the stored state's, and its `detail` says so without calling either state newer ("the stored desk state of scene <n> is not the one this write replaces: another session changed it (the stored state's ETag is "<sha256>")", or "scene <n> has no stored desk state any more: another session cleared it") |
-| `validation_error` (422) | a brief of a clip without shots ("plan the shots of clip <n> first"); a state without its format and version headers, of another format or version than the desk's, or not `application/octet-stream` (any other body type, malformed or empty JSON too: it is never parsed) |
+| `validation_error` (422) | a brief of a clip without shots ("plan the shots of clip <n> first"); a state without its format and version headers, of another format or version than the desk's, or not `application/octet-stream` (any other body type, malformed or empty JSON too: it is never parsed); an `X-Desk-State-Units` header that does not parse, or names more than 128 rows or 8 KiB |
 | `validation_error` (413) | an `application/octet-stream` state over 64 MiB: by its `Content-Length`, before the body is read, or counted as it arrives |
 
 The desk's own errors (`unsupported_version`, `invalid_scene`, `busy`, `export_unavailable`, `export_failed`,
@@ -482,9 +683,14 @@ of its own); `desk state refused` with the project, the clip and the reason (`co
 `size`); `desk state conflict` with the project, the clip, the `If-Match` and `If-None-Match` sent and the stored
 state's sha256; and `desk state unreadable` (warn) with the project, the clip, the file's path and the error, when the
 clip names a state whose file cannot be read (the `503`).
-The studio logs the messages it ignored or refused, the desk's errors, the states it could not store or load, and a
-`412` that named a state of its own (taken as the stored one, or newer from a later panel), to the browser's console
-(`[desk] …`, at the debug level).
+With library units, `desk state saved` also carries `units` (how many rows the state's `X-Desk-State-Units` named, or
+`unknown`), and `desk state refused` has the reason `units` for a header that does not parse (counted `refused`). A
+publish is counted and logged by the library (`rideo_library_total{event}` `created`, `version` or `unchanged`, then
+`pinned` for its link; `library item created`, `library version added`, `library applied`:
+[the library](library.md#observability)).
+The studio logs the messages it ignored or refused, the desk's errors, the states it could not store or load, a
+`412` that named a state of its own (taken as the stored one, or newer from a later panel), each unit it left out of
+an `open` and why, and each publish's answer, to the browser's console (`[desk] …`, at the debug level).
 
 ## Tests
 
@@ -616,4 +822,29 @@ The studio logs the messages it ignored or refused, the desk's errors, the state
   state staged before the brief retimed the first shot: sent longer, that shot refused with "press Update shots in the
   desk", and after the desk's Update shots with "set its length back in the desk" though `opened` listed it; a desk page
   served without its headers answered by the timeout message after 15 seconds, **Close** still closing; an approved clip
-  opened read-only and its result refused; nothing scrolls sideways.
+  opened read-only and its result refused; nothing scrolls sideways. With the scene's location pinned to a library set
+  through the API, the v1 fake desk still gets no unit field: no `options.units`, no pin in the brief, no `open.units`.
+- **Library units, unit (shared and web):** the protocol's schemas against the new fixtures (`desk-protocol.test.ts`:
+  every valid one parses, every invalid one is refused) and the capability read leniently (only version 2, garbage,
+  only unknown kinds: no units, and `ready` still parses); the brief (`desk-brief.test.ts`) without units the same byte
+  for byte even when entities are pinned, and with units `set.unit` from the scene's location only, prop pins, figure
+  pins with the figure's kind and height (null outside 0.1–4 m), kinds the desk did not announce left out, no unit on
+  a location row; `X-Desk-State-Units` formatted and parsed (`-`, no header, `local`, a reason; 129 rows, over 8 KiB and
+  bad syntax refused) and `deskUnitDrift` for every status and the badge's order (`desk-units.test.ts`); the bridge
+  (`desk-bridge.test.ts`): a desk without the capability gets no `options.units`, no pins and no `open.units`; a desk
+  with units gets `options.units` with `publish`, then `open.units` in slot order, fetched 2 at a time, once per
+  version, without the pins the stored state uses, a file that does not match or does not arrive left out, 48 MiB
+  never passed, the buffers transferred; `unit-publish` saving a new item, a new version with `basedOn` and the same
+  bytes again, linked by the rule's cases (read-only, no permission to edit, another pin, a `409` on the link: each
+  `linked: false` with its reason), every refusal mapped to its code, publishes one at a time, a publish on an open
+  without units refused at once; each state's units sent with its write, and none when they do not fit.
+- **Library units, integration** (`desk.test.ts`): `X-Desk-State-Units` kept on the clip with its state (`-` as none,
+  no header as unknown), a header that does not parse refused with `422` and counted, the same bytes again keeping the
+  rows, `DELETE` clearing them; the embedding origins' preflight allows `x-desk-state-units` (`embedding.test.ts`).
+- **Library units, end to end** (`e2e/desk-units.spec.ts`, desktop and mobile, on the stack's units studio, whose
+  `RIDEO_DESK_URL` is the fake desk's `desk.html?units=1`): the fake desk in units mode announces the capability,
+  shows its brief's pins and the units it got (version and bytes checked), sends `state.units` and has **Publish set**,
+  **Publish new version** and **Publish prop**. A scene at a pinned place opens with the set's pin and bytes; **Publish
+  set** on an unpinned place creates an item, links the place and is acked `linked`; **Publish new version** makes v2
+  and moves the pin; the state's units are recorded on the clip, and another scene at that place shows "3D: v2
+  available" until its desk opens again; no sideways scroll.

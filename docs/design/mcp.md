@@ -41,7 +41,7 @@ Tools return `structuredContent` (JSON) plus the same JSON as a text block for c
 structured output. Failures return `isError: true` with `{code, message}` using the stable error codes of
 the REST API (`validation_error`, `not_found`, `character_not_locked`, `character_locked`, `voice_not_locked`,
 `voice_locked`,
-`consistency_gate`, `gate_unmet`, `conflict`, `gateway_error`, …).
+`consistency_gate`, `gate_unmet`, `conflict`, `library_conflict`, `gateway_error`, …).
 
 Long-running tools (`*_generate`, `batch_generate`, `export_render`, `footage_analyze`) enqueue a job and
 return it immediately. Agents poll with `job_get` or block with `job_wait` (up to 120 s per call).
@@ -191,6 +191,26 @@ or keep going and `job_wait` until a tab picks the job up.
 
 `export_render` takes `bug?` (the brand bug); lower thirds and bumpers are timeline ops (`add_text` with a template's
 style, `add_bumper`).
+
+### Library
+
+[The studio library](library.md): characters, elements, resources and 3D units shared by the studio's projects. The
+tools without a `projectId` check the library's own permissions (read: any authenticated caller; publish: people, the
+studio token, unscoped editor tokens; manage: the owner or an admin); the project tools take the project's
+(`library_status` reads, the others edit; an apply whose plan lists approved clips needs a director).
+
+| Tool | Arguments |
+|---|---|
+| `library_list` | `kinds?` (`character`, `element`, `resource`, `desk-set`, `desk-prop`, `desk-figure`), `kind?`, `tag?`, `q?`, `archived?`, `sort?`, `limit?`, `cursor?` → `{items, next}` (read-only) |
+| `library_get` | `itemId`, `version?` → the item with its history, and that version's manifest when `version` is given (read-only) |
+| `library_update` | `itemId`, `name?`, `description?`, `tags?`, `current?`, `archived?`, `expectedRev?` → the item (its owner or an admin; `library_conflict` for a stale `expectedRev`) |
+| `library_uses` | `itemId` → `{incomplete, projects}`: where it is used, in the projects the caller may read (read-only) |
+| `library_save` | `projectId`, `entity` (`{kind: "character" \| "element" \| "resource", id}`), `itemId?`, `newItem?`, `name?`, `description?`, `tags?`, `note?`, `basedOn?`, `acknowledgeConsent?` → `{item, version, unchanged, commit}` |
+| `library_apply` | `projectId`, `itemId`, `version?`, `target?`, `relock?`, `replacePin?`, `acknowledgeConsent?`, `dryRun?` → `{plan, applied, entity, commit}`: Use in project, update, link, or pin a 3D unit on its target |
+| `library_detach` | `projectId`, `target`, `what` (`library`, `deskUnit`) → `{entity, commit}` |
+| `library_status` | `projectId` → the project's links and 3D pins, each `current`, `behind`, `ahead` or `missing` (read-only) |
+
+No tool uploads bytes: 3D units come from the desk and resources from projects (or a REST upload).
 
 ### Agents: recipes and many things at once
 

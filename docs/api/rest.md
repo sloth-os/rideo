@@ -42,6 +42,7 @@ Errors are RFC 9457 problem details (`application/problem+json`) with a stable `
 | `llm_invalid_output` | 502 | the LLM output failed validation after repair |
 | `storage_error` | 503 | the WebDAV backend failed |
 | `desk_state_conflict` | 412 | a desk state `PUT` whose `If-Match` or `If-None-Match` does not name the stored state ([the desk state](../design/director-desk.md#when-rideo-stores-it)) |
+| `library_conflict` | 412 | a library item's `If-Match` that is not its revision, or a new version whose `basedOn` is not the item's latest (`errors: [{latest}]`) ([the library](../design/library.md#versions-and-revisions)) |
 | `lease_lost` | 409 | an editor job is no longer leased to this session (expired, cancelled or reassigned) |
 | `consent_required` | 422 | an uploaded reference or voice sample of a real person lacks its consent record ([provenance](../design/provenance.md#consent-records)) |
 | `unauthorized` | 401 | not signed in, or a missing, wrong, revoked or expired token |
@@ -128,6 +129,28 @@ See [browser storage](../design/browser-storage.md#the-protocol).
 | PUT | `/api/projects/:id/brand` | `{kitId \| null}` | `{brand}`: the kit applied (its files copied into the project's media), or removed (`project.manage`) |
 
 Exports take `bug` (`POST /exports`, default: the brand's `bug.enabled`) to draw the brand bug.
+
+## Library
+
+[The studio library](../design/library.md): characters, elements, resources and 3D units shared by the studio's
+projects, in versions. Reading needs any authenticated caller; publishing (creating items, adding versions, saving
+from a project) a signed-in person, the studio token or an unscoped editor token; changing an item its owner or an
+admin.
+
+| Method | Path | Body / query | Result |
+|---|---|---|---|
+| GET | `/api/library/items` | `kinds?` (comma-separated: `character`, `element`, `resource`, `desk-set`, `desk-prop`, `desk-figure`), `kind?`, `tag?`, `q?`, `archived?` (`true`/`false`, default `false`), `sort?` (`updated`, `name`), `limit?` (1–200, default 100), `cursor?` | `{items, next}`: summaries (no history; `versions`, and for 3D units the current version's `unit: {sha256, bytes, format, formatVersion, actorKind, heightM, dimensionsM?}`) |
+| POST | `/api/library/items` | multipart: `meta` (JSON, first: `{kind, name, description?, tags?, note?, unit?: {format, formatVersion, meta}, resource?: {kind, role, name, notes?, probe?}}`), `payload`, `thumbnail?` (PNG, ≤ 64 KiB, ≤ 256 px) | `201 {item, version}` (3D units and resources; `413` for a part over its limit, a unit over 32 MiB; `422` for parts out of order, bad `meta`, a unit file that is not one or not of the item's kind) |
+| GET | `/api/library/items/:itemId` | – | the item with its history, `ETag: "r<rev>"` |
+| PATCH | `/api/library/items/:itemId` | `{name?, description?, tags?, current?, archived?}`, `If-Match?` | the item (its owner or an admin); `412 library_conflict` |
+| POST | `/api/library/items/:itemId/versions` | multipart as above, `meta.basedOn?`; `If-Match?` | `201 {item, version}`, or `200 {item, version, unchanged: true}` for the current version's bytes; `412 library_conflict` (a stale `If-Match`, or `basedOn` not the latest: `errors: [{latest}]`) |
+| GET | `/api/library/items/:itemId/versions/:version` | – | the version's manifest (`ETag` its digest) |
+| GET | `/api/library/items/:itemId/versions/:version/files/:sha256` | `Range`, `If-None-Match` | the file (`206` for a range, `304`), `ETag` its sha256, `Cache-Control: private, max-age=31536000, immutable`; `404` when the version names no such file |
+| GET | `/api/library/items/:itemId/uses` | – | `{incomplete, projects: [{projectId, title, role, uses: [{itemId, version, via, entity?, clips?, approved?}]}]}`: the projects the caller may read that use it |
+| GET | `/api/projects/:id/library` | – | `{links, behind}`: the project's library links and 3D pins, each `current`, `behind`, `ahead` or `missing` |
+| POST | `/api/projects/:id/library/save` | `{entity: {kind, id}, itemId?, newItem?, name?, description?, tags?, note?, basedOn?, acknowledgeConsent?}` | `201` (`200` when unchanged) `{item, version, unchanged, commit}`; `consent_required` for a real person without `acknowledgeConsent` |
+| POST | `/api/projects/:id/library/apply` | `{itemId, version?, target?: {kind, id}, relock?, replacePin?, acknowledgeConsent?, dryRun?}` | `{plan, applied, entity, commit}`: Use in project, update, link or pin; `409 conflict` (`exists`, `name`, `pinned`; an archived item), `403` when the plan lists approved clips and the caller is no director, `character_locked`, `element_locked`, `voice_locked` |
+| POST | `/api/projects/:id/library/detach` | `{target: {kind, id}, what: "library" \| "deskUnit"}` | `{entity, commit}` |
 
 ## Agents
 
@@ -276,7 +299,7 @@ review does not show is `403 forbidden`.
 | POST | `/api/projects/:id/clips/:clipId/review` | `{fix?: boolean}` | `Job` (`clip.review`: the scene watched as one video and heard, and, unless `fix: false`, its priority 1 regenerations applied, [scenes before the edit](../design/ai-review.md#scenes-before-the-edit)); `422` when a shot has no take |
 | GET | `/api/projects/:id/clips/:clipId/desk-brief` | – | the clip's `SceneBrief` for the 3D-Editor's desk ([the brief](../design/director-desk.md#the-brief)); `422` for a clip without shots |
 | GET | `/api/projects/:id/clips/:clipId/desk-state` | – | the desk state's bytes (`application/octet-stream`, headers `X-Desk-State-Format`, `X-Desk-State-Version`, `ETag`); `404` only when the clip names none, `503` `storage_error` when it names one whose file cannot be read: retry, or, when the file is missing or failed its hash check and so may be gone for good, `DELETE` the state, after which the desk's next `open` uses its own copy or the brief ([the desk state](../design/director-desk.md#the-desk-state)) |
-| PUT | `/api/projects/:id/clips/:clipId/desk-state` | the bytes (`application/octet-stream`, at most 64 MiB) with `X-Desk-State-Format` and `X-Desk-State-Version`, and the state they replace: `If-Match: "<sha256>"` (its `ETag`) or `If-None-Match: *` (none stored); `X-Desk-State-Replace: 1` when the person chose to replace that state (the desk panel's Replace: a commit of its own that never amends the tip, so the history keeps the replaced state) | `{deskState}` with the new state's `ETag`; the same bytes again change nothing, whatever the precondition; `412` `desk_state_conflict` when the stored state is not the one named (the answer's `ETag` is the stored state's, none when the clip names none; nothing is stored, and no file is kept unless another state was stored while the body arrived); without a precondition the bytes replace whatever is stored; `413` over 64 MiB (by `Content-Length` before the body is read, else counted as it arrives), `422` for missing or other format or version headers and any other body type (never parsed: malformed JSON is a `422` too) |
+| PUT | `/api/projects/:id/clips/:clipId/desk-state` | the bytes (`application/octet-stream`, at most 64 MiB) with `X-Desk-State-Format` and `X-Desk-State-Version`, and the state they replace: `If-Match: "<sha256>"` (its `ETag`) or `If-None-Match: *` (none stored); `X-Desk-State-Replace: 1` when the person chose to replace that state (the desk panel's Replace: a commit of its own that never amends the tip, so the history keeps the replaced state); `X-Desk-State-Units` (optional): the library units the state uses, `<slot>=<ref>@<version>:<staged>[:local][:<why>]` joined by `, ` or `-` for none, kept as `clip.deskState.units` (no header: not known; [what a stored state uses](../design/director-desk.md#what-a-stored-state-uses)) | `{deskState}` with the new state's `ETag`; the same bytes again change nothing, whatever the precondition; `412` `desk_state_conflict` when the stored state is not the one named (the answer's `ETag` is the stored state's, none when the clip names none; nothing is stored, and no file is kept unless another state was stored while the body arrived); without a precondition the bytes replace whatever is stored; `413` over 64 MiB (by `Content-Length` before the body is read, else counted as it arrives), `422` for missing or other format or version headers, an `X-Desk-State-Units` that does not parse (or over 128 rows or 8 KiB) and any other body type (never parsed: malformed JSON is a `422` too) |
 | DELETE | `/api/projects/:id/clips/:clipId/desk-state` | – | `204`: the clip names no desk state; the desk's next `open` gets none, so it restores its own copy in a browser that has one (the next stored state writes it back), else stages the brief |
 | POST | `/api/projects/:id/clips/:clipId/storyboard` | – | `Job` (`clip.storyboard`: a production scene's frames drawn, reviewed and approved, [production storyboards](../design/ai-review.md#production-storyboards)) |
 | POST | `/api/projects/:id/clips/:clipId/board-review/override` | `{note?}` | `Clip`: continue without passing the scene's storyboard review (an approval) |

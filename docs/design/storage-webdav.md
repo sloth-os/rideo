@@ -146,6 +146,9 @@ All paths are under `RIDEO_WEBDAV_ROOT` (default `/rideo`).
 │       └── jobs/<jobId>.json     job records (operational, not versioned)
 ├── accounts/users/<userId>.json   people of the studio (docs/design/accounts.md)
 ├── accounts/tokens/<tokenId>.json agent tokens (the secret's SHA-256 only)
+├── library/items/<libId>.json     the studio library: an item's head (docs/design/library.md)
+├── library/items/<libId>/vNNNN.json  one manifest per version, written once
+├── library/files/<aa>/<sha256>    every file of every version, named by its sha256, stored once
 └── watermarks/<watermarkId>.json provenance registry (global)
 ```
 

@@ -60,7 +60,7 @@ In browser mode the studio's storage is a `RoutedStorage` (`packages/server/src/
 | `projects/<projectId>/**`, `trash/<projectId>-<time>/**` of a browser project | `WorkspaceStorage` of the workspace that holds the project (RPC above) |
 | `projects/<projectId>/**` of a project in the data directory | the data directory (`FsBackend`, below) |
 | `projects` (the listing) | the data directory's projects, plus the projects of the caller's workspace (REST), or of every attached workspace (MCP, jobs) |
-| everything else: accounts, tokens, brand kits, recipes, the watermark registry | `FsBackend` over `<dataDir>/dav`, the directory the embedded WebDAV server uses, so studio data stays put when the storage mode changes |
+| everything else: accounts, tokens, brand kits, the studio library, recipes, the watermark registry | `FsBackend` over `<dataDir>/dav`, the directory the embedded WebDAV server uses, so studio data stays put when the storage mode changes |
 
 **Which workspace holds a project.** The server keeps a map from project to workspace, filled when a workspace
 attaches (it lists the workspace's `projects` folder) and when a project is created or imported. A request names its

@@ -67,7 +67,8 @@ MCP, the live WebSocket and editor jobs:
 REST routes map to a permission declaratively (`ROUTE_PERMISSIONS`: method and path pattern → permission; reads
 default to `project.read`, writes to `project.edit`); MCP tools declare theirs when they are registered. A call
 without the permission fails with `forbidden` (403) and an `auth.denied` audit event. The project list only shows
-projects the caller may read.
+projects the caller may read. The studio library belongs to no project: `libraryAllows` (`read`, `publish`,
+`manage`) sits next to this table and is checked the same way ([the library](library.md#permissions)).
 
 ## Agent tokens
 
@@ -90,6 +91,7 @@ Security-relevant events are appended as JSON lines to `<dataDir>/audit/<yyyy-mm
 | `user.updated` | studio role, disabled |
 | `project.access` | members, invites and visibility changed |
 | `project.approval` | gates approved, clips approved, takes overridden |
+| `library.publish`, `library.apply`, `library.change` | the studio library: an item or a version published, a version used, updated, linked or pinned in a project, an item archived, unarchived or given another current version ([the library](library.md#audit)) |
 
 `GET /api/audit?since&until&projectId&actor&type&limit` (admins; directors for their projects) reads it newest
 first. Logins, denials and token use are also counted in `rideo_auth_total{event, outcome}`.

@@ -190,3 +190,26 @@ from an uploaded photo.
 - The evidence frames next to the references, with the judge's issues listed.
 - "Regenerate" (new attempt with a new seed), "Pick take", "Override…" (requires a reason).
 - Workflow gates list every blocking take (`timeline.consistencyVerified` unmet: "shot c3-s2 take 1 is stale").
+
+## From the library
+
+A season's episodes are projects of their own; the [studio library](library.md) lets them share a cast without
+weakening the invariant:
+
+- **Save to library** on a character's card (`library_save`) keeps the character as a new library version: identity,
+  wardrobe (with its ids), approved references with their consent records, voice, seed, whether it was locked, and
+  its 3D figure pin. A real person needs the person saving to confirm that the consent covers the studio's other
+  projects (`consent_required` until then; [consent records](provenance.md#consent-records)).
+- **Use from library** in the Cast view (`library_apply`) copies the character into a project with the item's `chr_`
+  id when no character there has it, the same seed and the same wardrobe and reference ids, so the identity fragment,
+  the references chosen and the judge are the same in every episode (R3). The copy is locked only if the version was,
+  at a lock version this project never recorded for that id (1 + the highest of its takes and boards; the voice lock
+  likewise from take audio and dubs), so a take made from an earlier character of the same id is never current by
+  accident (R6, R9). A taken id or name answers `409` `conflict`, and the picker offers to link the existing
+  character instead.
+- **Update** to another version relocks as R2 does: the lock version goes up only when `identityHash` changes, so R6
+  (and V6 for the voice) marks exactly the takes made from the old identity stale. When an approved clip uses them,
+  the update needs a director (`project.approve`); the approval stays, and export waits until those takes are
+  generated again (R7).
+- **The 3D figure** a character pins (`character.deskUnit`) is shape, not identity: `identityHash` leaves it out, it
+  can move while the character is locked, and it never makes a take stale ([pins](library.md#pins-on-entities)).

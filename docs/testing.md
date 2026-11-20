@@ -242,6 +242,28 @@ only those names as extras, and reading verdicts that name a character instead o
   list) and its mode remembered, the bridge flushed when the panel goes away, the iframe mounted anew for another clip,
   Replace (three confirmations) and Start over only after their confirmations); a result uploaded and attached shot by
   shot with its JPEG poster ([director's desk](design/director-desk.md#tests)).
+- **the studio library** (`packages/shared/test/library.test.ts`, `accounts.test.ts`, `digest.test.ts`,
+  `documents.test.ts`, `packages/server/test/unit/library-store.test.ts`, `library-upload.test.ts`): the schemas of
+  every kind and their limits; the snapshot digest blind to reference ids, wardrobe ids, `createdAt` and
+  `consent.recordedAt` and changed by identity, wardrobe text, reference hashes, seed and pin; snapshots keeping only
+  approved references, with consent records, seeds, wardrobe ids and the 3D pin; the apply plan (create keeping the
+  item's id and seed at lock version 1 + the highest the project recorded, `conflict` for a taken id or name, update
+  relocking by the identity hash, stale takes and approved clips needing `project.approve`, the locked refusals, 3D
+  items onto their kinds of target only, `replacePin: false`, resources always created, archived items refused);
+  `libraryAllows` for people, admins, the studio token and agent tokens with and without projects; a digest with and
+  without `library`, still version 1; documents without `library` and `deskUnit` still parsing, and a pin changing no
+  identity hash; the store (versions, `unchanged`, `412` `library_conflict` for a stale `If-Match` and a stale
+  `basedOn`, two versions at once, a leftover manifest skipped, the same bytes stored once) and its uploads (`meta`
+  first, a unit of 32 MiB + 1 byte refused with `413`, a unit whose prefix, header or kind is wrong, thumbnails that are
+  not PNG, over 64 KiB or over 256 px) ([the library](design/library.md#tests)).
+- **library units** (`packages/shared/test/desk-protocol.test.ts`, `desk-brief.test.ts`, `desk-units.test.ts`,
+  `packages/web/test/desk-bridge.test.ts`): the new fixtures (valid ones parse, invalid ones are refused) and the
+  capability read leniently; the brief unchanged byte for byte without units and, with them, the set from the scene's
+  location, props, figures with their kind and height, only the kinds the desk announced; `X-Desk-State-Units`
+  formatted and parsed; `deskUnitDrift` for every status; the bridge sending no unit field to a desk without the
+  capability, `open.units` in slot order without the pins the stored state uses (2 fetches at a time, sha256 checked,
+  never past 48 MiB), `unit-publish` saved, linked by the contract's rule and acknowledged with the mapped codes, one
+  at a time ([library units](design/director-desk.md#tests)).
 - **reviews of every step** (`packages/shared/test/ai-review-gates.test.ts`): the whole-take watch's verdict and its
   merge into the quality checks, the scene review's verdict, the clip gate, the cast review's subject and merge
   (fixes pointed at the character), the `cast.reviewPassed` gate (off for older projects, continue anyway), the cut's
@@ -371,7 +393,20 @@ only those names as extras, and reading verdicts that name a character instead o
   (422), each counted as `refused` and logged; a request aborted before the service reads its body leaving no temporary
   file or open file; clip ids such as `constructor` and `__proto__` answered `404`; a partial camera through `PATCH` and
   `shot_update` keeping framing and movement; the state kept in the browser's storage; `RIDEO_DESK_URL` saved and
-  reaching `GET /api/config` as `features.desk`.
+  reaching `GET /api/config` as `features.desk`. Library units: `X-Desk-State-Units` kept on the clip with its state
+  (`-` as none, no header as unknown), a header that does not parse refused with `422` and counted, the same bytes
+  again keeping the rows, a `DELETE` clearing them; the embedding origins' preflight allowing `x-desk-state-units`
+  (`embedding.test.ts`).
+- **Library** (`library.test.ts`): a desk set uploaded, listed, read, served with `Range` and `304`, a new version
+  with a stale `If-Match` and with a stale `basedOn` (`412` `library_conflict`), renamed, archived (gone from the
+  default list, still served) and its uses; Mira saved from project A (`consent_required` until acknowledged), used in
+  project B with the same id and seed and her references copied, a v2 from A making B's status `behind`, B's dry run,
+  B's update refused for an editor while an approved clip uses her (`403`, audited) and done by a director (lock + 1,
+  the old takes stale); a name conflict linking instead; a resource used as a new resource; a figure pinned on a
+  character and a set on a location, unpinned again; the audit events and the metrics. MCP's `library_*` tools give the
+  same answers (`mcp.test.ts`); a token limited to some projects cannot publish (`accounts.test.ts`); a browser
+  project's apply goes through its tab and fails with `storage_offline` without it, the library staying in the data
+  directory (`browser-storage.test.ts`).
 - **Take editing** (`take-editing.test.ts`): a relit take is a verified, watermarked derived take that keeps the
   sound and dialogue, signed as an AI edit with its parent as ingredient; a new-angle edit; an extension from the
   last frame (+N s, trimmed to what was asked); generative extend after a take (a signed, watermarked extension
@@ -488,7 +523,7 @@ Projects: `desktop` (1440×900) runs every spec except `responsive`; `mobile` (4
 `responsive`, `mcp-sync`, `provenance`, `elements`, `dialogue`, `storyboard`, `director-desk`, `directing`, `take-editing`,
 `multi-shot`, `post-audio`, `localization`, `finishing`, `accounts`, `review`, `interchange`, `editor-depth`,
 `editing-tools`, `recipes`, `brand`, `search`, `performance`, `engine`, `pwa`, `settings`, `browser-storage`, `subpath`, `embed`,
-`feedback` and `insights`. The
+`feedback`, `insights`, `library` and `desk-units`. The
 web server stops with SIGTERM so the stack removes its data; stale stack directories older than an hour are removed
 when a new stack starts. Specs:
 
@@ -515,7 +550,9 @@ when a new stack starts. Specs:
 | `post-audio.spec.ts` | (desktop and mobile) the Mix card: ducking on after assembly, depth −18 dB, *Score the cut* with a direction (Cue 1 on the Music track), *Add sound effects* (an Effects track, its lane on desktop); an export rendered in the tab at broadcast loudness with stems; the export card shows about −23 LUFS and the three stem downloads |
 | `multi-shot.spec.ts` | (desktop and mobile) the multi-shot setting off and on in the project settings; a clip on `mock-multishot-v1` renders two shots in one request (`shot 1 of 2`, `shot 2 of 2` badges) and the third alone |
 | `directing.spec.ts` | (desktop and mobile) the Direct panel sets a push-in, an 85 mm lens, f/2 and a generated end frame; two variations are generated, compared side by side and B is chosen |
-| `director-desk.spec.ts` | (desktop and mobile, against the fake desk on its own origin) the Storyboard view's *Director's desk* on a planned scene: the panel connects (the page behind it inert, no Follow menu of its own, the desk opened on *Camera*, the iframe sandboxed without top navigation), the desk's **Send** attaches every shot's clip as its motion reference with the staged lens and move, the planned framing and movement kept (checked through the API: the resources ready with their probe and JPEG poster) and the toast names the mode and lists the shot whose camera disagrees with the plan; the state stored on Close and given back on the next open, opened and closed without an edit storing nothing (the same file, no commit), the desk's own **Done** storing its last state; an edit stored when the person leaves the view with the browser's back instead of Close; a state another session stored meanwhile kept at Close (the panel stays with the notice, Close again closes), and so is a state this tab stored that another session put back after storing another one (a restore: the tab saw the server move past it); a partial result attaching the shots it has, with the desk's `export_failed` in a toast; a stored state the desk cannot read kept (notice and toast, an edit not stored on Close) until **Replace the stored desk state** after its confirmation; a stored state the server cannot read: the panel failed with **Retry**, the desk not opened until Retry, and **Start over** after its confirmation clearing the state and opening the desk from the brief; *Poses* chosen in the desk's own Follow menu, attached and remembered for the project after a reload, and a shot the desk sent longer than its brief refused with "set its length back in the desk"; a desk opened on a state staged before the brief retimed the first shot (`opened` lists it): sent longer, that shot refused with "press Update shots in the desk", and after the desk's Update shots with "set its length back in the desk"; a desk page served without its headers: the timeout message after 15 seconds, Close still closing; an approved clip opened read-only and its result refused; no sideways scroll |
+| `director-desk.spec.ts` | (desktop and mobile, against the fake desk on its own origin) the Storyboard view's *Director's desk* on a planned scene: the panel connects (the page behind it inert, no Follow menu of its own, the desk opened on *Camera*, the iframe sandboxed without top navigation), the desk's **Send** attaches every shot's clip as its motion reference with the staged lens and move, the planned framing and movement kept (checked through the API: the resources ready with their probe and JPEG poster) and the toast names the mode and lists the shot whose camera disagrees with the plan; the state stored on Close and given back on the next open, opened and closed without an edit storing nothing (the same file, no commit), the desk's own **Done** storing its last state; an edit stored when the person leaves the view with the browser's back instead of Close; a state another session stored meanwhile kept at Close (the panel stays with the notice, Close again closes), and so is a state this tab stored that another session put back after storing another one (a restore: the tab saw the server move past it); a partial result attaching the shots it has, with the desk's `export_failed` in a toast; a stored state the desk cannot read kept (notice and toast, an edit not stored on Close) until **Replace the stored desk state** after its confirmation; a stored state the server cannot read: the panel failed with **Retry**, the desk not opened until Retry, and **Start over** after its confirmation clearing the state and opening the desk from the brief; *Poses* chosen in the desk's own Follow menu, attached and remembered for the project after a reload, and a shot the desk sent longer than its brief refused with "set its length back in the desk"; a desk opened on a state staged before the brief retimed the first shot (`opened` lists it): sent longer, that shot refused with "press Update shots in the desk", and after the desk's Update shots with "set its length back in the desk"; a desk page served without its headers: the timeout message after 15 seconds, Close still closing; an approved clip opened read-only and its result refused; the v1 fake desk getting no unit field though the scene's location pins a library set; no sideways scroll |
+| `library.spec.ts` | (desktop and mobile) Mira saved to the library from episode 1 through the consent dialog, used in episode 2 (the same id and seed, checked through the API), a v2 published from episode 1 and the update in episode 2 with its plan and the approval warning; the Library page listing, filtering by kind and tag, archiving (gone from the picker); a location's 3D row: Use, Change, Unlink; no sideways scroll ([the library](design/library.md#tests)) |
+| `desk-units.spec.ts` | (desktop and mobile, on the units studio with the fake desk in units mode) a scene at a pinned place opening with the set's pin and bytes; **Publish set** creating an item, linking the place and acknowledged `linked`; **Publish new version** making v2 and moving the pin; the state's units recorded and another scene at the place showing "3D: v2 available"; no sideways scroll ([library units](design/director-desk.md#tests)) |
 | `ai-review.spec.ts` | (desktop and mobile) the screenplay and the storyboard reviewed, revised by their review and passing before the next stage; the project settings' review gates at 8 (a new bar saved), frames corrected by editing them and how long the staging check reasons; one screenplay draft until the settings ask for more; the Story view's adapted brief; the cast review's panel in the Cast view passing; no sideways scroll |
 | `storyboard.spec.ts` | (desktop and mobile) generate the storyboard, approve a frame, move it later, approve all; download the shot list CSV and PDF; build the animatic, play it, export it in the tab (listed as an animatic export); approve the storyboard; import a Fountain screenplay in the Story view |
 | `dialogue.spec.ts` | (desktop and mobile) the Cast view's voice panel: design three voices, the previews play, pick one, lock it; clone a recording of a real person through the consent dialog and lock it; the gate stops asking for voices; the dialogue mode setting |
@@ -536,7 +573,9 @@ accounts, one that keeps projects in browsers without a gateway (and allows the 
 slow-media proxy in front of the main studio (`e2e/support/slow-media-proxy.ts`: HTTP/1.1, every ranged media read held
 20 s, everything else at once), the library's host page (`e2e/fixtures/embed`, built by `npm run build:e2e-host` against `dist-lib`),
 and a fake 3D desk on its own origin (`e2e/fixtures/desk`, served by `e2e/support/desk-page.ts` on `localhost` with
-the headers a desk page needs; the main studio's `RIDEO_DESK_URL` names it). The main studio
+the headers a desk page needs; the main studio's `RIDEO_DESK_URL` names it), and a units studio whose `RIDEO_DESK_URL`
+is the same fake desk with `?units=1` (library units: the capability, pins and unit bytes, publishing, `state.units`)
+while the main studio keeps the desk of before. The main studio
 starts last, so its readiness means all are up. `npm run test:e2e` builds the app, the library and the host first. Tiny media sizes (320×180)
 and short durations keep the suite fast. Playwright's Chromium decodes H.264 with WebCodecs, so the story
 spec emulates a browser without an H.264 decoder (an init script hides AVC from `VideoDecoder`): the preview
