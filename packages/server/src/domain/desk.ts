@@ -123,14 +123,15 @@ export class DeskService extends Service {
   }
 
   /**
-   * The stored state and a local, hash-checked copy of its bytes. `not_found` (404) only when the clip names no state:
-   * a named state whose file cannot be read (storage answers 404 for it, fails, or the bytes fail their hash check) is
+   * The stored state and a local, hash-checked copy of its bytes; null when the clip names no state (the route's `204`:
+   * the usual answer of a first open, not an error). `not_found` (404) only for a project or a clip that is not there.
+   * A named state whose file cannot be read (storage answers 404 for it, fails, or the bytes fail their hash check) is
    * a retryable `storage_error` (503), so a browser never takes it for "none stored" and opens the desk without it
    * (docs/design/director-desk.md#the-routes).
    */
-  async state(projectId: string, clipId: string): Promise<{ deskState: ClipDeskState; file: string }> {
+  async state(projectId: string, clipId: string): Promise<{ deskState: ClipDeskState; file: string } | null> {
     const clip = await this.clip(projectId, clipId);
-    if (!clip.deskState) throw notFound(`desk state of clip ${clip.index + 1}`);
+    if (!clip.deskState) return null;
     try {
       return {
         deskState: clip.deskState,

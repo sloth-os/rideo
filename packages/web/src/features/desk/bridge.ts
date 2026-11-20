@@ -127,7 +127,7 @@ export interface DeskBridgeOptions {
   /** The clip's brief, as `open` sends it: with the pins of the kinds the desk announced when the open has units. */
   brief: (options?: DeskBriefOptions) => DeskBrief;
   options: () => DeskOpenOptions;
-  /** The stored state (`GET desk-state`), null when none is stored (`404`); any other failure rejects. */
+  /** The stored state (`GET desk-state`), null when none is stored (`204`); any other answer rejects, a `404` too. */
   load: () => Promise<StoredDeskState | null>;
   /**
    * Stores a state (`PUT desk-state`) over the one the precondition names: the sha256 the server holds. Rejects with
@@ -576,7 +576,7 @@ export class DeskBridge {
   }
 
   /**
-   * Loads the stored state. Anything but a state rideo reads or none (`404`) fails the panel with Retry and Start over:
+   * Loads the stored state. Anything but a state rideo reads or none (`204`) fails the panel with Retry and Start over:
    * the desk is not opened without it (it would stage the brief or its own copy, and the next store would replace the
    * stored state with that).
    */

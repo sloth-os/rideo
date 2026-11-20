@@ -673,7 +673,10 @@ export function registerRoutes(app: FastifyInstance, studio: Studio): void {
     studio.desk.brief(pid(req), p(req, 'clipId')),
   );
   app.get('/api/projects/:id/clips/:clipId/desk-state', async (req, reply) => {
-    const { deskState, file } = await studio.desk.state(pid(req), p(req, 'clipId'));
+    const stored = await studio.desk.state(pid(req), p(req, 'clipId'));
+    // none stored: 204, no body, no ETag (a 404 would be an error in the browser's console on every first open)
+    if (!stored) return reply.code(204).header('cache-control', 'no-store').send();
+    const { deskState, file } = stored;
     return reply
       .type('application/octet-stream')
       .header('content-length', deskState.media.size)

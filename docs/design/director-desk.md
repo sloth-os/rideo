@@ -210,9 +210,9 @@ result's summary ("Attached 4 camera references.") and remembers it for the next
   which usually reaches rideo before the iframe's `load` event, so the bridge counts both: a `load` with no `hello` for
   it (the first, or the desk page loading again, say into the browser's error page after the desk was redeployed
   without its headers) drops the old connection, shows "Connecting to the desk at …" again and starts the 15 seconds.
-- **A stored state that cannot be loaded.** The bridge reads the stored state before `open`. Any answer but `404` (a
-  `503` `storage_error`, a network error) or a state whose `X-Desk-State-Format` and `X-Desk-State-Version` rideo does
-  not know fails the panel: "The stored desk could not be loaded: <reason>" with **Retry**, which reads it again and
+- **A stored state that cannot be loaded.** The bridge reads the stored state before `open`. Any answer but the state
+  or `204` (none stored) (a `503` `storage_error`, a `404` for a clip that is gone, a network error) or a state whose
+  `X-Desk-State-Format` and `X-Desk-State-Version` rideo does not know fails the panel: "The stored desk could not be loaded: <reason>" with **Retry**, which reads it again and
   opens the desk once it has it, and **Start over**. Until then the desk is not opened (a desk without the stored state
   would stage the brief or its own copy, and the next store would replace the stored state with it), and nothing is
   ever stored in that panel. Retry mends a storage that failed for a while; a file that is missing from storage or
@@ -357,8 +357,8 @@ keeps until the project is deleted, up to 64 MiB each.
 Before `open` the bridge reads the stored state and its sha256 (the `ETag`). A state whose bytes equal the stored one
 is not stored again (the desk sends the same bytes for an unchanged scene), and the server changes nothing for the
 state it already holds (no new file, no commit): opening the desk and closing it without an edit stores nothing. A
-stored state the bridge cannot load (any answer but `404`, a network error, format or version headers it does not
-know) fails the panel with **Retry** and **Start over** ([the desk](#the-desk)): the desk is not opened, and nothing is
+stored state the bridge cannot load (any answer but the state or `204`, a network error, format or version headers it
+does not know) fails the panel with **Retry** and **Start over** ([the desk](#the-desk)): the desk is not opened, and nothing is
 stored in that panel, so a state staged without the stored one never replaces it. Between two writes the desk's own
 copy holds the work on that device. Each write is a commit, `Save the desk of scene <n>`, coalesced per clip and author
 like typing ([coalescing](version-control.md#coalescing)), but for a Replace (below), which is a commit of its own; a
@@ -411,7 +411,7 @@ ends the backoff, and a later failure toasts again.
 
 | Route | Body | Returns |
 |---|---|---|
-| `GET /api/projects/:id/clips/:clipId/desk-state` | – | the bytes (`application/octet-stream`) with `X-Desk-State-Format`, `X-Desk-State-Version`, `ETag` (the sha256); `404` `not_found` only when the clip names no state; `503` `storage_error` when it names one whose file cannot be read (storage answered `404` for it, failed, or its bytes failed the hash check). A storage that failed may answer later, but a file that is missing or failed its hash check may be gone for good, which no retry mends: `DELETE` the state (the panel's **Start over**), and the next `open` uses the desk's own copy of the scene or the brief |
+| `GET /api/projects/:id/clips/:clipId/desk-state` | – | the bytes (`application/octet-stream`) with `X-Desk-State-Format`, `X-Desk-State-Version`, `ETag` (the sha256); `204` No Content when the clip names no state (no body, no `ETag`, `Cache-Control: no-store`: the usual answer of a first open, which a browser does not log as an error); `404` `not_found` only for a project or a clip that is not there; `503` `storage_error` when it names one whose file cannot be read (storage answered `404` for it, failed, or its bytes failed the hash check). A storage that failed may answer later, but a file that is missing or failed its hash check may be gone for good, which no retry mends: `DELETE` the state (the panel's **Start over**), and the next `open` uses the desk's own copy of the scene or the brief |
 | `PUT /api/projects/:id/clips/:clipId/desk-state` | the bytes (`application/octet-stream`, at most 64 MiB) with `X-Desk-State-Format` and `X-Desk-State-Version`, and the state it replaces: `If-Match` with its `ETag`, or `If-None-Match: *` for none; `X-Desk-State-Replace: 1` when the person chose to replace that state (the panel's [Replace](#when-rideo-stores-it)) | `{deskState}` (`200`, with the new state's `ETag`; the same when the bytes were stored already, whatever the precondition); `412` `desk_state_conflict` when the stored state is not the one named (the answer's `ETag` is the stored state's, none when the clip names none; nothing is stored: the precondition is checked before the bytes are kept as a file, and again in the commit, which finds a state stored while the body was arriving). A `PUT` without a precondition replaces whatever is stored (scripts; the studio always sends one). Each write is a commit coalesced per clip and author; one with `X-Desk-State-Replace: 1` is a commit of its own, which never amends the tip, so the history keeps the state it replaces |
 | `DELETE /api/projects/:id/clips/:clipId/desk-state` | – | `204`: the clip names no state (the file stays, as all media). The next `open` sends none: the desk restores its own copy of the scene in a browser that has one (and the next state rideo stores writes it back), else stages the brief |
 
@@ -653,7 +653,7 @@ REST and MCP call the same `DeskService` (`packages/server/src/domain/desk.ts`);
 
 | Error | When |
 |---|---|
-| `not_found` (404) | the project, the clip (any id, `constructor` and `__proto__` too: clips are looked up as the project's own), or a desk state to read when the clip names none |
+| `not_found` (404) | the project, the clip (any id, `constructor` and `__proto__` too: clips are looked up as the project's own); a clip that names no desk state is not one (its `GET` answers `204`) |
 | `storage_error` (503) | the clip names a desk state whose file cannot be read: retry later, or `DELETE` the state when its file is gone for good |
 | `desk_state_conflict` (412) | a `PUT` whose `If-Match` or `If-None-Match` does not name the stored state (another session stored one, restored an older one or cleared it): the answer's `ETag` is the stored state's, and its `detail` says so without calling either state newer ("the stored desk state of scene <n> is not the one this write replaces: another session changed it (the stored state's ETag is "<sha256>")", or "scene <n> has no stored desk state any more: another session cleared it") |
 | `validation_error` (422) | a brief of a clip without shots ("plan the shots of clip <n> first"); a state without its format and version headers, of another format or version than the desk's, or not `application/octet-stream` (any other body type, malformed or empty JSON too: it is never parsed); an `X-Desk-State-Units` header that does not parse, or names more than 128 rows or 8 KiB |
@@ -743,8 +743,9 @@ an `open` and why, and each publish's answer, to the browser's console (`[desk] 
   and `ETag`, a media file under `media/desk/`, a second PUT of the same bytes changing nothing, `DELETE`; a commit per
   state, coalesced per clip and author, and a clip restored with its state; a Replace (`X-Desk-State-Replace: 1`) right
   after another session's write by the same author a commit of its own, the history keeping the state it replaced (the
-  history names its file, and a restore brings it back), the next write not amending it; `404` only for a clip that
-  names no state, `503` `storage_error` for one whose file is gone, which a `DELETE` clears; a `PUT`'s precondition:
+  history names its file, and a restore brings it back), the next write not amending it; `204` (no body, no `ETag`,
+  not cached) for a clip that names no state, on the built-in WebDAV server and in a browser's storage, `404` for a
+  project or clip that is not there, `503` `storage_error` for one whose file is gone, which a `DELETE` clears; a `PUT`'s precondition:
   `If-None-Match: *` storing a first state and refused with `412` `desk_state_conflict` and the stored `ETag` once one
   is stored (the answer's `detail` naming it), `If-Match` with the `ETag` a `PUT` answers storing the next and a stale
   one refused (no `ETag` once the state is cleared, and a `detail` that says so), the same bytes accepted whatever the
@@ -798,7 +799,7 @@ an `open` and why, and each publish's answer, to the browser's console (`[desk] 
   the person (`not_open` for Close's `save` in the status line only), and a disposed bridge that reports no status; the
   panel (`desk-panel.test.tsx`): no Follow menu of its own, `open`'s options (the three modes in the protocol's order,
   the mode last attached in this project, *camera* in another), its store, load and clear on the desk-state routes with
-  the precondition and the Replace header, the close timeout's `AbortSignal` reaching `fetch`, a `412` made a conflict
+  the precondition and the Replace header (a `204` loaded as none stored, a `404` as the failure it is), the close timeout's `AbortSignal` reaching `fetch`, a `412` made a conflict
   with the stored `ETag`, a result applied with the brief and the retimed shots it was given (a length changed in the
   desk and one the brief retimed each refused with its own reason, the shot's own `brief_length` issue over a stale
   retimed list) and its mode remembered, the bridge flushed and disposed when the panel goes away, the iframe mounted

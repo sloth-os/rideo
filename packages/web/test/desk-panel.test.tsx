@@ -367,9 +367,9 @@ describe('the desk panel’s store and load (docs/design/director-desk.md#when-r
     expect(failed).toMatchObject({ code: 'storage_error' });
   });
 
-  it('loads with GET (404: none stored, the ETag is the sha256) and clears with DELETE (Start over)', async () => {
+  it('loads with GET (204: none stored, the ETag is the sha256) and clears with DELETE (Start over)', async () => {
     render(<DeskPanel clip={clipA} onClose={() => undefined} />);
-    fetchMock.mockResolvedValueOnce(problem(404, 'not_found', 'no desk state'));
+    fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }));
     await expect(bridge().opts.load()).resolves.toBeNull();
     fetchMock.mockResolvedValueOnce(
       new Response(new Uint8Array([7, 8]), {
@@ -390,6 +390,16 @@ describe('the desk panel’s store and load (docs/design/director-desk.md#when-r
     await bridge().opts.clear();
     expect(call(2)[1].method).toBe('DELETE');
     expect(call(2)[0]).toMatch(new RegExp(`/api/projects/${projectId}/clips/${clipA.id}/desk-state$`));
+  });
+
+  it('takes a 404 for the failure it is (a clip or project that is not there), never for none stored', async () => {
+    render(<DeskPanel clip={clipA} onClose={() => undefined} />);
+    fetchMock.mockResolvedValueOnce(problem(404, 'not_found', `clip ${clipA.id} not found`));
+    const failed = await bridge()
+      .opts.load()
+      .catch((err: unknown) => err);
+    expect(failed).toBeInstanceOf(ApiError);
+    expect(failed).toMatchObject({ code: 'not_found', status: 404 });
   });
 });
 
@@ -413,7 +423,7 @@ describe('leaving the desk panel without Close (docs/design/director-desk.md#the
     // the first clip's newest state was stored on the way out, then a new bridge started for the other clip
     expect(made.map((b) => b.calls)).toEqual([['start', 'flush', 'dispose'], ['start']]);
     expect(screen.getByTestId('desk-title').textContent).toBe('The lighthouse');
-    fetchMock.mockResolvedValueOnce(problem(404, 'not_found', 'no desk state'));
+    fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }));
     await bridge(1).opts.load();
     expect(call(0)[0]).toMatch(new RegExp(`/clips/${clipB.id}/desk-state$`));
   });

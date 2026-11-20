@@ -97,7 +97,17 @@ test('the desk connects, its Send attaches every shot’s clip and camera, and i
   const { pid, clip } = await planned(api, `Desk (${testInfo.project.name})`);
   const shots = [...clip.shots].sort((a: any, b: any) => a.index - b.index);
   const plannedCamera = new Map(shots.map((s: any) => [s.id, s.camera]));
+  // the first open of a clip with no stored state: the read answers 204 (none stored), and nothing is logged as an
+  // error (a 404 would be, as "Failed to load resource")
+  const consoleErrors: string[] = [];
+  page.on('console', (m) => {
+    if (m.type() === 'error') consoleErrors.push(`${m.text()} (${m.location().url})`);
+  });
+  const firstRead = page.waitForResponse(
+    (r) => r.request().method() === 'GET' && r.url().endsWith(`/clips/${clip.id}/desk-state`),
+  );
   await openDesk(page, pid);
+  expect((await firstRead).status()).toBe(204);
   await expect(page.getByTestId('desk-title')).toHaveText(clip.title);
   // sandboxed: scripts, its own storage and downloads, never the studio's tab
   const frame = page.getByTestId('desk-frame');
@@ -113,6 +123,7 @@ test('the desk connects, its Send attaches every shot’s clip and camera, and i
   await expect(page.getByTestId('desk-status')).toContainText('Opened from the brief');
   await expect(d.getByTestId('desk-shot')).toHaveCount(shots.length);
   await expect(d.getByTestId('desk-given')).toHaveText('none');
+  expect(consoleErrors).toEqual([]);
   const options = JSON.parse((await d.getByTestId('desk-options').textContent())!);
   expect(options).toEqual({
     hostName: 'Rideo',

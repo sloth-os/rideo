@@ -283,7 +283,8 @@ async function request<T>(
 
 /**
  * The desk's stored state of a clip (docs/design/director-desk.md#the-routes): its bytes, format, version and sha256
- * (the ETag); null when none is stored.
+ * (the ETag); null when none is stored (`204`). Any other answer that is not the state, a `404` for a clip or project
+ * that is not there included, is the failure it says.
  */
 async function deskState(
   id: string,
@@ -292,7 +293,7 @@ async function deskState(
   const path = `/projects/${id}/clips/${clipId}/desk-state`;
   const res = await send('GET', path);
   observe(res, path);
-  if (res.status === 404) return null;
+  if (res.status === 204) return null;
   if (!res.ok) {
     const text = await res.text();
     let json: unknown = null;

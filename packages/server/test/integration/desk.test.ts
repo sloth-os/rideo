@@ -102,6 +102,21 @@ async function rejects(p: Promise<unknown>, code: string, status?: number) {
   throw new Error(`expected ${code}`);
 }
 
+/**
+ * The clip names no state: `204` with no body, no `ETag` and no state headers, never cached
+ * (docs/design/director-desk.md#the-routes). Not a `404`, which a browser logs as an error: that is for a project or a
+ * clip that is not there.
+ */
+async function noState(on: Stack, pid: string, clipId: string, headers: Record<string, string> = {}) {
+  const res = await fetch(deskUrl(on, pid, clipId), { headers });
+  expect(res.status).toBe(204);
+  expect(res.headers.get('etag')).toBeNull();
+  expect(res.headers.get('x-desk-state-format')).toBeNull();
+  expect(res.headers.get('x-desk-state-version')).toBeNull();
+  expect(res.headers.get('cache-control')).toBe('no-store');
+  expect(await res.text()).toBe('');
+}
+
 async function metric(name: string, labels = ''): Promise<number> {
   const text = await (await fetch(`${stack.url}/metrics`)).text();
   const line = text.split('\n').find((l) => l.startsWith(`${name}${labels} `));
@@ -162,7 +177,7 @@ describe('the brief (desk-brief and desk_brief)', () => {
 describe('the desk state (docs/design/director-desk.md#the-routes)', () => {
   it('stores the bytes as a media file the clip names, gives them back, and changes nothing for the same bytes', async () => {
     const { pid, clip } = await seeded(stack);
-    await rejects(stack.api('GET', `/projects/${pid}/clips/${clip.id}/desk-state`), 'not_found', 404);
+    await noState(stack, pid, clip.id);
     const saved = await metric('rideo_desk_state_saves_total', '{outcome="saved"}');
     const unchanged = await metric('rideo_desk_state_saves_total', '{outcome="unchanged"}');
 
@@ -201,7 +216,7 @@ describe('the desk state (docs/design/director-desk.md#the-routes)', () => {
     // DELETE: the clip names no state (the file stays); a second DELETE changes nothing
     const del = await fetch(deskUrl(stack, pid, clip.id), { method: 'DELETE' });
     expect(del.status).toBe(204);
-    await rejects(stack.api('GET', `/projects/${pid}/clips/${clip.id}/desk-state`), 'not_found', 404);
+    await noState(stack, pid, clip.id);
     const after = (await stack.api<any>('GET', `/projects/${pid}/state`)).head.commit;
     expect((await fetch(deskUrl(stack, pid, clip.id), { method: 'DELETE' })).status).toBe(204);
     expect((await stack.api<any>('GET', `/projects/${pid}/state`)).head.commit).toBe(after);
@@ -339,9 +354,20 @@ describe('the desk state (docs/design/director-desk.md#the-routes)', () => {
     );
   });
 
-  it('answers 404 only when the clip names no state, and a retryable 503 when its file cannot be read', async () => {
+  it('answers 204 when the clip names no state, 404 for a project or clip that is not there, and a retryable 503 when its file cannot be read', async () => {
     const { pid, clip } = await seeded(stack);
-    await rejects(stack.api('GET', `/projects/${pid}/clips/${clip.id}/desk-state`), 'not_found', 404);
+    await noState(stack, pid, clip.id);
+    // not there: the project, the clip
+    await rejects(
+      stack.api('GET', `/projects/prj_0000000000nothere/clips/${clip.id}/desk-state`),
+      'not_found',
+      404,
+    );
+    await rejects(
+      stack.api('GET', `/projects/${pid}/clips/clp_0000000000000none/desk-state`),
+      'not_found',
+      404,
+    );
     // the clip names a state whose file is gone from storage (a restore from a copy without media, say)
     const h = await stack.server.studio.deps.projects.existing(pid);
     await h.repo.transact(
@@ -365,7 +391,7 @@ describe('the desk state (docs/design/director-desk.md#the-routes)', () => {
     await rejects(stack.api('GET', `/projects/${pid}/clips/${clip.id}/desk-state`), 'storage_error', 503);
     // a file that is gone for good: DELETE clears the state (the panel's Start over), and the next open has none
     expect((await fetch(deskUrl(stack, pid, clip.id), { method: 'DELETE' })).status).toBe(204);
-    await rejects(stack.api('GET', `/projects/${pid}/clips/${clip.id}/desk-state`), 'not_found', 404);
+    await noState(stack, pid, clip.id);
     // a new state, stored where none is
     expect(
       (await put(stack, pid, clip.id, bytes('a state that is there'), { 'if-none-match': '*' })).status,
@@ -606,7 +632,7 @@ describe('the desk state (docs/design/director-desk.md#the-routes)', () => {
       desk.saveState = save;
     }
     expect(leftovers()).toEqual(before);
-    await rejects(stack.api('GET', `/projects/${pid}/clips/${clip.id}/desk-state`), 'not_found', 404);
+    await noState(stack, pid, clip.id);
   });
 
   it('answers 404 for clip ids that name members of every object, on every desk route and in desk_brief', async () => {
@@ -650,6 +676,7 @@ describe('the desk state (docs/design/director-desk.md#the-routes)', () => {
 
   it("keeps the state in the browser's storage on a studio that keeps projects in browsers", async () => {
     const { pid, clip } = await seeded(browser, tab.api);
+    await noState(browser, pid, clip.id, { 'x-rideo-workspace': tab.id });
     const state = bytes('a state kept in the browser');
     const res = await fetch(deskUrl(browser, pid, clip.id), {
       method: 'PUT',
