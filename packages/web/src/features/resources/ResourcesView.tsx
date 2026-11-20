@@ -44,7 +44,7 @@ function ResourceCard({ r, projectId }: { r: Resource; projectId: string }) {
       )}
       <div className="flex items-center gap-2 p-3">
         <div className="min-w-0 flex-1">
-          <div className="truncate text-[13px] font-medium" title={r.name}>
+          <div className="text-[13px] font-medium wrap-anywhere" title={r.name}>
             {r.name}
           </div>
           <div className="text-[11px] text-muted">

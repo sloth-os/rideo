@@ -653,8 +653,9 @@ header leaves the room to the project's title and badges, [brand](../brand.md#la
 
 Every new control follows [the brand](../brand.md): the library row and the 3D row are `secondary` controls in the card,
 badges use the status colours (`info` for available, `warning` for waiting, `danger` for can't use, muted text for
-approved), and every view and dialog works at 360 px without sideways scroll: on a phone a card's name stays whole, its
-badges, **Save to library** and **Lock** wrapping below it.
+approved), and every view and dialog works at 360 px without sideways scroll: on a phone a card's name stays whole (a
+name longer than its line wraps onto the next, never cut), its badges, **Save to library** and **Lock** wrapping below
+it.
 
 ## Reusing sets, props and characters across episodes
 
@@ -798,8 +799,8 @@ existing `412` conflict, whose **Replace** would drop the server's change unless
   the Library page's search, kind chips and tag filter (the list kept beside the item on a wide screen), Use v3 for the
   project and Use v4 in every project, a tag added, a prop archived (gone from the list and the props' picker, back
   under Show archived), Change and Unlink; no sideways scroll. On phones (360×740, 390×844 and 412×915 at a device pixel
-  ratio of 1): Cast, Elements (in use and not) and Resources cards with long names, badges and Save to library keep
-  every name whole. The desk's side of units is in [the desk's tests](director-desk.md#tests).
+  ratio of 1): Cast, Elements (in use and not) and Resources cards with names longer than a phone's line in any font,
+  badges and Save to library keep every name whole, wrapped. The desk's side of units is in [the desk's tests](director-desk.md#tests).
 
 ## P1
 

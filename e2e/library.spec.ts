@@ -548,6 +548,9 @@ test('3D rows pin, move, change and unlink sets uploaded through the API; the Li
   await noSidewaysScroll(page);
 });
 
+/** A resource's file name longer than a phone card's line in any font. */
+const LONG_FILE = 'harbour wall at dawn seen from the end of the north pier at low tide.png';
+
 test('on phones the Cast, Elements and Resources cards keep their names whole beside their badges and Save to library', async ({
   browser,
   request,
@@ -555,9 +558,10 @@ test('on phones the Cast, Elements and Resources cards keep their names whole be
   test.skip(testInfo.project.name !== 'mobile', 'phone widths');
   const api = new Api(request);
   const pid = await api.storyProject(`Library phones (${runTag(testInfo)})`, { screenplay: true });
-  // A long name beside every badge a character card has: its role, locked and a real person
+  // A name longer than a phone's line in any font, beside every badge a character card has: its role, locked and a
+  // real person. Names this long wrap; a name that only just fits passed on one machine's fonts and was cut on another's
   const long = await api.call<any>('POST', `/projects/${pid}/characters`, {
-    name: 'Seraphina Okonkwo-Delacroix',
+    name: 'Seraphina Okonkwo-Delacroix of the Northern Lighthouse',
   });
   await uploadPhoto(request, pid, long.id);
   for (const r of (await docsOf(api, pid)).characters[long.id].references)
@@ -574,11 +578,11 @@ test('on phones the Cast, Elements and Resources cards keep their names whole be
   await api.call('POST', `/projects/${pid}/elements/${place.id}/lock`);
   await api.call('POST', `/projects/${pid}/elements`, {
     kind: 'prop',
-    name: "harbour master's storm lantern",
+    name: "harbour master's brass storm lantern with the cracked green glass",
     description: 'a brass storm lantern with a cracked green glass',
   });
   const still = await request.post(`/api/projects/${pid}/uploads`, {
-    multipart: { file: { name: 'harbour wall at dawn.png', mimeType: 'image/png', buffer: PHOTO } },
+    multipart: { file: { name: LONG_FILE, mimeType: 'image/png', buffer: PHOTO } },
   });
   expect(still.status(), await still.text()).toBe(201);
   await api.waitIdle(pid);
@@ -598,7 +602,7 @@ test('on phones the Cast, Elements and Resources cards keep their names whole be
           ? page.getByTestId('character-name')
           : view === 'elements'
             ? page.getByTestId('element-name')
-            : page.getByTitle('harbour wall at dawn.png', { exact: true }),
+            : page.getByTitle(LONG_FILE, { exact: true }),
       );
       await noSidewaysScroll(page);
       // kept beside the run's other output, to look at (device pixel ratio 1, as the phone is)

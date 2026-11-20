@@ -77,6 +77,9 @@ width from 360px, signed in or not:
 - The title row cuts only what the header's room cannot hold, so nothing runs under the header's controls, and
   nothing scrolls sideways.
 
+A card names its character, element or resource in full: a name longer than the card's line wraps onto the next line,
+never cut with an ellipsis, so a phone shows the whole name whatever the font.
+
 ## Logo
 
 A play triangle whose left edge forms the stem of an "R", in Ember on a dark tile

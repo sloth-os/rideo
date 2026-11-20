@@ -59,11 +59,11 @@ function ElementCard({ e, inUse }: { e: Element; inUse: boolean }) {
       className="rounded-[var(--radius-card)] border border-border bg-surface"
     >
       <div className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-3">
-        {/* the name keeps 16rem of the line (all of it on a phone): Save, Lock and Remove wrap below, the badges after it */}
+        {/* the name keeps 16rem of the line (all of it on a phone) and wraps when longer, never cut: Save, Lock and Remove wrap below, the badges after it */}
         <div className="flex min-w-0 grow basis-64 flex-wrap items-center gap-x-2 gap-y-1">
           <div className="flex min-w-0 grow items-center gap-2">
             <Icon className="size-4 shrink-0 text-muted" />
-            <h3 className="truncate text-base font-semibold" data-testid="element-name">
+            <h3 className="min-w-0 text-base font-semibold wrap-anywhere" data-testid="element-name">
               {e.name}
             </h3>
           </div>
