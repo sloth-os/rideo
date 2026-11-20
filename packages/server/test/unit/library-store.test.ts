@@ -638,10 +638,28 @@ describe('the library service', () => {
     docs = await studio.deps.projects.docs(pid);
     expect(docs.elements[lamp.id]!.deskUnit).toBeNull();
     expect((await lib.uses(set.item.id)).projects).toEqual([]);
+    // the unpin counts under the item's kind, as the pin did, not under the entity's
     expect(studio.deps.metrics.library.get({ event: 'pinned', kind: 'desk-set' })).toBe(1);
-    expect(studio.deps.metrics.library.get({ event: 'detached', kind: 'element' })).toBe(1);
+    expect(studio.deps.metrics.library.get({ event: 'detached', kind: 'desk-set' })).toBe(1);
+    expect(studio.deps.metrics.library.get({ event: 'detached', kind: 'element' })).toBe(0);
     const applied = await studio.deps.accounts.audit.query({ type: 'library.apply', limit: 10 });
     expect(applied.map((e) => e.detail.mode)).toEqual(['pin', 'pin']);
+  });
+
+  it('counts a detach under the kind of the item it detaches: the unit for a pin, the entity kind for a link', async () => {
+    const lib = studio.library;
+    const mira = f.character({ references: [], lock: { locked: false, version: 0 } });
+    const pid = await projectWith(studio, { characters: [mira] });
+    const figure = await lib.create(actor, await upload(figureMeta(), unitFile('figure')));
+    await lib.apply(actor, pid, { itemId: figure.item.id, target: { kind: 'character', id: mira.id } });
+    await lib.save(actor, pid, { entity: { kind: 'character', id: mira.id } });
+    const m = studio.deps.metrics.library;
+    await lib.detach(actor, pid, { target: { kind: 'character', id: mira.id }, what: 'deskUnit' });
+    expect(m.get({ event: 'detached', kind: 'desk-figure' })).toBe(1);
+    expect(m.get({ event: 'detached', kind: 'character' })).toBe(0);
+    await lib.detach(actor, pid, { target: { kind: 'character', id: mira.id }, what: 'library' });
+    expect(m.get({ event: 'detached', kind: 'character' })).toBe(1);
+    expect(m.get({ event: 'detached', kind: 'desk-figure' })).toBe(1);
   });
 
   it('asks a director to update a character whose approved clip goes stale, never an editor, and lets an editor see the plan', async () => {

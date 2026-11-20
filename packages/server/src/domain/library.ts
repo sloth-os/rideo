@@ -1111,7 +1111,12 @@ export class LibraryService extends Service {
       },
     );
     if (result.was) {
-      this.deps.metrics.library.inc({ event: 'detached', kind: target.kind });
+      // counted under the detached item's kind, as every library event is: a pin's unit, else the linked item,
+      // whose kind is the entity's
+      this.deps.metrics.library.inc({
+        event: 'detached',
+        kind: 'kind' in result.was ? result.was.kind : target.kind,
+      });
       this.deps.log.info(
         { projectId, entityId: target.id, what, itemId: result.was.itemId, version: result.was.version },
         'library detached',

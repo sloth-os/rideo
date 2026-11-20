@@ -513,7 +513,7 @@ Real people are recorded as `realPerson: true`, never by name. Refusals are `aut
 
 | Metric | Type | Labels | What |
 |---|---|---|---|
-| `rideo_library_total` | counter | `event` (`created`, `version`, `unchanged`, `conflict`, `refused`, `saved`, `used`, `updated`, `linked`, `pinned`, `detached`, `archived`, `unarchived`, `current`), `kind` | library operations |
+| `rideo_library_total` | counter | `event` (`created`, `version`, `unchanged`, `conflict`, `refused`, `saved`, `used`, `updated`, `linked`, `pinned`, `detached`, `archived`, `unarchived`, `current`), `kind` (the item's: `character`, `element`, `resource`, `desk-set`, `desk-prop`, `desk-figure`, so a 3D pin's unit when it is detached; the kind a refused upload claims, or `unknown`) | library operations |
 | `rideo_library_bytes_total` | counter | `op` (`upload`, `from_project`, `to_project`) | bytes written to the library and copied into projects |
 | `rideo_library_apply_seconds` | histogram | `op` (`save`, `apply`) | how long a save or an apply took |
 | `rideo_library_items` | gauge | `kind` | items in the library |
@@ -683,9 +683,11 @@ existing `412` conflict, whose **Replace** would drop the server's change unless
   read once with an invalid one skipped, a head whose read fails failing the load (retryable) until the next call reads
   it, the same bytes stored once, a file failing its hash check; the service on in-memory storage: v1, v2, `unchanged`,
   a stale `If-Match` and a stale `basedOn` answered `412` `library_conflict` with the latest, rename, current version,
-  archive; `libraryAllows` through real principals (people, admins, scoped, reviewer and editor tokens, an admin's
-  token); a set pinned on a location and a figure on a character (no lock or identity hash moved), status and uses
-  following the pin, detach; an update whose approved clip goes stale planned for an editor, refused to them (`403`,
+  archive; a head the storage cannot read answered with a retryable `storage_error`, the item kept and saved into again;
+  a save with `newItem` making a new item whatever `itemId` names; `libraryAllows` through real principals (people,
+  admins, scoped, reviewer and editor tokens, an admin's token); a set pinned on a location and a figure on a character
+  (no lock or identity hash moved), status and uses following the pin, detach (counted under the detached item's kind: a
+  pin's unit, a link's item); an update whose approved clip goes stale planned for an editor, refused to them (`403`,
   audited) and done by a director (lock + 1). Uploads (`library-upload.test.ts`): the multipart parts in order, `meta`
   not first, bad `meta`, a unit of 32 MiB + 1 byte (`413`, counted, its temporary file removed), a thumbnail over 64 KiB
   and `meta` over 32 KiB (`413`), 3D meta over 16 KiB (`422`), a unit with a wrong magic, container, codec, header,
