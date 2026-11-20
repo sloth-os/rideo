@@ -710,6 +710,8 @@ export class DeskBridge {
           message: `${type}: ${issues}`.slice(0, 2000),
         });
         port.postMessage(reply);
+        // the desk reads no error of the host: a publish waits for its unit-ack, so it gets one at once too
+        if (type === 'unit-publish') this.refuseUnreadablePublish(id, issues);
       }
       return;
     }
@@ -817,6 +819,24 @@ export class DeskBridge {
         void this.finish();
         return;
     }
+  }
+
+  /**
+   * A `unit-publish` that does not validate (a newer desk's unit format, a kind or `meta` this studio does not read):
+   * answered `unit-ack` `invalid` at once, so the desk never waits out its timeout, and said in a notice; nothing is
+   * uploaded (docs/design/director-desk.md#publishing-and-linking).
+   */
+  private refuseUnreadablePublish(id: string, issues: string): void {
+    const said = deskText(`this studio cannot read the publish: ${issues}`);
+    this.log('refused a unit-publish it cannot read', id);
+    try {
+      this.post({ type: 'unit-ack', id, ok: false, code: 'invalid', message: said });
+    } catch (err) {
+      this.log('the unit-ack was not sent', err);
+    }
+    const notice = `Not saved to the library: ${said}`;
+    this.o.onToast(notice, 'warning');
+    this.show(notice);
   }
 
   /** A `unit-publish`, published and linked; its `unit-ack` on the connection it came on, and a notice. */

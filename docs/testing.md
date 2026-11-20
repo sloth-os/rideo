@@ -269,7 +269,8 @@ only those names as extras, and reading verdicts that name a character instead o
   stored all the same); `deskUnitDrift` for every status (a slot made local stays `local` whatever its pin becomes); the
   bridge sending no unit field to a desk without the capability, `open.units` in slot order without the pins the stored
   state uses (2 fetches at a time, sha256 checked, never past 48 MiB), `unit-publish` saved, linked by the contract's
-  rule and acknowledged with the mapped codes, one at a time ([library units](design/director-desk.md#tests)).
+  rule and acknowledged with the mapped codes, one at a time, one it cannot read refused `invalid` at once ([library
+  units](design/director-desk.md#tests)).
 - **reviews of every step** (`packages/shared/test/ai-review-gates.test.ts`): the whole-take watch's verdict and its
   merge into the quality checks, the scene review's verdict, the clip gate, the cast review's subject and merge
   (fixes pointed at the character), the `cast.reviewPassed` gate (off for older projects, continue anyway), the cut's

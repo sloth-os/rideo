@@ -2267,4 +2267,33 @@ describe('the desk bridge: library units (docs/design/director-desk.md#library-u
     expect(h.toasts).toEqual([]);
     expect(h.last().line).toBe('Desk stored');
   });
+
+  it('answers a unit-publish it cannot read with bad_message and a unit-ack invalid at once, and says so', async () => {
+    const s = studio();
+    const h = await ready({ units: s.host });
+    h.desk(OPENED);
+    const before = h.posted().length;
+    // a newer desk's unit format: the desk reads no error of the host, and would wait out its timeout
+    h.desk(PUBLISH('pub-9', { unit: { format: '3d-editor.desk-unit', version: 2, data: bytes('unit v2') } }));
+    const answers = h.posted().slice(before);
+    expect(answers.map((m) => [m.type, m.id])).toEqual([
+      ['error', 'pub-9'],
+      ['unit-ack', 'pub-9'],
+    ]);
+    expect(answers[0]).toMatchObject({
+      code: 'bad_message',
+      message: expect.stringMatching(/^unit-publish: /),
+    });
+    expect(answers[1]).toMatchObject({ ok: false, code: 'invalid' });
+    const said = answers[1]!.message as string;
+    expect(said).toMatch(/^this studio cannot read the publish: unit\.version /);
+    expect(HostToDeskMessageSchema.safeParse(answers[1]).success).toBe(true);
+    expect(s.publishes).toEqual([]);
+    expect(h.toasts).toEqual([[`Not saved to the library: ${said}`, 'warning']]);
+    expect(h.last().line).toBe(`Not saved to the library: ${said}`);
+    // one without a usable id: nothing to answer
+    h.desk(PUBLISH('', { kind: 'vehicle' }));
+    expect(h.posted()).toHaveLength(before + 2);
+    expect(h.toasts).toHaveLength(1);
+  });
 });

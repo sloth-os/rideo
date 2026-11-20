@@ -135,9 +135,11 @@ the scene uses (`units`): [library units](#library-units).
 Rideo speaks version 1. A desk that offers no version rideo speaks is not connected: "This desk speaks protocol
 versions …; this studio speaks 1". Every message is validated with zod in both directions (`packages/shared`, the
 schemas of the protocol and of the brief); a message of a type rideo does not know is ignored and logged, one that
-does not validate is ignored and logged too, and one that carried an `id` is answered with `error` `bad_message`. Text
-the desk supplies (its versions, the reason export is unavailable, its errors' messages, the names of a result's
-files) is cut to 300 characters wherever rideo shows it, in the status line and in toasts.
+does not validate is ignored and logged too, and one that carried an `id` is answered with `error` `bad_message`. A
+`unit-publish` that does not validate is also answered `unit-ack` `{ok: false, code: "invalid"}` at once, since the desk
+reads no `error` of the host and would wait out its timeout ([publishing and linking](#publishing-and-linking)). Text
+the desk supplies (its versions, the reason export is unavailable, its errors' messages, the names of a result's files)
+is cut to 300 characters wherever rideo shows it, in the status line and in toasts.
 Rideo keeps a copy of the 3D-Editor's fixtures (one valid example of every message and some invalid ones) in
 `packages/shared/test/fixtures/desk-protocol/`, and its tests parse every valid one and reject every invalid one, so a
 change on either side that breaks the other shows up in the tests.
@@ -525,15 +527,18 @@ A refusal is `{ok: false, code, message}`, by what the library answered:
 |---|---|
 | `412` `library_conflict`: another version came after `newVersionOf` (the message names the latest) | `conflict` |
 | `413` | `too_large` |
-| `422` (`validation_error`, `consent_required`), or a sha256 that does not match | `invalid` |
+| `422` (`validation_error`, `consent_required`), a sha256 that does not match, or a `unit-publish` that does not validate | `invalid` |
 | `403` | `refused` |
 | `503`, or the studio is offline | `unavailable` |
 | anything else | `failed` |
 
-A `unit-publish` on an open without units (no desk should send one) is answered `{ok: false, code: "refused"}` at
-once, so the desk never waits out its timeout of 120 s plus 10 s per MiB of the unit. The panel says what happened, in
-its status line and a toast: "Saved Harbor v3 to the library; linked to the scene's place (Harbor)", "Saved Harbor v1
-to the library; not linked: Harbor uses another library set (Old harbor)", "Not saved to the library: …". An
+A `unit-publish` on an open without units (no desk should send one) is answered `{ok: false, code: "refused"}` at once,
+so the desk never waits out its timeout of 120 s plus 10 s per MiB of the unit. One that does not validate (a newer
+desk's unit format, a kind or `meta` this studio does not read) is answered at once too, `{ok: false, code: "invalid"}`
+with the message "this studio cannot read the publish: …" naming the checks that failed, after the `error` `bad_message`
+that every invalid message with an `id` gets (the desk does not read it); nothing is uploaded. The panel says what
+happened, in its status line and a toast: "Saved Harbor v3 to the library; linked to the scene's place (Harbor)", "Saved
+Harbor v1 to the library; not linked: Harbor uses another library set (Old harbor)", "Not saved to the library: …". An
 approved, read-only clip may publish; it is never linked.
 
 ### What a stored state uses
@@ -840,8 +845,9 @@ an `open` and why, and each publish's answer, to the browser's console (`[desk] 
   never passed, the buffers transferred; `unit-publish` saving a new item, a new version with `basedOn` and the same
   bytes again, linked by the rule's cases (read-only, no permission to edit, another pin, a `409` on the link: each
   `linked: false` with its reason), every refusal mapped to its code, publishes one at a time, a publish on an open
-  without units refused at once; each state's units sent with its write, and none when they do not fit or name a slot
-  twice (the state stored with its units unknown).
+  without units refused at once, one that does not validate answered `bad_message` and `unit-ack` `invalid` at once with
+  its notice; each state's units sent with its write, and none when they do not fit or name a slot twice (the state
+  stored with its units unknown).
 - **Library units, integration** (`desk.test.ts`): `X-Desk-State-Units` kept on the clip with its state (`-` as none,
   no header as unknown), a header that does not parse refused with `422` and counted, the same bytes again keeping the
   rows, `DELETE` clearing them; the embedding origins' preflight allows `x-desk-state-units` (`embedding.test.ts`).
