@@ -872,5 +872,6 @@ an `open` and why, and each publish's answer, to the browser's console (`[desk] 
   their pins in slot order and their bytes; Close records the state's units on the clip (no badge), and the next open
   sends no file for the pins that state uses; **Publish set** on an unpinned place creates an item, links the place in
   one commit and is acked `linked`; **Publish new version** makes v2 and moves the pin; another scene at that place
-  shows "3D: v2 available" until its desk opens again with v2's bytes; an approved clip's desk may publish, and the
+  shows "3D: v2 available" until its desk opens again with v2's bytes, the Library page's **Used in** saying
+  "Stored desk states: 1 clip uses v2" before and "2 clips use v2" after; an approved clip's desk may publish, and the
   publish is acked not linked ("the scene is read-only"); no sideways scroll.

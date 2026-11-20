@@ -511,12 +511,17 @@ export function moveEverywhereLabel(version: number, projects: number): string {
   return projects === 1 ? `Use v${version} in 1 project` : `Use v${version} in all ${projects} projects`;
 }
 
-/** A use of the item in a project, in words. */
+/**
+ * A use of the item in a project, in words: "Harbour: pins v1", "Stored desk states: 1 clip uses v2", "2 clips use v2
+ * (1 approved)" (the verb agrees with the count).
+ */
 export function usageText(u: LibraryUses['projects'][number]['uses'][number]): string {
-  if (u.via === 'deskState')
-    return `Stored desk states: ${plural(u.clips ?? 0, 'clip')} use v${u.version}${
+  if (u.via === 'deskState') {
+    const clips = u.clips ?? 0;
+    return `Stored desk states: ${plural(clips, 'clip')} ${clips === 1 ? 'uses' : 'use'} v${u.version}${
       u.approved ? ` (${u.approved} approved)` : ''
     }`;
+  }
   const name = u.entity?.name ?? 'an entity';
   return u.via === 'deskUnit' ? `${name}: pins v${u.version}` : `${name}: v${u.version}`;
 }

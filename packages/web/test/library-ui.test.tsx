@@ -541,6 +541,19 @@ describe('the rows and the plan in words', () => {
     });
     expect(usageText(uses.projects[0]!.uses[0]!)).toBe('Harbour: pins v1');
     expect(usageText(uses.projects[0]!.uses[1]!)).toBe('Stored desk states: 2 clips use v1 (1 approved)');
+    // the verb agrees with the count: one clip uses, two clips use
+    const stored = (clips: number, approved?: number) =>
+      usageText({
+        itemId: HARBOR_ITEM,
+        version: 2,
+        via: 'deskState',
+        clips,
+        ...(approved ? { approved } : {}),
+      });
+    expect(stored(1)).toBe('Stored desk states: 1 clip uses v2');
+    expect(stored(1, 1)).toBe('Stored desk states: 1 clip uses v2 (1 approved)');
+    expect(stored(2)).toBe('Stored desk states: 2 clips use v2');
+    expect(stored(0)).toBe('Stored desk states: 0 clips use v2');
     expect(
       usageText({
         itemId: MIRA_ITEM,

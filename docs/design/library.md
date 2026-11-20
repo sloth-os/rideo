@@ -593,12 +593,13 @@ header leaves the room to the project's title and badges, [brand](../brand.md#la
   character's role and summary, an element's kind and other names, a resource's kind and role, a 3D unit's figure kind
   and height, size, objects and credits), the versions (vN, date, author, note; the current one marked; **Make current**
   for the owner and admins) and **Used in**: the projects, each with the entities that use the item and the version each
-  uses, linking to their view, and for 3D units how many clips' stored desk states use each version; when where it is
-  used cannot be read, **Used in** says why and offers **Try again** (reading the item again leaves that said). For 3D
-  units each project row whose pins are at another version has **Use v3**, and **Use v3 in all 4 projects** (the
-  projects with such pins) applies the pin project by project, one apply per entity, and lists what each answered (now
-  uses v3, refused with the reason, or a project this person may not edit, skipped). The detail ends with **Archive** or
-  **Unarchive**; the archived item stays open, gone from the list unless **Show archived**.
+  uses, linking to their view, and for 3D units how many clips' stored desk states use each version ("Stored desk
+  states: 1 clip uses v2", "2 clips use v2": the verb agrees with the count); when where it is used cannot be read,
+  **Used in** says why and offers **Try again** (reading the item again leaves that said). For 3D units each project row
+  whose pins are at another version has **Use v3**, and **Use v3 in all 4 projects** (the projects with such pins)
+  applies the pin project by project, one apply per entity, and lists what each answered (now uses v3, refused with the
+  reason, or a project this person may not edit, skipped). The detail ends with **Archive** or **Unarchive**; the
+  archived item stays open, gone from the list unless **Show archived**.
 - **Phones**: the list, then the detail on its own route (with a link back to the list) and a bottom action bar holding
   **Use v3 in all 4 projects** and **Archive** or **Unarchive** (no bar for someone who may do neither); no sideways
   scroll.
@@ -781,7 +782,8 @@ existing `412` conflict, whose **Replace** would drop the server's change unless
   plan's verb for a use, an update and a link, and who may confirm, local edits, files), refusals in words by code (a
   `forbidden` one that needs a director said with the approved clips of its plan, the plan asked only then), tags
   checked, the moves of **Use v3 in all N projects** (pins at another version only, reviewers skipped, a refusal listed
-  and the loop going on), and the dialogs on a mocked API: Save with the consent box, a `412` offering Save anyway, the
+  and the loop going on), the Used in rows ("Harbour: pins v1", "Stored desk states: 1 clip uses v2", "2 clips use v2
+  (1 approved)"), and the dialogs on a mocked API: Save with the consent box, a `412` offering Save anyway, the
   plan's approval warning (a link an editor may not confirm, and an update refused for a clip approved since its plan
   naming that clip), the picker's "Link to the existing Mira" (Escape closing the plan only, the picker keeping its
   results), items checked under another search or tag used too, and a use that needs a director (an editor's refused one

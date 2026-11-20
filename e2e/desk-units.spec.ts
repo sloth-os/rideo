@@ -203,6 +203,13 @@ test('Publish set saves the place’s set to the library and links it; a new ver
   await expect(badge).toHaveAttribute('title', `${place}: Harbor set v2 available (not staged yet)`);
   await noSidewaysScroll(page);
 
+  // the Library page's Used in counts the clips whose stored state uses v2, the verb agreeing with the count
+  await page.goto(`/library/${ref}`);
+  const used = page.locator(`[data-testid="library-use-project"][data-project-id="${pid}"]`);
+  await expect(used).toContainText(`${place}: pins v2`);
+  await expect(used).toContainText('Stored desk states: 1 clip uses v2');
+  await noSidewaysScroll(page);
+
   // until its desk opens again: the pin and its bytes come, and its stored state uses v2
   await openDesk(page, pid, 1);
   await expect(d.getByTestId('desk-pin')).toHaveText([`set ${ref}@2`]);
@@ -215,6 +222,9 @@ test('Publish set saves the place’s set to the library and links it; a new ver
   await page.reload();
   await expect(sceneRow(page, 1)).toBeVisible();
   await expect(sceneRow(page, 1).getByTestId('desk-unit-badge')).toHaveCount(0);
+  // both clips' stored states use v2 now
+  await page.goto(`/library/${ref}`);
+  await expect(used).toContainText('Stored desk states: 2 clips use v2');
 });
 
 test('an approved clip’s desk may publish to the library, and the place is not linked', async ({
