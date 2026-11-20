@@ -433,10 +433,19 @@ export function maxRecordedLock(
   kind: 'character' | 'element' | 'voice',
   id: string,
 ): number {
-  let max = 0;
+  return recordedLock(docs, kind, id) ?? 0;
+}
+
+/** The highest lock version recorded for that id, as `maxRecordedLock`; null when nothing recorded one, not even 0. */
+function recordedLock(
+  docs: Pick<ProjectDocs, 'clips' | 'localizations'>,
+  kind: 'character' | 'element' | 'voice',
+  id: string,
+): number | null {
+  let max: number | null = null;
   const seen = (locks: Record<string, number> | undefined) => {
     const v = locks?.[id];
-    if (v !== undefined && v > max) max = v;
+    if (v !== undefined && (max === null || v > max)) max = v;
   };
   for (const clip of Object.values(docs.clips))
     for (const shot of clip.shots)
@@ -744,16 +753,16 @@ interface LockOutcome {
 
 /**
  * The lock an apply leaves (docs/design/library.md#use-in-project-update-and-link-apply): a create is locked only if
- * the version was saved locked, and locked or not it is above every version the project recorded (an unlocked one that
- * nothing recorded starts at 0), so no old take of that id is current by accident; an update relocks with the existing
- * rule (the version kept when the identity hash is unchanged, else raised); `relock: false` on a locked entity, or an
- * unlocked version onto a locked one, is refused.
+ * the version was saved locked, and locked or not it is above every version the project recorded, 0 included (an
+ * unlocked one that nothing recorded starts at 0), so no old take of that id is current by accident; an update relocks
+ * with the existing rule (the version kept when the identity hash is unchanged, else raised); `relock: false` on a
+ * locked entity, or an unlocked version onto a locked one, is refused. `recorded` is null when nothing recorded the id.
  */
 function relock(
   current: Character['lock'] | null,
   versionLocked: boolean,
   hash: string,
-  recorded: number,
+  recorded: number | null,
   ctx: LibraryApplyContext,
   refuse: (why: string) => LibraryError,
 ): LockOutcome {
@@ -762,14 +771,14 @@ function relock(
       ? {
           lock: {
             locked: true,
-            version: recorded + 1,
+            version: (recorded ?? 0) + 1,
             lockedAt: ctx.now,
             lockedBy: ctx.actor,
             identityHash: hash,
           },
           from: null,
         }
-      : { lock: { locked: false, version: recorded > 0 ? recorded + 1 : 0 }, from: null };
+      : { lock: { locked: false, version: recorded === null ? 0 : recorded + 1 }, from: null };
   }
   if (current.locked && !ctx.input.relock) throw refuse('relock it (relock: true) or unlock it first');
   if (current.locked && !versionLocked)
@@ -780,7 +789,7 @@ function relock(
   return {
     lock: {
       locked: true,
-      version: keep ? current.version : Math.max(current.version, recorded) + 1,
+      version: keep ? current.version : Math.max(current.version, recorded ?? 0) + 1,
       lockedAt: ctx.now,
       lockedBy: ctx.actor,
       identityHash: hash,
@@ -914,7 +923,7 @@ function resolveCharacter(
     base?.lock ?? null,
     payload.locked,
     ctx.identity.character(draft),
-    maxRecordedLock(ctx.docs, 'character', id),
+    recordedLock(ctx.docs, 'character', id),
     ctx,
     refuse,
   );
@@ -944,7 +953,7 @@ function resolveCharacter(
       current,
       v.locked,
       ctx.identity.voice(draftVoice),
-      maxRecordedLock(ctx.docs, 'voice', id),
+      recordedLock(ctx.docs, 'voice', id),
       ctx,
       (why) => new LibraryError('voice_locked', `${base?.name ?? payload.name}'s voice is locked: ${why}`),
     );
@@ -1084,7 +1093,7 @@ function resolveElement(ctx: LibraryApplyContext, payload: ElementSnapshot, medi
     base?.lock ?? null,
     payload.locked,
     ctx.identity.element(draft),
-    maxRecordedLock(ctx.docs, 'element', id),
+    recordedLock(ctx.docs, 'element', id),
     ctx,
     (why) => new LibraryError('element_locked', `${base?.name ?? payload.name} is locked: ${why}`),
   );

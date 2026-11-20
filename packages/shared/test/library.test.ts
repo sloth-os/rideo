@@ -591,6 +591,40 @@ describe('planApply', () => {
     expect(planApply(ctx(docsWith(), item, v)).lock).toEqual({ locked: false, from: null, to: 0 });
   });
 
+  it('creates a version saved unlocked above a version 0 a take recorded, its voice likewise', () => {
+    const voice: Voice = {
+      description: 'warm',
+      provider: 'elevenlabs',
+      voiceId: 'v1',
+      source: 'designed',
+      sample: f.media({ mime: 'audio/wav' }),
+      candidates: [],
+      lock: { locked: false, version: 0 },
+    };
+    const mira = f.character({ lock: { locked: false, version: 0 }, voice });
+    const v = version('lib_0000000000mira00', 'character', characterSnapshot(mira).payload);
+    const item = itemOf(v, { entityId: mira.id });
+    // a take of an earlier Mira of the same id, made while she and her voice were never locked
+    const old = f.take({
+      characterLocks: { [mira.id]: 0 },
+      audio: { mode: 'tts', dialogue: null, lines: [], voiceLocks: { [mira.id]: 0 }, lipSync: 'none' },
+    });
+    const shot = f.shot({ characterIds: [mira.id], takes: [old], selectedTakeId: old.id });
+    const clip = f.clip({ shots: [shot] });
+    const docs = docsWith({ clips: { [clip.id]: clip } });
+    expect(planApply(ctx(docs, item, v))).toMatchObject({
+      lock: { locked: false, from: null, to: 1 },
+      voiceLock: { locked: false, from: null, to: 1 },
+      staleTakes: 1,
+    });
+    const out = applyVersion({
+      ...ctx(docs, item, v),
+      copied: new Map([...mira.references.map((r) => r.media), voice.sample!].map((m) => [m.hash, m])),
+    });
+    const doc = CharacterSchema.parse(out.write!.doc);
+    expect(isStale(old, shot, { [doc.id]: doc })).toBe(true);
+  });
+
   it('refuses a create whose id or name is taken, and only warns for an alias', () => {
     const { mira, v, item } = miraItem();
     expect(refusal(() => planApply(ctx(docsWith({ characters: { [mira.id]: mira } }), item, v)))).toEqual({
