@@ -253,20 +253,24 @@ only those names as extras, and reading verdicts that name a character instead o
   every kind and their limits; the snapshot digest blind to reference ids, wardrobe ids, `createdAt` and
   `consent.recordedAt` and changed by identity, wardrobe text, reference hashes, seed and pin; snapshots keeping only
   approved references, with consent records, seeds, wardrobe ids and the 3D pin; the apply plan (create keeping the
-  item's id and seed at lock version 1 + the highest the project recorded, `conflict` for a taken id or name, update
-  relocking by the identity hash, stale takes and approved clips needing `project.approve`, the locked refusals, 3D
-  items onto their kinds of target only, `replacePin: false`, resources always created, archived items refused);
-  `libraryAllows` for people, admins, the studio token and agent tokens with and without projects; a digest with and
-  without `library`, still version 1; documents without `library` and `deskUnit` still parsing, and a pin changing no
-  identity hash; the store on memory and file backends (versions written once, a leftover manifest skipped, two
-  versions at once, heads read once and read again after a read that failed, the same bytes stored once) and the service
-  on in-memory storage (`unchanged`, `412` `library_conflict` for a stale `If-Match` and a stale `basedOn`, archive, a
-  head it cannot read answered with a retryable `storage_error`, a save with `newItem` making a new item whatever
-  `itemId` names, permissions through real principals, pins and detach (counted under the item's kind), an approved
-  clip's update planned for an editor, refused to them and done by a director) and its uploads (`meta` first, a unit of
-  32 MiB + 1 byte refused with `413`, a unit whose prefix, header or kind is wrong, thumbnails that are not PNG, over
-  64 KiB or over 256 px, a client gone in the middle of a part leaving no temporary file, a raster picture known by its
-  signature and an SVG or a page not taken for one) ([the library](design/library.md#tests)).
+  item's id and seed above every version the project recorded, locked or not, and counting the takes it makes stale,
+  `conflict` for a taken id or name, an alias that is another element's alias or name only warned, update relocking by
+  the identity hash, outfits keeping the target's ids (by id, then by name, each once), stale takes and approved clips
+  needing `project.approve` for a create as for an update, the locked refusals, 3D items onto their kinds of target
+  only, `replacePin: false` refused by a pin and by an update or link whose version carries one, no edit made here
+  counted for a pin or a voice the apply keeps, resources always created, archived items refused); `libraryAllows` for
+  people, admins, the studio token and agent tokens with and without projects; a digest with and without `library`,
+  still version 1; documents without `library` and `deskUnit` still parsing, and a pin changing no identity hash; the
+  store on memory and file backends (versions written once, a leftover manifest skipped, two versions at once, heads
+  read once and read again after a read that failed, the same bytes stored once) and the service on in-memory storage
+  (`unchanged`, `412` `library_conflict` for a stale `If-Match` and a stale `basedOn`, archive, a head it cannot read
+  answered with a retryable `storage_error`, a save with `newItem` making a new item whatever `itemId` names,
+  permissions through real principals, pins and detach (counted under the item's kind), an approved clip's update
+  planned for an editor, refused to them and done by a director, and so a Use in project of a character used again whose
+  old take an approved clip holds) and its uploads (`meta` first, a unit of 32 MiB + 1 byte refused with `413`, a unit
+  whose prefix, header or kind is wrong, thumbnails that are not PNG, over 64 KiB or over 256 px, a client gone in the
+  middle of a part leaving no temporary file, a raster picture known by its signature and an SVG or a page not taken for
+  one) ([the library](design/library.md#tests)).
 - **library units** (`packages/shared/test/desk-protocol.test.ts`, `desk-brief.test.ts`, `desk-units.test.ts`,
   `packages/web/test/desk-bridge.test.ts`): the new fixtures (valid ones parse, invalid ones refused but
   `state-units-bad-staged.json`, a state read with its units unknown) and the capability read leniently; the brief

@@ -688,16 +688,18 @@ existing `412` conflict, whose **Replace** would drop the server's change unless
 
 - **Unit (shared):** `library.test.ts`: the schemas of every kind (a payload of the wrong kind, tags, references and
   meta over their limits refused); the snapshot digest the same under new reference ids, wardrobe ids, `createdAt` and
-  `consent.recordedAt` and different for another identity, wardrobe text, reference hash, seed or pin; snapshots
-  keeping only approved references, with consent records, seeds, wardrobe ids and the pin; `planApply` (create keeping
-  the item's id and seed at lock version 1 + the highest recorded; `conflict` for a taken id or name, an alias only
-  warned; update relocking by the identity hash; stale takes and approved clips with `needs: "project.approve"`;
-  `character_locked`, `element_locked`, `voice_locked`; 3D items onto the right targets only; `replacePin: false`
-  refused on another pin; a version without a pin keeping the entity's; resources always created; archived items
-  refused); `libraryAllows` for every kind of caller (`accounts.test.ts`); digests with and without `library`, still
-  version 1 (`digest.test.ts`); old documents without `library` and `deskUnit` parsing and the new fields
-  round-tripping (`documents.test.ts`); a pin changing no identity hash (`library.test.ts`, and with the server's own
-  hashes in `library-store.test.ts`).
+  `consent.recordedAt` and different for another identity, wardrobe text, reference hash, seed or pin; snapshots keeping
+  only approved references, with consent records, seeds, wardrobe ids and the pin; `planApply` (create keeping the
+  item's id and seed above every version the project recorded, locked or not, its voice too, and counting the takes it
+  makes stale; `conflict` for a taken id or name, an alias only warned, one that is another element's name too; update
+  relocking by the identity hash; outfits keeping the target's ids, by id and then by name, each id once; stale takes
+  and approved clips with `needs: "project.approve"`, for a create as for an update; `character_locked`,
+  `element_locked`, `voice_locked`; 3D items onto the right targets only; `replacePin: false` refused on another pin, by
+  a pin or by an update or link whose version carries one; a version without a pin keeping the entity's; no edit made
+  here counted for a pin or a voice the apply keeps; resources always created; archived items refused); `libraryAllows`
+  for every kind of caller (`accounts.test.ts`); digests with and without `library`, still version 1 (`digest.test.ts`);
+  old documents without `library` and `deskUnit` parsing and the new fields round-tripping (`documents.test.ts`); a pin
+  changing no identity hash (`library.test.ts`, and with the server's own hashes in `library-store.test.ts`).
 - **Unit (server):** the store (`library-store.test.ts`, memory and file backends): versions written once, a leftover
   manifest skipped, two versions at once both kept (the item's lock in one server, `If-None-Match` across two), heads
   read once with an invalid one skipped, a head whose read fails failing the load (retryable) until the next call reads
@@ -708,12 +710,13 @@ existing `412` conflict, whose **Replace** would drop the server's change unless
   admins, scoped, reviewer and editor tokens, an admin's token); a set pinned on a location and a figure on a character
   (no lock or identity hash moved), status and uses following the pin, detach (counted under the detached item's kind: a
   pin's unit, a link's item); an update whose approved clip goes stale planned for an editor, refused to them (`403`,
-  audited) and done by a director (lock + 1). Uploads (`library-upload.test.ts`): the multipart parts in order, `meta`
-  not first, bad `meta`, a unit of 32 MiB + 1 byte (`413`, counted, its temporary file removed), a thumbnail over 64 KiB
-  and `meta` over 32 KiB (`413`), 3D meta over 16 KiB (`422`), a unit with a wrong magic, container, codec, header,
-  format, version or kind (`422`), thumbnails that are not PNG or over 256 px (`422`), a client that goes away in the
-  middle of a part (the receive rejects, no temporary file left), a raster picture known by its signature (PNG, JPEG,
-  WebP, GIF, BMP, TIFF) and an SVG, a page or a video not taken for one, byte ranges.
+  audited) and done by a director (lock + 1), and so is a Use in project of a character used again whose old take an
+  approved clip holds. Uploads (`library-upload.test.ts`): the multipart parts in order, `meta` not first, bad `meta`, a
+  unit of 32 MiB + 1 byte (`413`, counted, its temporary file removed), a thumbnail over 64 KiB and `meta` over 32 KiB
+  (`413`), 3D meta over 16 KiB (`422`), a unit with a wrong magic, container, codec, header, format, version or kind
+  (`422`), thumbnails that are not PNG or over 256 px (`422`), a client that goes away in the middle of a part (the
+  receive rejects, no temporary file left), a raster picture known by its signature (PNG, JPEG, WebP, GIF, BMP, TIFF)
+  and an SVG, a page or a video not taken for one, byte ranges.
 - **Integration** (`library.test.ts`, REST and MCP on one server): a desk set uploaded, listed, read, served with
   `Range`, `304` and `HEAD`, a new version with a stale `If-Match` and with a stale `basedOn`, renamed, archived (gone
   from the default list, still served), its uses; Mira saved from project A (`consent_required` until acknowledged),
