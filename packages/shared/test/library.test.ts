@@ -1058,6 +1058,71 @@ describe('planApply', () => {
     expect(plan.localChanges).toBe(true);
     expect(plan.changes).toContain('summary');
   });
+
+  it('counts no edit made here for a pin or a voice the apply keeps', () => {
+    const { mira, v, item } = miraItem();
+    const used = {
+      ...mira,
+      lock: { ...mira.lock, identityHash: identity.character(mira) },
+      library: { itemId: item.id, version: 1, digest: v.digest, mode: 'used' as const, at: NOW, by: actor },
+    };
+    const figure = (version: number) =>
+      DeskUnitPinSchema.parse({
+        kind: 'desk-figure',
+        itemId: 'lib_0000000000figaaa',
+        version,
+        sha256: HASH(`figure${version}`),
+        name: 'Mira look',
+        actorKind: 'mannequin',
+        heightM: 1.7,
+        pinnedAt: NOW,
+        pinnedBy: actor,
+      });
+    // a 3D figure pinned here after Use: the pin is shape, which no version without a pin replaces
+    const pinned: Character = { ...used, deskUnit: figure(1) };
+    const plan = (c: Character, ver: LibraryVersion) =>
+      planApply(
+        ctx(docsWith({ characters: { [mira.id]: c } }), itemOf(ver), ver, {
+          target: { kind: 'character', id: mira.id },
+        }),
+      );
+    expect(plan(pinned, v)).toMatchObject({ mode: 'update', changes: [], localChanges: false });
+    const silver = characterSnapshot({
+      ...mira,
+      identity: { ...mira.identity, hair: 'silver crop' },
+    }).payload;
+    const v2 = version(item.id, 'character', silver, 2);
+    expect(plan(pinned, v2)).toMatchObject({ changes: ['identity'], localChanges: false });
+    const kept = applyVersion({
+      ...ctx(docsWith({ characters: { [mira.id]: pinned } }), itemOf(v2), v2, {
+        target: { kind: 'character', id: mira.id },
+      }),
+      copied: new Map(mira.references.map((r) => [r.media.hash, r.media])),
+    });
+    expect((kept.write!.doc as Character).deskUnit).toEqual(pinned.deskUnit);
+    // a version carrying that very pin keeps it too; one carrying another replaces it, and says so
+    const { pinnedAt: _at, pinnedBy: _by, ...carried } = figure(1);
+    expect(
+      plan(pinned, version(item.id, 'character', { ...silver, deskUnit: carried }, 2)).localChanges,
+    ).toBe(false);
+    const moved = version(item.id, 'character', { ...silver, deskUnit: { ...carried, version: 2 } }, 2);
+    expect(plan(pinned, moved)).toMatchObject({ changes: ['identity', 'deskUnit'], localChanges: true });
+    // an edit made here besides the pin is still said
+    expect(plan({ ...pinned, summary: 'A pilot of the harbour.' }, v2).localChanges).toBe(true);
+    // a voice designed here, which a version without a voice leaves as it is
+    const voice: Voice = {
+      description: 'warm alto',
+      provider: 'elevenlabs',
+      voiceId: 'v-designed',
+      source: 'designed',
+      sample: f.media({ mime: 'audio/mpeg' }),
+      candidates: [],
+      lock: { locked: false, version: 0 },
+    };
+    expect(plan({ ...pinned, voice }, v2).localChanges).toBe(false);
+    // linking a character that differs from the version only by what the link keeps
+    expect(plan({ ...pinned, voice, library: null }, v)).toMatchObject({ mode: 'link', localChanges: false });
+  });
 });
 
 describe('libraryUses', () => {

@@ -261,16 +261,15 @@ sha256) and copies the others. Every apply is one commit:
 - **Files** are copied from `library/files` into the project's media under their usual names (`media/refs/…`,
   `media/uploads/…`).
 
-**Update and link** replace the target's library-owned content: name, role, summary, identity, wardrobe,
-personality, references, voice and seed for a character; name, description, aliases, references and seed for an
-element; and the 3D pin when the version has one (a version without a pin leaves the entity's pin as it is). Shots
-name outfits by id, so an outfit of the version keeps the target's id when it is the same outfit: the same id, else the
-same name as a target outfit no other outfit of the version took; every outfit keeps an id of its own, and the
-references that wear it follow it. When the
-target and the version are both locked and `relock` is on (the default), the lock version stays when the identity hash
-is unchanged and goes up by one otherwise: the rules R2 and E2 already use, so R6, E6 and V6 make exactly the takes that
-used the old identity stale. `relock: false` on a locked target, or an unlocked version applied onto a locked target,
-is refused with `character_locked`, `element_locked` or `voice_locked` (409).
+**Update and link** replace the target's library-owned content: name, role, summary, identity, wardrobe, personality,
+references and seed for a character; name, description, aliases, references and seed for an element; and the voice and
+the 3D pin when the version has them (a version without a voice or a pin leaves the entity's as it is). Shots name
+outfits by id, so an outfit of the version keeps the target's id when it is the same outfit: the same id, else the same
+name as a target outfit no other outfit of the version took; every outfit keeps an id of its own, and the references
+that wear it follow it. When the target and the version are both locked and `relock` is on (the default), the lock
+version stays when the identity hash is unchanged and goes up by one otherwise: the rules R2 and E2 already use, so R6,
+E6 and V6 make exactly the takes that used the old identity stale. `relock: false` on a locked target, or an unlocked
+version applied onto a locked target, is refused with `character_locked`, `element_locked` or `voice_locked` (409).
 
 **The plan** is what a dry run answers and every apply returns:
 
@@ -286,7 +285,7 @@ type LibraryApplyPlan = {
   voiceLock: { locked: boolean; from: number | null; to: number | null } | null;
   staleTakes: number;                 // takes the apply makes stale
   approvedClips: { id: string; index: number; title: string }[];   // approved clips whose selected takes go stale
-  localChanges: boolean;              // the entity was edited here since its version: those edits are replaced
+  localChanges: boolean;              // edited here since its version, in what the apply replaces
   realPerson: boolean;                // needs acknowledgeConsent
   files: { count: number; bytes: number; toCopy: number; bytesToCopy: number };
   warnings: string[];
@@ -299,6 +298,11 @@ type LibraryApplyPlan = {
   never taken back: the approved clips keep their takes, and export stays blocked by R7 until those takes are
   generated again ([character consistency](character-consistency.md)).
 - **Real people.** Applying a real-person version needs `acknowledgeConsent: true`, as saving one does.
+- **Edits made here** (`localChanges`) are told by the snapshot digest: the entity's against its version's (update: the
+  version it links; link: the version applied), counted with and without what the apply keeps. A pin moved here that
+  the version does not re-point (it carries none, or the very same one) and a voice the version does not have stay as
+  they are, so they alone never make the plan say that edits are replaced; the status's `modified` still counts them,
+  since the entity differs from its version.
 
 ### Detach
 

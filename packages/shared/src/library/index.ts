@@ -812,6 +812,10 @@ function targetOf(ctx: LibraryApplyContext, kind: 'character' | 'element') {
   return target.id;
 }
 
+/** An update or link keeps the entity's pin: the version carries none, or the very pin the entity has. */
+const keepsPin = (snapshot: LibrarySnapshotPin | null, current: DeskUnitPin | null | undefined) =>
+  !snapshot || (!!current && current.itemId === snapshot.itemId && current.version === snapshot.version);
+
 /**
  * The entity's pin after an update, link or create: the version's pin when it carries one, else the entity's own. A
  * pin of another item is re-pointed only with `replacePin`, as in mode pin; a new version of the same item moves it.
@@ -822,8 +826,7 @@ function pinAfter(
   name: string,
   ctx: LibraryApplyContext,
 ): DeskUnitPin | null {
-  if (!snapshot) return current ?? null;
-  if (current && current.itemId === snapshot.itemId && current.version === snapshot.version) return current;
+  if (!snapshot || keepsPin(snapshot, current)) return current ?? null;
   if (current && current.itemId !== snapshot.itemId && !ctx.input.replacePin)
     throw new LibraryError(
       'conflict',
@@ -984,7 +987,7 @@ function resolveCharacter(
     lock === base.lock &&
     base.library?.itemId === ctx.item.id &&
     base.library.version === ctx.version.version;
-  const localChanges = localEdits(ctx, 'character', base, mode);
+  const localChanges = localEdits(ctx, 'character', base, mode, payload);
   // a create counts too: takes that recorded this id before (the character removed and used again, or an episode
   // copied from another) go stale once it is back
   const stale = staleness(ctx.docs, {
@@ -1116,7 +1119,7 @@ function resolveElement(ctx: LibraryApplyContext, payload: ElementSnapshot, medi
       lock: { locked: lock.locked, from, to: lock.version },
       voiceLock: null,
       ...stale,
-      localChanges: localEdits(ctx, 'element', base, mode),
+      localChanges: localEdits(ctx, 'element', base, mode, payload),
       realPerson: ctx.version.realPerson,
       files: filesOf(ctx, true),
       warnings,
@@ -1127,17 +1130,27 @@ function resolveElement(ctx: LibraryApplyContext, payload: ElementSnapshot, medi
   };
 }
 
-/** The entity was edited here since its version (update), or differs from the version it gets linked to (link). */
+/**
+ * The entity was edited here since its version (update), or differs from the version it gets linked to (link), in what
+ * the apply replaces: its snapshot digest is not that version's, counted with or without what the apply keeps (the pin
+ * when the version carries none or the very same one, the voice when the version has none).
+ */
 function localEdits(
   ctx: LibraryApplyContext,
   kind: 'character' | 'element',
   base: Character | Element | undefined,
   mode: LibraryApplyPlan['mode'],
+  version: CharacterSnapshot | ElementSnapshot,
 ): boolean {
   if (!base) return false;
-  const digest = libraryDigest(kind, entitySnapshot(kind, base).payload, ctx.sha256);
-  if (mode === 'update') return !!base.library && digest !== base.library.digest;
-  return digest !== ctx.version.digest;
+  const reference = mode === 'update' ? base.library?.digest : ctx.version.digest;
+  if (!reference) return false;
+  let candidates = [entitySnapshot(kind, base).payload as CharacterSnapshot | ElementSnapshot];
+  if (base.deskUnit && keepsPin(version.deskUnit, base.deskUnit))
+    candidates = [...candidates, ...candidates.map((c) => ({ ...c, deskUnit: null }))];
+  if (kind === 'character' && (base as Character).voice && !(version as CharacterSnapshot).voice)
+    candidates = [...candidates, ...candidates.map((c) => ({ ...(c as CharacterSnapshot), voice: null }))];
+  return candidates.every((c) => libraryDigest(kind, c, ctx.sha256) !== reference);
 }
 
 function applyMessage(
