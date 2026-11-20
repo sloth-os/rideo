@@ -210,6 +210,13 @@ Files uploaded by editor jobs (render parts, soundtrack, analysis thumbnails, sp
 results (export, thumbnails) are written to WebDAV. Staging folders of finished jobs are removed after the
 follow-up job completes, and orphans after 24 h.
 
+The scratch directory `${RIDEO_DATA_DIR}/tmp/` holds what is on its way somewhere else: an upload spooled from its
+request before its service takes it, a library file or a brand kit's file being copied, a job's working folder
+(`d-…`). Each is removed when its request or job ends; what a crash or a killed process left there is removed when the
+server starts: every file, and every folder by its newest file, written more than a day before. The log line
+`removed stale scratch files` gives how many (`removed`, 0 when nothing was left). The day spares what another
+process sharing the data directory may still be writing.
+
 ### Serving media to the browser
 
 `GET /api/projects/:id/media/<path>` supports `Range`. It serves from the local cache when warm. Otherwise

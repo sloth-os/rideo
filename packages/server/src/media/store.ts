@@ -1,5 +1,16 @@
 import { createReadStream, createWriteStream } from 'node:fs';
-import { copyFile, mkdir, readdir, readFile, rename, rm, stat, utimes, writeFile } from 'node:fs/promises';
+import {
+  copyFile,
+  lstat,
+  mkdir,
+  readdir,
+  readFile,
+  rename,
+  rm,
+  stat,
+  utimes,
+  writeFile,
+} from 'node:fs/promises';
 import { extname, join } from 'node:path';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
@@ -131,6 +142,21 @@ type PendingUpload = z.infer<typeof PendingUploadSchema>;
 /** The first wait after a failed upload; it doubles up to the longest. */
 const UPLOAD_RETRY_MS = 30_000;
 const UPLOAD_RETRY_MAX_MS = 600_000;
+/** What is left in the scratch directory longer than this is removed at a start (`sweepTmp`). */
+const TMP_MAX_AGE_MS = 24 * 3600_000;
+
+/** The newest modification time under a path (itself, and for a folder all it holds); null when it is gone. */
+async function newestMtime(path: string): Promise<number | null> {
+  const st = await lstat(path).catch(() => null);
+  if (!st) return null;
+  let newest = st.mtimeMs;
+  if (!st.isDirectory()) return newest;
+  for (const name of await readdir(path).catch(() => [] as string[])) {
+    const t = await newestMtime(join(path, name));
+    if (t !== null && t > newest) newest = t;
+  }
+  return newest;
+}
 
 export class MediaStore {
   private readonly cacheDir: string;
@@ -213,7 +239,26 @@ export class MediaStore {
     for (const key of this.pending.keys()) void this.upload(key);
   }
 
-  /** A unique scratch path (caller deletes it, or it is swept on restart). */
+  /**
+   * Removes what a crash or a killed process left in the scratch directory: every file, and every folder by its newest
+   * file, written more than `maxAgeMs` ago (docs/design/storage-webdav.md#local-cache-and-staging). Run at start, when
+   * nothing of this process is in it; the age spares what another process sharing the data directory is still writing.
+   * Returns how many entries it removed.
+   */
+  async sweepTmp(maxAgeMs = TMP_MAX_AGE_MS, now = Date.now()): Promise<number> {
+    const names = await readdir(this.tmpDir).catch(() => [] as string[]);
+    let removed = 0;
+    for (const name of names) {
+      const path = join(this.tmpDir, name);
+      const newest = await newestMtime(path);
+      if (newest === null || now - newest <= maxAgeMs) continue;
+      await rm(path, { recursive: true, force: true });
+      removed++;
+    }
+    return removed;
+  }
+
+  /** A unique scratch path (caller deletes it, or it is swept at a start once a day old). */
   tmp(ext: string): string {
     return join(this.tmpDir, `${Date.now()}-${randomHex(6)}.${ext.replace(/^\./, '')}`);
   }

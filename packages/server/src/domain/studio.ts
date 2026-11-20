@@ -623,6 +623,12 @@ export function createStudio(
     async start() {
       await mkdir(join(config.dataDir), { recursive: true });
       await media.init();
+      // What a crash or a killed upload left in the scratch directory, a day on
+      // (docs/design/storage-webdav.md#local-cache-and-staging)
+      await media
+        .sweepTmp()
+        .then((removed) => log.info({ removed }, 'removed stale scratch files'))
+        .catch((err) => log.warn({ err }, 'scratch sweep failed'));
       // An export written to storage behind its readiness says so (docs/design/storage-webdav.md#local-cache-and-staging)
       media.onUploaded = (projectId, path) =>
         void projectsRegistry

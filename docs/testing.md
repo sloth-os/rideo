@@ -134,7 +134,9 @@ RIDEO_TEST_WEBDAV_URL=http://rideo:rideo@localhost:8080/ npx vitest run --projec
   timeout or failed connection made a retryable `llm_error` for the job, and a cancelled job not waiting; live hub sequencing, replay and resync, and job heartbeats on the live channel (leased, lost, cancelled); config parsing (TTS, speaker-check and audio-visual endpoints); the vision judge told who is absent and counting
 only those names as extras, and reading verdicts that name a character instead of its id with strays dropped
 (`judge.test.ts`); gateway output downloads made again after a dropped connection or a `5xx`, then a retryable
-`gateway_error`, and a `404` failing at once (`media-download.test.ts`); the ElevenLabs and OpenAI TTS clients
+`gateway_error`, and a `404` failing at once (`media-download.test.ts`); the scratch directory swept when the server
+starts, a file or a folder (by its newest file) more than a day old removed and the count logged, newer ones kept
+(`media-tmp.test.ts`); the ElevenLabs and OpenAI TTS clients
   against a fake proxy (design, save, clone, speech with timings and seeds, retryable failures, metrics); the
   speaker-check merge (V4: same, different, missing and silent voices, no judge, judge outage); sound effects
   through a fake proxy (request shape, length clamp, retryable failures, `rideo_post_audio_total`) and the
