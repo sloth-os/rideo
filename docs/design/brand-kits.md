@@ -60,7 +60,8 @@ the compositor loads it as a `FontFace` named after its hash.
 | a project's brand | `PUT /api/projects/:id/brand` `{kitId \| null}` | `project_brand` |
 | bumpers, lower thirds | the timeline ops `add_bumper`, `add_text` with a template's style | `timeline_apply` |
 
-The studio has a **Brand kits** page (from the user menu): kits with their colors, fonts, logo, bumpers, bug and
+The studio has a **Brand kits** page (from the header's **Brand kits** link; in a project below `md`, from **More**,
+[brand](../brand.md#layout-and-responsiveness)): kits with their colors, fonts, logo, bumpers, bug and
 lower-third templates, editable by admins and directors. The project's settings choose the kit; the editor's toolbar
 adds a lower third from a template and the intro and outro; the export dialog has the brand bug switch.
 

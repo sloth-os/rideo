@@ -12,9 +12,11 @@ import {
   MapPin,
   MoreHorizontal,
   NotebookPen,
+  Palette,
   ScanSearch,
   Scissors,
   Search,
+  Settings,
   Users,
 } from 'lucide-react';
 import { type ComponentType, lazy, Suspense, useEffect, useState } from 'react';
@@ -24,7 +26,7 @@ import { AiNotice } from '../../components/AiNotice';
 import { JobRow } from '../../components/JobProgress';
 import { Badge, cx, Spinner } from '../../components/ui';
 import { editorWorker } from '../../engine';
-import { useProjectRole } from '../../lib/auth';
+import { useAuth, useProjectRole } from '../../lib/auth';
 import { useAi } from '../../lib/config';
 import { liveClient } from '../../lib/live-bridge';
 import { useStudioShell } from '../../lib/studio-context';
@@ -74,6 +76,16 @@ const EDIT_NAV: NavItem[] = [
   { view: 'history', label: 'History', icon: GitBranch },
   { view: 'exports', label: 'Exports', icon: Download },
   { view: 'insights', label: 'Insights', icon: BarChart3 },
+];
+
+/**
+ * The header's studio links that the More menu holds while it shows (below `md`), the header leaving them out there
+ * (`AppHeader`'s `linksInMenu`, docs/brand.md#layout-and-responsiveness). Settings is for administrators, as in the header.
+ */
+const STUDIO_LINKS: { to: string; label: string; icon: LucideIcon; testid: string; admin?: boolean }[] = [
+  { to: '/library', label: 'Library', icon: LibraryBig, testid: 'mnav-library' },
+  { to: '/brand', label: 'Brand kits', icon: Palette, testid: 'mnav-brand-kits' },
+  { to: '/settings', label: 'Settings', icon: Settings, testid: 'mnav-settings', admin: true },
 ];
 
 // The editor pulls in mediabunny (WebCodecs); load it only when the editor is opened.
@@ -131,6 +143,7 @@ export function Workspace() {
   const ai = useAi();
   const [more, setMore] = useState(false);
   const shell = useStudioShell();
+  const admin = useAuth((s) => s.me?.admin);
   useEffect(() => {
     let cancelled = false;
     load(projectId)
@@ -171,23 +184,30 @@ export function Workspace() {
   const overflow = nav.slice(4);
   return (
     <div className="flex h-full flex-col">
-      <AppHeader libraryInMenu>
+      <AppHeader linksInMenu>
         {/*
-          The title shrinks for its badges to no less than 8rem (the whole row when that is narrower, as on a phone),
-          and the row clips what does not fit, so nothing runs under the header's controls
-          (docs/brand.md#layout-and-responsiveness)
+          The title gives way to its badges with an ellipsis, never below the smaller of its own width and 3rem and
+          never wider than its text; the stage badge (from `sm`) keeps its word; the branch badge gives way down to its
+          icon, its name in its tooltip. The row clips only what the header's room cannot hold, so nothing runs under
+          the header's controls (docs/brand.md#layout-and-responsiveness)
         */}
         <div className="flex min-w-0 items-center gap-2 overflow-hidden">
-          <h1 className="min-w-[min(8rem,100%)] truncate font-semibold" data-testid="project-title">
-            {docs.project.title}
+          <h1 className="font-semibold" data-testid="project-title" title={docs.project.title}>
+            <span className="fit-title-text">{docs.project.title}</span>
+            <span className="fit-title-sizer" data-text={docs.project.title} aria-hidden="true" />
           </h1>
-          <Badge tone="accent" className="hidden sm:inline-flex" testid="project-stage">
+          <Badge tone="accent" className="hidden shrink-0 sm:inline-flex" testid="project-stage">
             {docs.project.workflow.stage}
           </Badge>
           {head && head.branch !== 'main' ? (
-            <Badge tone="info" className="min-w-0" title={head.branch} testid="project-branch">
-              <GitBranch className="size-3 shrink-0" />
-              <span className="truncate">{head.branch}</span>
+            <Badge
+              tone="info"
+              className="min-w-[1.875rem] overflow-hidden"
+              title={`Branch ${head.branch}`}
+              testid="project-branch"
+            >
+              <GitBranch className="size-3 shrink-0" aria-hidden="true" />
+              <span className="min-w-0 truncate">{head.branch}</span>
             </Badge>
           ) : null}
         </div>
@@ -294,22 +314,26 @@ export function Workspace() {
             </NavLink>
           ))}
           {/*
-            Below `sm` the header's Library link moves here, leaving the header's room to the project's title
-            (docs/brand.md#layout-and-responsiveness); a host that hides the header has neither
+            While this menu shows (below `md`) the header's studio links are here, leaving the header's room to the
+            project's title and its badges (docs/brand.md#layout-and-responsiveness); a host that hides the header has
+            neither
           */}
           {shell.chrome.header ? (
             <>
-              <div className="my-1 border-t border-border sm:hidden" role="separator" />
-              <Link
-                to="/library"
-                onClick={() => setMore(false)}
-                className="flex items-center gap-3 rounded px-3 py-2.5 text-sm sm:hidden"
-                role="menuitem"
-                data-testid="mnav-library"
-              >
-                <LibraryBig className="size-4 text-muted" />
-                Library
-              </Link>
+              <div className="my-1 border-t border-border" role="separator" />
+              {STUDIO_LINKS.filter((l) => !l.admin || admin).map((l) => (
+                <Link
+                  key={l.to}
+                  to={l.to}
+                  onClick={() => setMore(false)}
+                  className="flex items-center gap-3 rounded px-3 py-2.5 text-sm"
+                  role="menuitem"
+                  data-testid={l.testid}
+                >
+                  <l.icon className="size-4 text-muted" />
+                  {l.label}
+                </Link>
+              ))}
             </>
           ) : null}
         </div>

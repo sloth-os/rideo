@@ -62,10 +62,20 @@ Progress (linear, with a job message), EmptyState, the workflow Stepper, and Con
 No view may scroll horizontally at 360px width, except the timeline lane, which scrolls inside its own
 container.
 
-The project header keeps the project's title on a phone: the title shrinks for its badges to no less than 8rem (the
-whole row when that is narrower, as on a phone), the row cuts whatever does not fit, so nothing runs under the engine
-state, the live dot or the header's links, and the stage badge waits for `sm` (640px). Below `sm` the header's Library
-link moves into the project's **More** menu.
+The project header keeps the project's title, its stage and its branch apart from the header's controls at every
+width from 360px, signed in or not:
+
+- The title gives way to its badges with an ellipsis (its full text in its tooltip), but never below the smaller of
+  its own width and 3rem, and it is never wider than its text: a short title is followed by its badges, not by a gap.
+- The stage badge waits for `sm` (640px); from there it shows whole.
+- A branch other than `main` shows as a badge whose name gives way down to the badge's icon, the branch named in its
+  tooltip ("Branch alt-ending"), at every width.
+- While the project's bottom bar and its **More** menu show (below `md`, 768px), the header's studio links (Library,
+  Brand kits, and Settings for an administrator) are under **More**; the header keeps the engine state, the live dot,
+  the theme, the Inbox, the notifications and the account. The engine state's label shows from `lg` (1024px), its icon
+  always.
+- The title row cuts only what the header's room cannot hold, so nothing runs under the header's controls, and
+  nothing scrolls sideways.
 
 ## Logo
 
