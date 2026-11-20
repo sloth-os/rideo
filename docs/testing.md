@@ -144,15 +144,19 @@ only those names as extras, and reading verdicts that name a character instead o
   ID tokens and every rejection: signature, issuer, audience, expiry, issue time, nonce, malformed, an unknown key
   read again from the JWKS; sessions by hash across a restart and their expiry; the audit log's filters; cookies and
   safe return paths; an MCP tool reached without a caller refused outside auth mode `none` while a recipe still runs it,
-  `mcp-principal.test.ts`); notifications (per person, newest first, pushed to that person's tabs only, read marks
-  across a restart, the last 500); interchange (the default WebDAV root, embedded or external; review notes on
+  `mcp-principal.test.ts`); recipes and the studio library (`recipes.test.ts`: a recipe that names `library_save`,
+  `library_update`, `library_apply` or `library_detach` refused when it is saved, naming the step and the tool, the
+  library's read tools kept; one saved before the rule refused when a run starts, with no job queued, and its job
+  refused before any step runs); notifications (per person, newest first, pushed to that person's tabs only, read
+  marks across a restart, the last 500); interchange (the default WebDAV root, embedded or external; review notes on
   takes as markers); the web's sign-in page; FCPXML and XML parsed as XML with awkward titles and labels; the
   inspector's transform keyframes and ramp presets, the transcript panel's filler and selection cuts, waveform
   drawing, and the compositor's overlay placement, opacity, matte alpha and LUT (a recording canvas); the
   Recipes card (built-in and studio recipes, the run dialog's parameters typed); brand text in the compositor
   (two lines, the brand font and box, no box) and the editor's lower third and intro; recipes (parameters, placeholders,
-  the built-ins); brand kits (font signatures, the bug's corner and size, `withBrand` over the other tracks for the
-  whole film, titles and lower thirds in the brand's fonts, colors and box, intros that move the other tracks,
+  the built-ins, the tools recipes may not use and no built-in using one); brand kits (font signatures, the bug's
+  corner and size, `withBrand` over the other tracks for the whole film, titles and lower thirds in the brand's
+  fonts, colors and box, intros that move the other tracks,
   `drawtext` with the brand font and box); search (the frames sampled from takes, footage and stills, what is
   indexed with whom it shows, index runs that drop, copy and caption, names as single terms, BM25 and cosine
   ranking with the best frame per file, names first, the REST query); the Search view (the index's state, indexing,
@@ -485,11 +489,12 @@ only those names as extras, and reading verdicts that name a character instead o
   served back; the bug set; the kit applied to a project (files copied into its media); a lower third and an intro
   that moves it; an export with the bug checked pixel by pixel (the logo in its corner over the intro), its length;
   the brand removed and the kit deleted; MCP `brand_kits_list`, `brand_kit_update`, `project_brand`.
-- **Agents** (`agents.test.ts`): studio recipes validated (unknown tools, arguments, placeholders) and run with
+- **Agents** (`agents.test.ts`): studio recipes validated (unknown tools, arguments, placeholders, a step that is
+  `library_apply` refused with the step and the tool named, a recipe of `library_status` saved and run) and run with
   `forEach` over a list parameter, a failing step stopping the recipe with its error, built-ins that cannot be
   deleted, metrics; the built-in *Cast every voice* designing, choosing and locking the voices; MCP prompts filled
-  with the scene (and refused for an unknown one), the new resources, `batch_variations` on a planned clip and a
-  recipe created and run by an agent.
+  with the scene (and refused for an unknown one), the new resources, `batch_variations` on a planned clip, a
+  recipe created and run by an agent, and an agent's recipe that names `library_save` refused.
 - **Editor depth** (`editor-depth.test.ts`): `.cube` LUT uploads (and a broken one refused); a cut with a LUT, a
   ramped item and a keyframed picture-in-picture on an overlay track rendered by the reference worker and checked
   pixel by pixel (the LUT's colour, the overlay where its keyframes put it, the ramp's source frames, the length);

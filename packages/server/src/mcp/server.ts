@@ -1606,7 +1606,7 @@ function buildServer(studio: Studio): McpServer {
   );
   tool(
     'recipe_create',
-    'Save a recipe for the studio: a name, parameters ({name, type: string|number|boolean|id|ids, required?, default?}) and steps ({tool, args with {{param}}, {{item}} or {{steps.N.path}} placeholders, forEach?: "{{listParam}}", wait?: true to wait for the jobs a step starts}).',
+    "Save a recipe for the studio: a name, parameters ({name, type: string|number|boolean|id|ids, required?, default?}) and steps ({tool, args with {{param}}, {{item}} or {{steps.N.path}} placeholders, forEach?: \"{{listParam}}\", wait?: true to wait for the jobs a step starts}). A step may not be recipe_run, nor a library tool that changes the library (library_save, library_update, library_apply, library_detach): a recipe's job runs without its caller's library permissions, so call those directly; the library's read tools may be steps.",
     RecipeInputSchema.shape,
     (a, actor) => studio.recipes.create(actor, RecipeInputSchema.parse(a)),
   );

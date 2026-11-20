@@ -160,9 +160,9 @@ admin.
 | Method | Path | Body / query | Result |
 |---|---|---|---|
 | GET | `/api/recipes` | – | built-in and studio recipes |
-| POST | `/api/recipes` | `{name, description?, params?, steps}` | `201` the recipe (validated against the MCP tools) |
+| POST | `/api/recipes` | `{name, description?, params?, steps}` | `201` the recipe (validated against the MCP tools); `422` for a step that is `recipe_run` or a library tool that changes the library (`library_save`, `library_update`, `library_apply`, `library_detach`) |
 | DELETE | `/api/recipes/:id` | – | `204`; built-ins `403`, others' recipes `403` unless admin |
-| POST | `/api/projects/:id/recipes/:recipeId/run` | `{params}` | `202 Job` (`recipe.run`); the caller needs the strongest permission of its steps |
+| POST | `/api/projects/:id/recipes/:recipeId/run` | `{params}` | `202 Job` (`recipe.run`); the caller needs the strongest permission of its steps; `422` for a recipe saved before with a step recipes may not use |
 | POST | `/api/projects/:id/clips/:clipId/variations` | `{shotIds?, count: 2–4}` | `202 Job[]` (`shot.generate`, one per new take) |
 | POST | `/api/projects/:id/voices/cast` | `{characterIds?, pick?, lock?}` | `202 Job` (`voices.cast`; `tts_unavailable` without TTS) |
 

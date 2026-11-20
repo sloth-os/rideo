@@ -7,6 +7,7 @@ import {
   RecipeParamsError,
   RecipeSchema,
   recipeParams,
+  recipeToolRefusal,
 } from '../src';
 
 const recipe = RecipeInputSchema.parse({
@@ -82,5 +83,20 @@ describe('recipes (docs/design/agents.md#recipes)', () => {
         steps: [{ tool: 'a_b' }],
       }),
     ).toThrow();
+  });
+
+  it('refuses the library tools that change the library or a project through it, and keeps its read tools', () => {
+    for (const tool of ['library_save', 'library_update', 'library_apply', 'library_detach'])
+      expect(recipeToolRefusal(tool)).toMatch(
+        new RegExp(`^recipes may not use ${tool}, which .+: use the Library page, REST or MCP directly$`),
+      );
+    for (const tool of ['library_list', 'library_get', 'library_uses', 'library_status', 'timeline_apply'])
+      expect(recipeToolRefusal(tool)).toBeNull();
+    // the names every object has are no tool's
+    for (const tool of ['constructor', 'toString', '__proto__']) expect(recipeToolRefusal(tool)).toBeNull();
+    // no built-in recipe uses one
+    const builtin = BUILTIN_RECIPES.flatMap((r) => r.steps.map((s) => s.tool));
+    expect(builtin.length).toBeGreaterThan(0);
+    expect(builtin.filter((tool) => recipeToolRefusal(tool) !== null)).toEqual([]);
   });
 });

@@ -465,6 +465,14 @@ schemas in `packages/shared/src/schemas/library.ts`.
 There is no delete: items are archived ([P1](#p1)). The rows of every route are in the
 [REST reference](../api/rest.md#library).
 
+**Recipes** ([agents](agents.md#recipes)) may use the read tools (`library_list`, `library_get`, `library_uses`,
+`library_status`), never `library_save`, `library_update`, `library_apply` or `library_detach`. A recipe runs as a job,
+and a job does not carry the studio-level permissions of whoever started it: the service would check whatever principal
+the job happens to run under (the studio's when there is none) and could let a recipe publish or manage what its caller
+may not. A recipe that names one of them is refused with `validation_error` naming the step and the tool when it is
+saved, when a run starts and when its job runs, before any step runs; the library is changed from the Library page, REST
+or MCP directly.
+
 **Uploads** (`POST /api/library/items` and `…/versions`) are multipart: the part `meta` first (JSON), then the file
 `payload`, then an optional `thumbnail`:
 

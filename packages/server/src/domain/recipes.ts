@@ -10,12 +10,22 @@ import {
   RecipeParamsError,
   RecipeSchema,
   recipeParams,
+  recipeStepsRefusal,
 } from '@rideo/shared';
 import { z } from 'zod';
 import { currentPrincipal } from '../auth/context';
 import { AppError, invalid, notFound } from '../errors';
 import { strongest, type ToolRegistry } from '../mcp/registry';
 import { Service } from './base';
+
+/**
+ * A recipe whose steps call a tool recipes may not use is `validation_error`, naming the step and the tool
+ * (docs/design/agents.md#recipes): checked when it is saved, when a run starts and when its job runs.
+ */
+export function refuseSteps(recipe: Pick<RecipeInput, 'steps'>): void {
+  const refused = recipeStepsRefusal(recipe.steps);
+  if (refused) throw invalid(refused);
+}
 
 /**
  * Recipes (docs/design/agents.md#recipes): Rideo's built-in ones and the studio's, stored as JSON on the storage
@@ -65,8 +75,12 @@ export class RecipeService extends Service {
     return r;
   }
 
-  /** Checks that every step names a tool and that its arguments without placeholders fit the tool. */
+  /**
+   * Checks that every step names a tool a recipe may use (not `recipe_run`, nor a library tool that changes the library:
+   * `RECIPE_REFUSED_TOOLS`) and that its arguments without placeholders fit the tool.
+   */
   private validate(input: RecipeInput): void {
+    refuseSteps(input);
     const tools = this.tools();
     const params = new Set(['projectId', ...input.params.map((p) => p.name)]);
     input.steps.forEach((step, k) => {
@@ -127,6 +141,8 @@ export class RecipeService extends Service {
   ): Promise<Job> {
     await this.deps.projects.existing(projectId);
     const recipe = await this.get(recipeId);
+    // A recipe saved before a tool was refused to recipes is refused here, before its job is queued
+    refuseSteps(recipe);
     let params: Record<string, unknown>;
     try {
       params = recipeParams(recipe, given);

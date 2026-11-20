@@ -1,5 +1,6 @@
 import { fillPlaceholders, isTerminalJob, type Job } from '@rideo/shared';
 import { ZodError, z } from 'zod';
+import { refuseSteps } from '../../domain/recipes';
 import { AppError, toAppError } from '../../errors';
 import type { JobContext } from '../queue';
 import type { HandlerDeps } from './common';
@@ -15,12 +16,14 @@ function jobsIn(result: unknown): string[] {
 
 /**
  * `recipe.run` (docs/design/agents.md#recipes): the steps in order through the MCP tool registry, as the job's actor,
- * waiting for the jobs of `wait` steps; a failing step stops the recipe.
+ * waiting for the jobs of `wait` steps; a failing step stops the recipe. A recipe that calls a tool recipes may not use
+ * (a job queued before the rule, a recipe file replaced on the storage) fails before any step runs.
  */
 export async function recipeRun(deps: HandlerDeps, ctx: JobContext) {
   const { recipeId, params } = ctx.job.params as { recipeId: string; params: Record<string, unknown> };
   const projectId = ctx.job.projectId;
   const recipe = await deps.services.recipes.get(recipeId);
+  refuseSteps(recipe);
   const tools = deps.services.recipes.tools();
   const scope: Record<string, unknown> = { ...params, projectId, steps: [] as unknown[] };
   const outcomes: { step: number; tool: string; ok: boolean; jobs: string[] }[] = [];

@@ -56,6 +56,35 @@ describe('recipes', () => {
     expect(
       await bad([{ tool: 'timeline_apply', args: { projectId: '{{projectId}}', ops: '{{nope}}' } }]),
     ).toBe('422 validation_error');
+    // nor a library tool that changes the library or a project through it: a recipe's job does not carry its
+    // caller's library permissions (docs/design/agents.md#recipes); the library's read tools stay
+    const library = await stack
+      .api('POST', '/recipes', {
+        name: 'Use the harbour set',
+        steps: [
+          { tool: 'library_status', args: { projectId: '{{projectId}}' } },
+          { tool: 'library_apply', args: { projectId: '{{projectId}}', itemId: 'lib_0000000000000001' } },
+        ],
+      })
+      .catch((err: ApiError) => err);
+    expect(library).toMatchObject({
+      status: 422,
+      body: {
+        code: 'validation_error',
+        detail: expect.stringMatching(
+          /^step 2: recipes may not use library_apply, .+: use the Library page, REST or MCP directly$/,
+        ),
+      },
+    });
+    const reads = await stack.api<Recipe>('POST', '/recipes', {
+      name: 'Library status',
+      steps: [{ tool: 'library_status', args: { projectId: '{{projectId}}' } }],
+    });
+    const status = await stack.api<Job>('POST', `/projects/${pid}/recipes/${reads.id}/run`, { params: {} });
+    expect(expectSucceeded(await stack.waitJob(pid, status.id)).result).toMatchObject({
+      steps: [{ step: 1, tool: 'library_status', ok: true }],
+    });
+    await stack.api('DELETE', `/recipes/${reads.id}`);
     // One title per text, then the cut read back
     const recipe = await stack.api<Recipe>('POST', '/recipes', {
       name: 'Titles from a list',
@@ -265,6 +294,26 @@ describe('agents over MCP', () => {
       for (const s of again.shots) expect(s.takes.length).toBe(4);
       const unknown = await call('recipe_run', { projectId: pid, recipeId: 'rcp_000000000404' });
       expect(unknown).toMatchObject({ error: true, body: { code: 'not_found' } });
+      // An agent's recipe may not save to the library either
+      const saving = await call('recipe_create', {
+        name: 'Save the cast',
+        params: [{ name: 'characterId', type: 'id', required: true }],
+        steps: [
+          {
+            tool: 'library_save',
+            args: { projectId: '{{projectId}}', entity: { kind: 'character', id: '{{characterId}}' } },
+          },
+        ],
+      });
+      expect(saving).toMatchObject({
+        error: true,
+        body: {
+          code: 'validation_error',
+          message: expect.stringMatching(
+            /^step 1: recipes may not use library_save, .+Library page, REST or MCP/,
+          ),
+        },
+      });
     } finally {
       await client.close();
     }

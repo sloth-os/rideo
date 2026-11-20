@@ -153,6 +153,37 @@ export const BUILTIN_RECIPES: Recipe[] = [
   },
 ];
 
+/**
+ * The tools a recipe may not use (docs/design/agents.md#recipes): a recipe runs as a job, and a job does not carry the
+ * studio-level permissions of whoever started it (the library's `publish` and `manage`), so the library tools that
+ * change the library, or a project through it, are left to the Library page, REST and MCP. The library's read tools
+ * (`library_list`, `library_get`, `library_uses`, `library_status`) stay. Tool → what it does, for the refusal.
+ */
+export const RECIPE_REFUSED_TOOLS: Readonly<Record<string, string>> = {
+  library_save: 'saves to the studio library',
+  library_update: 'changes a library item',
+  library_apply: 'changes a project from the studio library',
+  library_detach: "unlinks a project's entity from the studio library or removes its 3D pin",
+};
+
+/** Why a recipe step may not call a tool, or null when it may: checked when a recipe is saved, run and its job runs. */
+export function recipeToolRefusal(tool: string): string | null {
+  if (!Object.hasOwn(RECIPE_REFUSED_TOOLS, tool)) return null;
+  return (
+    `recipes may not use ${tool}, which ${RECIPE_REFUSED_TOOLS[tool]} (a recipe's job runs without its caller's ` +
+    'library permissions): use the Library page, REST or MCP directly'
+  );
+}
+
+/** The first step that calls a tool recipes may not use, as `step N: why`, or null when every step may run. */
+export function recipeStepsRefusal(steps: readonly { tool: string }[]): string | null {
+  for (const [k, step] of steps.entries()) {
+    const why = recipeToolRefusal(step.tool);
+    if (why) return `step ${k + 1}: ${why}`;
+  }
+  return null;
+}
+
 export class RecipeParamsError extends Error {}
 
 /** The parameters of a run: defaults filled, types checked, required ones present. */
