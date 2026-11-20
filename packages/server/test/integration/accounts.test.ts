@@ -58,6 +58,23 @@ const as =
     return json as T;
   };
 
+/** The status of a request whose path goes out exactly as written (the router decodes percent-escapes itself). */
+async function rawStatus(method: string, path: string, auth: Auth = {}, body?: unknown): Promise<number> {
+  const headers: Record<string, string> = { accept: 'application/json, text/event-stream' };
+  if (auth.cookie) headers.cookie = auth.cookie;
+  if (body !== undefined) headers['content-type'] = 'application/json';
+  const res = await fetch(`${stack.url}${path}`, {
+    method,
+    headers,
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  await res.body?.cancel();
+  return res.status;
+}
+
+/** A project id with its last letter percent-escaped: the router decodes it to the id. */
+const escapedId = (id: string) => `${id.slice(0, -1)}%${id.charCodeAt(id.length - 1).toString(16)}`;
+
 /** Signs in through the mock provider; returns the session cookie. */
 async function signIn(
   email: string,
@@ -188,6 +205,90 @@ describe('accounts', () => {
     expect(
       (await as({ token: 'studio-token' })<ProjectSummary[]>('GET', '/projects')).length,
     ).toBeGreaterThan(0);
+  });
+
+  it('authenticates and authorizes by the matched route, however its path is percent-encoded', async () => {
+    const initialize = {
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'initialize',
+      params: { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: { name: 'x', version: '0' } },
+    };
+    const escaped = escapedId(pid);
+    const clip = 'clp_0123456789abcdef';
+    const by = (cookie: string | undefined) => (method: string, path: string, body?: unknown) =>
+      rawStatus(method, path, { cookie }, body);
+    const [dora, ana, ben] = [by(users.dora), by(users.ana), by(users.ben)];
+    const seen = {
+      // nobody signed in: /api, /mcp and /metrics answer 401 whichever letter of their path is escaped
+      nobody: {
+        projects: await rawStatus('GET', '/%61pi/projects'),
+        mcp: await rawStatus('POST', '/%6dcp', {}, initialize),
+        metrics: await rawStatus('GET', '/%6detrics'),
+        // the open routes stay open
+        health: await rawStatus('GET', '/%61pi/health'),
+      },
+      // a signed-in person who is not a member, with a letter of the project id escaped
+      dora: {
+        state: await dora('GET', `/api/projects/${escaped}/state`),
+        add: await dora('POST', `/api/projects/${escaped}/characters`, { name: 'Ghost' }),
+      },
+      // a member reads it under the same escaped id
+      ana: await ana('GET', `/api/projects/${escaped}/state`),
+      // an escaped letter of the route's own words keeps the route's permission: an editor may not approve
+      ben: {
+        approve: await ben('POST', `/api/projects/${pid}/clips/${clip}/approve`, {}),
+        escaped: await ben('POST', `/api/projects/${pid}/clips/${clip}/appro%76e`, {}),
+      },
+    };
+    expect(seen).toEqual({
+      nobody: { projects: 401, mcp: 401, metrics: 401, health: 200 },
+      dora: { state: 403, add: 403 },
+      ana: 200,
+      ben: { approve: 403, escaped: 403 },
+    });
+    const state = await as({ cookie: users.ana })<any>('GET', `/projects/${pid}/state`);
+    expect(Object.values(state.docs.characters).map((c: any) => c.name)).not.toContain('Ghost');
+  });
+
+  it('keeps the studio library and its project routes to their callers, however the path is percent-encoded', async () => {
+    const ana = as({ cookie: users.ana });
+    const state = await ana<any>('GET', `/projects/${pid}/state`);
+    const keeper = Object.values(state.docs.characters as Record<string, { id: string; name: string }>).find(
+      (c) => c.name === 'Keeper',
+    )!;
+    const saved = await ana<any>('POST', `/projects/${pid}/library/save`, {
+      entity: { kind: 'character', id: keeper.id },
+    });
+    const escaped = escapedId(pid);
+    const target = { kind: 'character', id: keeper.id };
+    const dora = (method: string, path: string, body?: unknown) =>
+      rawStatus(method, `/api/projects/${escaped}/library${path}`, { cookie: users.dora }, body);
+    const seen = {
+      // nobody signed in: the library is no one's to read or change
+      nobody: {
+        list: await rawStatus('GET', '/%61pi/library/items'),
+        archive: await rawStatus('PATCH', `/%61pi/library/items/${saved.item.id}`, {}, { archived: true }),
+      },
+      // a signed-in person who is not a member: 403 on the project's library routes
+      dora: {
+        status: await dora('GET', ''),
+        save: await dora('POST', '/save', { entity: target, newItem: true }),
+        apply: await dora('POST', '/apply', { itemId: saved.item.id, target }),
+        detach: await dora('POST', '/detach', { target, what: 'library' }),
+      },
+      // a member reads it under the same escaped id
+      ana: await rawStatus('GET', `/api/projects/${escaped}/library`, { cookie: users.ana }),
+    };
+    expect(seen).toEqual({
+      nobody: { list: 401, archive: 401 },
+      dora: { status: 403, save: 403, apply: 403, detach: 403 },
+      ana: 200,
+    });
+    // nothing changed: Keeper is still linked to Ana's item, which is not archived
+    const status = await ana<any>('GET', `/projects/${pid}/library`);
+    expect(status.links.map((l: any) => [l.entity.id, l.itemId])).toEqual([[keeper.id, saved.item.id]]);
+    expect((await ana<any>('GET', `/library/items/${saved.item.id}`)).archived).toBe(false);
   });
 
   it('lets agents act for their owner within a token’s scope, over REST and MCP', async () => {
