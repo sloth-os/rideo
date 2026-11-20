@@ -160,9 +160,9 @@ admin.
 | Method | Path | Body / query | Result |
 |---|---|---|---|
 | GET | `/api/recipes` | – | built-in and studio recipes |
-| POST | `/api/recipes` | `{name, description?, params?, steps}` | `201` the recipe (validated against the MCP tools); `422` for a step that is `recipe_run` or a library tool that changes the library (`library_save`, `library_update`, `library_apply`, `library_detach`) |
+| POST | `/api/recipes` | `{name, description?, params?, steps}` | `201` the recipe (validated against the MCP tools); `422` for a step that is `recipe_run`, a library tool but `library_status`, a tool that takes no `projectId`, or a step whose `projectId` is left out or written out rather than `{{projectId}}` (a recipe acts only on the project it runs in; one a parameter fills in is checked when it runs) |
 | DELETE | `/api/recipes/:id` | – | `204`; built-ins `403`, others' recipes `403` unless admin |
-| POST | `/api/projects/:id/recipes/:recipeId/run` | `{params}` | `202 Job` (`recipe.run`); the caller needs the strongest permission of its steps; `422` for a recipe saved before with a step recipes may not use |
+| POST | `/api/projects/:id/recipes/:recipeId/run` | `{params}` | `202 Job` (`recipe.run`); the caller needs the strongest permission of its steps; `422` for a recipe saved before with a step recipes may not use, or a step whose `projectId`, with the parameters filled in, is not this project |
 | POST | `/api/projects/:id/clips/:clipId/variations` | `{shotIds?, count: 2–4}` | `202 Job[]` (`shot.generate`, one per new take) |
 | POST | `/api/projects/:id/voices/cast` | `{characterIds?, pick?, lock?}` | `202 Job` (`voices.cast`; `tts_unavailable` without TTS) |
 

@@ -228,7 +228,12 @@ use `recipe_run`, nor a library tool but `library_status`: not those that change
 its items are used (`library_list`, `library_get`, `library_uses`). A recipe's job does not carry its caller's library
 permissions and would act as the studio, so a recipe that names one is refused with `validation_error` when it is
 saved, run or its job runs. Call those tools directly; `library_status`, which reads only the run's project, may be a
-step.
+step. A recipe acts only on the project it runs in, which is all a run is authorized for: every step's tool takes a
+`projectId` and the step gives it `{{projectId}}`. A tool that takes none acts on the studio (`project_list`,
+`project_import`, `settings_update`, `recipe_delete`, …) and may not be a step; a `projectId` left out, written out
+(a literal id), or filled in with another project (by a parameter, a list's item or an earlier step's result) is
+refused with `validation_error` naming the step and the argument, when the recipe is saved, when a run starts, when
+its job begins and before that step runs ([agents](agents.md#recipes)).
 
 | Tool | Arguments |
 |---|---|

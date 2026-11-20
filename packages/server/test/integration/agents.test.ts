@@ -85,6 +85,25 @@ describe('recipes', () => {
         },
       });
     }
+    // nor a step aimed at a project by its id, not even the one it will run in, nor a tool that takes no project: a
+    // recipe acts only on the project it runs in, which its steps name {{projectId}}
+    for (const [steps, detail] of [
+      [
+        [{ tool: 'character_create', args: { projectId: pid, name: 'Ghost' } }],
+        `step 1 (character_create): projectId is "${pid}": it must be {{projectId}}, the project the recipe runs in`,
+      ],
+      [
+        [{ tool: 'ui_notify', args: { message: 'Done' } }],
+        'step 1 (ui_notify): projectId is missing: it must be {{projectId}}, the project the recipe runs in',
+      ],
+      [
+        [{ tool: 'project_import', args: { url: 'https://example.test/film.rideo', mode: 'replace' } }],
+        'step 1: recipes may not use project_import, which takes no projectId: a recipe acts only on the project it runs in',
+      ],
+    ] as const)
+      expect(
+        await stack.api('POST', '/recipes', { name: 'Elsewhere', steps }).catch((err: ApiError) => err),
+      ).toMatchObject({ status: 422, body: { code: 'validation_error', detail } });
     const reads = await stack.api<Recipe>('POST', '/recipes', {
       name: 'Library status',
       steps: [{ tool: 'library_status', args: { projectId: '{{projectId}}' } }],
@@ -335,6 +354,37 @@ describe('agents over MCP', () => {
           message: expect.stringMatching(
             /^step 1: recipes may not use library_get, .+Library page, REST or MCP/,
           ),
+        },
+      });
+      // nor aim a step at a project by its id, nor run on one through a parameter: a recipe acts only on the project it
+      // runs in
+      const aimed = await call('recipe_create', {
+        name: 'Elsewhere',
+        steps: [{ tool: 'character_create', args: { projectId: pid, name: 'Ghost' } }],
+      });
+      expect(aimed).toMatchObject({
+        error: true,
+        body: {
+          code: 'validation_error',
+          message: `step 1 (character_create): projectId is "${pid}": it must be {{projectId}}, the project the recipe runs in`,
+        },
+      });
+      const other = (
+        await stack.api<{ id: string }>('POST', '/projects', { kind: 'story', title: 'Another' })
+      ).id;
+      const viaParam = await call('recipe_create', {
+        name: 'Somewhere',
+        params: [{ name: 'target', type: 'id', required: true }],
+        steps: [{ tool: 'character_create', args: { projectId: '{{target}}', name: 'Ghost' } }],
+      });
+      expect(viaParam.error).toBe(false);
+      expect(
+        await call('recipe_run', { projectId: pid, recipeId: viaParam.body.id, params: { target: other } }),
+      ).toMatchObject({
+        error: true,
+        body: {
+          code: 'validation_error',
+          message: `step 1 (character_create): projectId is "${other}": it must be ${pid}, the project the recipe runs in`,
         },
       });
     } finally {

@@ -33,7 +33,7 @@ an unknown project or scene is an MCP error.
 ## Recipes
 
 A recipe is a named sequence of **tool calls** with parameters, like a skill or a tool of other studios, that any
-member can run on any project:
+member can run on any project. It acts only on the project it runs in:
 
 ```ts
 type Recipe = {
@@ -54,15 +54,37 @@ type Recipe = {
 ```
 
 - **Placeholders.** A string that is only a placeholder takes the value as it is (a number, a list); inside a
-  longer string it is interpolated. `{{projectId}}` is always set; `{{steps.<k>.<path>}}` reads an earlier step's
-  result (`steps.0.id` is the job id a step returned).
+  longer string it is interpolated. `{{projectId}}` is always set, to the project the recipe runs in, and is how a step
+  names it; `{{steps.<k>.<path>}}` reads an earlier step's result (`steps.0.id` is the job id a step returned).
 - **Built-in recipes** ship with Rideo (read-only): *Storyboard to animatic* (`storyboard_generate` → wait →
   `storyboard_approve_all` → `animatic_build`), *Cast every voice* (`voices_cast` with pick and lock → wait),
   *Dub and export a language* (`localize` with dubbing → wait → `export_render` of the dubbed variant), *Variations
   of a clip* (`batch_variations` → wait).
 - **Studio recipes** are JSON documents on the storage backend (`<root>/recipes/<id>.json`), created by people and
-  agents (`recipe_create`, `POST /api/recipes`), validated (every step names a known tool a recipe may use; its static
-  arguments pass the tool's schema where no placeholder stands), and deleted by their author or an admin.
+  agents (`recipe_create`, `POST /api/recipes`), validated (every step names a known tool a recipe may use and acts on
+  the project the recipe runs in; its static arguments pass the tool's schema where no placeholder stands), and deleted
+  by their author or an admin.
+- **One project.** A recipe acts only on the project it runs in. A run is authorized for that project alone (below),
+  and its job runs the steps without asking anyone about theirs: like every job, it has no caller of its own and runs
+  under whatever principal the queue happens to run it under, or none. So every step names the run's project: its tool
+  takes a `projectId`, and the step's `projectId` is `{{projectId}}`. A tool that takes none acts on the studio rather
+  than a project (`project_list`, `project_create`, `project_import`, `settings_get`, `settings_update`, the brand kit
+  tools, `recipes_list`, `recipe_create`, `recipe_delete`, `notifications_list`, `camera_moves`, the library tools that
+  read or change the library) and may not be a step; a tool whose `projectId` may be left out (`ui_sessions`,
+  `ui_notify`, `watermark_detect`) must be given it. No tool takes another argument that names a project
+  (`recipes.test.ts` checks the registry for one). The rule is checked three times, each a `validation_error` naming
+  the step and the argument:
+  - when a recipe is saved: a `projectId` that is missing or written out (a literal id, even that of the project it
+    will run in) is refused: "step 2 (character_create): projectId is "prj_…": it must be {{projectId}}, the project
+    the recipe runs in". One made of another placeholder (a parameter, `{{item}}`, an earlier step's result) is checked
+    when the recipe runs. A tool that takes no `projectId` is refused as a tool: "step 1: recipes may not use
+    project_list, which takes no projectId: a recipe acts only on the project it runs in";
+  - when a run starts, and again when its job begins (a recipe saved or a job queued before the rule, a job enqueued
+    directly): with the run's parameters and project filled in (and the items of a `forEach` over a parameter), every
+    step's `projectId` must be the run's project ("… it must be prj_…, the project the recipe runs in"); a literal
+    id stored before the rule passes only when it is that project. The job refuses before its first step;
+  - before each step: its `projectId` with every placeholder filled in, an earlier step's result included, must be the
+    run's project, or the job fails there, before the step runs.
 - **Tools a recipe may not use.** A step may not run a recipe (`recipe_run`), nor use a
   [studio library](library.md#surfaces) tool but `library_status`: not those that change the library or a project
   through it (`library_save`, `library_update`, `library_apply`, `library_detach`), nor those that read the library or
@@ -73,14 +95,15 @@ type Recipe = {
   one is refused with `validation_error` naming the step and the tool ("step 2: recipes may not use library_apply,
   which changes a project from the studio library (…): use the Library page, REST or MCP directly") when it is saved,
   when a run starts and when its job runs (a recipe saved or a job queued before the rule), before any step runs.
-  `library_status` may be a step: it reads only the run's project, which the run was allowed to read when it started.
-  No built-in recipe uses a library tool.
+  `library_status` may be a step: it reads only the run's project (its `projectId` is that project, as every step's
+  is), which the run was allowed to read when it started. No built-in recipe uses a library tool.
 - **Running** (`recipe_run`, `POST /api/projects/:id/recipes/:recipeId/run {params}`) checks the steps' tools, the
-  parameters, and the caller's role against the strongest permission of the steps' tools (an approval step needs
-  `project.approve`), then starts a `recipe.run` job (control lane). The job runs the steps in order through the same
-  tool handlers as MCP (one registry), as every job does: Rideo on behalf of who started it, with progress per step; a
-  step that fails stops the recipe with that step's error, and the job's result lists every step's outcome. Recipe
-  runs are audited like the tools they call (approval steps record `project.approval`).
+  parameters, that every step acts on this project, and the caller's role on it against the strongest permission of
+  the steps' tools (an approval step needs `project.approve`), then starts a `recipe.run` job (control lane). The job
+  runs the steps in order through the same tool handlers as MCP (one registry), as every job does: Rideo on behalf of
+  who started it, with progress per step; a step that fails stops the recipe with that step's error, and the job's
+  result lists every step's outcome. Recipe runs are audited like the tools they call (approval steps record
+  `project.approval`).
 
 ## Many things at once
 

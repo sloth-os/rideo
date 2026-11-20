@@ -481,10 +481,10 @@ There is no delete: items are archived ([P1](#p1)). The rows of every route are 
 job, and a job does not carry the studio-level permissions of whoever started it: the service would act as whatever
 principal the job happens to run under (the studio's when there is none), so a recipe could publish or manage what its
 caller may not, and read the whole studio library and where its items are used across every project as the studio.
-`library_status` reads only the run's project, which the run was allowed to read when it started. A recipe that names
-one of the others is refused with `validation_error` naming the step and the tool when it is saved, when a run starts
-and when its job runs, before any step runs; the library is read and changed from the Library page, REST or MCP
-directly.
+`library_status` reads only the run's project (a recipe acts only on the project it runs in: every step's `projectId`
+is that project), which the run was allowed to read when it started. A recipe that names one of the others is refused
+with `validation_error` naming the step and the tool when it is saved, when a run starts and when its job runs, before
+any step runs; the library is read and changed from the Library page, REST or MCP directly.
 
 **Uploads** (`POST /api/library/items` and `…/versions`) are multipart: the part `meta` first (JSON), then the file
 `payload`, then an optional `thumbnail`:

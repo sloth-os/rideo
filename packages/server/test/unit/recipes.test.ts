@@ -1,7 +1,7 @@
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { type Recipe, RecipeInputSchema, RecipeSchema } from '@rideo/shared';
+import { BUILTIN_RECIPES, type Recipe, RecipeInputSchema, RecipeSchema } from '@rideo/shared';
 import * as f from '@rideo/shared/testing';
 import { afterAll, afterEach, describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
@@ -53,7 +53,10 @@ afterAll(async () => {
   await Promise.all(dirs.map((d) => rm(d, { recursive: true, force: true })));
 });
 
-/** A studio with the MCP tools as its recipes' registry (as the app wires it) and one project. */
+/**
+ * A studio with the MCP tools as its recipes' registry (as the app wires it) and two projects: the one recipes run in
+ * and another, whose id the first one's brief holds (a value a step can read and pass on).
+ */
 async function makeStudio(stored: Recipe[] = []) {
   const dataDir = await mkdtemp(join(tmpdir(), 'rideo-recipes-'));
   dirs.push(dataDir);
@@ -73,11 +76,42 @@ async function makeStudio(stored: Recipe[] = []) {
   const studio = createStudio(config, { log: quiet(), storage });
   studios.push(studio);
   studio.recipes.setTools(() => toolRegistry(studio));
-  const project = f.project();
-  const h = studio.deps.projects.handle(project.id);
-  await h.repo.init({ 'project.json': project }, person, 'Create project');
-  await h.worktree.idle();
-  return { studio, projectId: project.id };
+  const other = f.project({ title: 'Another film' });
+  const project = f.project({
+    brief: { prompt: other.id, attachmentResourceIds: [], adapted: null },
+  });
+  for (const p of [project, other]) {
+    const h = studio.deps.projects.handle(p.id);
+    await h.repo.init({ 'project.json': p }, person, 'Create project');
+    await h.worktree.idle();
+  }
+  return { studio, projectId: project.id, otherId: other.id };
+}
+
+/** The names of a project's characters. */
+async function cast(studio: Studio, projectId: string): Promise<string[]> {
+  return Object.values((await studio.projects.state(projectId)).docs.characters).map((c) => c.name);
+}
+
+/** A `recipe.run` job of a recipe, handled as the queue would, without the queue (as if enqueued directly). */
+function recipeJob(
+  studio: Studio,
+  projectId: string,
+  recipeId: string,
+  params: Record<string, unknown> = {},
+) {
+  const deps = {
+    services: { recipes: studio.recipes },
+    metrics: new Metrics(),
+    log: quiet(),
+  } as unknown as HandlerDeps;
+  const ctx = {
+    job: { id: 'job_0000000000000002', projectId, params: { recipeId, params } },
+    actor: { kind: 'system', id: 'rideo', name: 'Rideo' },
+    progress: vi.fn(),
+    waitFor: vi.fn(async () => []),
+  } as unknown as JobContext;
+  return recipeRun(deps, ctx);
 }
 
 const step = (tool: string, args: Record<string, unknown>) => ({ tool, args });
@@ -206,4 +240,255 @@ describe('recipes and the studio library', () => {
       expect(ran).toEqual([]);
     },
   );
+});
+
+/**
+ * A recipe acts only on the project it runs in (docs/design/agents.md#recipes): a run is authorized for that project
+ * alone, and its job runs the steps without asking anyone about theirs (as whatever principal the queue happens to run
+ * under, or none). So every step must take the run's project as its projectId: a tool that takes none is refused, a
+ * literal projectId when a recipe is saved, one the run's parameters fill in with another project when a run starts or
+ * its job begins, and one an earlier step's result fills in before that step runs.
+ */
+describe('recipes act only on the project they run in', () => {
+  const elsewhere = (k: number, tool: string, rest: string) =>
+    new RegExp(`^step ${k} \\(${tool}\\): projectId ${rest}`);
+  const refused = (p: Promise<unknown>) =>
+    p.then(
+      () => null,
+      (e: { code: string; message: string }) => ({ code: e.code, message: e.message }),
+    );
+
+  it('refuses to save a step aimed at another project, or without one, naming the step and the argument', async () => {
+    const { studio, otherId } = await makeStudio();
+    const save = (steps: ReturnType<typeof step>[], params: { name: string; type: 'id' }[] = []) =>
+      refused(studio.recipes.create(person, RecipeInputSchema.parse({ name: 'Elsewhere', params, steps })));
+    // another project's id, or the run's own written out: only {{projectId}} names the project a recipe runs in
+    for (const id of [otherId, 'prj_0123456789abcdef'])
+      expect(
+        await save([
+          step('project_get', { projectId: '{{projectId}}' }),
+          step('character_create', { projectId: id, name: 'Intruder' }),
+        ]),
+        id,
+      ).toMatchObject({
+        code: 'validation_error',
+        message: expect.stringMatching(
+          elsewhere(2, 'character_create', `is "${id}": it must be \\{\\{projectId\\}\\}`),
+        ),
+      });
+    // a tool whose projectId may be left out acts on every project then
+    expect(await save([step('ui_sessions', {})])).toMatchObject({
+      code: 'validation_error',
+      message: expect.stringMatching(
+        elsewhere(1, 'ui_sessions', 'is missing: it must be \\{\\{projectId\\}\\}'),
+      ),
+    });
+    // a tool that takes no project acts on the studio, not on the project the recipe runs in
+    for (const [tool, args] of [
+      ['project_list', {}],
+      ['project_create', { kind: 'story', title: 'Elsewhere' }],
+      ['project_import', { url: 'https://example.test/film.rideo', mode: 'replace' }],
+      ['recipe_delete', { recipeId: 'rcp_0000000000000001' }],
+      ['settings_update', { values: {} }],
+      ['notifications_list', {}],
+    ] as const)
+      expect(await save([step(tool, args)]), tool).toMatchObject({
+        code: 'validation_error',
+        message: `step 1: recipes may not use ${tool}, which takes no projectId: a recipe acts only on the project it runs in`,
+      });
+    expect((await studio.recipes.list()).filter((r) => !r.builtin)).toEqual([]);
+    // {{projectId}} is saved; a parameter is checked when a run starts
+    const ok = await studio.recipes.create(
+      person,
+      RecipeInputSchema.parse({
+        name: 'Here',
+        params: [{ name: 'target', type: 'id' }],
+        steps: [
+          step('character_create', { projectId: '{{projectId}}', name: 'Here' }),
+          step('character_create', { projectId: '{{target}}', name: 'There' }),
+          step('ui_notify', { projectId: '{{projectId}}', message: 'Done' }),
+        ],
+      }),
+    );
+    expect(ok.steps).toHaveLength(3);
+  });
+
+  it('refuses to start a run whose steps name another project, saved before the rule or through a parameter', async () => {
+    const literal = RecipeSchema.parse({
+      ...RecipeInputSchema.parse({
+        name: 'Old intruder',
+        steps: [step('character_create', { projectId: 'prj_0000000000other', name: 'Intruder' })],
+      }),
+      id: 'rcp_0000000000old4',
+      builtin: false,
+      createdBy: person,
+      createdAt: '2026-11-01T00:00:00.000Z',
+    });
+    const studioWide = RecipeSchema.parse({
+      ...RecipeInputSchema.parse({ name: 'Old listing', steps: [step('project_list', {})] }),
+      id: 'rcp_0000000000old5',
+      builtin: false,
+      createdBy: person,
+      createdAt: '2026-11-01T00:00:00.000Z',
+    });
+    const { studio, projectId, otherId } = await makeStudio([literal, studioWide]);
+    expect(await refused(studio.recipes.run(person, projectId, literal.id))).toMatchObject({
+      code: 'validation_error',
+      message: expect.stringMatching(
+        elsewhere(1, 'character_create', `is "prj_0000000000other": it must be ${projectId}, the project`),
+      ),
+    });
+    expect(await refused(studio.recipes.run(person, projectId, studioWide.id))).toMatchObject({
+      code: 'validation_error',
+      message: expect.stringMatching(/^step 1: recipes may not use project_list, which takes no projectId/),
+    });
+    // the same written out as the run's own project still runs there
+    const ownId = { ...literal, id: 'rcp_0000000000old6', steps: [step('project_get', { projectId })] };
+    await studio.deps.storage.write(studio.deps.layout.recipe(ownId.id), JSON.stringify(ownId), {
+      contentType: 'application/json',
+    });
+    // a parameter filled with another project, directly or as a list's item
+    const viaParam = await studio.recipes.create(
+      person,
+      RecipeInputSchema.parse({
+        name: 'Through a parameter',
+        params: [
+          { name: 'target', type: 'id', required: true },
+          { name: 'targets', type: 'ids' },
+        ],
+        steps: [
+          step('character_create', { projectId: '{{target}}', name: 'Intruder' }),
+          {
+            ...step('character_create', { projectId: '{{item}}', name: 'Intruders' }),
+            forEach: '{{targets}}',
+          },
+        ],
+      }),
+    );
+    expect(
+      await refused(studio.recipes.run(person, projectId, viaParam.id, { target: otherId })),
+    ).toMatchObject({
+      code: 'validation_error',
+      message: expect.stringMatching(
+        elsewhere(1, 'character_create', `is "${otherId}": it must be ${projectId}`),
+      ),
+    });
+    expect(
+      await refused(
+        studio.recipes.run(person, projectId, viaParam.id, {
+          target: projectId,
+          targets: [projectId, otherId],
+        }),
+      ),
+    ).toMatchObject({
+      code: 'validation_error',
+      message: expect.stringMatching(
+        elsewhere(2, 'character_create', `is "${otherId}": it must be ${projectId}`),
+      ),
+    });
+    expect(studio.deps.jobs.list(projectId, { kind: 'recipe.run' })).toEqual([]);
+    // filled with the run's own project, it runs
+    const job = await studio.recipes.run(person, projectId, viaParam.id, {
+      target: projectId,
+      targets: [projectId],
+    });
+    expect(job).toMatchObject({ kind: 'recipe.run', projectId });
+  });
+
+  it('refuses a job whose steps name another project before any step runs, and a step an earlier result aims elsewhere before it runs', async () => {
+    const { studio, projectId, otherId } = await makeStudio();
+    const viaParam = await studio.recipes.create(
+      person,
+      RecipeInputSchema.parse({
+        name: 'Through a parameter',
+        params: [{ name: 'target', type: 'id', required: true }],
+        steps: [
+          step('character_create', { projectId: '{{projectId}}', name: 'Here' }),
+          step('character_create', { projectId: '{{target}}', name: 'Intruder' }),
+        ],
+      }),
+    );
+    // a job enqueued directly, past the run's check: refused before its first step
+    await expect(recipeJob(studio, projectId, viaParam.id, { target: otherId })).rejects.toMatchObject({
+      code: 'validation_error',
+      message: expect.stringMatching(
+        elsewhere(2, 'character_create', `is "${otherId}": it must be ${projectId}`),
+      ),
+    });
+    expect(await cast(studio, projectId)).toEqual([]);
+    expect(await cast(studio, otherId)).toEqual([]);
+    // the run's project brief holds the other project's id: a step that passes it on is refused before it runs
+    const viaResult = await studio.recipes.create(
+      person,
+      RecipeInputSchema.parse({
+        name: 'Through a result',
+        steps: [
+          step('project_get', { projectId: '{{projectId}}' }),
+          step('character_create', { projectId: '{{steps.0.project.brief.prompt}}', name: 'Intruder' }),
+        ],
+      }),
+    );
+    await expect(recipeJob(studio, projectId, viaResult.id)).rejects.toMatchObject({
+      code: 'validation_error',
+      message: expect.stringMatching(
+        elsewhere(2, 'character_create', `is "${otherId}": it must be ${projectId}`),
+      ),
+    });
+    expect(await cast(studio, otherId)).toEqual([]);
+    // the same steps aimed at the run's project run
+    await expect(recipeJob(studio, projectId, viaParam.id, { target: projectId })).resolves.toMatchObject({
+      steps: [
+        { step: 1, tool: 'character_create', ok: true },
+        { step: 2, tool: 'character_create', ok: true },
+      ],
+    });
+    expect((await cast(studio, projectId)).sort()).toEqual(['Here', 'Intruder']);
+    expect(await cast(studio, otherId)).toEqual([]);
+  });
+
+  it('refuses a recipe that runs a recipe when it is saved, when a run starts and when its job runs', async () => {
+    const nested = RecipeSchema.parse({
+      ...RecipeInputSchema.parse({
+        name: 'Again',
+        steps: [step('recipe_run', { projectId: '{{projectId}}', recipeId: 'rcp_0000000000old7' })],
+      }),
+      id: 'rcp_0000000000old7',
+      builtin: false,
+      createdBy: person,
+      createdAt: '2026-11-01T00:00:00.000Z',
+    });
+    const { studio, projectId } = await makeStudio([nested]);
+    const again = { code: 'validation_error', message: 'step 1: recipes do not run recipes' };
+    expect(await refused(studio.recipes.create(person, RecipeInputSchema.parse(nested)))).toEqual(again);
+    expect(await refused(studio.recipes.run(person, projectId, nested.id))).toEqual(again);
+    await expect(recipeJob(studio, projectId, nested.id)).rejects.toMatchObject(again);
+    expect(studio.deps.jobs.list(projectId, { kind: 'recipe.run' })).toEqual([]);
+  });
+
+  it('keeps every built-in recipe to the project it runs in, and no tool names a project but by projectId', async () => {
+    const { studio, projectId } = await makeStudio();
+    const tools = toolRegistry(studio);
+    for (const r of BUILTIN_RECIPES) {
+      // saved as they are, and started with parameters that fit them
+      await expect(studio.recipes.create(person, RecipeInputSchema.parse(r)), r.id).resolves.toBeTruthy();
+      const params = Object.fromEntries(
+        r.params
+          .filter((p) => p.required)
+          .map((p) => [p.name, p.type === 'id' ? 'clp_0000000000000001' : 'es']),
+      );
+      const job = await studio.recipes.run(person, projectId, r.id, params);
+      expect(job, r.id).toMatchObject({ kind: 'recipe.run', projectId });
+      await studio.deps.jobs.cancel(projectId, job.id).catch(() => undefined);
+    }
+    // the rule covers projectId: a tool that took another argument naming a project would have to be added to it
+    const projectArgs = [...tools.values()].flatMap((def) => {
+      const schema = JSON.stringify(z.toJSONSchema(z.object(def.shape), { unrepresentable: 'any' }));
+      const keys = [...schema.matchAll(/"([A-Za-z_]*[Pp]roject[A-Za-z_]*)":/g)].map((m) => m[1]!);
+      return keys.filter((k) => k !== 'projectId').map((k) => `${def.name}.${k}`);
+    });
+    expect(projectArgs).toEqual([]);
+    expect([...tools.values()].filter((def) => Object.hasOwn(def.shape, 'projectId')).length).toBeGreaterThan(
+      100,
+    );
+  });
 });

@@ -363,6 +363,67 @@ describe('accounts', () => {
     }
   });
 
+  it('keeps a recipe to the project it runs in: one aimed at a project its runner may not use is refused when saved, run or queued', async () => {
+    const dora = as({ cookie: users.dora });
+    const characters = async (projectId: string) =>
+      Object.values<{ name: string }>(
+        (await stack.api<any>('GET', `/projects/${projectId}/state`)).docs.characters,
+      ).map((c) => c.name);
+    const anas = await characters(pid);
+    const mine = (await dora<any>('POST', '/projects', { kind: 'story', title: 'Dora’s film' })).id as string;
+    // Dora may not use Ana's project
+    await expect(dora('GET', `/projects/${pid}/state`)).rejects.toMatchObject({ status: 403 });
+    // saved: Ana's project written into a step, or a tool that acts on the studio rather than a project
+    for (const [steps, detail] of [
+      [
+        [
+          { tool: 'character_create', args: { projectId: pid, name: 'Intruder' } },
+          { tool: 'library_status', args: { projectId: pid } },
+        ],
+        `step 1 (character_create): projectId is "${pid}": it must be {{projectId}}, the project the recipe runs in`,
+      ],
+      [
+        [{ tool: 'project_list', args: {} }],
+        'step 1: recipes may not use project_list, which takes no projectId: a recipe acts only on the project it runs in',
+      ],
+    ] as const)
+      await expect(dora('POST', '/recipes', { name: 'Elsewhere', steps })).rejects.toMatchObject({
+        status: 422,
+        body: { code: 'validation_error', detail },
+      });
+    // run: Ana's project through a parameter
+    const recipe = await dora<any>('POST', '/recipes', {
+      name: 'Cast someone',
+      params: [{ name: 'target', type: 'id', required: true }],
+      steps: [{ tool: 'character_create', args: { projectId: '{{target}}', name: 'Intruder' } }],
+    });
+    const aimed = `step 1 (character_create): projectId is "${pid}": it must be ${mine}, the project the recipe runs in`;
+    await expect(
+      dora('POST', `/projects/${mine}/recipes/${recipe.id}/run`, { params: { target: pid } }),
+    ).rejects.toMatchObject({ status: 422, body: { code: 'validation_error', detail: aimed } });
+    // queued directly, past the run's check, and run as no one: the job fails before its step
+    const queued = await stack.server.studio.deps.jobs.enqueue({
+      projectId: mine,
+      kind: 'recipe.run',
+      params: { recipeId: recipe.id, params: { target: pid } },
+      actor: { kind: 'user', id: 'dora', name: 'Dora' },
+      branch: 'main',
+    });
+    expect(await stack.waitJob(mine, queued.id)).toMatchObject({
+      status: 'failed',
+      error: { code: 'validation_error', message: aimed },
+    });
+    expect(await characters(pid)).toEqual(anas);
+    // on her own project it runs
+    const run = await dora<any>('POST', `/projects/${mine}/recipes/${recipe.id}/run`, {
+      params: { target: mine },
+    });
+    expect((await stack.waitJob(mine, run.id)).status).toBe('succeeded');
+    expect(await characters(mine)).toEqual(['Intruder']);
+    expect(await characters(pid)).toEqual(anas);
+    await dora('DELETE', `/recipes/${recipe.id}`);
+  });
+
   it('keeps the studio library and its project routes to their callers, however the path is percent-encoded', async () => {
     const ana = as({ cookie: users.ana });
     const state = await ana<any>('GET', `/projects/${pid}/state`);

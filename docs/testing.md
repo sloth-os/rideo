@@ -151,7 +151,14 @@ starts, a file or a folder (by its newest file) more than a day old removed and 
   library (`recipes.test.ts`: a recipe that names any library tool but `library_status` (`library_list`,
   `library_get`, `library_uses`, `library_save`, `library_update`, `library_apply`, `library_detach`) refused when it
   is saved, naming the step and the tool, `library_status` kept; one saved before the rule refused when a run starts,
-  with no job queued, and its job refused before any step runs); notifications (per person, newest first, pushed to that
+  with no job queued, and its job refused before any step runs; and the one project a recipe acts on, with two real
+  projects and the MCP tools: a step's `projectId` written out (another project's id, or any), left out, or a tool that
+  takes none (`project_list`, `project_import`, `settings_update`, `recipe_delete`, …) refused when saved, naming the
+  step and the argument; a recipe saved before the rule, or a parameter or a list's item filled with another project,
+  refused when a run starts, with no job queued; a job enqueued directly with another project refused before its first
+  step, and a step an earlier result aims at the other project refused before it runs, the other project untouched;
+  `recipe_run` refused when saved, run and in a job; every built-in saved and started; no tool argument but `projectId`
+  names a project); notifications (per person, newest first, pushed to that
   person's tabs only, read marks across a restart, the last 500); interchange (the default WebDAV root, embedded or
   external; review notes on takes as markers); the web's sign-in page; FCPXML and XML parsed as XML with awkward titles
   and labels; the inspector's transform keyframes and ramp presets, the transcript panel's filler and selection cuts,
@@ -159,7 +166,8 @@ starts, a file or a folder (by its newest file) more than a day old removed and 
   Recipes card (built-in and studio recipes, the run dialog's parameters typed); brand text in the compositor
   (two lines, the brand font and box, no box) and the editor's lower third and intro; recipes (parameters, each type
   named with its article in a refusal, placeholders, the built-ins, the tools recipes may not use and no built-in using
-  one); brand kits (font signatures, the bug's
+  one, and a step's `projectId` checked when saved, when a run starts with its parameters and list items filled in, and
+  as the job fills it in before the step); brand kits (font signatures, the bug's
   corner and size, `withBrand` over the other tracks for the whole film, titles and lower thirds in the brand's
   fonts, colors and box, intros that move the other tracks,
   `drawtext` with the brand font and box); search (the frames sampled from takes, footage and stills, what is
@@ -490,7 +498,9 @@ starts, a file or a folder (by its newest file) more than a day old removed and 
   callers and a scoped token from reads, edits, library tools, an approval and access (no `auth.denied` recorded, a
   well-formed id of another's project still `forbidden`); a library upload from a reviewer token answered
   `403` before its parts are read (a person's for an item that is not there `404`), nothing written to the temporary
-  folder.
+  folder; a recipe kept to the project it runs in: a non-member's recipe with the director's project id in a step (or
+  `project_list`) refused when saved, one passing that project through a parameter refused when run and, enqueued
+  directly, failing before its step, the director's project untouched, and the same recipe run on her own project.
 - **Installable app** (`pwa.test.ts`): devices subscribed (https only), a failed recipe pushed to them encrypted and
   VAPID-signed (decrypted as the device would), a device its push service forgot dropped, unsubscribing; the Inbox
   across projects (an agent's review and commit, the gate, today's failures).
@@ -509,12 +519,14 @@ starts, a file or a folder (by its newest file) more than a day old removed and 
   corner over the intro), its length; the brand removed and the kit deleted; MCP `brand_kits_list`,
   `brand_kit_update`, `project_brand`.
 - **Agents** (`agents.test.ts`): studio recipes validated (unknown tools, arguments, placeholders, a step that is
-  `library_apply`, `library_uses` or `library_list` refused with the step and the tool named, a recipe of
-  `library_status` saved and run) and run with
+  `library_apply`, `library_uses` or `library_list` refused with the step and the tool named, a step with a project's
+  id written out, one without its `projectId` and a `project_import` step refused with the step and the argument named,
+  a recipe of `library_status` saved and run) and run with
   `forEach` over a list parameter, a failing step stopping the recipe with its error, built-ins that cannot be
   deleted, metrics; the built-in *Cast every voice* designing, choosing and locking the voices; MCP prompts filled
   with the scene (and refused for an unknown one), the new resources, `batch_variations` on a planned clip, a
-  recipe created and run by an agent, and an agent's recipe that names `library_save` or `library_get` refused.
+  recipe created and run by an agent, an agent's recipe that names `library_save` or `library_get` refused, one with a
+  project's id written out refused when saved, and one run with another project through a parameter refused.
 - **Editor depth** (`editor-depth.test.ts`): `.cube` LUT uploads (and a broken one refused); a cut with a LUT, a
   ramped item and a keyframed picture-in-picture on an overlay track rendered by the reference worker and checked
   pixel by pixel (the LUT's colour, the overlay where its keyframes put it, the ramp's source frames, the length);
