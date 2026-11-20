@@ -68,7 +68,8 @@ REST routes map to a permission declaratively (`ROUTE_PERMISSIONS`: method and p
 default to `project.read`, writes to `project.edit`); MCP tools declare theirs when they are registered. A call
 without the permission fails with `forbidden` (403) and an `auth.denied` audit event. A route's project id is checked
 first, as its handler checks it: a malformed one fails with `validation_error` (422) for every caller, before any
-permission is asked (no `auth.denied`). The project list only shows projects the caller may read. The studio library
+permission is asked (no `auth.denied`); an MCP tool checks its `projectId` the same way
+([MCP](mcp.md#transport-and-auth)). The project list only shows projects the caller may read. The studio library
 belongs to no project: `libraryAllows` (`read`, `publish`, `manage`) sits next to this table and is checked the same
 way ([the library](library.md#permissions)).
 

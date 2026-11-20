@@ -302,6 +302,67 @@ describe('accounts', () => {
     );
   });
 
+  it('answers a malformed project id validation_error over MCP before it asks who may use the project, whoever calls', async () => {
+    const mira = as({ cookie: users.mira });
+    const denials = async () =>
+      (await mira<AuditEvent[]>('GET', '/audit?limit=1000')).filter((e) => e.type === 'auth.denied').length;
+    const scoped = await as({ cookie: users.ana })<any>('POST', '/tokens', {
+      name: 'Scoped',
+      role: 'editor',
+      projectIds: [pid],
+    });
+    const callers: Record<string, Record<string, string>> = {
+      dora: { cookie: users.dora! },
+      ana: { cookie: users.ana! },
+      mira: { cookie: users.mira! },
+      studio: { authorization: 'Bearer studio-token' },
+      scoped: { authorization: `Bearer ${scoped.secret}` },
+    };
+    // reads, edits, the library, an approval and access: what each permission guards
+    const calls: [string, Record<string, unknown>][] = [
+      ['project_get', {}],
+      ['character_create', { name: 'Ghost' }],
+      ['library_status', {}],
+      ['library_save', { entity: { kind: 'character', id: 'chr_0123456789abcdef' } }],
+      ['workflow_approve', { gate: 'brief_ready' }],
+      ['project_access', {}],
+    ];
+    const before = await denials();
+    const seen: Record<string, string[]> = {};
+    const clients: Record<string, Client> = {};
+    try {
+      for (const [who, headers] of Object.entries(callers)) {
+        const client = new Client({ name: 'Claude Code', version: '1.0.0' });
+        await client.connect(
+          new StreamableHTTPClientTransport(new URL(`${stack.url}/mcp`), { requestInit: { headers } }),
+        );
+        clients[who] = client;
+        const answers = new Set<string>();
+        for (const [tool, args] of calls)
+          for (const projectId of ['not-an-id', 'PRJ_0123456789abcdef', 'prj_short', 'prj_bad/../x']) {
+            const r = await client.callTool({ name: tool, arguments: { ...args, projectId } });
+            const body = JSON.parse((r.content as { text: string }[])[0]!.text);
+            answers.add(r.isError ? body.code : 'ok');
+          }
+        seen[who] = [...answers];
+      }
+      expect(seen).toEqual({
+        dora: ['validation_error'],
+        ana: ['validation_error'],
+        mira: ['validation_error'],
+        studio: ['validation_error'],
+        scoped: ['validation_error'],
+      });
+      // nobody was asked about a project, so nobody was denied
+      expect(await denials()).toBe(before);
+      // a well-formed id is still asked about: Dora is not a member of Ana's project
+      const r = await clients.dora!.callTool({ name: 'project_get', arguments: { projectId: pid } });
+      expect(JSON.parse((r.content as { text: string }[])[0]!.text)).toMatchObject({ code: 'forbidden' });
+    } finally {
+      for (const client of Object.values(clients)) await client.close();
+    }
+  });
+
   it('keeps the studio library and its project routes to their callers, however the path is percent-encoded', async () => {
     const ana = as({ cookie: users.ana });
     const state = await ana<any>('GET', `/projects/${pid}/state`);

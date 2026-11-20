@@ -18,6 +18,11 @@ resulting change streams live to the frontend.
   opened it (403 for anyone else). Outside auth mode `none` every call has a caller: the app refuses `/mcp` without
   one (401), and a tool reached without one all the same answers `unauthorized` rather than running as the studio.
   Recipe steps, which run their tools inside jobs rather than over `/mcp`, are not affected.
+- A tool's `projectId` is checked first, as REST checks a route's (`prj_` and 10 to 32 lowercase letters or digits):
+  a malformed one answers `validation_error` for every caller, before any permission is asked (no `auth.denied`) and
+  before anything reads a project. Recipe steps run the same check, and the prompts and the
+  `rideo://projects/{projectId}/…` resources refuse a malformed id with the same message before asking who may read
+  the project.
 - Clients that only support stdio can bridge with `npx mcp-remote http://HOST:8787/mcp`.
 - Under a subpath the endpoint is `<base>/mcp` ([subpath](subpath.md)). When projects live in browsers, an agent
   reaches the projects of browsers that have a studio tab open; `?workspace=ws_…` on the URL (the Overview's command

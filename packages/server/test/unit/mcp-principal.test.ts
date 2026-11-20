@@ -115,3 +115,118 @@ describe('MCP tools reached without a caller', () => {
     expect(await call('library_list')).toEqual({ error: false, body: { items: [], next: null } });
   });
 });
+
+/** JSON Schema of a tool's arguments, as `tools/list` gives it. */
+interface Schema {
+  type?: string | string[];
+  const?: unknown;
+  enum?: unknown[];
+  oneOf?: Schema[];
+  anyOf?: Schema[];
+  pattern?: string;
+  minLength?: number;
+  minimum?: number;
+  exclusiveMinimum?: number;
+  minItems?: number;
+  items?: Schema;
+  properties?: Record<string, Schema>;
+  required?: string[];
+}
+
+/** Values for the patterned strings tools require besides their project id. */
+const PATTERNED: Record<string, string> = {
+  '^[a-z]{2,3}(-[A-Z]{2})?$': 'en',
+  '^[a-z]{3}_[0-9a-z]{10,32}$': 'chr_0123456789abcdef',
+  '^lib_[0-9a-z]{10,32}$': 'lib_0123456789abcdef',
+  '^media\\/[a-z0-9._/-]+$': 'media/clip.mp4',
+  '^[0-9a-f]{64}$': '0'.repeat(64),
+};
+
+/** The smallest arguments a tool's schema accepts: its required properties, each with a value of its type. */
+function example(s: Schema): unknown {
+  if (s.const !== undefined) return s.const;
+  if (s.enum) return s.enum[0];
+  const alternatives = (s.oneOf ?? s.anyOf)?.filter((a) => a.type !== 'null');
+  if (alternatives?.length) return example(alternatives[0]!);
+  const type = Array.isArray(s.type) ? s.type.find((t) => t !== 'null') : s.type;
+  switch (type) {
+    case 'string':
+      if (s.pattern === undefined) return 'x'.repeat(Math.max(1, s.minLength ?? 1));
+      if (!(s.pattern in PATTERNED)) throw new Error(`no example for the pattern ${s.pattern}`);
+      return PATTERNED[s.pattern];
+    case 'number':
+    case 'integer':
+      return s.minimum ?? (s.exclusiveMinimum !== undefined ? s.exclusiveMinimum + 1 : 1);
+    case 'boolean':
+      return false;
+    case 'array':
+      return Array.from({ length: s.minItems ?? 0 }, () => example(s.items ?? {}));
+    case 'object':
+      return Object.fromEntries((s.required ?? []).map((k) => [k, example(s.properties![k]!)]));
+    default:
+      return null;
+  }
+}
+
+describe('MCP tools given a malformed project id', () => {
+  it('answer validation_error before anything reads the project, whatever the tool', async () => {
+    const { studio, project } = await makeStudio();
+    const call = await bareMcp(studio);
+    const client = clients.at(-1)!;
+    const tools = (await client.listTools()).tools.filter(
+      (t) => (t.inputSchema.properties as Record<string, unknown> | undefined)?.projectId,
+    );
+    // every tool of a project, the library's and the recipes' included
+    expect(tools.length).toBeGreaterThan(120);
+    for (const name of ['project_get', 'library_status', 'library_save', 'recipe_run', 'ui_notify'])
+      expect(tools.map((t) => t.name)).toContain(name);
+    // not an id, another case, too short, a path, a trailing newline, empty
+    const ids = ['not-an-id', 'PRJ_0123456789abcdef', 'prj_short', 'prj_bad/../x', `${project.id}\n`, ''];
+    const answers: Record<string, string[]> = {};
+    for (const t of tools) {
+      const args = example(t.inputSchema as Schema) as Record<string, unknown>;
+      const seen = new Set<string>();
+      for (const projectId of ids) {
+        const r = await client.callTool({ name: t.name, arguments: { ...args, projectId } });
+        const text = (r.content as { text: string }[])[0]!.text;
+        let code: string;
+        try {
+          code = (JSON.parse(text) as { code: string }).code;
+        } catch {
+          code = text.slice(0, 120);
+        }
+        seen.add(r.isError ? code : 'ok');
+      }
+      answers[t.name] = [...seen];
+    }
+    expect(answers).toEqual(Object.fromEntries(tools.map((t) => [t.name, ['validation_error']])));
+    // the message says which argument and what a project id is
+    expect(await call('project_get', { projectId: 'prj_short' })).toEqual({
+      error: true,
+      body: expect.objectContaining({
+        code: 'validation_error',
+        message: expect.stringMatching(/^projectId .*prj_/),
+      }),
+    });
+    // a well-formed id is the project's business: missing is not_found, an existing one answers
+    expect((await call('project_get', { projectId: 'prj_0000000000000000' })).body).toMatchObject({
+      code: 'not_found',
+    });
+    expect(await call('project_get', { projectId: project.id })).toMatchObject({ error: false });
+    // a recipe's step runs the same tool from the registry: the same answer
+    await expect(
+      toolRegistry(studio)
+        .get('project_get')!
+        .run({ projectId: 'prj_short' } as never, recipe),
+    ).rejects.toMatchObject({ code: 'validation_error' });
+    // the prompts and the project resources say the same before they ask who may read the project
+    const refusal = /projectId is not a project id/;
+    await expect(
+      client.getPrompt({ name: 'cast_voices', arguments: { projectId: 'prj_short' } }),
+    ).rejects.toThrow(refusal);
+    await expect(client.readResource({ uri: 'rideo://projects/prj_short/state' })).rejects.toThrow(refusal);
+    await expect(
+      client.readResource({ uri: 'rideo://projects/PRJ_0123456789abcdef/timeline' }),
+    ).rejects.toThrow(refusal);
+  });
+});

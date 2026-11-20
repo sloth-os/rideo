@@ -72,6 +72,7 @@ import type { Studio } from '../domain/studio';
 import { AppError, invalid, toAppError } from '../errors';
 import { VERSION } from '../http/app';
 import type { AuthedRequest } from '../http/auth-routes';
+import { IdParam } from '../http/routes';
 import {
   castVoicesPrompt,
   directScenePrompt,
@@ -82,6 +83,18 @@ import {
 import type { ToolDef, ToolRegistry } from './registry';
 
 const PROJECT = z.string().describe('Project id (prj_…)');
+
+/**
+ * A tool's `projectId` is checked as REST checks a route's (`IdParam`), before anyone is asked about the project or
+ * anything reads it: a malformed one is `validation_error` for every caller (docs/design/mcp.md#transport-and-auth).
+ * Tools that take no project leave it undefined.
+ */
+function checkProjectId(projectId: unknown): void {
+  if (projectId === undefined || IdParam.safeParse({ id: projectId }).success) return;
+  throw invalid('projectId is not a project id (prj_ and 10 to 32 lowercase letters or digits)', [
+    { path: 'projectId', message: 'not a project id' },
+  ]);
+}
 
 /** Compact, agent-friendly project snapshot (full documents via doc_get). */
 export function summarizeState(state: ProjectState) {
@@ -269,10 +282,11 @@ function buildServer(studio: Studio): McpServer {
       shape,
       readOnly,
       permission,
-      // A recipe's step: the same activity and approval audit as a call from a client
+      // A recipe's step: the same project id check, activity and approval audit as a call from a client
       run: (async (args: ToolArgs<S>, actor: Actor) => {
         const projectId = (args as { projectId?: string }).projectId;
-        if (projectId && !readOnly && /^prj_/.test(projectId))
+        checkProjectId(projectId);
+        if (projectId && !readOnly)
           studio.deps.hub.activity(projectId, actor, `tool:${name}`, `${actor.name} → ${name}`);
         const result = await run(args, actor);
         if (projectId && permission === 'project.approve')
@@ -299,10 +313,12 @@ function buildServer(studio: Studio): McpServer {
               ? 'Sign in, or send an agent token'
               : 'Missing or invalid bearer token',
           );
-        if (projectId && !annotations.readOnlyHint && /^prj_/.test(projectId))
+        // A malformed project id is refused before anyone is asked about the project, as over REST
+        checkProjectId(projectId);
+        if (projectId && !annotations.readOnlyHint)
           studio.deps.hub.activity(projectId, actor, `tool:${name}`, `${actor.name} → ${name}`);
         // The same permissions as REST (docs/design/accounts.md#users-roles-and-projects).
-        if (projectId && /^prj_/.test(projectId))
+        if (projectId)
           await studio.deps.accounts.authorize(
             principal ?? studio.deps.accounts.studioPrincipal(),
             projectId,
@@ -1750,6 +1766,7 @@ function buildServer(studio: Studio): McpServer {
 
   // Prompts for common jobs, filled with the project's material (docs/design/agents.md#prompts)
   const readable = async (projectId: string) => {
+    checkProjectId(projectId);
     await studio.deps.accounts.authorize(
       currentPrincipal() ?? studio.deps.accounts.studioPrincipal(),
       projectId,

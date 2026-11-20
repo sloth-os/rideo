@@ -146,14 +146,16 @@ starts, a file or a folder (by its newest file) more than a day old removed and 
   ID tokens and every rejection: signature, issuer, audience, expiry, issue time, nonce, malformed, an unknown key
   read again from the JWKS; sessions by hash across a restart and their expiry; the audit log's filters; cookies and
   safe return paths; an MCP tool reached without a caller refused outside auth mode `none` while a recipe still runs it,
-  `mcp-principal.test.ts`); recipes and the studio library (`recipes.test.ts`: a recipe that names `library_save`,
-  `library_update`, `library_apply` or `library_detach` refused when it is saved, naming the step and the tool, the
-  library's read tools kept; one saved before the rule refused when a run starts, with no job queued, and its job
-  refused before any step runs); notifications (per person, newest first, pushed to that person's tabs only, read
-  marks across a restart, the last 500); interchange (the default WebDAV root, embedded or external; review notes on
-  takes as markers); the web's sign-in page; FCPXML and XML parsed as XML with awkward titles and labels; the
-  inspector's transform keyframes and ramp presets, the transcript panel's filler and selection cuts, waveform
-  drawing, and the compositor's overlay placement, opacity, matte alpha and LUT (a recording canvas); the
+  `mcp-principal.test.ts`, which also gives every MCP tool that takes a `projectId` a malformed one and expects
+  `validation_error`, from the tool, a recipe's step, the prompts and the project resources); recipes and the studio
+  library (`recipes.test.ts`: a recipe that names `library_save`, `library_update`, `library_apply` or `library_detach`
+  refused when it is saved, naming the step and the tool, the library's read tools kept; one saved before the rule
+  refused when a run starts, with no job queued, and its job refused before any step runs); notifications (per person,
+  newest first, pushed to that person's tabs only, read marks across a restart, the last 500); interchange (the default
+  WebDAV root, embedded or external; review notes on takes as markers); the web's sign-in page; FCPXML and XML parsed as
+  XML with awkward titles and labels; the inspector's transform keyframes and ramp presets, the transcript panel's
+  filler and selection cuts, waveform drawing, and the compositor's overlay placement, opacity, matte alpha and LUT (a
+  recording canvas); the
   Recipes card (built-in and studio recipes, the run dialog's parameters typed); brand text in the compositor
   (two lines, the brand font and box, no box) and the editor's lower third and intro; recipes (parameters, placeholders,
   the built-ins, the tools recipes may not use and no built-in using one); brand kits (font signatures, the bug's
@@ -477,7 +479,9 @@ starts, a file or a folder (by its newest file) more than a day old removed and 
   `/%6detrics` answered `401`; a non-member under a project id with an escaped letter, its library routes included, and
   an editor's `appro%76e` answered `403`); a malformed project id (`not-an-id`, another case, too short, another kind's
   id, an escaped path) answered `422 validation_error` to a member, a non-member, an admin and the studio token on every
-  project route, the library's included, before any permission is asked; a library upload from a reviewer token answered
+  project route, the library's included, before any permission is asked, and over MCP `validation_error` to the same
+  callers and a scoped token from reads, edits, library tools, an approval and access (no `auth.denied` recorded, a
+  well-formed id of another's project still `forbidden`); a library upload from a reviewer token answered
   `403` before its parts are read (a person's for an item that is not there `404`), nothing written to the temporary
   folder.
 - **Installable app** (`pwa.test.ts`): devices subscribed (https only), a failed recipe pushed to them encrypted and
