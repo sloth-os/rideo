@@ -25,8 +25,9 @@ const HEAD_FILE = /^lib_[0-9a-z]{10,32}\.json$/;
 
 /**
  * The studio library on the storage backend (docs/design/library.md#storage): item heads (read into memory on first
- * use, 8 at a time, an invalid head skipped with a warning), version manifests (written once with `If-None-Match: *`,
- * read on demand, the last 256 kept) and content-addressed files. Every change of an item runs under its lock.
+ * use, 8 at a time, an invalid head skipped with a warning, one that cannot be read failing the load until the next
+ * call reads them again), version manifests (written once with `If-None-Match: *`, read on demand, the last 256 kept)
+ * and content-addressed files. Every change of an item runs under its lock.
  */
 export class LibraryStore {
   private readonly heads = new Map<string, LibraryItem>();
@@ -46,13 +47,18 @@ export class LibraryStore {
     },
   ) {}
 
-  /** Reads every head once; a listing that fails is tried again by the next call (a retryable `storage_error`). */
+  /**
+   * Reads every head once; a listing or a head read that fails is tried again by the next call (a retryable
+   * `storage_error`).
+   */
   load(): Promise<void> {
     this.loaded ??= (async () => {
       const dir = this.deps.layout.libraryItemsDir();
       const entries = (await this.deps.storage.list(dir)).filter((e) => !e.isDir && HEAD_FILE.test(e.name));
       await eachLimit(entries, HEADS_AT_ONCE, async (e) => {
-        const buf = await this.deps.storage.read(`${dir}/${e.name}`).catch(() => null);
+        // a head that cannot be read fails the load: skipping it would hide the item, and a save of an entity linked
+        // to it would make a new item
+        const buf = await this.deps.storage.read(`${dir}/${e.name}`);
         this.headReads++;
         if (!buf) return;
         try {

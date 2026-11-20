@@ -74,7 +74,9 @@ default `/rideo`):
 ```
 
 - **Heads** are read into memory on first use (8 at a time; an invalid head is skipped with a warning, as brand kits
-  are), **manifests** on demand (the last 256 stay in memory), **files** are streamed.
+  are; a head that cannot be read fails the call with a retryable `storage_error`, and the next call reads every head
+  again, so an item is never left out while a save would make a second one), **manifests** on demand (the last 256 stay
+  in memory), **files** are streamed.
 - **One file per content.** The same bytes in two versions or two items are stored once; a file is written only when
   its path is missing, and never changed. Nothing is collected: like project objects and media
   ([garbage collection](version-control.md#garbage-collection)), measure before writing a collector.
@@ -673,7 +675,8 @@ existing `412` conflict, whose **Replace** would drop the server's change unless
   hashes in `library-store.test.ts`).
 - **Unit (server):** the store (`library-store.test.ts`, memory and file backends): versions written once, a leftover
   manifest skipped, two versions at once both kept (the item's lock in one server, `If-None-Match` across two), heads
-  read once with an invalid one skipped, the same bytes stored once, a file failing its hash check; the service on
+  read once with an invalid one skipped, a head whose read fails failing the load (retryable) until the next call reads
+  it, the same bytes stored once, a file failing its hash check; the service on
   in-memory storage: v1, v2, `unchanged`, a stale `If-Match` and a stale `basedOn` answered `412` `library_conflict`
   with the latest, rename, current version, archive; `libraryAllows` through real principals (people, admins, scoped,
   reviewer and editor tokens, an admin's token); a set pinned on a location and a figure on a character (no lock or

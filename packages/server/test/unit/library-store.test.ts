@@ -219,6 +219,26 @@ describe.each([
     );
   });
 
+  it('fails the load when a head cannot be read, and reads every head again on the next call', async () => {
+    const a = versionOf(newId('libraryItem'), 1, sha256('a'));
+    const b = versionOf(newId('libraryItem'), 1, sha256('b'));
+    await store().saveHead(headOf(a));
+    await store().saveHead(headOf(b, { name: 'Lamp room' }));
+    // the storage fails the first read of one head (a server error, a timeout, a dropped connection)
+    const read = storage.read.bind(storage);
+    let failing: string | null = layout.libraryItem(a.itemId);
+    vi.spyOn(storage, 'read').mockImplementation(async (path) => {
+      if (path !== failing) return read(path);
+      failing = null;
+      throw new Error('GET failed: 503 Service Unavailable');
+    });
+    const s = store();
+    await expect(s.items()).rejects.toMatchObject({ code: 'storage_error', retryable: true });
+    expect((await s.items()).map((i) => i.name).sort()).toEqual(['Harbor', 'Lamp room']);
+    expect(await s.item(a.itemId)).toMatchObject({ id: a.itemId });
+    expect(log.warn).not.toHaveBeenCalled();
+  });
+
   it('a manifest that does not parse is a storage error', async () => {
     const id = newId('libraryItem');
     await storage.write(layout.libraryVersion(id, 1), 'garbage');
@@ -417,6 +437,29 @@ describe('the library service', () => {
     expect(await lib.store.version(item.id, 3)).toBeNull();
     expect((await lib.get(item.id)).latest).toBe(2);
     expect(m.get({ event: 'conflict', kind: 'desk-set' })).toBe(2);
+  });
+
+  it('answers a retryable storage error while a head cannot be read, and never loses the item', async () => {
+    const storage = new MemoryBackend();
+    const one = await makeStudio(storage);
+    const mira = f.character({ references: [], lock: { locked: false, version: 0 } });
+    const pid = await projectWith(one, { characters: [mira] });
+    const first = await one.library.save(actor, pid, { entity: { kind: 'character', id: mira.id } });
+    // another server on the same storage, whose first read of the item's head fails
+    const two = await makeStudio(storage);
+    const read = storage.read.bind(storage);
+    let failing: string | null = two.deps.layout.libraryItem(first.item.id);
+    vi.spyOn(storage, 'read').mockImplementation(async (path) => {
+      if (path !== failing) return read(path);
+      failing = null;
+      throw new Error('GET failed: 503 Service Unavailable');
+    });
+    await expect(two.library.list({})).rejects.toMatchObject({ code: 'storage_error', retryable: true });
+    expect((await two.library.list({})).items.map((i) => i.id)).toEqual([first.item.id]);
+    // Mira is saved into the item she is linked to, not into a new one
+    const again = await two.library.save(actor, pid, { entity: { kind: 'character', id: mira.id } });
+    expect(again.item.id).toBe(first.item.id);
+    expect((await two.library.list({})).items).toHaveLength(1);
   });
 
   it('keeps two versions published at once', async () => {
