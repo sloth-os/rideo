@@ -90,7 +90,7 @@ storage, the editor with long cuts, AI calls under load) are listed in [improvem
 | Editing generated takes | Regenerate only | Aleph 2.0, Ray3 Modify, extend, object insert/remove |
 | Editor | **Overlay tracks with keyframed transform and opacity, speed ramps, .cube LUTs, segmentation masks, transcript editing with filler removal, waveforms and filmstrips**; transitions, speed, fades, color, titles; browser engine (ffmpeg.wasm + WebCodecs) | Multitrack, transcript editing, generative extend, auto mix, animated subtitles |
 | Footage → edit | Analysis signals + AI suggestions + auto edit | Descript Underlord, Resolve IntelliScript |
-| Assets and versioning | **WebDAV + git-like history, branches, tags** | Project libraries, versions per asset |
+| Assets and versioning | **WebDAV + git-like history, branches, tags; a studio library of characters, places, props, resources and 3D units in versions, used across projects with their ids and seeds, 3D units pinned by version ([the library](design/library.md))** | Project libraries, versions per asset |
 | Agents | **MCP with 58+ tools and live UI control** | Flow Agent, Runway Agent/MCP, Descript MCP |
 | Provenance | **Invisible keyed watermark + registry + detector**, container metadata | C2PA + SynthID |
 | Review and teams | **OIDC accounts, roles, agent tokens, audit log; share links, timecoded comments and drawings, reviews that approve gates, notifications** | Share links, timecoded comments, approvals, SSO |

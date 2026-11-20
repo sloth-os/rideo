@@ -21,6 +21,8 @@ import { prepareMedia } from '../../engine/prepare';
 import { api, mediaUrl } from '../../lib/api';
 import { useProject } from '../../store/project';
 import { reportError, useUi } from '../../store/ui';
+import { LibraryProvider } from '../library/LibraryProvider';
+import { LibraryRows, SaveToLibraryButton, UseFromLibraryButton } from '../library/rows';
 
 function ResourceCard({ r, projectId }: { r: Resource; projectId: string }) {
   return (
@@ -58,6 +60,12 @@ function ResourceCard({ r, projectId }: { r: Resource; projectId: string }) {
           {r.status}
         </Badge>
       </div>
+      {r.status === 'ready' ? (
+        <div className="space-y-2 px-3 pb-3">
+          <SaveToLibraryButton kind="resource" entity={r} />
+          <LibraryRows kind="resource" entity={r} />
+        </div>
+      ) : null}
     </Entity>
   );
 }
@@ -128,140 +136,145 @@ export function ResourcesView() {
     }
   };
   return (
-    <div className="mx-auto max-w-5xl space-y-4">
-      <SectionHeader
-        title={isEdit ? 'Footage' : 'Resources'}
-        subtitle={
-          isEdit
-            ? 'Upload the video to edit. Rideo builds a browser-safe proxy for editing.'
-            : 'Add voice-over, music, sound effects, images or footage; generate music.'
-        }
-        actions={
-          atStage && gate ? (
+    <LibraryProvider projectId={projectId} docs={docs}>
+      <div className="mx-auto max-w-5xl space-y-4">
+        <SectionHeader
+          title={isEdit ? 'Footage' : 'Resources'}
+          subtitle={
+            isEdit
+              ? 'Upload the video to edit. Rideo builds a browser-safe proxy for editing.'
+              : 'Add voice-over, music, sound effects, images or footage; generate music.'
+          }
+          actions={
+            <>
+              <UseFromLibraryButton kind="resource" />
+              {atStage && gate ? (
+                <Button
+                  variant="primary"
+                  icon={isEdit ? <ScanSearch className="size-4" /> : undefined}
+                  disabled={!gate.satisfied}
+                  onClick={proceed}
+                  data-testid="approve-resources"
+                >
+                  {isEdit
+                    ? 'Analyze footage'
+                    : docs?.project.settings.storyboard.enabled === false
+                      ? 'Continue to pilot'
+                      : 'Continue to storyboard'}
+                </Button>
+              ) : null}
+            </>
+          }
+        />
+        <Card
+          className={cx(
+            'border-dashed p-6 text-center transition-colors',
+            dragging && 'border-accent bg-accent/5',
+          )}
+          onDragOver={(e: React.DragEvent) => {
+            e.preventDefault();
+            setDragging(true);
+          }}
+          onDragLeave={() => setDragging(false)}
+          onDrop={(e: React.DragEvent) => {
+            e.preventDefault();
+            setDragging(false);
+            void upload(Array.from(e.dataTransfer.files));
+          }}
+        >
+          <Upload className="mx-auto mb-2 size-6 text-muted" />
+          <p className="text-[13px] text-muted">Drop files here, or</p>
+          <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
+            <Select
+              value={role}
+              onChange={(e) => setRole(e.target.value as ResourceRole | '')}
+              className="w-auto"
+              aria-label="Role"
+            >
+              <option value="">Role: automatic</option>
+              {(['source', 'reference', 'music', 'voiceover', 'sfx', 'other'] as const).map((r) => (
+                <option key={r} value={r}>
+                  {r}
+                </option>
+              ))}
+            </Select>
             <Button
               variant="primary"
-              icon={isEdit ? <ScanSearch className="size-4" /> : undefined}
-              disabled={!gate.satisfied}
-              onClick={proceed}
-              data-testid="approve-resources"
+              icon={<Upload className="size-4" />}
+              loading={uploading > 0}
+              onClick={() => fileRef.current?.click()}
             >
-              {isEdit
-                ? 'Analyze footage'
-                : docs?.project.settings.storyboard.enabled === false
-                  ? 'Continue to pilot'
-                  : 'Continue to storyboard'}
+              Choose files
             </Button>
-          ) : null
-        }
-      />
-      <Card
-        className={cx(
-          'border-dashed p-6 text-center transition-colors',
-          dragging && 'border-accent bg-accent/5',
-        )}
-        onDragOver={(e: React.DragEvent) => {
-          e.preventDefault();
-          setDragging(true);
-        }}
-        onDragLeave={() => setDragging(false)}
-        onDrop={(e: React.DragEvent) => {
-          e.preventDefault();
-          setDragging(false);
-          void upload(Array.from(e.dataTransfer.files));
-        }}
-      >
-        <Upload className="mx-auto mb-2 size-6 text-muted" />
-        <p className="text-[13px] text-muted">Drop files here, or</p>
-        <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
-          <Select
-            value={role}
-            onChange={(e) => setRole(e.target.value as ResourceRole | '')}
-            className="w-auto"
-            aria-label="Role"
-          >
-            <option value="">Role: automatic</option>
-            {(['source', 'reference', 'music', 'voiceover', 'sfx', 'other'] as const).map((r) => (
-              <option key={r} value={r}>
-                {r}
-              </option>
-            ))}
-          </Select>
-          <Button
-            variant="primary"
-            icon={<Upload className="size-4" />}
-            loading={uploading > 0}
-            onClick={() => fileRef.current?.click()}
-          >
-            Choose files
-          </Button>
-          <input
-            ref={fileRef}
-            type="file"
-            multiple
-            accept="video/*,image/*,audio/*"
-            hidden
-            onChange={(e) => upload(e.target.files)}
-            data-testid="resource-upload"
-          />
-        </div>
-        {uploadStep ? (
-          <p className="mt-2 text-[12px] text-muted" data-testid="upload-status">
-            {uploadStep}
-          </p>
-        ) : null}
-      </Card>
-      {!isEdit ? (
-        <Card className="p-4">
-          <h3 className="mb-3 flex items-center gap-2 font-medium">
-            <Music className="size-4 text-muted" /> Generate music
-          </h3>
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
-            <Field label="Prompt" className="flex-1">
-              <Input
-                value={music.prompt}
-                onChange={(e) => setMusic({ ...music, prompt: e.target.value })}
-                placeholder="Slow brooding strings with a hopeful piano theme"
-              />
-            </Field>
-            <Field label="Seconds" className="sm:w-28">
-              <Input
-                type="number"
-                min={5}
-                max={600}
-                value={music.durationSec}
-                onChange={(e) => setMusic({ ...music, durationSec: Number(e.target.value) })}
-              />
-            </Field>
-            <Button
-              loading={!!musicJob}
-              disabled={music.prompt.trim().length < 3}
-              onClick={() =>
-                api
-                  .generateMusic(projectId, { prompt: music.prompt, durationSec: music.durationSec })
-                  .catch(reportError)
-              }
-            >
-              Compose
-            </Button>
+            <input
+              ref={fileRef}
+              type="file"
+              multiple
+              accept="video/*,image/*,audio/*"
+              hidden
+              onChange={(e) => upload(e.target.files)}
+              data-testid="resource-upload"
+            />
           </div>
-          {musicJob ? (
-            <div className="mt-3">
-              <JobRow job={musicJob} projectId={projectId} />
-            </div>
+          {uploadStep ? (
+            <p className="mt-2 text-[12px] text-muted" data-testid="upload-status">
+              {uploadStep}
+            </p>
           ) : null}
         </Card>
-      ) : null}
-      {resources.length === 0 ? (
-        <EmptyState title="Nothing here yet">
-          Uploads, music and files dropped into the WebDAV inbox appear here.
-        </EmptyState>
-      ) : (
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3" data-testid="resources">
-          {resources.map((r) => (
-            <ResourceCard key={r.id} r={r} projectId={projectId} />
-          ))}
-        </div>
-      )}
-    </div>
+        {!isEdit ? (
+          <Card className="p-4">
+            <h3 className="mb-3 flex items-center gap-2 font-medium">
+              <Music className="size-4 text-muted" /> Generate music
+            </h3>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+              <Field label="Prompt" className="flex-1">
+                <Input
+                  value={music.prompt}
+                  onChange={(e) => setMusic({ ...music, prompt: e.target.value })}
+                  placeholder="Slow brooding strings with a hopeful piano theme"
+                />
+              </Field>
+              <Field label="Seconds" className="sm:w-28">
+                <Input
+                  type="number"
+                  min={5}
+                  max={600}
+                  value={music.durationSec}
+                  onChange={(e) => setMusic({ ...music, durationSec: Number(e.target.value) })}
+                />
+              </Field>
+              <Button
+                loading={!!musicJob}
+                disabled={music.prompt.trim().length < 3}
+                onClick={() =>
+                  api
+                    .generateMusic(projectId, { prompt: music.prompt, durationSec: music.durationSec })
+                    .catch(reportError)
+                }
+              >
+                Compose
+              </Button>
+            </div>
+            {musicJob ? (
+              <div className="mt-3">
+                <JobRow job={musicJob} projectId={projectId} />
+              </div>
+            ) : null}
+          </Card>
+        ) : null}
+        {resources.length === 0 ? (
+          <EmptyState title="Nothing here yet">
+            Uploads, music and files dropped into the WebDAV inbox appear here.
+          </EmptyState>
+        ) : (
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3" data-testid="resources">
+            {resources.map((r) => (
+              <ResourceCard key={r.id} r={r} projectId={projectId} />
+            ))}
+          </div>
+        )}
+      </div>
+    </LibraryProvider>
   );
 }

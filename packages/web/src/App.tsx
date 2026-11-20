@@ -19,6 +19,7 @@ import { LoginPage } from './features/account/LoginPage';
 import { TokensPage } from './features/account/TokensPage';
 import { Dashboard } from './features/dashboard/Dashboard';
 import { InboxPage } from './features/inbox/InboxPage';
+import { LibraryPage } from './features/library/LibraryPage';
 import { GuestReviewPage } from './features/review/GuestReviewPage';
 import { SettingsPage } from './features/settings/SettingsPage';
 import { VerifyPage } from './features/verify/VerifyPage';
@@ -142,6 +143,15 @@ export function Studio({
           element={
             <Signed>
               <BrandKitsPage />
+            </Signed>
+          }
+        />
+        {/* One route for the list and an item, so opening an item keeps the list's filters */}
+        <Route
+          path="/library/:itemId?"
+          element={
+            <Signed>
+              <LibraryPage />
             </Signed>
           }
         />

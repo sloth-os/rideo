@@ -29,6 +29,8 @@ import {
 import { api } from '../../lib/api';
 import { useProject } from '../../store/project';
 import { reportError } from '../../store/ui';
+import { LibraryProvider } from '../library/LibraryProvider';
+import { LibraryRows, SaveToLibraryButton, UseFromLibraryButton } from '../library/rows';
 
 const KINDS: { kind: ElementKind; title: string; hint: string }[] = [
   { kind: 'location', title: 'Locations', hint: 'Places that must look the same in every scene.' },
@@ -69,6 +71,7 @@ function ElementCard({ e, inUse }: { e: Element; inUse: boolean }) {
         ) : (
           <Badge tone="warning">unlocked</Badge>
         )}
+        <SaveToLibraryButton kind="element" entity={e} />
         {locked ? (
           <Button
             size="sm"
@@ -256,6 +259,7 @@ function ElementCard({ e, inUse }: { e: Element; inUse: boolean }) {
               ariaLabel={`${e.name} aliases`}
             />
           </Field>
+          <LibraryRows kind="element" entity={e} />
         </div>
       </div>
     </Entity>
@@ -274,111 +278,116 @@ export function ElementsView() {
   const gate = workflow?.stages.find((s) => s.id === 'cast')?.gate;
   const unmet = gate?.requirements.filter((r) => !r.ok && r.id.startsWith('elements.')) ?? [];
   return (
-    <div className="mx-auto max-w-5xl space-y-4">
-      <SectionHeader
-        title="Elements"
-        subtitle="Locations, props and styles kept consistent like characters: approve references and lock everything the story uses."
-        actions={
-          <Button
-            icon={<Plus className="size-4" />}
-            onClick={() => setAdding(true)}
-            data-testid="add-element"
+    <LibraryProvider projectId={projectId} docs={docs}>
+      <div className="mx-auto max-w-5xl space-y-4">
+        <SectionHeader
+          title="Elements"
+          subtitle="Locations, props and styles kept consistent like characters: approve references and lock everything the story uses."
+          actions={
+            <>
+              <Button
+                icon={<Plus className="size-4" />}
+                onClick={() => setAdding(true)}
+                data-testid="add-element"
+              >
+                Add element
+              </Button>
+              <UseFromLibraryButton kind="element" />
+            </>
+          }
+        />
+        {unmet.length && workflow?.stage === 'cast' ? (
+          <div
+            className="rounded-[var(--radius-control)] border border-warning/40 bg-warning/10 p-3 text-[13px]"
+            data-testid="elements-unmet"
           >
-            Add element
-          </Button>
-        }
-      />
-      {unmet.length && workflow?.stage === 'cast' ? (
-        <div
-          className="rounded-[var(--radius-control)] border border-warning/40 bg-warning/10 p-3 text-[13px]"
-          data-testid="elements-unmet"
-        >
-          {unmet.map((r) => (
-            <p key={r.id}>
-              {r.message}
-              {r.details?.length ? `: ${r.details.join(', ')}` : ''}
-            </p>
-          ))}
-        </div>
-      ) : null}
-      {all.length === 0 ? (
-        <EmptyState title="No elements yet">
-          Generating the screenplay creates its locations and props. You can also add them yourself.
-        </EmptyState>
-      ) : (
-        KINDS.map(({ kind: k, title, hint }) => {
-          const list = all
-            .filter((e) => e.kind === k)
-            .sort(
-              (a, b) => Number(inUse.has(b.id)) - Number(inUse.has(a.id)) || a.name.localeCompare(b.name),
+            {unmet.map((r) => (
+              <p key={r.id}>
+                {r.message}
+                {r.details?.length ? `: ${r.details.join(', ')}` : ''}
+              </p>
+            ))}
+          </div>
+        ) : null}
+        {all.length === 0 ? (
+          <EmptyState title="No elements yet">
+            Generating the screenplay creates its locations and props. You can also add them yourself.
+          </EmptyState>
+        ) : (
+          KINDS.map(({ kind: k, title, hint }) => {
+            const list = all
+              .filter((e) => e.kind === k)
+              .sort(
+                (a, b) => Number(inUse.has(b.id)) - Number(inUse.has(a.id)) || a.name.localeCompare(b.name),
+              );
+            if (!list.length) return null;
+            return (
+              <section key={k} className="space-y-3" data-testid={`elements-${k}`}>
+                <div>
+                  <h3 className="font-semibold">{title}</h3>
+                  <p className="text-[12px] text-muted">{hint}</p>
+                </div>
+                {list.map((e) => (
+                  <ElementCard key={e.id} e={e} inUse={inUse.has(e.id)} />
+                ))}
+              </section>
             );
-          if (!list.length) return null;
-          return (
-            <section key={k} className="space-y-3" data-testid={`elements-${k}`}>
-              <div>
-                <h3 className="font-semibold">{title}</h3>
-                <p className="text-[12px] text-muted">{hint}</p>
-              </div>
-              {list.map((e) => (
-                <ElementCard key={e.id} e={e} inUse={inUse.has(e.id)} />
-              ))}
-            </section>
-          );
-        })
-      )}
-      <Dialog
-        open={adding}
-        onClose={() => setAdding(false)}
-        title="Add element"
-        footer={
-          <Button
-            variant="primary"
-            disabled={!name.trim()}
-            onClick={() =>
-              api
-                .createElement(projectId, { kind, name, description })
-                .then(() => {
-                  setAdding(false);
-                  setName('');
-                  setDescription('');
-                })
-                .catch(reportError)
-            }
-            data-testid="add-element-submit"
-          >
-            Add
-          </Button>
-        }
-      >
-        <div className="space-y-3">
-          <Field label="Kind">
-            <Select
-              value={kind}
-              onChange={(e) => setKind(e.target.value as ElementKind)}
-              data-testid="new-element-kind"
+          })
+        )}
+        <Dialog
+          open={adding}
+          onClose={() => setAdding(false)}
+          title="Add element"
+          footer={
+            <Button
+              variant="primary"
+              disabled={!name.trim()}
+              onClick={() =>
+                api
+                  .createElement(projectId, { kind, name, description })
+                  .then(() => {
+                    setAdding(false);
+                    setName('');
+                    setDescription('');
+                  })
+                  .catch(reportError)
+              }
+              data-testid="add-element-submit"
             >
-              <option value="location">Location</option>
-              <option value="prop">Prop</option>
-              <option value="style">Style</option>
-            </Select>
-          </Field>
-          <Field label="Name">
-            <Input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Lamp room"
-              data-testid="new-element-name"
-            />
-          </Field>
-          <Field label="Description">
-            <Textarea
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="circular brass-framed lantern room, salt-crusted windows"
-            />
-          </Field>
-        </div>
-      </Dialog>
-    </div>
+              Add
+            </Button>
+          }
+        >
+          <div className="space-y-3">
+            <Field label="Kind">
+              <Select
+                value={kind}
+                onChange={(e) => setKind(e.target.value as ElementKind)}
+                data-testid="new-element-kind"
+              >
+                <option value="location">Location</option>
+                <option value="prop">Prop</option>
+                <option value="style">Style</option>
+              </Select>
+            </Field>
+            <Field label="Name">
+              <Input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Lamp room"
+                data-testid="new-element-name"
+              />
+            </Field>
+            <Field label="Description">
+              <Textarea
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="circular brass-framed lantern room, salt-crusted windows"
+              />
+            </Field>
+          </div>
+        </Dialog>
+      </div>
+    </LibraryProvider>
   );
 }

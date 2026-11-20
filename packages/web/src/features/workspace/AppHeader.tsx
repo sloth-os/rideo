@@ -2,6 +2,7 @@ import {
   Cpu,
   Inbox,
   KeyRound,
+  LibraryBig,
   Loader2,
   LogOut,
   Moon,
@@ -222,6 +223,15 @@ export function AppHeader({ children }: { children?: ReactNode }) {
         data-testid="brand-kits-link"
       >
         <Palette className="size-4" />
+      </Link>
+      <Link
+        to="/library"
+        className="rounded p-1.5 text-muted hover:text-text"
+        aria-label="Library"
+        title="Library"
+        data-testid="library-link"
+      >
+        <LibraryBig className="size-4" />
       </Link>
       <Link
         to="/verify"
