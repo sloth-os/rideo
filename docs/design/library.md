@@ -200,9 +200,10 @@ as before. 3D units are the exception: they are [pinned](#pins-on-entities), and
 `POST /api/projects/:id/library/save` (`library_save`) `{entity: {kind: 'character' | 'element' | 'resource', id},
 itemId?, newItem?, name?, description?, tags?, note?, basedOn?, acknowledgeConsent?}`:
 
-- **Which item.** A new item when the entity has no library link (or `newItem: true`): its kind's, named after the
-  entity unless `name` says otherwise, with `entityId` the entity's id. Otherwise a new version of `itemId`, or of the
-  item the entity is linked to (`entity.library.itemId`); a kind that is not the item's is `422`. Save of a linked
+- **Which item.** A new item when the entity has no library link, or with `newItem: true` (which wins over `itemId` and
+  the link): its kind's, named after the entity unless `name` says otherwise, with `entityId` the entity's id. Otherwise
+  a new version of `itemId` (`404` when there is no such item), or of the item the entity is linked to
+  (`entity.library.itemId`); a kind that is not the item's is `422`. Save of a linked
   entity sends `basedOn` = its linked version, so a version someone published meanwhile is never buried
   (`412` `library_conflict`; the dialog then offers **Update…** first, **Save anyway** as the next version, or **Save
   as a new item**).

@@ -462,6 +462,25 @@ describe('the library service', () => {
     expect((await two.library.list({})).items).toHaveLength(1);
   });
 
+  it('saves into a new item when newItem is asked, whatever itemId names', async () => {
+    const mira = f.character({ references: [], lock: { locked: false, version: 0 } });
+    const pid = await projectWith(studio, { characters: [mira] });
+    const first = await studio.library.save(actor, pid, { entity: { kind: 'character', id: mira.id } });
+    const fresh = await studio.library.save(actor, pid, {
+      entity: { kind: 'character', id: mira.id },
+      itemId: first.item.id,
+      newItem: true,
+    });
+    expect(fresh.item.id).not.toBe(first.item.id);
+    expect(fresh.version.version).toBe(1);
+    // Mira is linked to the new item, and both items are there
+    const linked = (await studio.deps.projects.docs(pid)).characters[mira.id]!.library;
+    expect(linked).toMatchObject({ itemId: fresh.item.id, version: 1 });
+    expect((await studio.library.list({})).items.map((i) => i.id).sort()).toEqual(
+      [first.item.id, fresh.item.id].sort(),
+    );
+  });
+
   it('keeps two versions published at once', async () => {
     const lib = studio.library;
     const { item } = await lib.create(actor, await upload(setMeta(), unitFile('set')));

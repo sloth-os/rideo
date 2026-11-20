@@ -1509,7 +1509,7 @@ function buildServer(studio: Studio): McpServer {
   );
   tool(
     'library_save',
-    'Save a character, element or resource of the project to the studio library: a new item, or a new version of the item it is linked to (itemId for another, newItem for a new one). Its approved references and files are copied into the library and the entity is linked (one commit). A real person needs acknowledgeConsent (consent_required otherwise); basedOn: the version it was made from (library_conflict when the item has a later one); unchanged when nothing changed since the current version.',
+    'Save a character, element or resource of the project to the studio library: a new item, or a new version of the item it is linked to (itemId for another; newItem for a new one, whatever itemId says). Its approved references and files are copied into the library and the entity is linked (one commit). A real person needs acknowledgeConsent (consent_required otherwise); basedOn: the version it was made from (library_conflict when the item has a later one); unchanged when nothing changed since the current version.',
     { projectId: PROJECT, ...LibrarySaveInputSchema.shape },
     (a, actor) => {
       const { projectId, ...input } = a;

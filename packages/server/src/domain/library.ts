@@ -799,9 +799,10 @@ export class LibraryService extends Service {
       kind === 'character' ? docs.characters : kind === 'element' ? docs.elements : docs.resources;
     const entity: LibraryEntity | undefined = Object.hasOwn(collection, id) ? collection[id] : undefined;
     if (!entity) throw notFound(`${kind} ${id}`);
+    // `newItem` wins over `itemId` and the entity's link: a new item, whatever they name
     const linkedId = input.newItem ? null : (input.itemId ?? entity.library?.itemId ?? null);
     const item = linkedId ? await this.store.item(linkedId) : null;
-    if (input.itemId && !item) throw notFound(`library item ${input.itemId}`);
+    if (input.itemId && !input.newItem && !item) throw notFound(`library item ${input.itemId}`);
     if (item && item.kind !== kind)
       throw invalid(`a ${kind} is saved as a ${kind} item, not into ${item.name} (a ${item.kind})`);
     const snap = entitySnapshot(kind, entity);
