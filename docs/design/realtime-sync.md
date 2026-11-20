@@ -95,8 +95,9 @@ another's (`LiveHub.sendUi`, `UiService`):
   reached (`delivered: []`, the answer a session that does not exist gets too). `ui_notify` without a `projectId`
   reaches only the caller's own tabs (an agent token's: its owner's).
 - **`ui_sessions`** lists the tabs the caller may see: their own, and those on projects they may read, each showing
-  only those projects (`projectIds`, and `presence` when it is on one of them, else `null`). With a `projectId`, which
-  the caller must read, it lists the tabs on that project and shows that project alone.
+  only those projects (`projectIds`, and `presence` when it is on one of them, or on no project in the caller's own
+  tab, else `null`). With a `projectId`, which the caller must read, it lists the tabs on that project and shows that
+  project alone.
 - **Presence** counts only on a project the tab may follow: a claim on another is refused like a `subscribe`, and the
   tab is present nowhere until its next claim, so it gets no command for that project.
 - **The web app** carries out a command only for the project the tab shows (or one without a project): any other it
