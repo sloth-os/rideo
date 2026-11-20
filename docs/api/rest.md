@@ -140,12 +140,12 @@ admin.
 | Method | Path | Body / query | Result |
 |---|---|---|---|
 | GET | `/api/library/items` | `kinds?` (comma-separated: `character`, `element`, `resource`, `desk-set`, `desk-prop`, `desk-figure`), `kind?`, `tag?`, `q?`, `archived?` (`true`/`false`, default `false`; `true` lists archived items too), `sort?` (`updated`, `name`), `limit?` (1–200, default 100), `cursor?` | `{items, next}`: summaries (no history; `versions`, and for 3D units the current version's `unit: {sha256, bytes, format, formatVersion, actorKind, heightM, dimensionsM?}`) |
-| POST | `/api/library/items` | multipart: `meta` (JSON, first: `{kind, name, description?, tags?, note?, unit?: {format, formatVersion, meta}, resource?: {kind, role, name, notes?, probe?}}`), `payload`, `thumbnail?` (PNG, ≤ 64 KiB, ≤ 256 px) | `201 {item, version, unchanged: false}` with `ETag: "r<rev>"` (3D units and resources; `403` before the parts are read for a caller who may not publish; `413` for a part over its limit: a unit over 32 MiB, a thumbnail over 64 KiB, `meta` over 32 KiB; `422` for parts out of order, bad `meta`, a unit file that is not one or not of the item's kind, a thumbnail that is not a PNG of at most 256 px) |
+| POST | `/api/library/items` | multipart: `meta` (JSON, first: `{kind, name, description?, tags?, note?, unit?: {format, formatVersion, meta}, resource?: {kind, role, name, notes?, probe?}}`), `payload`, `thumbnail?` (PNG, ≤ 64 KiB, ≤ 256 px) | `201 {item, version, unchanged: false}` with `ETag: "r<rev>"` (3D units and resources; `403` before the parts are read for a caller who may not publish; `413` for a part over its limit: a unit over 32 MiB, a thumbnail over 64 KiB, `meta` over 32 KiB; `422` for parts out of order, bad `meta`, a unit file that is not one or not of the item's kind, an image resource whose bytes are not a PNG, JPEG, WebP, GIF, BMP or TIFF (`reason: payload`), a thumbnail that is not a PNG of at most 256 px) |
 | GET | `/api/library/items/:itemId` | – | the item with its history, `ETag: "r<rev>"` |
 | PATCH | `/api/library/items/:itemId` | `{name?, description?, tags?, current?, archived?}`, `If-Match?` | the item with its new `ETag` (its owner or an admin); `412 library_conflict` with the current `ETag` |
 | POST | `/api/library/items/:itemId/versions` | multipart as above, `meta.basedOn?`; `If-Match?` | `201 {item, version}`, or `200 {item, version, unchanged: true}` for the current version's bytes; `403` (a caller who may not publish) and `404` (no such item) before the parts are read; `412 library_conflict` (a stale `If-Match`: `errors: [{rev, latest}]` and the current `ETag`; `basedOn` not the latest: `errors: [{latest}]`) |
 | GET | `/api/library/items/:itemId/versions/:version` | – | the version's manifest (`ETag` its digest) |
-| GET | `/api/library/items/:itemId/versions/:version/files/:sha256` | `Range`, `If-None-Match` | the file (`206` for a range, `416` past its end, `304`; `HEAD` answers the headers), `ETag` its sha256, `Cache-Control: private, max-age=31536000, immutable`; `404` when the version names no such file |
+| GET | `/api/library/items/:itemId/versions/:version/files/:sha256` | `Range`, `If-None-Match` | the file (`206` for a range, `416` past its end, `304`; `HEAD` answers the headers), `ETag` its sha256, `Cache-Control: private, max-age=31536000, immutable`, `X-Content-Type-Options: nosniff`, `Content-Security-Policy: default-src 'none'; sandbox`; `404` when the version names no such file |
 | GET | `/api/library/items/:itemId/uses` | – | `{incomplete, projects: [{projectId, title, role, uses: [{itemId, version, via, entity?, clips?, approved?}]}]}`: the projects the caller may read that use it |
 | GET | `/api/projects/:id/library` | – | `{links, behind}`: the project's library links and 3D pins, each `current`, `behind`, `ahead` or `missing` |
 | POST | `/api/projects/:id/library/save` | `{entity: {kind, id}, itemId?, newItem?, name?, description?, tags?, note?, basedOn?, acknowledgeConsent?}` | `201` (`200` when unchanged) `{item, version, unchanged, commit}`; `consent_required` for a real person without `acknowledgeConsent` |
@@ -199,7 +199,7 @@ documents, so they are also in `state`, history and live updates.
 | POST | `/api/projects/:id/reviews/:rid/decisions` | `{decision: "approve" \| "changes", note?}` | the review; an approved review for a gate approves the gate when it can (`project.comment`) |
 | DELETE | `/api/projects/:id/reviews/:rid/link` | – | the review, its link revoked (`project.approve`) |
 | GET | `/api/review/:token` | – | guests: `{projectId, project: {title}, review (without its link), items[{key, label, target, media}], comments}` |
-| GET | `/api/review/:token/media/*` | `Range` | guests: the review's videos and posters only |
+| GET | `/api/review/:token/media/*` | `Range` | guests: the review's videos and posters only (the same headers as project media) |
 | POST | `/api/review/:token/comments` | `{name, target, at?, annotation?, body}` | guests: `201` the thread, on what the review shows |
 | POST | `/api/review/:token/comments/:cid/replies` | `{name, body}` | guests: `201` the thread |
 | POST | `/api/review/:token/decisions` | `{name, decision, note?}` | guests: the review |
@@ -234,7 +234,7 @@ review does not show is `403 forbidden`.
 | POST | `/api/projects/import` | the project file (`application/octet-stream`), `?mode=new\|replace\|copy` | `201 {id, title, kind, mode, files, skipped}`; `409 conflict` when the project is already here and no mode says what to do |
 | POST | `/api/projects/:id/sync` | `{discardInvalid?}` | WebDAV sync report |
 | GET | `/api/projects/:id/docs/*path` | `?at=<commit>` | document |
-| GET | `/api/projects/:id/media/*path` | `Range` supported | bytes |
+| GET | `/api/projects/:id/media/*path` | `Range` supported | bytes, with `X-Content-Type-Options: nosniff` and `Content-Security-Policy: default-src 'none'; sandbox` (a file opened as a page runs nothing) |
 | POST | `/api/projects/:id/uploads` | multipart `file`, optional `poster` (JPEG) and `meta` JSON `{probe, kind?, role?, name?}` (`probe`: `ProbeSchema`, made by the browser) | `Resource`: `ready` with a probe; otherwise `processing` + a `media.process` editor job; a `.cube` file is a `lut` resource (`application/x-cube`, validated: `422` when it is not a 3D LUT) |
 | POST | `/api/projects/:id/resources` | `{uri, kind?, role?, name?}` | `Resource` (`processing` + `media.process` editor job for audio/video) |
 

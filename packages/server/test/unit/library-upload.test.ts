@@ -9,7 +9,12 @@ import Fastify, { type FastifyInstance } from 'fastify';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { loadConfig } from '../../src/config';
 import type { LibraryUploadFiles } from '../../src/domain/library';
-import { DESK_UNIT_MAGIC, pngSize, readDeskUnitHeader } from '../../src/domain/library-files';
+import {
+  DESK_UNIT_MAGIC,
+  pngSize,
+  rasterImageMime,
+  readDeskUnitHeader,
+} from '../../src/domain/library-files';
 import { createStudio, type Studio } from '../../src/domain/studio';
 import { AppError } from '../../src/errors';
 import { byteRange, receiveLibraryUpload } from '../../src/http/library-routes';
@@ -298,6 +303,36 @@ describe('what rideo reads of a unit file and a thumbnail', () => {
     expect(pngSize(png(256, 128))).toEqual({ width: 256, height: 128 });
     expect(pngSize(Buffer.from('GIF89a...........................'))).toBeNull();
     expect(pngSize(png(0, 10))).toBeNull();
+  });
+
+  it('knows a raster picture by its signature, whatever it is called', () => {
+    const bytes = (text: string) => Buffer.from(text, 'latin1');
+    expect([
+      rasterImageMime(png(4, 4)),
+      rasterImageMime(Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10])),
+      rasterImageMime(bytes('RIFF\x10\x00\x00\x00WEBPVP8 ')),
+      rasterImageMime(bytes('GIF89a\x01\x00\x01\x00')),
+      rasterImageMime(bytes('BM\x46\x00\x00\x00\x00\x00\x00\x00\x36\x00\x00\x00')),
+      rasterImageMime(bytes('II*\x00\x08\x00\x00\x00')),
+      rasterImageMime(bytes('MM\x00*\x00\x00\x00\x08')),
+    ]).toEqual([
+      'image/png',
+      'image/jpeg',
+      'image/webp',
+      'image/gif',
+      'image/bmp',
+      'image/tiff',
+      'image/tiff',
+    ]);
+    const pages = [
+      '<svg xmlns="http://www.w3.org/2000/svg"/>',
+      '\ufeff<svg/>',
+      '<!doctype html><p>',
+      'RIFF\x10\x00\x00\x00AVI LIST',
+      'BM',
+      '',
+    ];
+    expect(pages.map((p) => rasterImageMime(Buffer.from(p)))).toEqual(pages.map(() => null));
   });
 
   it('answers byte ranges as HTTP does', () => {

@@ -496,6 +496,63 @@ describe('the studio library', () => {
     expect(used.entity.id).not.toBe(res.id);
   });
 
+  it('takes an image resource only as a raster picture and serves files that never run as a page', async () => {
+    const resource = (name: string, bytes: Buffer, type: string) => {
+      const f = new FormData();
+      f.append(
+        'meta',
+        JSON.stringify({ kind: 'resource', name, resource: { kind: 'image', role: 'reference', name } }),
+      );
+      f.append('payload', new Blob([new Uint8Array(bytes)], { type }), name);
+      return f;
+    };
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg"><script>fetch("/api/projects")</script></svg>';
+    const refused = {
+      svg: await call(stack, 'POST', '/library/items', {
+        body: resource('logo.svg', Buffer.from(svg), 'image/svg+xml'),
+      }),
+      // a page that calls itself a PNG
+      html: await call(stack, 'POST', '/library/items', {
+        body: resource('logo.png', Buffer.from('<!doctype html><script>alert(1)</script>'), 'image/png'),
+      }),
+    };
+    expect({
+      svg: [refused.svg.status, refused.svg.json.errors],
+      html: [refused.html.status, refused.html.json.errors],
+    }).toEqual({ svg: [422, [{ reason: 'payload' }]], html: [422, [{ reason: 'payload' }]] });
+    // a PNG is kept as a PNG, whatever its part says it is
+    const png = await readFile(await makeStill(dir, 'logo.png', 'teal'));
+    const kept = await call(stack, 'POST', '/library/items', {
+      body: resource('logo.png', png, 'image/svg+xml'),
+    });
+    expect(kept.status).toBe(201);
+    const media = kept.json.version.payload.media as { hash: string; mime: string };
+    expect(media).toMatchObject({ hash: sha256(png), mime: 'image/png' });
+
+    // a library file and a project's media file are served so that no browser runs them as a page
+    const inert = (h: Headers) => [
+      h.get('content-type'),
+      h.get('x-content-type-options'),
+      h.get('content-security-policy'),
+    ];
+    const file = await call(
+      stack,
+      'GET',
+      `/library/items/${kept.json.item.id}/versions/1/files/${media.hash}`,
+    );
+    const still = await uploadReady(stack, a, await makeStill(dir, 'board.png', 'navy'), {
+      mime: 'image/png',
+      name: 'board.png',
+      role: 'reference',
+    });
+    const served = await fetch(`${stack.url}/api/projects/${a}/media/${still.media.path}`);
+    await served.body?.cancel();
+    expect({ library: inert(file.headers), project: inert(served.headers) }).toEqual({
+      library: ['image/png', 'nosniff', "default-src 'none'; sandbox"],
+      project: ['image/png', 'nosniff', "default-src 'none'; sandbox"],
+    });
+  });
+
   it('pins a figure on a character and a set on a location, then removes the pin', async () => {
     const figure = (
       await call(stack, 'POST', '/library/items', {

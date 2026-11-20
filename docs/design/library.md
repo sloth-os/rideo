@@ -471,11 +471,15 @@ read and thrown away. Each part is counted as it streams to a temporary file: a 
 that is not first or does not validate is `422`. An upload the client abandons in the middle ends there: its temporary
 files are removed and nothing is published. A unit file whose prefix or header is not a desk unit's, whose `format` is
 not `3d-editor.desk-unit`, or whose header `kind` is not the item's (`set`, `prop`, `figure` for `desk-set`,
-`desk-prop`, `desk-figure`) is `422`. A thumbnail must carry the PNG signature and an `IHDR` of at most 256 × 256.
+`desk-prop`, `desk-figure`) is `422`. A thumbnail must carry the PNG signature and an `IHDR` of at most 256 × 256. An
+image resource is taken by its bytes: a PNG, JPEG, WebP, GIF, BMP or TIFF (the stills rideo's media probe reads), kept
+with that type whatever its part says; anything else, an SVG or a page among them, is `422` (`reason: payload`).
 
-**The file route** serves any file a version names, with `Range` (`206`), `ETag` (its sha256), `304` on
-`If-None-Match`, and `Cache-Control: private, max-age=31536000, immutable`: a version's files never change, so the
-browser's HTTP cache serves a unit the second time a desk opens. A sha256 the version does not name is `404`.
+**The file route** serves any file a version names, with `Range` (`206`), `ETag` (its sha256), `304` on `If-None-Match`,
+and `Cache-Control: private, max-age=31536000, immutable`: a version's files never change, so the browser's HTTP cache
+serves a unit the second time a desk opens. Like a project's media, every file is sent with `X-Content-Type-Options:
+nosniff` and `Content-Security-Policy: default-src 'none'; sandbox`: whatever a file holds, a browser that opens it as a
+page runs nothing of it in the studio's origin. A sha256 the version does not name is `404`.
 
 ### Errors
 
@@ -484,7 +488,7 @@ browser's HTTP cache serves a unit the second time a desk opens. A sha256 the ve
 | `library_conflict` | 412 | an `If-Match` (MCP `expectedRev`) that is not the item's revision (the answer's `ETag` is the current one); a new version whose `basedOn` is not the item's latest (`errors: [{latest}]`) |
 | `conflict` | 409 | Use in project when the item's id is taken in the project (`errors: [{reason: "exists", entityId}]`) or its name is (`{reason: "name", entityId}`); a pin with `replacePin: false` on an entity that pins another item (`{reason: "pinned", itemId}`); an archived item applied to an entity that does not use it |
 | `not_found` | 404 | the item, the version, a file the version does not name, the target entity |
-| `validation_error` | 422 | a body, query or `meta` that fails its schema, parts out of order; a unit file that is not one or not of the item's kind; a thumbnail that is not a PNG or over 256 px; a 3D item applied without a target or to the wrong one (a set on a prop, anything on a style); a version of another kind than its item |
+| `validation_error` | 422 | a body, query or `meta` that fails its schema, parts out of order; a unit file that is not one or not of the item's kind; an image resource whose bytes are not a raster picture (`reason: payload`); a thumbnail that is not a PNG or over 256 px; a 3D item applied without a target or to the wrong one (a set on a prop, anything on a style); a version of another kind than its item |
 | `validation_error` | 413 | a part over its limit: a unit over 32 MiB, a thumbnail over 64 KiB, a resource file over its kind's limit |
 | `forbidden` | 403 | `libraryAllows` refuses; the project's permission (read, edit, approve when the plan lists approved clips) |
 | `consent_required` | 422 | a real-person version saved or applied without `acknowledgeConsent` |
@@ -515,7 +519,7 @@ Real people are recorded as `realPerson: true`, never by name. Refusals are `aut
 
 Logs carry `itemId`, `kind`, `version`, and the `projectId` and entity when a project is involved: `library item
 created`, `library version added`, `library version unchanged`, `library conflict` (the `If-Match` or `basedOn` sent
-and the latest), `library upload refused` (the reason: `order`, `meta`, `size`, `unit`, `kind`, `thumbnail`),
+and the latest), `library upload refused` (the reason: `order`, `meta`, `size`, `unit`, `kind`, `thumbnail`, `payload`),
 `library saved`, `library applied` (the mode, stale takes, approved clips), `library detached` and `library item
 changed`.
 
@@ -676,27 +680,29 @@ existing `412` conflict, whose **Replace** would drop the server's change unless
 - **Unit (server):** the store (`library-store.test.ts`, memory and file backends): versions written once, a leftover
   manifest skipped, two versions at once both kept (the item's lock in one server, `If-None-Match` across two), heads
   read once with an invalid one skipped, a head whose read fails failing the load (retryable) until the next call reads
-  it, the same bytes stored once, a file failing its hash check; the service on
-  in-memory storage: v1, v2, `unchanged`, a stale `If-Match` and a stale `basedOn` answered `412` `library_conflict`
-  with the latest, rename, current version, archive; `libraryAllows` through real principals (people, admins, scoped,
-  reviewer and editor tokens, an admin's token); a set pinned on a location and a figure on a character (no lock or
-  identity hash moved), status and uses following the pin, detach; an update whose approved clip goes stale planned
-  for an editor, refused to them (`403`, audited) and done by a director (lock + 1). Uploads
-  (`library-upload.test.ts`): the multipart parts in order, `meta` not first, bad `meta`, a unit of 32 MiB + 1 byte
-  (`413`, counted, its temporary file removed), a thumbnail over 64 KiB and `meta` over 32 KiB (`413`), 3D meta over
-  16 KiB (`422`), a unit with a wrong magic, container, codec, header, format, version or kind (`422`), thumbnails
-  that are not PNG or over 256 px (`422`), a client that goes away in the middle of a part (the receive rejects, no
-  temporary file left), byte ranges.
+  it, the same bytes stored once, a file failing its hash check; the service on in-memory storage: v1, v2, `unchanged`,
+  a stale `If-Match` and a stale `basedOn` answered `412` `library_conflict` with the latest, rename, current version,
+  archive; `libraryAllows` through real principals (people, admins, scoped, reviewer and editor tokens, an admin's
+  token); a set pinned on a location and a figure on a character (no lock or identity hash moved), status and uses
+  following the pin, detach; an update whose approved clip goes stale planned for an editor, refused to them (`403`,
+  audited) and done by a director (lock + 1). Uploads (`library-upload.test.ts`): the multipart parts in order, `meta`
+  not first, bad `meta`, a unit of 32 MiB + 1 byte (`413`, counted, its temporary file removed), a thumbnail over 64 KiB
+  and `meta` over 32 KiB (`413`), 3D meta over 16 KiB (`422`), a unit with a wrong magic, container, codec, header,
+  format, version or kind (`422`), thumbnails that are not PNG or over 256 px (`422`), a client that goes away in the
+  middle of a part (the receive rejects, no temporary file left), a raster picture known by its signature (PNG, JPEG,
+  WebP, GIF, BMP, TIFF) and an SVG, a page or a video not taken for one, byte ranges.
 - **Integration** (`library.test.ts`, REST and MCP on one server): a desk set uploaded, listed, read, served with
   `Range`, `304` and `HEAD`, a new version with a stale `If-Match` and with a stale `basedOn`, renamed, archived (gone
   from the default list, still served), its uses; Mira saved from project A (`consent_required` until acknowledged),
-  used in project B with the same id and seed and her references copied, a v2 from A making B's status `behind`, B's
-  dry run and update (lock + 1); a name conflict linking instead; a resource used as a new resource; a figure pinned on
-  a character and a set on a location, detached; the audit events and the metrics. MCP's `library_*` tools give the
-  same answers as the routes. With projects in browsers: the library in the data directory, an apply through the tab
-  that holds the project, `storage_offline` without it. With accounts (`accounts.test.ts`): the library and its project
-  routes kept to their callers however the path is percent-encoded, and an upload from a reviewer token answered `403`
-  (an item that is not there `404`) before its parts are read, nothing written to the temporary folder.
+  used in project B with the same id and seed and her references copied, a v2 from A making B's status `behind`, B's dry
+  run and update (lock + 1); a name conflict linking instead; a resource used as a new resource; an image resource that
+  is an SVG or a page refused (`payload`), a PNG kept as one whatever its part says, and a library file and a project's
+  media served with `nosniff` and a sandboxing policy; a figure pinned on a character and a set on a location, detached;
+  the audit events and the metrics. MCP's `library_*` tools give the same answers as the routes. With projects in
+  browsers: the library in the data directory, an apply through the tab that holds the project, `storage_offline`
+  without it. With accounts (`accounts.test.ts`): the library and its project routes kept to their callers however the
+  path is percent-encoded, and an upload from a reviewer token answered `403` (an item that is not there `404`) before
+  its parts are read, nothing written to the temporary folder.
 - **Unit (web)** (`packages/web/test/library-ui.test.tsx`): the rows' texts ("Library: Mira v2 · v3 available", "edited
   here", "3D set: none", a missing pin), the plan in words (lock versions, stale takes, the approval warning and who may
   confirm, local edits, files), refusals in words by code, tags checked, the moves of **Use v3 in all N projects**

@@ -76,3 +76,30 @@ export function pngSize(bytes: Buffer): { width: number; height: number } | null
   const height = bytes.readUInt32BE(20);
   return width > 0 && height > 0 ? { width, height } : null;
 }
+
+/**
+ * What an image resource's bytes are (docs/design/library.md#limits): one of the raster formats rideo's media probe
+ * reads as a still (PNG, JPEG, WebP, GIF, BMP, TIFF), by its signature; null for anything else (an SVG, a page, a video).
+ */
+export function rasterImageMime(head: Buffer): string | null {
+  const ascii = head.toString('latin1', 0, 12);
+  if (head.subarray(0, 8).equals(PNG_SIGNATURE)) return 'image/png';
+  if (head[0] === 0xff && head[1] === 0xd8 && head[2] === 0xff) return 'image/jpeg';
+  if (ascii.startsWith('RIFF') && ascii.slice(8, 12) === 'WEBP') return 'image/webp';
+  if (ascii.startsWith('GIF87a') || ascii.startsWith('GIF89a')) return 'image/gif';
+  if (ascii.startsWith('BM') && head.length >= 14) return 'image/bmp';
+  if (ascii.startsWith('II*\0') || ascii.startsWith('MM\0*')) return 'image/tiff';
+  return null;
+}
+
+/** The first `n` bytes of a file (fewer when it is shorter). */
+export async function fileHead(path: string, n: number): Promise<Buffer> {
+  const fh = await open(path, 'r');
+  try {
+    const buf = Buffer.alloc(n);
+    const { bytesRead } = await fh.read(buf, 0, n, 0);
+    return buf.subarray(0, bytesRead);
+  } finally {
+    await fh.close();
+  }
+}

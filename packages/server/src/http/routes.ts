@@ -143,6 +143,16 @@ function coalesceHeader(req: FastifyRequest): string | undefined {
   return typeof v === 'string' && /^[\w:.#/-]{1,120}$/.test(v) ? v : undefined;
 }
 
+/**
+ * A stored file served as it is (a project's media, a library file): its type is never sniffed into another one, and
+ * a browser that opens it as a page runs nothing of it (docs/api/rest.md#projects-and-documents).
+ */
+export function inertFile(reply: FastifyReply): FastifyReply {
+  return reply
+    .header('x-content-type-options', 'nosniff')
+    .header('content-security-policy', "default-src 'none'; sandbox");
+}
+
 /** Streams a project's media file with range support (the studio's player, the guest page of a review). */
 export async function sendMedia(
   studio: Studio,
@@ -164,7 +174,7 @@ export async function sendMedia(
   }
   const res = await studio.deps.media.stream(projectId, path, r);
   if (!res) throw new AppError('not_found', `media ${path} not found`);
-  reply
+  inertFile(reply)
     .header('accept-ranges', 'bytes')
     .header('cache-control', 'private, max-age=31536000, immutable')
     .type(res.mime);

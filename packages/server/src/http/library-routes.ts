@@ -20,6 +20,7 @@ import { z } from 'zod';
 import { LibraryConflictError, type LibraryUploadFiles, uploadPayloadLimit } from '../domain/library';
 import type { Studio } from '../domain/studio';
 import { type AppError, invalid, tooLarge } from '../errors';
+import { inertFile } from './routes';
 
 const parse = <T>(schema: z.ZodType<T>, value: unknown): T => schema.parse(value ?? {});
 const ItemParam = z.object({ itemId: LibraryItemIdSchema });
@@ -177,12 +178,15 @@ export function byteRange(
   return { start, end };
 }
 
-/** A version's file: immutable, `ETag` its sha256, `304` on `If-None-Match`, `Range` (docs/design/library.md#surfaces). */
+/**
+ * A version's file: immutable, `ETag` its sha256, `304` on `If-None-Match`, `Range`, inert as a page
+ * (docs/design/library.md#surfaces).
+ */
 async function sendLibraryFile(studio: Studio, req: FastifyRequest, reply: FastifyReply) {
   const { itemId, version, sha256 } = parse(FileParam, req.params);
   const info = await studio.library.fileInfo(itemId, version, sha256);
   const etag = `"${sha256}"`;
-  reply
+  inertFile(reply)
     .header('etag', etag)
     .header('cache-control', 'private, max-age=31536000, immutable')
     .header('accept-ranges', 'bytes')

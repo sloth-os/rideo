@@ -75,7 +75,7 @@ import type { Tx } from '../vcs/repo';
 import { Service } from './base';
 import type { Deps } from './deps';
 import { elementIdentityHash } from './elements';
-import { pngSize, readDeskUnitHeader } from './library-files';
+import { fileHead, pngSize, rasterImageMime, readDeskUnitHeader } from './library-files';
 import { LibraryStore } from './library-store';
 import { identityHash } from './story';
 import { voiceIdentityHash } from './voices';
@@ -497,6 +497,17 @@ export class LibraryService extends Service {
         throw this.refused('resource', 'payload', invalid(`not a 3D LUT: ${(err as Error).message}`));
       }
       mime = 'application/x-cube';
+    } else if (r.kind === 'image') {
+      // a picture is what its bytes are, never the type the part claims: a page or an SVG served from the library
+      // would run in the studio's origin
+      const raster = rasterImageMime(await fileHead(file.path, 16));
+      if (!raster)
+        throw this.refused(
+          'resource',
+          'payload',
+          invalid('an image resource is a PNG, JPEG, WebP, GIF, BMP or TIFF file', [{ reason: 'payload' }]),
+        );
+      mime = raster;
     } else if (kindFromMime(mime) !== r.kind)
       throw this.refused(
         'resource',
