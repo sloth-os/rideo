@@ -63,15 +63,18 @@ type Recipe = {
 - **Studio recipes** are JSON documents on the storage backend (`<root>/recipes/<id>.json`), created by people and
   agents (`recipe_create`, `POST /api/recipes`), validated (every step names a known tool a recipe may use; its static
   arguments pass the tool's schema where no placeholder stands), and deleted by their author or an admin.
-- **Tools a recipe may not use.** A step may not run a recipe (`recipe_run`), nor use a library tool that changes the
-  [studio library](library.md#surfaces) or a project through it: `library_save`, `library_update`, `library_apply`,
-  `library_detach` (`RECIPE_REFUSED_TOOLS` in `packages/shared/src/agents/recipes.ts`). A recipe runs as a job, and a
-  job does not carry the studio-level permissions of whoever started it (the library's `publish` and `manage`), so
-  these are left to the Library page, REST and MCP. A recipe that names one is refused with `validation_error` naming
-  the step and the tool ("step 2: recipes may not use library_apply, which changes a project from the studio library
-  (…): use the Library page, REST or MCP directly") when it is saved, when a run starts and when its job runs (a
-  recipe saved or a job queued before the rule), before any step runs. The library's read tools (`library_list`,
-  `library_get`, `library_uses`, `library_status`) may be steps; no built-in recipe uses a library tool.
+- **Tools a recipe may not use.** A step may not run a recipe (`recipe_run`), nor use a
+  [studio library](library.md#surfaces) tool but `library_status`: not those that change the library or a project
+  through it (`library_save`, `library_update`, `library_apply`, `library_detach`), nor those that read the library or
+  where its items are used across the studio's projects (`library_list`, `library_get`, `library_uses`)
+  (`RECIPE_REFUSED_TOOLS` in `packages/shared/src/agents/recipes.ts`). A recipe runs as a job, and a job does not carry
+  the studio-level permissions of whoever started it (the library's `publish` and `manage`, and which projects it may
+  read): the library would act as the studio, so these are left to the Library page, REST and MCP. A recipe that names
+  one is refused with `validation_error` naming the step and the tool ("step 2: recipes may not use library_apply,
+  which changes a project from the studio library (…): use the Library page, REST or MCP directly") when it is saved,
+  when a run starts and when its job runs (a recipe saved or a job queued before the rule), before any step runs.
+  `library_status` may be a step: it reads only the run's project, which the run was allowed to read when it started.
+  No built-in recipe uses a library tool.
 - **Running** (`recipe_run`, `POST /api/projects/:id/recipes/:recipeId/run {params}`) checks the steps' tools, the
   parameters, and the caller's role against the strongest permission of the steps' tools (an approval step needs
   `project.approve`), then starts a `recipe.run` job (control lane). The job runs the steps in order through the same

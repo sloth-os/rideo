@@ -85,13 +85,21 @@ describe('recipes (docs/design/agents.md#recipes)', () => {
     ).toThrow();
   });
 
-  it('refuses the library tools that change the library or a project through it, and keeps its read tools', () => {
-    for (const tool of ['library_save', 'library_update', 'library_apply', 'library_detach'])
+  it('refuses the library tools that read the studio library or change it, and keeps the run project’s status', () => {
+    for (const tool of [
+      'library_list',
+      'library_get',
+      'library_uses',
+      'library_save',
+      'library_update',
+      'library_apply',
+      'library_detach',
+    ])
       expect(recipeToolRefusal(tool)).toMatch(
         new RegExp(`^recipes may not use ${tool}, which .+: use the Library page, REST or MCP directly$`),
       );
-    for (const tool of ['library_list', 'library_get', 'library_uses', 'library_status', 'timeline_apply'])
-      expect(recipeToolRefusal(tool)).toBeNull();
+    // library_status reads only the run's project, which the run was allowed to read
+    for (const tool of ['library_status', 'timeline_apply']) expect(recipeToolRefusal(tool)).toBeNull();
     // the names every object has are no tool's
     for (const tool of ['constructor', 'toString', '__proto__']) expect(recipeToolRefusal(tool)).toBeNull();
     // no built-in recipe uses one

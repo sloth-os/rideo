@@ -155,11 +155,16 @@ export const BUILTIN_RECIPES: Recipe[] = [
 
 /**
  * The tools a recipe may not use (docs/design/agents.md#recipes): a recipe runs as a job, and a job does not carry the
- * studio-level permissions of whoever started it (the library's `publish` and `manage`), so the library tools that
- * change the library, or a project through it, are left to the Library page, REST and MCP. The library's read tools
- * (`library_list`, `library_get`, `library_uses`, `library_status`) stay. Tool → what it does, for the refusal.
+ * studio-level permissions of whoever started it (the library's `publish` and `manage`, and the projects it may read),
+ * so the library would act as the studio. The library tools that change the library or a project through it, and those
+ * that read the studio library or where its items are used across every project, are left to the Library page, REST
+ * and MCP. `library_status` stays: it reads only the run's project, which the run was allowed to read. Tool → what it
+ * does, for the refusal.
  */
 export const RECIPE_REFUSED_TOOLS: Readonly<Record<string, string>> = {
+  library_list: 'lists the studio library',
+  library_get: 'reads a studio library item and its versions',
+  library_uses: "finds where a library item is used across the studio's projects",
   library_save: 'saves to the studio library',
   library_update: 'changes a library item',
   library_apply: 'changes a project from the studio library',

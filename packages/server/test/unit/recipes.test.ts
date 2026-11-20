@@ -18,9 +18,10 @@ import { MemoryBackend } from '../../src/storage/memory';
 
 /**
  * Recipes and the studio library (docs/design/agents.md#recipes, docs/design/library.md#surfaces): a recipe runs as a
- * job, which does not carry its caller's studio-level permissions, so it may not use the library tools that change the
- * library or a project through it. A recipe is refused when it is saved, when a run starts and when its job runs; the
- * library's read tools stay.
+ * job, which does not carry its caller's studio-level permissions (the library service falls back to the studio), so
+ * it may not use the library tools that change the library or a project through it, nor those that read the studio
+ * library or where its items are used across the studio's projects. A recipe is refused when it is saved, when a run
+ * starts and when its job runs; `library_status`, which reads only the run's project, stays.
  */
 
 const quiet = () => {
@@ -28,7 +29,16 @@ const quiet = () => {
   return log;
 };
 const person = { kind: 'user' as const, id: 'local', name: 'You' };
-const WRITES = ['library_save', 'library_update', 'library_apply', 'library_detach'];
+/** Every library tool but `library_status`: the studio library's reads and the tools that change it. */
+const REFUSED = [
+  'library_list',
+  'library_get',
+  'library_uses',
+  'library_save',
+  'library_update',
+  'library_apply',
+  'library_detach',
+];
 const refusal = (tool: string, step = 1) =>
   new RegExp(
     `^step ${step}: recipes may not use ${tool}, which .+: use the Library page, REST or MCP directly$`,
@@ -106,11 +116,14 @@ const storedRecipe = (id: string, tools: string[]): Recipe =>
   });
 
 describe('recipes and the studio library', () => {
-  it('refuses to save a recipe that changes the library, naming the tool, and keeps the read tools', async () => {
+  it('refuses to save a recipe that reads the studio library or changes it, naming the tool, and keeps library_status', async () => {
     const { studio } = await makeStudio();
-    for (const tool of WRITES) {
+    // every library tool of the registry is refused but the run project's status (a new one must be decided)
+    const libraryTools = [...toolRegistry(studio).keys()].filter((t) => t.startsWith('library_')).sort();
+    expect(libraryTools).toEqual([...REFUSED, 'library_status'].sort());
+    for (const tool of REFUSED) {
       const err = await studio.recipes
-        .create(person, input(`Uses ${tool}`, [LIBRARY_STEPS.library_list!, LIBRARY_STEPS[tool]!]))
+        .create(person, input(`Uses ${tool}`, [LIBRARY_STEPS.library_status!, LIBRARY_STEPS[tool]!]))
         .then(
           () => null,
           (e: { code: string; message: string }) => e,
@@ -121,77 +134,76 @@ describe('recipes and the studio library', () => {
       });
     }
     expect((await studio.recipes.list()).filter((r) => !r.builtin)).toEqual([]);
-    // The read tools stay
-    const reads = await studio.recipes.create(
+    // The status of the run's project stays: the run is allowed to read that project
+    const status = await studio.recipes.create(
       person,
-      input('Read the library', [
-        LIBRARY_STEPS.library_list!,
-        LIBRARY_STEPS.library_get!,
-        LIBRARY_STEPS.library_uses!,
-        LIBRARY_STEPS.library_status!,
-      ]),
+      input('Library status', [LIBRARY_STEPS.library_status!]),
     );
-    expect(reads.steps.map((s) => s.tool)).toEqual([
-      'library_list',
-      'library_get',
-      'library_uses',
-      'library_status',
-    ]);
+    expect(status.steps.map((s) => s.tool)).toEqual(['library_status']);
   });
 
   it('refuses to start a run of a recipe saved before the rule, and starts none of its steps', async () => {
-    const old = storedRecipe('rcp_0000000000old1', ['library_status', 'library_apply']);
-    const { studio, projectId } = await makeStudio([old]);
-    // still listed, so its author sees it and can delete it
-    expect((await studio.recipes.list()).map((r) => r.id)).toContain(old.id);
-    await expect(
-      studio.recipes.run(person, projectId, old.id, { itemId: 'lib_0000000000000001' }),
-    ).rejects.toMatchObject({
-      code: 'validation_error',
-      message: expect.stringMatching(refusal('library_apply', 2)),
-    });
+    const changes = storedRecipe('rcp_0000000000old1', ['library_status', 'library_apply']);
+    const reads = storedRecipe('rcp_0000000000old3', ['library_status', 'library_uses']);
+    const { studio, projectId } = await makeStudio([changes, reads]);
+    for (const [old, tool] of [
+      [changes, 'library_apply'],
+      [reads, 'library_uses'],
+    ] as const) {
+      // still listed, so its author sees it and can delete it
+      expect((await studio.recipes.list()).map((r) => r.id)).toContain(old.id);
+      await expect(
+        studio.recipes.run(person, projectId, old.id, { itemId: 'lib_0000000000000001' }),
+      ).rejects.toMatchObject({
+        code: 'validation_error',
+        message: expect.stringMatching(refusal(tool, 2)),
+      });
+    }
     expect(studio.deps.jobs.list(projectId, { kind: 'recipe.run' })).toEqual([]);
   });
 
-  it('refuses a recipe job that names one, before any step runs', async () => {
-    // A job queued before the rule, or a recipe file replaced on the storage after its run started
-    const recipe = storedRecipe('rcp_0000000000old2', ['library_status', 'library_detach']);
-    const ran: string[] = [];
-    const def = (name: string): ToolDef => ({
-      name,
-      description: name,
-      shape: { projectId: z.string().optional() },
-      readOnly: false,
-      permission: 'project.edit',
-      run: (async () => {
-        ran.push(name);
-        return { ok: true };
-      }) as ToolDef['run'],
-    });
-    const deps = {
-      services: {
-        recipes: {
-          get: async () => recipe,
-          tools: () => new Map([...['library_status', 'library_detach'].map((n) => [n, def(n)] as const)]),
+  it.each(['library_detach', 'library_list'])(
+    'refuses a recipe job that names %s, before any step runs',
+    async (tool) => {
+      // A job queued before the rule, or a recipe file replaced on the storage after its run started
+      const recipe = storedRecipe('rcp_0000000000old2', ['library_status', tool]);
+      const ran: string[] = [];
+      const def = (name: string): ToolDef => ({
+        name,
+        description: name,
+        shape: { projectId: z.string().optional() },
+        readOnly: false,
+        permission: 'project.edit',
+        run: (async () => {
+          ran.push(name);
+          return { ok: true };
+        }) as ToolDef['run'],
+      });
+      const deps = {
+        services: {
+          recipes: {
+            get: async () => recipe,
+            tools: () => new Map([...['library_status', tool].map((n) => [n, def(n)] as const)]),
+          },
         },
-      },
-      metrics: new Metrics(),
-      log: quiet(),
-    } as unknown as HandlerDeps;
-    const ctx = {
-      job: {
-        id: 'job_0000000000000001',
-        projectId: 'prj_0000000000000001',
-        params: { recipeId: recipe.id, params: {} },
-      },
-      actor: { kind: 'system', id: 'rideo', name: 'Rideo' },
-      progress: vi.fn(),
-      waitFor: vi.fn(),
-    } as unknown as JobContext;
-    await expect(recipeRun(deps, ctx)).rejects.toMatchObject({
-      code: 'validation_error',
-      message: expect.stringMatching(refusal('library_detach', 2)),
-    });
-    expect(ran).toEqual([]);
-  });
+        metrics: new Metrics(),
+        log: quiet(),
+      } as unknown as HandlerDeps;
+      const ctx = {
+        job: {
+          id: 'job_0000000000000001',
+          projectId: 'prj_0000000000000001',
+          params: { recipeId: recipe.id, params: {} },
+        },
+        actor: { kind: 'system', id: 'rideo', name: 'Rideo' },
+        progress: vi.fn(),
+        waitFor: vi.fn(),
+      } as unknown as JobContext;
+      await expect(recipeRun(deps, ctx)).rejects.toMatchObject({
+        code: 'validation_error',
+        message: expect.stringMatching(refusal(tool, 2)),
+      });
+      expect(ran).toEqual([]);
+    },
+  );
 });

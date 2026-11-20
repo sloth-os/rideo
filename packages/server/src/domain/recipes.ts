@@ -76,8 +76,8 @@ export class RecipeService extends Service {
   }
 
   /**
-   * Checks that every step names a tool a recipe may use (not `recipe_run`, nor a library tool that changes the library:
-   * `RECIPE_REFUSED_TOOLS`) and that its arguments without placeholders fit the tool.
+   * Checks that every step names a tool a recipe may use (not `recipe_run`, nor a studio library tool but
+   * `library_status`: `RECIPE_REFUSED_TOOLS`) and that its arguments without placeholders fit the tool.
    */
   private validate(input: RecipeInput): void {
     refuseSteps(input);

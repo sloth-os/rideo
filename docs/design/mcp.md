@@ -217,16 +217,18 @@ studio token, unscoped editor tokens; manage: the owner or an admin); the projec
 | `library_detach` | `projectId`, `target`, `what` (`library`, `deskUnit`) → `{entity, commit}` |
 | `library_status` | `projectId` → the project's links and 3D pins, each `current`, `behind`, `ahead` or `missing` (read-only) |
 
-No tool uploads bytes: 3D units come from the desk and resources from projects (or a REST upload). A recipe may use
-only the read tools (`library_list`, `library_get`, `library_uses`, `library_status`; [agents](agents.md#recipes)).
+No tool uploads bytes: 3D units come from the desk and resources from projects (or a REST upload). Of these tools a
+recipe may use only `library_status`, which reads the run's own project ([agents](agents.md#recipes)).
 
 ### Agents: recipes and many things at once
 
 [Agents](agents.md#recipes): recipes are sequences of these tools with parameters, run on the server. A step may not
-use `recipe_run`, nor the library tools that change the library or a project through it (`library_save`,
-`library_update`, `library_apply`, `library_detach`): a recipe's job does not carry its caller's library permissions,
-so a recipe that names one is refused with `validation_error` when it is saved, run or its job runs. Call those tools
-directly; the library's read tools may be steps.
+use `recipe_run`, nor a library tool but `library_status`: not those that change the library or a project through it
+(`library_save`, `library_update`, `library_apply`, `library_detach`), nor those that read the studio library or where
+its items are used (`library_list`, `library_get`, `library_uses`). A recipe's job does not carry its caller's library
+permissions and would act as the studio, so a recipe that names one is refused with `validation_error` when it is
+saved, run or its job runs. Call those tools directly; `library_status`, which reads only the run's project, may be a
+step.
 
 | Tool | Arguments |
 |---|---|

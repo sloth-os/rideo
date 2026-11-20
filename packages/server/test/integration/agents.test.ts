@@ -56,26 +56,35 @@ describe('recipes', () => {
     expect(
       await bad([{ tool: 'timeline_apply', args: { projectId: '{{projectId}}', ops: '{{nope}}' } }]),
     ).toBe('422 validation_error');
-    // nor a library tool that changes the library or a project through it: a recipe's job does not carry its
-    // caller's library permissions (docs/design/agents.md#recipes); the library's read tools stay
-    const library = await stack
-      .api('POST', '/recipes', {
-        name: 'Use the harbour set',
-        steps: [
-          { tool: 'library_status', args: { projectId: '{{projectId}}' } },
-          { tool: 'library_apply', args: { projectId: '{{projectId}}', itemId: 'lib_0000000000000001' } },
-        ],
-      })
-      .catch((err: ApiError) => err);
-    expect(library).toMatchObject({
-      status: 422,
-      body: {
-        code: 'validation_error',
-        detail: expect.stringMatching(
-          /^step 2: recipes may not use library_apply, .+: use the Library page, REST or MCP directly$/,
-        ),
-      },
-    });
+    // nor a library tool that changes the library or a project through it, nor one that reads the studio library
+    // or where its items are used: a recipe's job does not carry its caller's library permissions, and would read as
+    // the studio (docs/design/agents.md#recipes); the status of the run's project stays
+    for (const [tool, args] of [
+      ['library_apply', { projectId: '{{projectId}}', itemId: 'lib_0000000000000001' }],
+      ['library_uses', { itemId: 'lib_0000000000000001' }],
+      ['library_list', {}],
+    ] as const) {
+      const library = await stack
+        .api('POST', '/recipes', {
+          name: 'Use the harbour set',
+          steps: [
+            { tool: 'library_status', args: { projectId: '{{projectId}}' } },
+            { tool, args },
+          ],
+        })
+        .catch((err: ApiError) => err);
+      expect(library, tool).toMatchObject({
+        status: 422,
+        body: {
+          code: 'validation_error',
+          detail: expect.stringMatching(
+            new RegExp(
+              `^step 2: recipes may not use ${tool}, .+: use the Library page, REST or MCP directly$`,
+            ),
+          ),
+        },
+      });
+    }
     const reads = await stack.api<Recipe>('POST', '/recipes', {
       name: 'Library status',
       steps: [{ tool: 'library_status', args: { projectId: '{{projectId}}' } }],
@@ -311,6 +320,20 @@ describe('agents over MCP', () => {
           code: 'validation_error',
           message: expect.stringMatching(
             /^step 1: recipes may not use library_save, .+Library page, REST or MCP/,
+          ),
+        },
+      });
+      // nor read the studio library: the job would read it as the studio
+      const reading = await call('recipe_create', {
+        name: 'Read the library',
+        steps: [{ tool: 'library_get', args: { itemId: 'lib_0000000000000001' } }],
+      });
+      expect(reading).toMatchObject({
+        error: true,
+        body: {
+          code: 'validation_error',
+          message: expect.stringMatching(
+            /^step 1: recipes may not use library_get, .+Library page, REST or MCP/,
           ),
         },
       });
