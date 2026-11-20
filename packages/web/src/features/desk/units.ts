@@ -1,6 +1,7 @@
 import {
   type AuthMe,
   type Character,
+  cutText,
   DESK_UNIT_DATA_VERSION,
   DESK_UNIT_FORMAT,
   DESK_UNIT_LIBRARY_KIND,
@@ -13,6 +14,7 @@ import {
   type DeskUnitPublishMessage,
   deskText,
   type Element,
+  LIBRARY_LIMITS,
   type LibraryUploadResult,
   libraryAllows,
   type ProjectDocs,
@@ -422,8 +424,10 @@ export async function publishDeskUnit(
 
   const kind = DESK_UNIT_LIBRARY_KIND[msg.kind];
   const unit = { format: msg.unit.format, formatVersion: msg.unit.version, meta: msg.meta };
+  // a new version keeps its item's name (the message's only names the file); its description is the version's note
+  const note = cutText(msg.description?.trim() ?? '', LIBRARY_LIMITS.note);
   const meta = msg.newVersionOf
-    ? { kind, unit, basedOn: msg.newVersionOf.version }
+    ? { kind, unit, basedOn: msg.newVersionOf.version, ...(note ? { note } : {}) }
     : {
         kind,
         name: msg.name,

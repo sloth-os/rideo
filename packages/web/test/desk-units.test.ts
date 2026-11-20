@@ -4,6 +4,7 @@ import {
   type DeskUnitPin,
   type DeskUnitPublishMessage,
   deskUnitPinsToSend,
+  LibraryUploadMetaSchema,
   ProjectSettingsSchema,
   parseDeskStateUnits,
   type Scene,
@@ -421,14 +422,33 @@ describe('a unit-publish (docs/design/director-desk.md#publishing-and-linking)',
       ctx(docs, clip.id),
       { fetch: api.fetch },
     );
-    expect(api.calls[0]).toMatchObject({
-      path: '/library/items/lib_0000000000harbor/versions',
-      meta: { kind: 'desk-set', basedOn: 1 },
+    expect(api.calls[0]!.path).toBe('/library/items/lib_0000000000harbor/versions');
+    // a version is not a new item: the item keeps its name, and the description is the version's note
+    expect(api.calls[0]!.meta).toEqual({
+      kind: 'desk-set',
+      unit: { format: '3d-editor.desk-unit', formatVersion: 1, meta: publishMessage().meta },
+      basedOn: 1,
+      note: 'The docks at dawn',
     });
-    // a version is not a new item: no name or description
-    expect(api.calls[0]!.meta).not.toHaveProperty('name');
+    expect(LibraryUploadMetaSchema.safeParse(api.calls[0]!.meta).success).toBe(true);
     expect(api.calls[1]!.body).toMatchObject({ itemId: 'lib_0000000000harbor', version: 2 });
     expect(out.ack).toMatchObject({ ok: true, ref: 'lib_0000000000harbor', version: 2, linked: true });
+
+    // a note is at most the library's 500 characters, never cut inside a character; no description, no note
+    const version = (description: string | undefined) => async () => {
+      const lib = libraryApi();
+      await publishDeskUnit(
+        publishMessage({ newVersionOf: { ref: 'lib_0000000000harbor', version: 1 }, description }),
+        ctx(docs, clip.id),
+        { fetch: lib.fetch },
+      );
+      return lib.calls[0]!.meta!;
+    };
+    const long = await version(`${'x'.repeat(499)}🏮 and a lamp post by the steps`)();
+    expect(long.note).toBe('x'.repeat(499));
+    expect(LibraryUploadMetaSchema.safeParse(long).success).toBe(true);
+    expect(await version('  added a lamp post  ')()).toMatchObject({ note: 'added a lamp post' });
+    for (const none of [undefined, '', '   ']) expect(await version(none)()).not.toHaveProperty('note');
   });
 
   it('says so when the bytes are the current version already, and links that version', async () => {

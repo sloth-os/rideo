@@ -508,9 +508,11 @@ new item), `from` (the brief slot it came from: `{set: true}`, `{castId}` or `{e
 time, in the order they come:
 
 1. **Checks** the bytes' sha256 against `sha256`: a mismatch is refused (`invalid`) and nothing is uploaded.
-2. **Publishes** through the library ([uploads](library.md#surfaces)): a new item (`POST /api/library/items`) or, with
-   `newVersionOf`, a new version of that item with `basedOn` = `newVersionOf.version`
-   (`POST /api/library/items/:itemId/versions`). The kind `set`, `prop` or `figure` is the item kind `desk-set`,
+2. **Publishes** through the library ([uploads](library.md#surfaces)): a new item (`POST /api/library/items`) named
+   `name`, with `description`, or, with `newVersionOf`, a new version of that item with `basedOn` =
+   `newVersionOf.version` (`POST /api/library/items/:itemId/versions`): the item keeps its name (the message's `name`
+   names only the file), and `description`, trimmed and cut to the 500 characters of a version note, is the new
+   version's note (none when it is empty). The kind `set`, `prop` or `figure` is the item kind `desk-set`,
    `desk-prop` or `desk-figure`, and the digest the server computed must be the message's `sha256` again. Bytes equal
    to the item's current version publish nothing new and answer that version.
 3. **Links**, by the contract's rule: only when (a) the open is not read-only, (b) the person may edit the project,
