@@ -246,9 +246,9 @@ const REASONS: Record<string, string> = {
   too_new: 'a newer desk made it',
   too_large: 'it is over 32 MiB',
   wrong_kind: 'it is another kind of unit',
-  figure_kind: 'the desk has no actor of its kind',
-  figure_rig: "its rig is not the actor's",
-  over_budget: "the scene's units are more than the desk takes",
+  figure_kind: "the figure is not of the staged actor's kind (or of a kind the desk does not build)",
+  figure_rig: "the figure does not fit the staged actor's rig or height (±5 mm)",
+  over_budget: 'it is larger than one desk staging takes',
   set_ground: 'its ground is not at height 0',
 };
 

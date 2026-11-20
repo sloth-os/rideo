@@ -604,7 +604,9 @@ desk's banner offers **Update shots**.
 | `mismatch`: the bytes are not the pin's | `pending` | `pending:mismatch` | `pending` | open the scene again |
 | `unavailable`: the desk could not use it this time | `pending` | `pending:unavailable` | `pending` | open the scene again |
 | `unreadable`, `too_new` (a newer desk's), `too_large` (over 32 MiB) | `refused` | `refused:<why>` | `refused` | pin another version |
-| `wrong_kind` (not the slot's kind), `figure_kind` (the desk has no actor of that kind), `figure_rig` (another rig), `over_budget` (the scene's units pass what the desk takes), `set_ground` (the set's ground is not at height 0) | `refused` | `refused:<why>` | `refused` | pin another unit, or save one that fits from the desk |
+| `wrong_kind` (not the slot's kind), `set_ground` (the set's ground is not at height 0) | `refused` | `refused:<why>` | `refused` | pin another unit, or save one that fits from the desk |
+| `figure_kind` (the figure is not of the staged actor's kind, or of a kind the desk does not build), `figure_rig` (the figure does not fit the staged actor's rig or height, ±5 mm) | `refused` | `refused:<why>` | `refused` | pin a figure of the staged actor's kind and height (the desk keeps the actor) |
+| `over_budget`: the unit is larger than one desk staging takes (the scene's units together past the budget wait `unavailable` instead) | `refused` | `refused:over_budget` | `refused` | pin a smaller unit |
 | made local in the desk (it stays so, whatever the slot's pin becomes) | `unit` | `unit:local` | `local` | – |
 | a desk from before units, or no header | – | – | `unknown` | – |
 

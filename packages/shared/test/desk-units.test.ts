@@ -282,6 +282,28 @@ describe('deskUnitDrift (docs/design/director-desk.md#drift-the-storyboard-badge
     expect(approved[0]!.status).toBe('local');
   });
 
+  it("says what the desk's refusals mean: one unit too large for a staging, a figure that does not fit the actor", () => {
+    const line = (row: 'set' | 'cast', why: string) =>
+      deskUnitDriftLine(
+        statuses((r) => [
+          { ...r.set, ...(row === 'set' ? { staged: 'refused', why } : {}) },
+          { ...r.cast, ...(row === 'cast' ? { staged: 'refused', why } : {}) },
+          r.el,
+        ]).drift[row === 'set' ? 0 : 1]!,
+      );
+    // a unit whose own size never fits one staging: not the scene's units together (those wait, unavailable)
+    expect(line('set', 'over_budget')).toBe(
+      "Harbor: can't use Harbor v3 (it is larger than one desk staging takes)",
+    );
+    // the actor the desk staged for the member stays: a figure of another kind or rig or height is refused
+    expect(line('cast', 'figure_kind')).toBe(
+      "Mira: can't use Mira figure v2 (the figure is not of the staged actor's kind (or of a kind the desk does not build))",
+    );
+    expect(line('cast', 'figure_rig')).toBe(
+      "Mira: can't use Mira figure v2 (the figure does not fit the staged actor's rig or height (±5 mm))",
+    );
+  });
+
   it("names the first slot that needs attention: can't use, waiting, available, approved", () => {
     const all = statuses((r) => [
       { ...r.set, version: 1 },
