@@ -543,21 +543,24 @@ changed`.
 
 `/library`, from the header's **Library** link next to **Brand kits**.
 
-- **Desktop**: two panes. The list has kind chips (**All**, **Characters**, **Places & props**, **Resources**,
-  **3D sets**, **3D props**, **3D figures**), a tag filter (the tags of the items listed), search (names, descriptions,
-  tags) and **Show archived** (archived items then show with an "archived" badge).
-  The detail (`/library/:itemId`) shows the thumbnail, name, description and tags (editable by the owner and admins,
-  an `If-Match` on the item's revision: a change made meanwhile reloads the item and says so), what the current
-  version is (a character's role and summary, an element's kind and other names, a resource's kind and role, a 3D
-  unit's figure kind and height, size and objects), the versions (vN, date, author, note; the current one marked;
-  **Make current** for the owner and admins) and **Used in**: the projects, each with the entities that use the item
-  and the version each uses, linking to their view, and for 3D units how many clips' stored desk states use each
-  version. For 3D units each project row whose pins are at another version has **Use v3**, and **Use v3 in all 4
-  projects** (the projects with such pins) applies the pin project by project, one apply per entity, and lists what
-  each answered (now uses v3, refused with the reason, or a project this person may not edit, skipped). The detail
-  ends with **Archive** or **Unarchive**; the archived item stays open, gone from the list unless **Show archived**.
+- **Desktop**: two panes. The list has kind chips (**All**, **Characters**, **Places & props**, **Resources**, **3D
+  sets**, **3D props**, **3D figures**), a tag filter (the tags of the items listed), search (names, descriptions, tags)
+  and **Show archived** (archived items then show with an "archived" badge); each item says its kind, an element its own
+  ("Location", "Prop" or "Style", read from its current version as the Elements picker reads it). The detail
+  (`/library/:itemId`) shows the thumbnail, name, description and tags (editable by the owner and admins, an `If-Match`
+  on the item's revision: a change made meanwhile reloads the item and says so), what the current version is (a
+  character's role and summary, an element's kind and other names, a resource's kind and role, a 3D unit's figure kind
+  and height, size, objects and credits), the versions (vN, date, author, note; the current one marked; **Make current**
+  for the owner and admins) and **Used in**: the projects, each with the entities that use the item and the version each
+  uses, linking to their view, and for 3D units how many clips' stored desk states use each version; when where it is
+  used cannot be read, **Used in** says why and offers **Try again** (reading the item again leaves that said). For 3D
+  units each project row whose pins are at another version has **Use v3**, and **Use v3 in all 4 projects** (the
+  projects with such pins) applies the pin project by project, one apply per entity, and lists what each answered (now
+  uses v3, refused with the reason, or a project this person may not edit, skipped). The detail ends with **Archive** or
+  **Unarchive**; the archived item stays open, gone from the list unless **Show archived**.
 - **Phones**: the list, then the detail on its own route (with a link back to the list) and a bottom action bar holding
-  **Use v3 in all 4 projects** and **Archive** or **Unarchive**; no sideways scroll.
+  **Use v3 in all 4 projects** and **Archive** or **Unarchive** (no bar for someone who may do neither); no sideways
+  scroll.
 - The page uploads nothing: characters, elements and resources are saved from their projects, 3D units from the desk.
 
 ### Cast, Elements and Resources
@@ -569,17 +572,20 @@ changed`.
   Its answer says what happened: "Saved Mira v3 to the library" or "Nothing changed since v2". A version saved
   meanwhile (`412`) offers **Update…**, **Save anyway as v4** or **Save as a new item**; refusals are said in words
   from their code.
-- **Use from library** in each of the three views (Footage too): a multi-select picker of the view's kinds (in
-  Elements, chips for locations, props and styles, read from each item's current version), filtered by tag and
-  searchable, archived items left out, the items the project already uses marked. **Use** applies the chosen items one
-  by one and lists the results; an item whose id or name is taken offers **Link to the existing Mira**, which shows
-  its plan first; a real-person item asks for the consent first.
+- **Use from library** in each of the three views (Footage too): a multi-select picker of the view's kinds (in Elements,
+  chips for locations, props and styles, read from each item's current version), filtered by tag and searchable,
+  archived items left out, the items the project already uses marked. What is checked stays checked under another
+  search, tag or chip ("Also checked: Ada" names the ones the list hides), and **Use 2** applies every checked item one
+  by one and lists the results; an item whose id or name is taken offers **Link to the existing Mira**, which shows its
+  plan first, over the picker (Escape closes the plan and leaves the picker with its results); a real-person item asks
+  for the consent first.
 - **The library row** on a linked entity: "Library: Mira v2 · v3 available [Update…] [Unlink]", with "edited here since
   v2" when the entity changed in this project after it was linked (a library character unlocked and described again,
   say). **Update…** opens the plan: what changes, the lock version before and after, how many takes go stale, the
   approved clips that need a director (an editor sees them and cannot update), that edits made here since v2 are
   replaced, and the consent checkbox for a real person. On a resource the row offers **Use v3** instead, which adds v3
-  as a new resource (shots keep the one they name). **Unlink** keeps the entity as the project's own.
+  as a new resource (shots keep the one they name); once a resource of the project holds v3 the row names it ("v3 is in
+  this project: Moodboard still B") and adds no other copy. **Unlink** keeps the entity as the project's own.
 - **The 3D row** on characters, locations and props (after the summary on a character, after "Also called" on an
   element): "3D figure: Mira look v1 · v2 available [Use v2] [Change] [Unlink]", or "3D set: none [Choose…]". The
   picker lists the matching kind only (figures for characters, sets for locations, props for props). There is no 3D row
@@ -596,9 +602,10 @@ changed`.
   scene's place (Harbor)", "Saved Harbor v1 to the library; not linked: Harbor uses another library set (Old harbor)",
   "Not saved to the library: …".
 
-Every new control follows [the brand](../brand.md): the library row and the 3D row are `secondary` controls in the
-card, badges use the status colours (`info` for available, `warning` for waiting, `danger` for can't use, muted text
-for approved), and every view and dialog works at 360 px without sideways scroll.
+Every new control follows [the brand](../brand.md): the library row and the 3D row are `secondary` controls in the card,
+badges use the status colours (`info` for available, `warning` for waiting, `danger` for can't use, muted text for
+approved), and every view and dialog works at 360 px without sideways scroll: on a phone a card's name stays whole, its
+badges, **Save to library** and **Lock** wrapping below it.
 
 ## Reusing sets, props and characters across episodes
 
@@ -708,20 +715,25 @@ existing `412` conflict, whose **Replace** would drop the server's change unless
   its parts are read, nothing written to the temporary folder.
 - **Unit (web)** (`packages/web/test/library-ui.test.tsx`): the rows' texts ("Library: Mira v2 · v3 available", "edited
   here", "3D set: none", a missing pin), the plan in words (lock versions, stale takes, the approval warning and who may
-  confirm, local edits, files), refusals in words by code, tags checked, the moves of **Use v3 in all N projects**
-  (pins at another version only, reviewers skipped, a refusal listed and the loop going on), and the dialogs on a
-  mocked API: Save with the consent box, a `412` offering Save anyway, the plan's approval warning, the picker's "Link
-  to the existing Mira"; on the Library page, **Make current** and **Archive** with the item's revision as `If-Match`,
-  and a change made meanwhile (`412`) reloading the item and saying so.
+  confirm, local edits, files), refusals in words by code, tags checked, the moves of **Use v3 in all N projects** (pins
+  at another version only, reviewers skipped, a refusal listed and the loop going on), and the dialogs on a mocked API:
+  Save with the consent box, a `412` offering Save anyway, the plan's approval warning, the picker's "Link to the
+  existing Mira" (Escape closing the plan only, the picker keeping its results) and items checked under another search
+  or tag used too; a resource row naming the resource that holds the version it would add; on the Library page, **Make
+  current** and **Archive** with the item's revision as `If-Match`, a change made meanwhile (`412`) reloading the item
+  and saying so, no action bar for someone with nothing to do, "1 object · 1 credit", a style called Style in the list
+  and on the item, and **Used in** saying why it could not be read, whenever the item arrives, with **Try again**.
 - **End to end** (`e2e/library.spec.ts`, desktop and mobile): Mira saved from episode 1 through the consent dialog, used
-  in episode 2 (the same id and seed, checked through the API), the writer of episode 2 keeping her (its scenes cast
-  her id), a project with a Mira of its own offered "Link to the existing Mira" (its plan, then linked and locked), a
-  v2 published from episode 1, the update in episode 2 with its plan and the approval warning of its approved clip,
-  the item's Used in; desk units uploaded through the REST API in the test: a location's 3D row Choose (sets only),
-  Use v2, the Library page's search, kind chips and tag filter (the list kept beside the item on a wide screen), Use
-  v3 for the project and Use v4 in every project, a tag added, a prop archived (gone from the list and the props'
-  picker, back under Show archived), Change and Unlink; no sideways scroll. The desk's side of units is in
-  [the desk's tests](director-desk.md#tests).
+  in episode 2 (the same id and seed, checked through the API), the writer of episode 2 keeping her (its scenes cast her
+  id), a project with a Mira of its own offered "Link to the existing Mira" (Mira kept checked under another search,
+  Escape closing the plan and leaving the picker with its result, then the plan again, linked and locked), a v2
+  published from episode 1, the update in episode 2 with its plan and the approval warning of its approved clip, the
+  item's Used in; desk units uploaded through the REST API in the test: a location's 3D row Choose (sets only), Use v2,
+  the Library page's search, kind chips and tag filter (the list kept beside the item on a wide screen), Use v3 for the
+  project and Use v4 in every project, a tag added, a prop archived (gone from the list and the props' picker, back
+  under Show archived), Change and Unlink; no sideways scroll. On phones (360×740, 390×844 and 412×915 at a device pixel
+  ratio of 1): Cast, Elements (in use and not) and Resources cards with long names, badges and Save to library keep
+  every name whole. The desk's side of units is in [the desk's tests](director-desk.md#tests).
 
 ## P1
 
