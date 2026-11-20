@@ -464,7 +464,8 @@ type LibraryUploadMeta = {
 ```
 
 Each part is counted as it streams to a temporary file: a part over its limit is `413`, `meta` that is not first or
-does not validate is `422`. A unit file whose prefix or header is not a desk unit's, whose `format` is not
+does not validate is `422`. An upload the client abandons in the middle ends there: its temporary files are removed
+and nothing is published. A unit file whose prefix or header is not a desk unit's, whose `format` is not
 `3d-editor.desk-unit`, or whose header `kind` is not the item's (`set`, `prop`, `figure` for `desk-set`, `desk-prop`,
 `desk-figure`) is `422`. A thumbnail must carry the PNG signature and an `IHDR` of at most 256 × 256.
 
@@ -679,7 +680,8 @@ existing `412` conflict, whose **Replace** would drop the server's change unless
   (`library-upload.test.ts`): the multipart parts in order, `meta` not first, bad `meta`, a unit of 32 MiB + 1 byte
   (`413`, counted, its temporary file removed), a thumbnail over 64 KiB and `meta` over 32 KiB (`413`), 3D meta over
   16 KiB (`422`), a unit with a wrong magic, container, codec, header, format, version or kind (`422`), thumbnails
-  that are not PNG or over 256 px (`422`), byte ranges.
+  that are not PNG or over 256 px (`422`), a client that goes away in the middle of a part (the receive rejects, no
+  temporary file left), byte ranges.
 - **Integration** (`library.test.ts`, REST and MCP on one server): a desk set uploaded, listed, read, served with
   `Range`, `304` and `HEAD`, a new version with a stale `If-Match` and with a stale `basedOn`, renamed, archived (gone
   from the default list, still served), its uses; Mira saved from project A (`consent_required` until acknowledged),

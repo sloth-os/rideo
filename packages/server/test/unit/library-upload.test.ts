@@ -1,4 +1,5 @@
 import { mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
+import { request } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import multipart from '@fastify/multipart';
@@ -66,6 +67,8 @@ describe('the multipart parts', () => {
   let tmp: string;
   const refused = vi.fn((_kind: string, _reason: string, err: AppError) => err);
   let received: LibraryUploadFiles | null = null;
+  /** How the last receive ended: pending while it runs. */
+  let outcome = '';
   beforeAll(async () => {
     app = Fastify();
     await app.register(multipart, { limits: { fileSize: 4 * 1024 ** 3, files: 2 } });
@@ -76,7 +79,14 @@ describe('the multipart parts', () => {
       }),
     );
     app.post('/upload', async (req) => {
-      received = await receiveLibraryUpload(req, (ext) => join(tmp, `${newId('job')}.${ext}`), refused);
+      outcome = 'pending';
+      try {
+        received = await receiveLibraryUpload(req, (ext) => join(tmp, `${newId('job')}.${ext}`), refused);
+        outcome = 'resolved';
+      } catch (err) {
+        outcome = `rejected: ${(err as Error).message}`;
+        throw err;
+      }
       return {
         kind: received.meta.kind,
         payload: received.payload.size,
@@ -203,6 +213,44 @@ describe('the multipart parts', () => {
       ['payload', unitFile('set')],
     ]);
     expect(meta).toMatchObject({ status: 413 });
+  });
+
+  it('rejects and removes what it wrote when the client goes away in the middle of a part', async () => {
+    const boundary = 'cut-short';
+    const meta = JSON.stringify({
+      kind: 'resource',
+      name: 'Long take',
+      resource: { kind: 'video', role: 'source', name: 'take.mp4' },
+    });
+    const head = Buffer.from(
+      `--${boundary}\r\nContent-Disposition: form-data; name="meta"\r\n\r\n${meta}\r\n` +
+        `--${boundary}\r\nContent-Disposition: form-data; name="payload"; filename="take.mp4"\r\n` +
+        'Content-Type: video/mp4\r\n\r\n',
+    );
+    const target = new URL(url);
+    // 2 MiB of a body announced as 8 MiB, then the socket is gone
+    await new Promise<void>((resolve) => {
+      const req = request({
+        host: target.hostname,
+        port: target.port,
+        path: target.pathname,
+        method: 'POST',
+        headers: {
+          'content-type': `multipart/form-data; boundary=${boundary}`,
+          'content-length': String(head.length + 8 * 1024 * 1024),
+        },
+      });
+      req.on('error', () => undefined);
+      req.write(head);
+      req.write(Buffer.alloc(2 * 1024 * 1024, 1), () =>
+        setTimeout(() => {
+          req.destroy();
+          resolve();
+        }, 200),
+      );
+    });
+    await vi.waitFor(() => expect(outcome).toMatch(/^rejected/), { timeout: 3000, interval: 50 });
+    expect(await readdir(tmp)).toEqual([]);
   });
 });
 

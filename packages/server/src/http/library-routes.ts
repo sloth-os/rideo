@@ -1,6 +1,7 @@
 import { createWriteStream } from 'node:fs';
 import { rm } from 'node:fs/promises';
-import { Readable } from 'node:stream';
+import { Readable, Transform } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 import {
   LIBRARY_LIMITS,
   LibraryApplyInputSchema,
@@ -27,39 +28,20 @@ const FileParam = VersionParam.extend({ sha256: Sha256HexSchema });
 const ProjectParam = z.object({ id: z.string().regex(/^prj_[0-9a-z]{10,32}$/) });
 
 /**
- * Writes a part to a file, counting its bytes: past `limit` the file is dropped and the rest of the part read and
- * thrown away (the request is read to its end, so the refusal reaches the client). -1 when it was over the limit.
+ * Writes a part to a file, counting its bytes: past `limit` nothing more is written and the rest of the part is read
+ * and thrown away (the request is read to its end, so the refusal reaches the client). -1 when it was over the limit.
+ * A client that goes away in the middle of the part ends it early: the promise rejects (premature close).
  */
-export function writeCounted(file: Readable, path: string, limit: number): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const out = createWriteStream(path);
-    let size = 0;
-    let over = false;
-    file.on('data', (chunk: Buffer) => {
-      if (over) return;
+export async function writeCounted(file: Readable, path: string, limit: number): Promise<number> {
+  let size = 0;
+  const count = new Transform({
+    transform(chunk: Buffer, _encoding, done) {
       size += chunk.length;
-      if (size > limit) {
-        over = true;
-        out.destroy();
-        return;
-      }
-      if (!out.write(chunk)) {
-        file.pause();
-        out.once('drain', () => file.resume());
-      }
-    });
-    file.once('end', () => {
-      if (over) resolve(-1);
-      else out.end(() => resolve(size));
-    });
-    file.once('error', (err) => {
-      out.destroy();
-      reject(err);
-    });
-    out.once('error', (err) => {
-      if (!over) reject(err);
-    });
+      done(null, size > limit ? undefined : chunk);
+    },
   });
+  await pipeline(file, count, createWriteStream(path));
+  return size > limit ? -1 : size;
 }
 
 /**
