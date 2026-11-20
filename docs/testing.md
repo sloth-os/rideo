@@ -211,7 +211,8 @@ only those names as extras, and reading verdicts that name a character instead o
   `shot-update.test.ts`, `packages/server/test/unit/batch-boards.test.ts`, `desk-precondition.test.ts`,
   `packages/web/test/desk-bridge.test.ts`, `desk-panel.test.tsx`, `desk-results.test.ts`): the protocol's schemas
   against a verbatim copy of the 3D-Editor's fixtures (`packages/shared/test/fixtures/desk-protocol/`: every valid one
-  parses, every invalid one is refused), a result over its limits, and the desk page's URL rule; the brief from rideo's
+  parses, each invalid one is refused but `state-units-bad-staged.json`, a state read with its units unknown), a result
+  over its limits, and the desk page's URL rule; the brief from rideo's
   documents, row by row (odd sizes, interiors, the time of day, heights in every form it reads, feet and inches before
   a weight, the order and limits of the cast and elements, layouts filtered to the shot's own cast, a clip without
   shots, clip ids such as `constructor`); a result's plan (the mode each shot carries, of several the one last attached,
@@ -262,15 +263,15 @@ only those names as extras, and reading verdicts that name a character instead o
   uploads (`meta` first, a unit of 32 MiB + 1 byte refused with `413`, a unit whose prefix, header or kind is wrong,
   thumbnails that are not PNG, over 64 KiB or over 256 px) ([the library](design/library.md#tests)).
 - **library units** (`packages/shared/test/desk-protocol.test.ts`, `desk-brief.test.ts`, `desk-units.test.ts`,
-  `packages/web/test/desk-bridge.test.ts`): the new fixtures (valid ones parse, invalid ones are refused) and the
-  capability read leniently; the brief unchanged byte for byte without units and, with them, the set from the scene's
-  location, props, figures with their kind and height, only the kinds the desk announced; `X-Desk-State-Units`
-  formatted and parsed, and `state.units` that name a slot twice read as not known and sent as no header (the state
-  stored all the same); `deskUnitDrift` for every status (a slot made local stays `local` whatever its pin becomes); the
-  bridge sending no unit field to a desk without the capability, `open.units` in slot order without the pins the stored
-  state uses (2 fetches at a time, sha256 checked, never past 48 MiB), `unit-publish` saved, linked by the contract's
-  rule and acknowledged with the mapped codes, one at a time, one it cannot read refused `invalid` at once ([library
-  units](design/director-desk.md#tests)).
+  `packages/web/test/desk-bridge.test.ts`): the new fixtures (valid ones parse, invalid ones refused but
+  `state-units-bad-staged.json`, a state read with its units unknown) and the capability read leniently; the brief
+  unchanged byte for byte without units and, with them, the set from the scene's location, props, figures with their
+  kind and height, only the kinds the desk announced; `X-Desk-State-Units` formatted and parsed, and `state.units` that
+  name a slot twice read as not known and sent as no header (the state stored all the same); `deskUnitDrift` for every
+  status (a slot made local stays `local` whatever its pin becomes); the bridge sending no unit field to a desk without
+  the capability, `open.units` in slot order without the pins the stored state uses (2 fetches at a time, sha256
+  checked, never past 48 MiB), `unit-publish` saved, linked by the contract's rule and acknowledged with the mapped
+  codes, one at a time, one it cannot read refused `invalid` at once ([library units](design/director-desk.md#tests)).
 - **reviews of every step** (`packages/shared/test/ai-review-gates.test.ts`): the whole-take watch's verdict and its
   merge into the quality checks, the scene review's verdict, the clip gate, the cast review's subject and merge
   (fixes pointed at the character), the `cast.reviewPassed` gate (off for older projects, continue anyway), the cut's

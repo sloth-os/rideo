@@ -141,8 +141,9 @@ reads no `error` of the host and would wait out its timeout ([publishing and lin
 the desk supplies (its versions, the reason export is unavailable, its errors' messages, the names of a result's files)
 is cut to 300 characters wherever rideo shows it, in the status line and in toasts.
 Rideo keeps a copy of the 3D-Editor's fixtures (one valid example of every message and some invalid ones) in
-`packages/shared/test/fixtures/desk-protocol/`, and its tests parse every valid one and reject every invalid one, so a
-change on either side that breaks the other shows up in the tests.
+`packages/shared/test/fixtures/desk-protocol/`, and its tests parse every valid one and refuse every invalid one but
+`state-units-bad-staged.json`, a state rideo reads with its units unknown ([what a stored state
+uses](#what-a-stored-state-uses)), so a change on either side that breaks the other shows up in the tests.
 
 ## The brief
 
@@ -709,7 +710,8 @@ an `open` and why, and each publish's answer, to the browser's console (`[desk] 
   ids filtered to the brief's cast and layouts to the shot's own cast (a character taken out of a shot but still in
   another), a clip without shots and clip ids such as `constructor`; the protocol's schemas (`desk-protocol.test.ts`)
   against a verbatim copy of the 3D-Editor's fixtures, `{"$bytes": …}` decoded to ArrayBuffers: every valid one parses
-  (in its direction too) and every invalid one is refused, a state over 64 MiB, a result over its limits (201 shots,
+  (in its direction too) and each invalid one is refused but `state-units-bad-staged.json` (its state parses, with its
+  units unknown), a state over 64 MiB, a result over its limits (201 shots,
   801 files, a 201-character file name), the same 20 moves and framings as rideo's, the desk page's URL rule; a
   result's plan (`desk-result.test.ts`): the mode each shot carries, of several the one last attached, else the first
   in the protocol's order, every refusal (a shot listed twice, a clip that is not MP4 among them, a frame count or
@@ -831,23 +833,23 @@ an `open` and why, and each publish's answer, to the browser's console (`[desk] 
   opened read-only and its result refused; nothing scrolls sideways. With the scene's location pinned to a library set
   through the API, the v1 fake desk still gets no unit field: no `options.units`, no pin in the brief, no `open.units`.
 - **Library units, unit (shared and web):** the protocol's schemas against the new fixtures (`desk-protocol.test.ts`:
-  every valid one parses, every invalid one is refused) and the capability read leniently (only version 2, garbage,
-  only unknown kinds: no units, and `ready` still parses), `state.units` too (rows that do not validate, 129 rows, a
-  slot named twice: units not known, and the state still parses); the brief (`desk-brief.test.ts`) without units the
-  same byte for byte even when entities are pinned, and with units `set.unit` from the scene's location only, prop
-  pins, figure pins with the figure's kind and height (null outside 0.1–4 m), kinds the desk did not announce left out,
-  no unit on a location row; `X-Desk-State-Units` formatted and parsed (`-`, no header, `local`, a reason; 129 rows,
-  over 8 KiB and bad syntax refused, rows naming a slot twice no header) and `deskUnitDrift` for every status (a slot
-  made local staying `local` whatever its pin becomes) and the badge's order (`desk-units.test.ts`); the bridge
-  (`desk-bridge.test.ts`): a desk without the capability gets no `options.units`, no pins and no `open.units`; a desk
-  with units gets `options.units` with `publish`, then `open.units` in slot order, fetched 2 at a time, once per
-  version, without the pins the stored state uses, a file that does not match or does not arrive left out, 48 MiB
-  never passed, the buffers transferred; `unit-publish` saving a new item, a new version with `basedOn` and the same
-  bytes again, linked by the rule's cases (read-only, no permission to edit, another pin, a `409` on the link: each
-  `linked: false` with its reason), every refusal mapped to its code, publishes one at a time, a publish on an open
-  without units refused at once, one that does not validate answered `bad_message` and `unit-ack` `invalid` at once with
-  its notice; each state's units sent with its write, and none when they do not fit or name a slot twice (the state
-  stored with its units unknown).
+  every valid one parses, each invalid one is refused but `state-units-bad-staged.json`, whose state parses with its
+  units unknown) and the capability read leniently (only version 2, garbage, only unknown kinds: no units, and `ready`
+  still parses), `state.units` too (rows that do not validate, 129 rows, a slot named twice: units not known, and the
+  state still parses); the brief (`desk-brief.test.ts`) without units the same byte for byte even when entities are
+  pinned, and with units `set.unit` from the scene's location only, prop pins, figure pins with the figure's kind and
+  height (null outside 0.1–4 m), kinds the desk did not announce left out, no unit on a location row;
+  `X-Desk-State-Units` formatted and parsed (`-`, no header, `local`, a reason; 129 rows, over 8 KiB and bad syntax
+  refused, rows naming a slot twice no header) and `deskUnitDrift` for every status (a slot made local staying `local`
+  whatever its pin becomes) and the badge's order (`desk-units.test.ts`); the bridge (`desk-bridge.test.ts`): a desk
+  without the capability gets no `options.units`, no pins and no `open.units`; a desk with units gets `options.units`
+  with `publish`, then `open.units` in slot order, fetched 2 at a time, once per version, without the pins the stored
+  state uses, a file that does not match or does not arrive left out, 48 MiB never passed, the buffers transferred;
+  `unit-publish` saving a new item, a new version with `basedOn` and the same bytes again, linked by the rule's cases
+  (read-only, no permission to edit, another pin, a `409` on the link: each `linked: false` with its reason), every
+  refusal mapped to its code, publishes one at a time, a publish on an open without units refused at once, one that does
+  not validate answered `bad_message` and `unit-ack` `invalid` at once with its notice; each state's units sent with its
+  write, and none when they do not fit or name a slot twice (the state stored with its units unknown).
 - **Library units, integration** (`desk.test.ts`): `X-Desk-State-Units` kept on the clip with its state (`-` as none,
   no header as unknown), a header that does not parse refused with `422` and counted, the same bytes again keeping the
   rows, `DELETE` clearing them; the embedding origins' preflight allows `x-desk-state-units` (`embedding.test.ts`).
