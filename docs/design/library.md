@@ -658,7 +658,8 @@ its 3D set into episode 2.
 ## Server calls to the 3D-Editor
 
 The second request was: "rideo backend can directly request to 3D-Editor backend if it can improve efficiency". The
-3D-Editor's design for a desk service (D4) measured what a server-to-server call could do:
+3D-Editor measured what a server-to-server call could do (the 3D-Editor repository's `docs/embedding.md`,
+[Server calls](https://github.com/sloth-os/3D-Editor/blob/main/docs/embedding.md#server-calls)):
 
 | Candidate | What it would save | What it costs | Decision |
 |---|---|---|---|

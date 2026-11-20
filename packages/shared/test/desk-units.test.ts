@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   type Clip,
@@ -26,11 +28,10 @@ const FIGURE = 'lib_0j8kc4n2q1h7mira';
 const PROP = 'lib_0j8kc4n2q1h7lamp';
 
 describe('X-Desk-State-Units (docs/design/director-desk.md#what-a-stored-state-uses)', () => {
-  // the docs' example
+  // the docs' example, its rows in the desk's order
   const EXAMPLE =
-    'set=lib_0j8kc4n2q1h7wz3x@3:unit, cast:chr_0j8kc3v9m2a7mr5t=lib_0j8kc4n2q1h7mira@2:unit:local, el:ele_0j8kc3x0b5k9dn2p=lib_0j8kc4n2q1h7lamp@1:pending:missing';
+    'cast:chr_0j8kc3v9m2a7mr5t=lib_0j8kc4n2q1h7mira@2:unit:local, el:ele_0j8kc3x0b5k9dn2p=lib_0j8kc4n2q1h7lamp@1:pending:missing, set=lib_0j8kc4n2q1h7wz3x@3:unit';
   const ROWS: DeskStateUnitUse[] = [
-    { slot: 'set', ref: 'lib_0j8kc4n2q1h7wz3x', version: 3, staged: 'unit', local: false },
     {
       slot: 'cast:chr_0j8kc3v9m2a7mr5t',
       ref: 'lib_0j8kc4n2q1h7mira',
@@ -46,15 +47,27 @@ describe('X-Desk-State-Units (docs/design/director-desk.md#what-a-stored-state-u
       local: false,
       why: 'missing',
     },
+    { slot: 'set', ref: 'lib_0j8kc4n2q1h7wz3x', version: 3, staged: 'unit', local: false },
   ];
+
+  it("is the docs' example, rows sorted by slot in plain string order as the desk sends them", () => {
+    const doc = readFileSync(resolve(import.meta.dirname, '../../../docs/design/director-desk.md'), 'utf8');
+    expect(/^X-Desk-State-Units: (.+)$/m.exec(doc)?.[1]).toBe(EXAMPLE);
+    // the desk compares slots as plain strings (a < b): cast:…, el:…, set
+    const slots = parseDeskStateUnits(EXAMPLE)!.map((r) => r.slot);
+    expect(slots).toEqual([...slots].sort());
+    expect(doc.replace(/\s+/g, ' ')).toContain(
+      'sorted by slot in plain string order (`cast:<characterId>`, `el:<elementId>`, `set`)',
+    );
+  });
 
   it("is the docs' header, and reads back as its rows", () => {
     expect(DESK_STATE_UNITS_HEADER).toBe('x-desk-state-units');
     const rows = parseDeskStateUnits(EXAMPLE)!;
     expect(rows.map((r) => [r.slot, r.version, r.staged, r.local, r.why])).toEqual([
-      ['set', 3, 'unit', false, undefined],
       ['cast:chr_0j8kc3v9m2a7mr5t', 2, 'unit', true, undefined],
       ['el:ele_0j8kc3x0b5k9dn2p', 1, 'pending', false, 'missing'],
+      ['set', 3, 'unit', false, undefined],
     ]);
     expect(rows).toEqual(ROWS);
     expect(formatDeskStateUnits(ROWS)).toBe(EXAMPLE);
