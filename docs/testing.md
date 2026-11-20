@@ -491,9 +491,10 @@ only those names as extras, and reading verdicts that name a character instead o
   takes and references with embeddings (`semantic`): synonyms found, a character's takes named first, an unapproved
   reference dropped on its own; MCP `media_search`, `search_status`, `search_index`.
 - **Brand kits** (`brand.test.ts`): a kit with fonts (a broken one refused), a logo, a video intro and an outro still,
-  served back; the bug set; the kit applied to a project (files copied into its media); a lower third and an intro
-  that moves it; an export with the bug checked pixel by pixel (the logo in its corner over the intro), its length;
-  the brand removed and the kit deleted; MCP `brand_kits_list`, `brand_kit_update`, `project_brand`.
+  served back with `nosniff` and a sandboxing policy; the bug set; the kit applied to a project (files copied into its
+  media); a lower third and an intro that moves it; an export with the bug checked pixel by pixel (the logo in its
+  corner over the intro), its length; the brand removed and the kit deleted; MCP `brand_kits_list`,
+  `brand_kit_update`, `project_brand`.
 - **Agents** (`agents.test.ts`): studio recipes validated (unknown tools, arguments, placeholders, a step that is
   `library_apply` refused with the step and the tool named, a recipe of `library_status` saved and run) and run with
   `forEach` over a list parameter, a failing step stopping the recipe with its error, built-ins that cannot be

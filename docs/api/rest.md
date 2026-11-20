@@ -126,7 +126,7 @@ See [browser storage](../design/browser-storage.md#the-protocol).
 | PATCH | `/api/brand-kits/:id` | the same, partial | the kit (its author or an admin) |
 | DELETE | `/api/brand-kits/:id` | – | `204`, with its files |
 | PUT | `/api/brand-kits/:id/files/:slot` | multipart `file`; `slot`: `title_font`, `body_font`, `logo`, `intro`, `outro` | the kit; `422` for a file that is not a font (signature), an image or a video (probe), or a bumper over 30 s |
-| GET | `/api/brand-kits/:id/files/:file` | – | the file |
+| GET | `/api/brand-kits/:id/files/:file` | – | the file, with `X-Content-Type-Options: nosniff` and `Content-Security-Policy: default-src 'none'; sandbox` (a file opened as a page runs nothing) |
 | PUT | `/api/projects/:id/brand` | `{kitId \| null}` | `{brand}`: the kit applied (its files copied into the project's media), or removed (`project.manage`) |
 
 Exports take `bug` (`POST /exports`, default: the brand's `bug.enabled`) to draw the brand bug.

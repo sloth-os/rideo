@@ -107,6 +107,10 @@ describe('brand kits', () => {
     expect(k.outro).toMatchObject({ durationSec: 3 });
     const file = await fetch(`${stack.url}/api/brand-kits/${kit.id}/files/${k.logo!.file}`);
     expect(file.status).toBe(200);
+    // served as it is, as a library file or a project's media: never sniffed into another type, nothing of it run
+    expect([file.headers.get('x-content-type-options'), file.headers.get('content-security-policy')]).toEqual(
+      ['nosniff', "default-src 'none'; sandbox"],
+    );
     expect(Buffer.from(await file.arrayBuffer()).equals(await readFile(logo))).toBe(true);
     k = await stack.api<BrandKit>('PATCH', `/brand-kits/${kit.id}`, {
       bug: { enabled: true, corner: 'top_left', size: 0.2, opacity: 1 },
