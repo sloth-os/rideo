@@ -63,8 +63,9 @@ left out: no scene names one). The writer keeps those exact names, never a nickn
 every person, place or object of the film that is one of them, with its role and look, and names only the others anew.
 The lists stay short: at most 40 characters (by role, the locked ones first, then by name) and 80 locations and props
 (locations first, the locked ones first, then by name), each look at most 160 characters, each element with at most 5
-aliases of at most 160 characters together: under 40,000 characters at the very worst, a few hundred for a season's
-cast and places. A project without any sends no `existing`, so a new project's prompts are as before. The merge then
+aliases of at most 160 characters together: about 40,000 characters at the very worst (40,069 with every name, look
+and alias at its longest, more when they hold characters JSON escapes), a few hundred for a season's cast and places.
+A project without any sends no `existing`, so a new project's prompts are as before. The merge then
 links the scenes to them, case-insensitively by name, a character also by its first name and an element by an alias. A
 matched entity keeps its id, seed, references, lock and every field the writer does not write, its library link and 3D
 pin among them: a locked character or element is left as it is; an unlocked character takes the writer's role,

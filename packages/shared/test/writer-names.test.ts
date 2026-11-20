@@ -175,10 +175,13 @@ describe('existingNames', () => {
   });
 
   it('stays small at its worst: the most characters and places with the longest names, looks and aliases', () => {
+    // every bound at its maximum: 120-character names, the longest role and kind, 160-character looks, and five
+    // aliases of 32 characters (the most aliases that fit in 160 characters, each costing its quotes and comma)
     const name = (i: number) => `${String(i).padStart(3, '0')} ${'n'.repeat(116)}`;
     const cast = Array.from({ length: 100 }, (_, i) =>
       f.character({
         name: name(i),
+        role: 'protagonist',
         summary: 's'.repeat(4000),
         identity: { ...f.character().identity, build: 'b'.repeat(200) },
       }),
@@ -187,14 +190,18 @@ describe('existingNames', () => {
       f.element({
         kind: i % 2 ? 'prop' : 'location',
         name: name(i),
-        aliases: Array.from({ length: 20 }, () => 'a'.repeat(120)),
+        aliases: Array.from({ length: 20 }, (_, k) => `${k}`.padStart(32, 'a')),
       }),
     );
     const out = existingNames(cast, world)!;
     expect(out.characters).toHaveLength(40);
     expect(out.elements).toHaveLength(80);
-    // About 10,000 tokens at the very worst; a library's cast and places are a few hundred characters.
-    expect(JSON.stringify(out).length).toBeLessThan(40_000);
+    expect(out.characters.every((c) => c.name.length === 120 && c.identity.length === 160)).toBe(true);
+    expect(out.elements.every((e) => e.kind === 'location' && e.aliases.length === 5)).toBe(true);
+    expect(out.elements[0]!.aliases.join('')).toHaveLength(160);
+    // The documented worst (docs/design/continuity.md#storytelling): about 10,000 tokens; a library's cast and places
+    // are a few hundred characters.
+    expect(JSON.stringify(out)).toHaveLength(40_069);
   });
 });
 
