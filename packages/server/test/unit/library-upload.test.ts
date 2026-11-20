@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import { request } from 'node:http';
 import { tmpdir } from 'node:os';
@@ -38,11 +39,15 @@ function unitFile(
   body = 'body',
   opts: { header?: unknown; magic?: Buffer; container?: number; codec?: number; length?: number } = {},
 ) {
-  const json = Buffer.from(
-    typeof opts.header === 'string'
-      ? opts.header
-      : JSON.stringify(opts.header ?? { format: '3d-editor.desk-unit', version: 1, kind, name: 'Harbor' }),
-  );
+  const json = Buffer.isBuffer(opts.header)
+    ? opts.header
+    : Buffer.from(
+        typeof opts.header === 'string'
+          ? opts.header
+          : JSON.stringify(
+              opts.header ?? { format: '3d-editor.desk-unit', version: 1, kind, name: 'Harbor' },
+            ),
+      );
   const prefix = Buffer.alloc(16);
   (opts.magic ?? DESK_UNIT_MAGIC).copy(prefix, 0);
   prefix[8] = opts.container ?? 1;
@@ -66,6 +71,19 @@ const setMeta = (extra: Record<string, unknown> = {}) => ({
   ...extra,
 });
 const png = (w: number, h: number) => Buffer.from(f.pngBytes(w, h));
+/** A unit file the 3D-Editor's core wrote: a red kite (`units/unit-file-prop.json`, a verbatim copy of its fixture). */
+const editorUnit = () =>
+  Buffer.from(
+    (
+      JSON.parse(
+        readFileSync(
+          join(import.meta.dirname, '../../../shared/test/fixtures/desk-protocol/units/unit-file-prop.json'),
+          'utf8',
+        ),
+      ) as { $bytes: string }
+    ).$bytes,
+    'base64',
+  );
 
 describe('the multipart parts', () => {
   let app: FastifyInstance;
@@ -285,6 +303,13 @@ describe('what rideo reads of a unit file and a thumbnail', () => {
     });
     // gzip as codec is fine: the body is not read
     expect((await header(unitFile('prop', 'body', { codec: 1 }))).kind).toBe('prop');
+    // the 3D-Editor's own unit file, as its contract lays it out
+    expect(await header(editorUnit())).toEqual({
+      format: '3d-editor.desk-unit',
+      version: 1,
+      kind: 'prop',
+      name: 'Red kite',
+    });
   });
 
   it('refuses what is not a unit file', async () => {
@@ -298,6 +323,24 @@ describe('what rideo reads of a unit file and a thumbnail', () => {
     expect(await refusal(header(unitFile('set', '', { length: 70_000 })))).toBe('422 unit');
     expect(await refusal(header(unitFile('set', '', { length: 5000 })))).toBe('422 unit');
     expect(await refusal(header(Buffer.from('3DUNIT')))).toBe('422 unit');
+    // what the 3D-Editor's contract adds (docs/embedding.md, "The unit file"): bytes 10 and 11 both 0, a UTF-8 header
+    // naming a kind of the three and a name of 1–120 characters
+    const withByte = (i: number) => {
+      const b = editorUnit();
+      b[i] = 1;
+      return b;
+    };
+    expect(await refusal(header(withByte(10)))).toBe('422 unit');
+    expect(await refusal(header(withByte(11)))).toBe('422 unit');
+    const named = (name: unknown) => ({ format: '3d-editor.desk-unit', version: 1, kind: 'set', name });
+    expect(await refusal(header(unitFile('set', 'b', { header: named(undefined) })))).toBe('422 unit');
+    expect(await refusal(header(unitFile('set', 'b', { header: named('') })))).toBe('422 unit');
+    expect(await refusal(header(unitFile('set', 'b', { header: named('k'.repeat(121)) })))).toBe('422 unit');
+    expect(await refusal(header(unitFile('tree', 'b')))).toBe('422 unit');
+    // a name written in Latin-1, not UTF-8
+    const latin1 = Buffer.from(JSON.stringify(named('Caf_')));
+    latin1[latin1.indexOf('_')] = 0xe9;
+    expect(await refusal(header(unitFile('set', 'b', { header: latin1 })))).toBe('422 unit');
   });
 
   it('reads a PNG size from its IHDR and nothing else', () => {
@@ -448,6 +491,30 @@ describe('the service checks an upload', () => {
     ).toBe('422 unit');
     expect(studio.deps.metrics.library.get({ event: 'refused', kind: 'desk-set' })).toBe(4);
     expect((await lib.list({ archived: false, sort: 'updated', limit: 100 })).items).toEqual([]);
+  });
+
+  it("keeps the 3D-Editor's own unit file as a desk-prop under its sha256, and no version but 1", async () => {
+    const lib = studio.library;
+    const propMeta = (formatVersion: number) => ({
+      kind: 'desk-prop',
+      name: 'Red kite',
+      unit: { format: '3d-editor.desk-unit', formatVersion, meta: META },
+    });
+    const bytes = editorUnit();
+    const out = await lib.create(actor, await upload(propMeta(1), bytes));
+    const snap = out.version.payload as { format: string; formatVersion: number; payload: { hash: string } };
+    expect([out.item.kind, snap.format, snap.formatVersion, snap.payload.hash, out.version.digest]).toEqual([
+      'desk-prop',
+      '3d-editor.desk-unit',
+      1,
+      '839114263baa77e854f16ee63db032f7b01f0a2a7b1f103a6e732dc9732ef16c',
+      '839114263baa77e854f16ee63db032f7b01f0a2a7b1f103a6e732dc9732ef16c',
+    ]);
+    // the contract lays out version 1: a header and meta that agree on another version are not kept either
+    const v3 = unitFile('prop', 'b', {
+      header: { format: '3d-editor.desk-unit', version: 3, kind: 'prop', name: 'K' },
+    });
+    expect(await outcome(lib.create(actor, await upload(propMeta(3), v3)))).toBe('422 unit');
   });
 
   it('keeps a PNG thumbnail of at most 256 px and refuses other pictures', async () => {

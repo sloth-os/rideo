@@ -1,5 +1,13 @@
 import { open } from 'node:fs/promises';
-import { LIBRARY_LIMITS, type ResourceKind, withArticle } from '@rideo/shared';
+import {
+  DESK_UNIT_FILE,
+  DeskUnitFileError,
+  type DeskUnitFileHeader,
+  type ResourceKind,
+  readDeskUnitHeaderJson,
+  readDeskUnitPrefix,
+  withArticle,
+} from '@rideo/shared';
 import { invalid } from '../errors';
 
 /**
@@ -8,59 +16,30 @@ import { invalid } from '../errors';
  */
 
 /** `3DUNIT` CR LF: the first 8 bytes of every 3D unit file (the 3D-Editor's `UNIT_MAGIC`). */
-export const DESK_UNIT_MAGIC = Buffer.from([0x33, 0x44, 0x55, 0x4e, 0x49, 0x54, 0x0d, 0x0a]);
-/** The container version of the prefix (byte 8). */
-export const DESK_UNIT_CONTAINER_VERSION = 1;
-const PREFIX_BYTES = 16;
-
-/** What a unit file's header declares, as far as rideo checks it. */
-export interface DeskUnitHeaderInfo {
-  format: string;
-  version: number;
-  kind: string;
-  name: string | null;
-}
+export const DESK_UNIT_MAGIC = Buffer.from(DESK_UNIT_FILE.magic);
 
 const notAUnit = (why: string) => invalid(`not a 3D unit file: ${why}`, [{ reason: 'unit' }]);
 
 /**
- * Reads a 3D unit file's prefix (bytes 0–7 the magic, byte 8 the container version, byte 9 the codec: 0 none or 1
- * gzip, bytes 12–15 the header's length, little-endian) and its JSON header, of at most 64 KiB. `validation_error`
- * (reason `unit`) when the file is not one.
+ * Reads a 3D unit file's prefix and JSON header from disk, as the 3D-Editor's contract lays them out (the shared
+ * reader, `packages/shared/src/library/unit-file.ts`; docs/design/library.md#what-it-holds), never its body.
+ * `validation_error` (reason `unit`) when the file is not one.
  */
-export async function readDeskUnitHeader(path: string, size: number): Promise<DeskUnitHeaderInfo> {
-  if (size < PREFIX_BYTES + 2) throw notAUnit('it is too short');
+export async function readDeskUnitHeader(path: string, size: number): Promise<DeskUnitFileHeader> {
+  const prefixBytes = DESK_UNIT_FILE.prefixBytes;
+  if (size < prefixBytes + 2) throw notAUnit('it is too short');
   const fh = await open(path, 'r');
   try {
-    const prefix = Buffer.alloc(PREFIX_BYTES);
-    await fh.read(prefix, 0, PREFIX_BYTES, 0);
-    if (!prefix.subarray(0, 8).equals(DESK_UNIT_MAGIC)) throw notAUnit('its first bytes are not 3DUNIT');
-    if (prefix[8] !== DESK_UNIT_CONTAINER_VERSION) throw notAUnit(`container version ${prefix[8]} is not 1`);
-    if (prefix[9] !== 0 && prefix[9] !== 1) throw notAUnit(`codec ${prefix[9]} is unknown`);
-    const length = prefix.readUInt32LE(12);
-    if (length < 2 || length > LIBRARY_LIMITS.deskUnitHeaderBytes)
-      throw notAUnit(`its header of ${length} bytes is not 2 bytes to 64 KiB`);
-    if (PREFIX_BYTES + length > size) throw notAUnit('its header runs past the end of the file');
-    const raw = Buffer.alloc(length);
-    await fh.read(raw, 0, length, PREFIX_BYTES);
-    let header: unknown;
-    try {
-      header = JSON.parse(raw.toString('utf8'));
-    } catch {
-      throw notAUnit('its header is not JSON');
-    }
-    const h = header as Record<string, unknown>;
-    if (!h || typeof h !== 'object' || Array.isArray(h)) throw notAUnit('its header is not a JSON object');
-    if (typeof h.format !== 'string' || typeof h.kind !== 'string')
-      throw notAUnit('its header names no format or kind');
-    if (typeof h.version !== 'number' || !Number.isInteger(h.version))
-      throw notAUnit('its header names no version');
-    return {
-      format: h.format,
-      version: h.version,
-      kind: h.kind,
-      name: typeof h.name === 'string' ? h.name : null,
-    };
+    const prefix = Buffer.alloc(prefixBytes);
+    await fh.read(prefix, 0, prefixBytes, 0);
+    const { headerBytes } = readDeskUnitPrefix(prefix);
+    if (prefixBytes + headerBytes > size) throw notAUnit('its header runs past the end of the file');
+    const raw = Buffer.alloc(headerBytes);
+    await fh.read(raw, 0, headerBytes, prefixBytes);
+    return readDeskUnitHeaderJson(raw);
+  } catch (err) {
+    if (err instanceof DeskUnitFileError) throw notAUnit(err.message);
+    throw err;
   } finally {
     await fh.close();
   }

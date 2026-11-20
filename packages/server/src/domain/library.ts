@@ -10,6 +10,7 @@ import {
   CharacterSnapshotSchema,
   type Clip,
   consentSubjects,
+  DESK_UNIT_DATA_VERSION,
   DESK_UNIT_FILE_KIND,
   DESK_UNIT_FORMAT,
   type DeskUnitSnapshot,
@@ -458,7 +459,16 @@ export class LibraryService extends Service {
           'unit',
           invalid(`a 3D unit file of format ${DESK_UNIT_FORMAT}, not ${header.format}`, [{ reason: 'unit' }]),
         );
-      if (header.version < 1 || header.version > 1000 || header.version !== unit.formatVersion)
+      // version 1 is the one the 3D-Editor's contract lays out (docs/design/library.md#what-it-holds)
+      if (header.version !== DESK_UNIT_DATA_VERSION)
+        throw this.refused(
+          meta.kind,
+          'unit',
+          invalid(`a 3D unit file of version ${DESK_UNIT_DATA_VERSION}, not ${header.version}`, [
+            { reason: 'unit' },
+          ]),
+        );
+      if (header.version !== unit.formatVersion)
         throw this.refused(
           meta.kind,
           'unit',

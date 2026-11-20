@@ -439,7 +439,9 @@ rideo sends), with message ids of `DeskRequestIdSchema`, and keeps a verbatim co
 `open-units-figure-hints.json`, `unit-publish-set.json`, `unit-publish-figure-new-version.json`,
 `unit-ack-linked.json`, `unit-ack-unlinked.json`, `unit-ack-refused.json` and `state-units.json`; invalid
 `open-units-bad-pin.json`, `unit-publish-two-from.json`, `unit-publish-bad-sha.json`,
-`unit-publish-thumbnail-too-large.json`, `unit-ack-ok-without-ref.json` and `state-units-bad-staged.json`.
+`unit-publish-thumbnail-too-large.json`, `unit-ack-ok-without-ref.json` and `state-units-bad-staged.json`; and
+`units/unit-file-prop.json`, a unit file the 3D-Editor's core wrote (a red kite), which the server's and the browser's
+readers of the unit file ([3D units](library.md#what-it-holds)) read as a prop and which an upload keeps as a desk-prop.
 
 A unit version is `{ref, version, sha256}` everywhere: `ref` is the library item's id (`lib_…`), `version` its
 integer version (1, 2, …) and `sha256` the hash of the unit file's bytes

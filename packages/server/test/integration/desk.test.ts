@@ -769,7 +769,9 @@ describe('library units: what a stored state uses (docs/design/director-desk.md#
 
   it("lists the clips whose stored state uses a library version where it is used ('deskState')", async () => {
     const { pid, clip } = await seeded(stack);
-    const json = Buffer.from(JSON.stringify({ format: '3d-editor.desk-unit', version: 1, kind: 'set' }));
+    const json = Buffer.from(
+      JSON.stringify({ format: '3d-editor.desk-unit', version: 1, kind: 'set', name: 'Lamp room set' }),
+    );
     const prefix = Buffer.alloc(16);
     DESK_UNIT_MAGIC.copy(prefix, 0);
     prefix[8] = 1;

@@ -121,10 +121,13 @@ async function readyKeepingLibrary(api: Api, pid: string): Promise<void> {
 
 /**
  * A 3D unit file as the 3D-Editor writes it (docs/design/library.md#the-three-hashes): `3DUNIT` CR LF, container
- * version 1, codec 0, the JSON header's length at byte 12 (little-endian), the header at 16, then the body.
+ * version 1, codec 0, two zero bytes, the JSON header's length at byte 12 (little-endian), the header at 16 (its
+ * format, version, kind and a name of 1–120 characters), then the body.
  */
 function unitFile(kind: 'set' | 'prop', body: string): Buffer {
-  const header = Buffer.from(JSON.stringify({ format: '3d-editor.desk-unit', version: 1, kind }));
+  const header = Buffer.from(
+    JSON.stringify({ format: '3d-editor.desk-unit', version: 1, kind, name: body.slice(0, 120) }),
+  );
   const text = Buffer.from(body);
   const out = Buffer.alloc(16 + header.length + text.length);
   out.write('3DUNIT\r\n', 0, 'latin1');

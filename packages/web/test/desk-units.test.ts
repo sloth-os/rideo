@@ -1,4 +1,6 @@
 import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import {
   type DeskBriefPinSlot,
   type DeskUnitPin,
@@ -32,7 +34,9 @@ const sha = (data: ArrayBuffer | Uint8Array) =>
 
 /** A unit file as the 3D-Editor writes one: `3DUNIT\r\n`, container 1, the header's length at 12, its JSON at 16. */
 function unitFile(kind: 'set' | 'prop' | 'figure', body: string, version = 1): ArrayBuffer {
-  const json = new TextEncoder().encode(JSON.stringify({ format: '3d-editor.desk-unit', version, kind }));
+  const json = new TextEncoder().encode(
+    JSON.stringify({ format: '3d-editor.desk-unit', version, kind, name: `${kind} ${body}`.slice(0, 120) }),
+  );
   const out = new Uint8Array(16 + json.length + body.length);
   out.set(new TextEncoder().encode('3DUNIT\r\n'), 0);
   out[8] = 1;
@@ -241,8 +245,36 @@ describe('the files of an open (docs/design/director-desk.md#unit-bytes-in-open)
   });
 
   it("reads a unit file's header, and nothing from bytes that are not one", () => {
-    expect(deskUnitHeader(unitFile('set', 'x', 3))).toEqual({ format: '3d-editor.desk-unit', version: 3 });
+    expect(deskUnitHeader(unitFile('set', 'x', 3))).toEqual({
+      format: '3d-editor.desk-unit',
+      version: 3,
+      kind: 'set',
+      name: 'set x',
+    });
     expect(deskUnitHeader(new TextEncoder().encode('a short text, not a unit file').buffer)).toBeNull();
+    // the 3D-Editor's own unit file (units/unit-file-prop.json, a verbatim copy of its fixture): a red kite
+    const editor = Buffer.from(
+      (
+        JSON.parse(
+          readFileSync(
+            join(import.meta.dirname, '../../shared/test/fixtures/desk-protocol/units/unit-file-prop.json'),
+            'utf8',
+          ),
+        ) as { $bytes: string }
+      ).$bytes,
+      'base64',
+    );
+    const data = editor.buffer.slice(editor.byteOffset, editor.byteOffset + editor.byteLength);
+    expect(deskUnitHeader(data)).toEqual({
+      format: '3d-editor.desk-unit',
+      version: 1,
+      kind: 'prop',
+      name: 'Red kite',
+    });
+    // bytes 10 and 11 of the prefix are both 0 in a unit file
+    const odd = new Uint8Array(data.slice(0));
+    odd[10] = 1;
+    expect(deskUnitHeader(odd.buffer)).toBeNull();
   });
 });
 

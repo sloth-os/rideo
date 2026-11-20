@@ -35,10 +35,13 @@
     [...new Uint8Array(await crypto.subtle.digest('SHA-256', data))]
       .map((b) => b.toString(16).padStart(2, '0'))
       .join('');
-  /** A unit file as the 3D-Editor writes one: `3DUNIT\r\n`, container 1, the header's length at 12, its JSON at 16. */
+  /**
+   * A unit file as the 3D-Editor writes one: `3DUNIT\r\n`, container 1, codec 0, two zero bytes, the header's length
+   * at 12, its JSON at 16 (format, version, kind and a name of 1–120 characters).
+   */
   const unitFile = (kind, body) => {
     const json = new TextEncoder().encode(
-      JSON.stringify({ format: '3d-editor.desk-unit', version: 1, kind }),
+      JSON.stringify({ format: '3d-editor.desk-unit', version: 1, kind, name: body.slice(0, 120) }),
     );
     const text = new TextEncoder().encode(body);
     const out = new Uint8Array(16 + json.length + text.length);

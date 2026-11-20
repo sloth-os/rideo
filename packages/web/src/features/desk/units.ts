@@ -9,6 +9,8 @@ import {
   type DeskBriefPinSlot,
   type DeskOpenUnit,
   type DeskPublishRefusal,
+  DeskUnitFileError,
+  type DeskUnitFileHeader,
   type DeskUnitFileKind,
   type DeskUnitPin,
   type DeskUnitPublishMessage,
@@ -18,6 +20,7 @@ import {
   type LibraryUploadResult,
   libraryAllows,
   type ProjectDocs,
+  readDeskUnitFile,
 } from '@rideo/shared';
 import { ApiError, getToken, type ProblemDetails } from '../../lib/api';
 import { apiUrl } from '../../lib/runtime';
@@ -126,24 +129,18 @@ export interface DeskUnitFetchOptions {
   budget?: number;
 }
 
-/** The format and version a unit file's header names (`3DUNIT\r\n`, the header's length at 12, its JSON at 16). */
-export function deskUnitHeader(data: ArrayBuffer): { format: string; version: number } | null {
-  if (data.byteLength < 18) return null;
-  const view = new DataView(data);
-  const magic = new Uint8Array(data, 0, 8);
-  if (String.fromCharCode(...magic) !== '3DUNIT\r\n') return null;
-  const length = view.getUint32(12, true);
-  if (length < 2 || 16 + length > data.byteLength || length > 64 * 1024) return null;
+/**
+ * What a unit file's prefix and header say (its format, version, kind and name), read by the 3D-Editor's contract
+ * like the server's upload (`readDeskUnitFile`, docs/design/library.md#what-it-holds); null for bytes it does not lay
+ * out or a format longer than an open's 64 characters.
+ */
+export function deskUnitHeader(data: ArrayBuffer): DeskUnitFileHeader | null {
   try {
-    const h = JSON.parse(new TextDecoder().decode(new Uint8Array(data, 16, length))) as {
-      format?: unknown;
-      version?: unknown;
-    };
-    if (typeof h.format !== 'string' || !h.format || h.format.length > 64) return null;
-    if (typeof h.version !== 'number' || !Number.isInteger(h.version) || h.version < 1) return null;
-    return { format: h.format, version: h.version };
-  } catch {
-    return null;
+    const { format, version, kind, name } = readDeskUnitFile(new Uint8Array(data));
+    return format.length > 64 ? null : { format, version, kind, name };
+  } catch (err) {
+    if (err instanceof DeskUnitFileError) return null;
+    throw err;
   }
 }
 

@@ -55,11 +55,14 @@ There is no `voice` kind: a voice travels inside its character, with its consent
 carry free **tags** (`season 1`, `harbor town`) that the pickers filter by; series and "New episode" are
 [P1](#p1).
 
-**3D units** (`desk-*`) are files the 3D-Editor's desk writes, format `3d-editor.desk-unit` version 1, described in
-the 3D-Editor's [embedding contract](https://github.com/sloth-os/3D-Editor/blob/main/docs/embedding.md#library-units).
-Rideo stores them, serves them and reads only their 16-byte prefix and JSON header (the magic `3DUNIT` CR LF, the
-container version 1, the header's length, then `format`, `version` and `kind`) to check what an upload claims. It
-never inflates a unit's body, and it never reads a desk state.
+**3D units** (`desk-*`) are files the 3D-Editor's desk writes, format `3d-editor.desk-unit` version 1. Their layout
+is the 3D-Editor's contract: the section *The unit file* of its `docs/embedding.md` (repository `sloth-os/3D-Editor`,
+[docs/embedding.md#the-unit-file](https://github.com/sloth-os/3D-Editor/blob/main/docs/embedding.md#the-unit-file)).
+Rideo stores them, serves them and reads only what that section says a host may read, to check what an upload claims:
+the 16-byte prefix (the magic `3DUNIT` CR LF, the container version 1, the body's compression 0 or 1, two zero bytes,
+the header's length of at most 64 KiB) and the UTF-8 JSON header with its `format`, `version`, `kind` (`set`, `prop`
+or `figure`) and `name` (1–120 characters), one reader for the server and the browser
+(`packages/shared/src/library/unit-file.ts`). It never inflates a unit's body, and it never reads a desk state.
 
 ## Storage
 
@@ -437,7 +440,7 @@ hides what a person may not do):
 | Tags | at most 20 an item, each 1–40 characters, lower case, starting with a letter or digit: letters, digits, space, `_`, `.`, `-` |
 | Versions | at most 1000 an item |
 | A list page | at most 200 items (`limit`, default 100), then `cursor` |
-| A 3D unit file | at most 32 MiB (33554432 bytes, the desk's `capabilities.units.maxBytes`); format `3d-editor.desk-unit`, `formatVersion` 1–1000; a header of at most 64 KiB |
+| A 3D unit file | at most 32 MiB (33554432 bytes, the desk's `capabilities.units.maxBytes`); format `3d-editor.desk-unit` version 1, the one the 3D-Editor's contract lays out (the file's header and `formatVersion`); a header of at most 64 KiB |
 | Desk meta | at most 16 KiB of JSON, at most 32 credits |
 | An uploaded thumbnail | PNG only, at most 64 KiB and 256 px a side (its signature and `IHDR` are checked) |
 | Resource files | images at most 50 MiB, LUTs 16 MiB, audio and video 4 GiB |
@@ -501,14 +504,17 @@ An upload that is refused whatever its parts is answered before they are read, a
 who may not publish gets `403` `forbidden`, a new version of an item that is not there `404`; the rest of the request is
 read and thrown away. Each part is counted as it streams to a temporary file: a part over its limit is `413`, `meta`
 that is not first or does not validate is `422`. An upload the client abandons in the middle ends there: its temporary
-files are removed and nothing is published. A unit file whose prefix or header is not a desk unit's, whose `format` is
-not `3d-editor.desk-unit`, or whose header `kind` is not the item's (`set`, `prop`, `figure` for `desk-set`,
-`desk-prop`, `desk-figure`) is `422`. A thumbnail must carry the PNG signature and an `IHDR` of at most 256 × 256. An
-image resource is taken by its bytes: a PNG, JPEG, WebP, GIF, BMP or TIFF (the stills rideo's media probe reads), kept
-with that type whatever its part says; anything else, an SVG or a page among them, is `422` (`reason: payload`). A
-video or an audio resource is kept under one type of its kind, its parameters dropped (`video/mp4; codecs=…` is kept
-as `video/mp4`); anything else, another kind's type or a list such as `video/mp4, text/html` (a browser reads a list as
-its last type) among them, is `422` (`reason: payload`). A LUT is read as a `.cube` and kept as `application/x-cube`.
+files are removed and nothing is published. A unit file whose prefix or header is not a desk unit's as the 3D-Editor's
+contract lays them out ([3D units](#what-it-holds) above: bytes 10 and 11 not zero, a header that is not UTF-8 JSON or
+names no `kind` of `set`, `prop` or `figure` or no `name` of 1–120 characters among them), whose `format` is not
+`3d-editor.desk-unit`, whose `version` is not 1 or not the meta's `formatVersion`, or whose header `kind` is not the
+item's (`set`, `prop`, `figure` for `desk-set`, `desk-prop`, `desk-figure`) is `422`. A thumbnail must carry the PNG
+signature and an `IHDR` of at most 256 × 256. An image resource is taken by its bytes: a PNG, JPEG, WebP, GIF, BMP or
+TIFF (the stills rideo's media probe reads), kept with that type whatever its part says; anything else, an SVG or a page
+among them, is `422` (`reason: payload`). A video or an audio resource is kept under one type of its kind, its
+parameters dropped (`video/mp4; codecs=…` is kept as `video/mp4`); anything else, another kind's type or a list such as
+`video/mp4, text/html` (a browser reads a list as its last type) among them, is `422` (`reason: payload`). A LUT is read
+as a `.cube` and kept as `application/x-cube`.
 
 **The file route** serves any file a version names, with `Range` (`206`), `ETag` (its sha256), `304` on `If-None-Match`,
 and `Cache-Control: private, max-age=31536000, immutable`: a version's files never change, so the browser's HTTP cache
@@ -746,12 +752,15 @@ existing `412` conflict, whose **Replace** would drop the server's change unless
   `image/png`) and with a poster that is not a raster picture (saved without it). Uploads (`library-upload.test.ts`):
   the multipart parts in order, `meta` not first, bad `meta`, a unit of 32 MiB + 1 byte (`413`, counted, its temporary
   file removed), a thumbnail over 64 KiB and `meta` over 32 KiB (`413`), 3D meta over 16 KiB (`422`), a unit with a
-  wrong magic, container, codec, header, format, version or kind (`422`), thumbnails that are not PNG or over 256 px
-  (`422`), a client that goes away in the middle of a part (the receive rejects, no temporary file left), a raster
-  picture known by its signature (PNG, JPEG, WebP, GIF, BMP, TIFF) and an SVG, a page or a video not taken for one, a
-  video or an audio resource kept under one type of its kind (parameters dropped, `Video/MP4; codecs=…` kept as
-  `video/mp4`) and a list, a bare `video/`, another kind's type or `application/octet-stream` refused (`payload`,
-  counted, the message naming the kind with its article: "an audio resource has one audio/… type"), byte ranges.
+  wrong magic, container, codec, bytes 10–11, header (not UTF-8 JSON, no kind of the three, no name of 1–120
+  characters), format, version or kind (`422`), and the 3D-Editor's own unit file (`units/unit-file-prop.json`, a red
+  kite its core wrote) read as a `prop` named "Red kite" of version 1 and uploaded as a desk-prop under its sha256,
+  thumbnails that are not PNG or over 256 px (`422`), a client that goes away in the middle of a part (the receive
+  rejects, no temporary file left), a raster picture known by its signature (PNG, JPEG, WebP, GIF, BMP, TIFF) and an
+  SVG, a page or a video not taken for one, a video or an audio resource kept under one type of its kind (parameters
+  dropped, `Video/MP4; codecs=…` kept as `video/mp4`) and a list, a bare `video/`, another kind's type or
+  `application/octet-stream` refused (`payload`, counted, the message naming the kind with its article: "an audio
+  resource has one audio/… type"), byte ranges.
 - **Integration** (`library.test.ts`, REST and MCP on one server): a desk set uploaded, listed, read, served with
   `Range`, `304` and `HEAD`, a new version with a stale `If-Match` and with a stale `basedOn`, renamed, archived (gone
   from the default list, still served), its uses; Mira saved from project A (`consent_required` until acknowledged),

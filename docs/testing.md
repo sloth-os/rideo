@@ -280,8 +280,12 @@ starts, a file or a folder (by its newest file) more than a day old removed and 
   refused with `413`, a unit whose prefix, header or kind is wrong, thumbnails that are not PNG, over 64 KiB or over 256
   px, a client gone in the middle of a part leaving no temporary file, a raster picture known by its signature and an
   SVG or a page not taken for one, a video or an audio resource kept under one type of its kind without its parameters
-  and a list such as `video/mp4, text/html` refused, saying "an audio resource" or "a video resource") ([the
-  library](design/library.md#tests)).
+  and a list such as `video/mp4, text/html` refused, saying "an audio resource" or "a video resource"), and the unit
+  file as the 3D-Editor's contract lays it out (`packages/shared/test/unit-file.test.ts`, the server's
+  `library-upload.test.ts` and the browser's `desk-units.test.ts`: the 3D-Editor's own unit file,
+  `units/unit-file-prop.json`, read as a prop of version 1 and uploaded as a desk-prop under its sha256; a prefix with
+  bytes 10–11 set, a header that is not UTF-8 or names no kind of the three or no name of 1–120 characters, and a
+  version other than 1 refused) ([the library](design/library.md#tests)).
 - **library units** (`packages/shared/test/desk-protocol.test.ts`, `desk-brief.test.ts`, `desk-units.test.ts`,
   `packages/web/test/desk-bridge.test.ts`): the new fixtures (valid ones parse, invalid ones refused but
   `state-units-bad-staged.json`, a state read with its units unknown) and the capability read leniently; the brief
