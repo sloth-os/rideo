@@ -21,6 +21,7 @@ import { LibraryProvider } from '../src/features/library/LibraryProvider';
 import { LibraryRows, SaveToLibraryButton, UseFromLibraryButton } from '../src/features/library/rows';
 import {
   appliedText,
+  applyRefusalText,
   conflictOf,
   consentSubjectsOf,
   deskMoves,
@@ -30,12 +31,14 @@ import {
   libraryRowText,
   moveEverywhere,
   moveEverywhereLabel,
+  needsDirectorTitle,
   offeredVersion,
   parseTags,
   planAllowed,
   planLines,
   planTitle,
   usageText,
+  usedText,
 } from '../src/features/library/words';
 import { ApiError } from '../src/lib/api';
 import { useAuth } from '../src/lib/auth';
@@ -54,6 +57,32 @@ const hex = (n: number) => n.toString(16).padStart(64, '0');
 const PID = 'prj_0000000000ep02';
 const MIRA_ITEM = 'lib_0000000000mira';
 const HARBOR_ITEM = 'lib_00000000harbor';
+/** An approved clip whose selected take an apply would make stale (the third clip). */
+const HARBOR_CLIP = { id: 'clp_0000000000hrbr', index: 2, title: 'Harbor at dawn' };
+const EDDY = 'usr_00000000000eddy';
+
+/** Signs in Eddy, an editor of the project (not a director), and gives the project's access that says so. */
+function asEditor(docs: ProjectDocs): ProjectDocs {
+  useAuth.setState({
+    me: { mode: 'oidc', user: { id: EDDY, name: 'Eddy' }, admin: false, token: null } as unknown as AuthMe,
+  });
+  return {
+    ...docs,
+    project: {
+      ...docs.project,
+      access: { visibility: 'private', members: [{ userId: EDDY, role: 'editor' }], invites: [] },
+    },
+  };
+}
+
+/** The studio's refusal of an apply that needs a director, to an editor (`accounts.authorize`). */
+const NEEDS_APPROVE = {
+  type: 'about:blank',
+  title: 'Forbidden',
+  status: 403,
+  detail: 'Your role in this project (editor) cannot do that (project.approve)',
+  code: 'forbidden',
+};
 
 function head(over: Partial<LibraryItem> = {}): LibraryItem {
   const latest = over.latest ?? over.current ?? 1;
@@ -276,6 +305,79 @@ describe('the rows and the plan in words', () => {
     expect(planLines(plan({ lock: { locked: false, from: 0, to: 0 } }), { canApprove: true })[1]!.text).toBe(
       'Identity is not locked',
     );
+  });
+
+  it('says which apply needs a director: using it here, updating or linking', () => {
+    const approved = (mode: LibraryApplyPlan['mode']) =>
+      plan({ mode, approvedClips: [HARBOR_CLIP], staleTakes: 1, needs: 'project.approve' });
+    const line = (mode: LibraryApplyPlan['mode'], canApprove: boolean) =>
+      planLines(approved(mode), { canApprove }).find((l) => l.id === 'approved')!.text;
+    const clips = '1 approved clip would hold stale takes: clip 3 (Harbor at dawn).';
+    expect(line('create', false)).toBe(
+      `${clips} Using it in this project needs a director: ask one to do it.`,
+    );
+    expect(line('update', false)).toBe(`${clips} Updating needs a director: ask one to do it.`);
+    expect(line('link', false)).toBe(`${clips} Linking needs a director: ask one to do it.`);
+    expect(line('link', true)).toBe(
+      `${clips} Linking needs a director: you are one, and the clips stay approved with their takes until generated again.`,
+    );
+    // more than five clips: the first five, and how many more
+    const many = Array.from({ length: 7 }, (_, i) => ({ id: `clp_00000000000${i}aa`, index: i, title: '' }));
+    expect(
+      planLines(plan({ approvedClips: many }), { canApprove: false }).find((l) => l.id === 'approved')!.text,
+    ).toBe(
+      '7 approved clips would hold stale takes: clip 1, clip 2, clip 3, clip 4, clip 5 and 2 more. Updating needs a director: ask one to do it.',
+    );
+    // the confirm button says who may do it, in the plan's own verb
+    expect(needsDirectorTitle(approved('link'))).toBe('Approved clips are affected: a director links');
+    expect(needsDirectorTitle(approved('update'))).toBe('Approved clips are affected: a director updates');
+  });
+
+  it('turns a refusal that needs a director into the plan’s approved clips, asking the plan only then', async () => {
+    const forbidden = apiError(
+      403,
+      'forbidden',
+      undefined,
+      'Your role in this project (editor) cannot do that (project.approve)',
+    );
+    const director = plan({ mode: 'create', approvedClips: [HARBOR_CLIP], needs: 'project.approve' });
+    const answer = (p: LibraryApplyPlan) => async () => ({
+      plan: p,
+      applied: false,
+      entity: { kind: p.entity.kind, id: p.entity.id },
+      commit: null,
+    });
+    expect(await applyRefusalText(forbidden, answer(director))).toBe(
+      '1 approved clip would hold stale takes: clip 3 (Harbor at dawn). Using it in this project needs a director: ask one to do it.',
+    );
+    // refused for another reason: the plan needs no director, or cannot be had; the refusal's own words
+    expect(await applyRefusalText(forbidden, answer(plan()))).toBe(
+      'You may not do this: Your role in this project (editor) cannot do that (project.approve).',
+    );
+    const unasked = vi.fn(answer(director));
+    expect(
+      await applyRefusalText(forbidden, () => Promise.reject(apiError(403, 'forbidden', undefined, 'no'))),
+    ).toBe('You may not do this: Your role in this project (editor) cannot do that (project.approve).');
+    // any other refusal is said as it is, without asking the plan
+    const taken = apiError(409, 'conflict', [{ reason: 'name' }], 'a character named Mira is already here');
+    expect(await applyRefusalText(taken, unasked)).toBe('a character named Mira is already here');
+    expect(unasked).not.toHaveBeenCalled();
+  });
+
+  it('says which approved clips a director’s use left with stale takes', () => {
+    const result = (approvedClips: LibraryApplyPlan['approvedClips'], applied = true) => ({
+      plan: plan({ mode: 'create', keepsLibraryId: true, approvedClips, needs: 'project.approve' }),
+      applied,
+      entity: { kind: 'character' as const, id: 'chr_0000000000mira' },
+      commit: null,
+    });
+    expect(usedText(result([HARBOR_CLIP]))).toBe(
+      'Mira is in the project (v3, the same id and seed). 1 approved clip now holds stale takes: clip 3 (Harbor at dawn); it stays approved with its takes until generated again.',
+    );
+    expect(usedText(result([HARBOR_CLIP, { id: 'clp_0000000000five', index: 4, title: '' }]))).toBe(
+      'Mira is in the project (v3, the same id and seed). 2 approved clips now hold stale takes: clip 3 (Harbor at dawn), clip 5; they stay approved with their takes until generated again.',
+    );
+    expect(usedText(result([]))).toBe('Mira is in the project (v3, the same id and seed)');
   });
 
   it('titles and reports each kind of apply', () => {
@@ -570,6 +672,69 @@ describe('the library on a project’s cards', () => {
       target: { kind: 'character', id: mira.id },
       acknowledgeConsent: true,
     });
+  });
+
+  it('tells an editor that linking needs a director, for the approved clips it names, and lets only one confirm', async () => {
+    const mira = linkedMira();
+    const dry = plan({ mode: 'link', staleTakes: 1, approvedClips: [HARBOR_CLIP], needs: 'project.approve' });
+    serve([
+      statusRoute([link()]),
+      [
+        'POST',
+        /\/library\/apply$/,
+        () => [200, { plan: dry, applied: false, entity: { kind: 'character', id: mira.id }, commit: null }],
+      ],
+    ]);
+    render(
+      <LibraryProvider projectId={PID} docs={asEditor(docsWith([mira]))}>
+        <LibraryRows kind="character" entity={mira} />
+      </LibraryProvider>,
+    );
+    fireEvent.click(await screen.findByTestId('library-update'));
+    const dialog = await screen.findByRole('dialog');
+    await within(dialog).findByText('Link Mira to the library (v3)');
+    expect(within(dialog).getByTestId('plan-approved').textContent).toBe(
+      '1 approved clip would hold stale takes: clip 3 (Harbor at dawn). Linking needs a director: ask one to do it.',
+    );
+    const confirm = within(dialog).getByTestId('plan-confirm') as HTMLButtonElement;
+    expect(confirm.textContent).toBe('Link');
+    expect(confirm.disabled).toBe(true);
+    expect(confirm.title).toBe('Approved clips are affected: a director links');
+  });
+
+  it('names the approved clips when the apply is refused for a clip approved since its plan', async () => {
+    const mira = linkedMira();
+    let plans = 0;
+    serve([
+      statusRoute([link()]),
+      [
+        'POST',
+        /\/library\/apply$/,
+        (s) => {
+          if (!s.body.dryRun) return [403, NEEDS_APPROVE];
+          // the plan the dialog opened with was an editor's; a clip approved since makes it a director's
+          const p =
+            plans++ === 0
+              ? plan()
+              : plan({ staleTakes: 1, approvedClips: [HARBOR_CLIP], needs: 'project.approve' });
+          return [200, { plan: p, applied: false, entity: { kind: 'character', id: mira.id }, commit: null }];
+        },
+      ],
+    ]);
+    render(
+      <LibraryProvider projectId={PID} docs={asEditor(docsWith([mira]))}>
+        <LibraryRows kind="character" entity={mira} />
+      </LibraryProvider>,
+    );
+    fireEvent.click(await screen.findByTestId('library-update'));
+    const dialog = await screen.findByRole('dialog');
+    await within(dialog).findByText('Update Mira from the library (v2 → v3)');
+    fireEvent.click(within(dialog).getByTestId('plan-confirm'));
+    expect((await within(dialog).findByTestId('plan-error')).textContent).toBe(
+      '1 approved clip would hold stale takes: clip 3 (Harbor at dawn). Updating needs a director: ask one to do it.',
+    );
+    expect(calls('POST', /\/library\/apply$/).map((c) => !!c.body.dryRun)).toEqual([true, false, true]);
+    expect(toasts()).toEqual([]);
   });
 
   it('shows 3D rows for characters, locations and props, none for styles, and a missing pin with Change and Unlink', async () => {
@@ -991,6 +1156,81 @@ describe('Use from library', () => {
       'Ada: Ada is in the project (v3, the same id and seed)',
       'Mira: Mira is in the project (v3, the same id and seed)',
     ]);
+  });
+
+  /** Mira in the library; a use answered by `apply` (a dry run answered with the plan `dry`). */
+  function miraToUse(docs: ProjectDocs, apply: (s: Sent) => Answer, dry: LibraryApplyPlan) {
+    serve([
+      statusRoute([]),
+      ['GET', /^\/api\/library\/items\?/, () => [200, { items: [summary(head())], next: null }]],
+      [
+        'POST',
+        /\/library\/apply$/,
+        (s) =>
+          s.body.dryRun
+            ? [
+                200,
+                { plan: dry, applied: false, entity: { kind: 'character', id: dry.entity.id }, commit: null },
+              ]
+            : apply(s),
+      ],
+    ]);
+    render(
+      <LibraryProvider projectId={PID} docs={docs}>
+        <UseFromLibraryButton kind="character" />
+      </LibraryProvider>,
+    );
+  }
+  /** A use of Mira back in the project, whose old take an approved clip holds (the third clip). */
+  const miraBack = plan({
+    mode: 'create',
+    keepsLibraryId: true,
+    entity: { kind: 'character', id: 'chr_0000000000mira', name: 'Mira', exists: false },
+    staleTakes: 1,
+    approvedClips: [HARBOR_CLIP],
+    needs: 'project.approve',
+  });
+
+  it('tells an editor which approved clips need a director instead of the role’s refusal', async () => {
+    miraToUse(asEditor(docsWith([])), () => [403, NEEDS_APPROVE], miraBack);
+    fireEvent.click(screen.getByTestId('use-from-library'));
+    fireEvent.click(await screen.findByTestId('use-item-check'));
+    fireEvent.click(screen.getByTestId('use-submit'));
+    await waitFor(() =>
+      expect(screen.getByTestId('use-result').textContent).toBe(
+        'Mira: 1 approved clip would hold stale takes: clip 3 (Harbor at dawn). Using it in this project needs a director: ask one to do it.',
+      ),
+    );
+    // the use first, then (refused) its plan, as a dry run of the same use
+    expect(calls('POST', /\/library\/apply$/).map((c) => c.body)).toEqual([
+      { itemId: MIRA_ITEM },
+      { itemId: MIRA_ITEM, dryRun: true },
+    ]);
+  });
+
+  it('tells a director which approved clips the use left with stale takes', async () => {
+    miraToUse(
+      docsWith([]),
+      () => [
+        200,
+        {
+          plan: miraBack,
+          applied: true,
+          entity: { kind: 'character', id: miraBack.entity.id },
+          commit: null,
+        },
+      ],
+      miraBack,
+    );
+    fireEvent.click(screen.getByTestId('use-from-library'));
+    fireEvent.click(await screen.findByTestId('use-item-check'));
+    fireEvent.click(screen.getByTestId('use-submit'));
+    await waitFor(() =>
+      expect(screen.getByTestId('use-result').textContent).toBe(
+        'Mira: Mira is in the project (v3, the same id and seed). 1 approved clip now holds stale takes: clip 3 (Harbor at dawn); it stays approved with its takes until generated again.',
+      ),
+    );
+    expect(calls('POST', /\/library\/apply$/)).toHaveLength(1);
   });
 
   it('keeps what was checked under another tag, and uses every checked item', async () => {

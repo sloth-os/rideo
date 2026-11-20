@@ -5,7 +5,16 @@ import { Button, cx, Dialog, Spinner } from '../../components/ui';
 import { useUi } from '../../store/ui';
 import { libraryApi } from './api';
 import { type PlanRequest, useLibraryScope } from './context';
-import { appliedText, libraryErrorText, type PlanTone, planAllowed, planLines, planTitle } from './words';
+import {
+  appliedText,
+  applyRefusalText,
+  libraryErrorText,
+  needsDirectorTitle,
+  type PlanTone,
+  planAllowed,
+  planLines,
+  planTitle,
+} from './words';
 
 const TONE: Record<PlanTone, string> = {
   muted: 'text-muted',
@@ -17,7 +26,8 @@ const TONE: Record<PlanTone, string> = {
 /**
  * Update… and Link (docs/design/library.md#use-in-project-update-and-link-apply): the apply's dry run first, its plan
  * in words (what changes, the lock versions, the takes that go stale, the approved clips that need a director, the
- * edits made here that are replaced, the consent for a real person), then the apply itself.
+ * edits made here that are replaced, the consent for a real person), then the apply itself. An apply refused for a
+ * director it did not need when planned names the approved clips from its plan asked again.
  */
 export function PlanDialog({ request, onClose }: { request: PlanRequest; onClose: () => void }) {
   const scope = useLibraryScope();
@@ -52,18 +62,24 @@ export function PlanDialog({ request, onClose }: { request: PlanRequest; onClose
     if (!plan) return;
     setBusy(true);
     setError(null);
+    const input = {
+      itemId: request.itemId,
+      version: plan.item.version,
+      target: { kind: request.target.kind, id: request.target.id },
+    };
     try {
       const out = await libraryApi.apply(scope.projectId, {
-        itemId: request.itemId,
-        version: plan.item.version,
-        target: { kind: request.target.kind, id: request.target.id },
+        ...input,
         ...(plan.realPerson ? { acknowledgeConsent: consent } : {}),
       });
       useUi.getState().toast(appliedText(out, request.fromVersion), 'success');
       scope.refresh();
       onClose();
     } catch (err) {
-      setError(libraryErrorText(err));
+      // refused for a director (a clip approved since the plan, say): the plan asked again names the clips
+      setError(
+        await applyRefusalText(err, () => libraryApi.apply(scope.projectId, { ...input, dryRun: true })),
+      );
     } finally {
       setBusy(false);
     }
@@ -87,7 +103,7 @@ export function PlanDialog({ request, onClose }: { request: PlanRequest; onClose
               !scope.canEdit
                 ? 'Editors and directors change the project'
                 : plan && !allowed
-                  ? 'Approved clips are affected: a director updates'
+                  ? needsDirectorTitle(plan)
                   : undefined
             }
             onClick={confirm}

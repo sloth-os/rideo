@@ -599,14 +599,22 @@ changed`.
   search, tag or chip ("Also checked: Ada" names the ones the list hides), and **Use 2** applies every checked item one
   by one and lists the results; an item whose id or name is taken offers **Link to the existing Mira**, which shows its
   plan first, over the picker (Escape closes the plan and leaves the picker with its results); a real-person item asks
-  for the consent first.
+  for the consent first. A use that needs a director (a character or element used again whose old take an approved clip
+  holds, [above](#use-in-project-update-and-link-apply)) is refused to an editor, and the picker asks the use's plan
+  (a dry run) and says why instead of the role's refusal: "Mira: 1 approved clip would hold stale takes: clip 3 (Harbor
+  at dawn). Using it in this project needs a director: ask one to do it." A director's use goes through and its result
+  names those clips: "1 approved clip now holds stale takes: clip 3 (Harbor at dawn); it stays approved with its takes
+  until generated again."
 - **The library row** on a linked entity: "Library: Mira v2 · v3 available [Update…] [Unlink]", with "edited here since
   v2" when the entity changed in this project after it was linked (a library character unlocked and described again,
   say). **Update…** opens the plan: what changes, the lock version before and after, how many takes go stale, the
-  approved clips that need a director (an editor sees them and cannot update), that edits made here since v2 are
-  replaced, and the consent checkbox for a real person. On a resource the row offers **Use v3** instead, which adds v3
-  as a new resource (shots keep the one they name); once a resource of the project holds v3 the row names it ("v3 is in
-  this project: Moodboard still B") and adds no other copy. **Unlink** keeps the entity as the project's own.
+  approved clips that need a director, said in the plan's own verb ("Updating needs a director", "Linking needs a
+  director"; an editor sees them and cannot confirm), that edits made here since v2 are replaced, and the consent
+  checkbox for a real person. An apply refused for a director its plan did not need (a clip approved since the plan was
+  shown) names the clips from its plan asked again, as the picker does. On a resource the row offers **Use v3** instead,
+  which adds v3 as a new resource (shots keep the one they name); once a resource of the project holds v3 the row names
+  it ("v3 is in this project: Moodboard still B") and adds no other copy. **Unlink** keeps the entity as the project's
+  own.
 - **The 3D row** on characters, locations and props (after the summary on a character, after "Also called" on an
   element): "3D figure: Mira look v1 · v2 available [Use v2] [Change] [Unlink]", or "3D set: none [Choose…]". The
   picker lists the matching kind only (figures for characters, sets for locations, props for props). There is no 3D row
@@ -739,15 +747,19 @@ existing `412` conflict, whose **Replace** would drop the server's change unless
   path is percent-encoded, and an upload from a reviewer token answered `403` (an item that is not there `404`) before
   its parts are read, nothing written to the temporary folder.
 - **Unit (web)** (`packages/web/test/library-ui.test.tsx`): the rows' texts ("Library: Mira v2 · v3 available", "edited
-  here", "3D set: none", a missing pin), the plan in words (lock versions, stale takes, the approval warning and who may
-  confirm, local edits, files), refusals in words by code, tags checked, the moves of **Use v3 in all N projects** (pins
-  at another version only, reviewers skipped, a refusal listed and the loop going on), and the dialogs on a mocked API:
-  Save with the consent box, a `412` offering Save anyway, the plan's approval warning, the picker's "Link to the
-  existing Mira" (Escape closing the plan only, the picker keeping its results) and items checked under another search
-  or tag used too; a resource row naming the resource that holds the version it would add; on the Library page, **Make
-  current** and **Archive** with the item's revision as `If-Match`, a change made meanwhile (`412`) reloading the item
-  and saying so, no action bar for someone with nothing to do, "1 object · 1 credit", a style called Style in the list
-  and on the item, and **Used in** saying why it could not be read, whenever the item arrives, with **Try again**.
+  here", "3D set: none", a missing pin), the plan in words (lock versions, stale takes, the approval warning in the
+  plan's verb for a use, an update and a link, and who may confirm, local edits, files), refusals in words by code (a
+  `forbidden` one that needs a director said with the approved clips of its plan, the plan asked only then), tags
+  checked, the moves of **Use v3 in all N projects** (pins at another version only, reviewers skipped, a refusal listed
+  and the loop going on), and the dialogs on a mocked API: Save with the consent box, a `412` offering Save anyway, the
+  plan's approval warning (a link an editor may not confirm, and an update refused for a clip approved since its plan
+  naming that clip), the picker's "Link to the existing Mira" (Escape closing the plan only, the picker keeping its
+  results), items checked under another search or tag used too, and a use that needs a director (an editor's refused one
+  naming the approved clip and whom to ask, a director's naming the clip it left with stale takes); a resource row
+  naming the resource that holds the version it would add; on the Library page, **Make current** and **Archive** with
+  the item's revision as `If-Match`, a change made meanwhile (`412`) reloading the item and saying so, no action bar for
+  someone with nothing to do, "1 object · 1 credit", a style called Style in the list and on the item, and **Used in**
+  saying why it could not be read, whenever the item arrives, with **Try again**.
 - **End to end** (`e2e/library.spec.ts`, desktop and mobile): Mira saved from episode 1 through the consent dialog, used
   in episode 2 (the same id and seed, checked through the API), the writer of episode 2 keeping her (its scenes cast her
   id), a project with a Mira of its own offered "Link to the existing Mira" (Mira kept checked under another search,

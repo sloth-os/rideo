@@ -187,22 +187,8 @@ export function planLines(
       tone: 'warning',
       text: `${plural(plan.staleTakes, 'take')} will need generating again`,
     });
-  if (plan.approvedClips.length) {
-    const clips = plan.approvedClips
-      .slice(0, 5)
-      .map((c) => `clip ${c.index + 1}${c.title ? ` (${c.title})` : ''}`)
-      .join(', ');
-    const more = plan.approvedClips.length > 5 ? ` and ${plan.approvedClips.length - 5} more` : '';
-    lines.push({
-      id: 'approved',
-      tone: opts.canApprove ? 'warning' : 'danger',
-      text: `${plural(plan.approvedClips.length, 'approved clip')} would hold stale takes: ${clips}${more}. ${
-        opts.canApprove
-          ? 'Updating needs a director: you are one, and the clips stay approved with their takes until generated again.'
-          : 'Updating needs a director: ask one to do it.'
-      }`,
-    });
-  }
+  const approved = approvalText(plan, opts.canApprove);
+  if (approved) lines.push({ id: 'approved', tone: opts.canApprove ? 'warning' : 'danger', text: approved });
   if (plan.localChanges)
     lines.push({
       id: 'local',
@@ -224,6 +210,69 @@ export function planAllowed(plan: LibraryApplyPlan, canApprove: boolean): boolea
   return plan.needs !== 'project.approve' || canApprove;
 }
 
+/** "clip 3 (Harbor at dawn), clip 5": the first five clips, and how many more. */
+function clipList(clips: LibraryApplyPlan['approvedClips']): string {
+  const named = clips
+    .slice(0, 5)
+    .map((c) => `clip ${c.index + 1}${c.title ? ` (${c.title})` : ''}`)
+    .join(', ');
+  return clips.length > 5 ? `${named} and ${clips.length - 5} more` : named;
+}
+
+/** An apply of each mode where it needs a director, and what a director does: "Linking needs a director". */
+const DIRECTOR_APPLY: Record<LibraryApplyPlan['mode'], { doing: string; does: string }> = {
+  create: { doing: 'Using it in this project', does: 'uses it' },
+  update: { doing: 'Updating', does: 'updates' },
+  link: { doing: 'Linking', does: 'links' },
+  pin: { doing: 'Pinning', does: 'pins' },
+};
+
+/**
+ * The approved clips an apply would leave holding stale takes, and who may do it
+ * (docs/design/library.md#use-in-project-update-and-link-apply), in the plan's own verb: "1 approved clip would hold
+ * stale takes: clip 3 (Harbor at dawn). Using it in this project needs a director: ask one to do it." Null when no
+ * approved clip is affected.
+ */
+export function approvalText(plan: LibraryApplyPlan, canApprove: boolean): string | null {
+  const clips = plan.approvedClips;
+  if (!clips.length) return null;
+  return `${plural(clips.length, 'approved clip')} would hold stale takes: ${clipList(clips)}. ${
+    DIRECTOR_APPLY[plan.mode].doing
+  } needs a director: ${
+    canApprove
+      ? 'you are one, and the clips stay approved with their takes until generated again.'
+      : 'ask one to do it.'
+  }`;
+}
+
+/** The plan's confirm button, to someone who is not a director: "Approved clips are affected: a director links". */
+export function needsDirectorTitle(plan: LibraryApplyPlan): string {
+  return `Approved clips are affected: a director ${DIRECTOR_APPLY[plan.mode].does}`;
+}
+
+/**
+ * A refused apply in words. A `403` `forbidden` may be the director an apply needs when approved clips would hold
+ * stale takes: the same apply asked again as a dry run (`plan`, which an editor may ask) says so, and the approved
+ * clips are named with what to do instead of the role's refusal. Any other refusal, a plan that needs no director, or
+ * one that cannot be had, is said by its code (`libraryErrorText`).
+ */
+export async function applyRefusalText(
+  err: unknown,
+  plan: () => Promise<LibraryApplyResult>,
+): Promise<string> {
+  if (err instanceof ApiError && err.code === 'forbidden') {
+    const asked = await plan().then(
+      (r) => r.plan,
+      () => null,
+    );
+    if (asked?.needs === 'project.approve') {
+      const text = approvalText(asked, false);
+      if (text) return text;
+    }
+  }
+  return libraryErrorText(err);
+}
+
 /** What an apply did, in a sentence. */
 export function appliedText(result: LibraryApplyResult, fromVersion: number | null = null): string {
   const { plan } = result;
@@ -242,6 +291,21 @@ export function appliedText(result: LibraryApplyResult, fromVersion: number | nu
     case 'pin':
       return `${plan.entity.name} uses the ${KIND_LABEL[plan.item.kind]} ${plan.item.name} v${v}`;
   }
+}
+
+/**
+ * What Use from library did, as `appliedText` says it, and the approved clips a director's use left holding stale
+ * takes (the picker shows no plan first): "Mira is in the project (v3, the same id and seed). 1 approved clip now
+ * holds stale takes: clip 3 (Harbor at dawn); it stays approved with its takes until generated again."
+ */
+export function usedText(result: LibraryApplyResult): string {
+  const text = appliedText(result);
+  const clips = result.applied ? result.plan.approvedClips : [];
+  if (!clips.length) return text;
+  const one = clips.length === 1;
+  return `${text}. ${plural(clips.length, 'approved clip')} now ${one ? 'holds' : 'hold'} stale takes: ${clipList(
+    clips,
+  )}; ${one ? 'it stays' : 'they stay'} approved with ${one ? 'its' : 'their'} takes until generated again.`;
 }
 
 /** A conflict's first reason, when the refusal is one (`409` `conflict` with `errors: [{reason, …}]`). */

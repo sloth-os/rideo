@@ -291,14 +291,16 @@ only those names as extras, and reading verdicts that name a character instead o
   subject, a production scene's storyboard review state.
 
 - **the studio library's pages** (`library-ui.test.tsx`): the library and 3D rows' texts (available, edited here, none,
-  a pin the studio lacks), an apply's plan in words (lock versions, stale takes, the approval warning and who may
-  confirm), refusals in words by their code, tags, the loop of "Use v3 in all N projects" (pins at another version,
-  reviewers skipped, refusals listed), the Save, plan and Use from library dialogs on a mocked API (the consent box, a
-  `412` offering Save anyway, "Link to the existing Mira" with Escape closing only the plan over the picker, items
-  checked under another search or tag used too), a resource row naming the resource that holds the version it would add,
-  and the Library page: its changes with the item's revision (Make current, Archive; a change made meanwhile reloaded
-  and said), no action bar for someone with nothing to do, singular counts, a style called Style, and Used in saying why
-  it could not be read with Try again ([the library](design/library.md#tests)).
+  a pin the studio lacks), an apply's plan in words (lock versions, stale takes, the approval warning in the plan's own
+  verb and who may confirm), refusals in words by their code (one that needs a director said with its plan's approved
+  clips), tags, the loop of "Use v3 in all N projects" (pins at another version, reviewers skipped, refusals listed),
+  the Save, plan and Use from library dialogs on a mocked API (the consent box, a `412` offering Save anyway, "Link to
+  the existing Mira" with Escape closing only the plan over the picker, items checked under another search or tag used
+  too, a use or an update refused for a director naming the approved clips, a director's use naming the clips it left
+  with stale takes), a resource row naming the resource that holds the version it would add, and the Library page: its
+  changes with the item's revision (Make current, Archive; a change made meanwhile reloaded and said), no action bar for
+  someone with nothing to do, singular counts, a style called Style, and Used in saying why it could not be read with
+  Try again ([the library](design/library.md#tests)).
 
 - **web, settings, workspace and library** (`settings.test.tsx`, `workspace.test.ts`, `runtime.test.ts`,
   `embed.test.tsx`, `library-build.test.ts`, `pwa.test.tsx`): the Settings page (sections from the table and the

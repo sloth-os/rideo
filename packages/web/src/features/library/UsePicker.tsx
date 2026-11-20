@@ -5,7 +5,7 @@ import { Badge, Button, cx, Dialog, EmptyState, Spinner } from '../../components
 import { libraryApi } from './api';
 import { type EntityKind, useLibraryScope } from './context';
 import { Chips, LibraryFilters, LibraryThumb, useDebounced, useElementKinds, useLibraryList } from './parts';
-import { appliedText, conflictOf, ELEMENT_CHIPS, libraryErrorText } from './words';
+import { applyRefusalText, conflictOf, ELEMENT_CHIPS, usedText } from './words';
 
 const TITLES: Record<EntityKind, string> = {
   character: 'Use characters from the library',
@@ -30,7 +30,8 @@ interface Outcome {
  * locations, props and styles), filtered by tag and searchable, archived items left out; several items at once, used
  * one after the other with each result listed. What is checked stays checked under another search, tag or chip. An
  * item whose id or name the project already has offers "Link to the existing Mira" (its plan first); a real person asks
- * for the consent before anything is used.
+ * for the consent before anything is used. A use that needs a director (approved clips would hold stale takes) names
+ * those clips: to an editor it was refused for, from its plan, with whom to ask; to a director, after the use.
  */
 export function UsePicker({ entityKind, onClose }: { entityKind: EntityKind; onClose: () => void }) {
   const scope = useLibraryScope();
@@ -87,18 +88,22 @@ export function UsePicker({ entityKind, onClose }: { entityKind: EntityKind; onC
           itemId: item.id,
           ...(item.realPerson ? { acknowledgeConsent: consent } : {}),
         });
-        results.push({ itemId: item.id, name: item.name, ok: true, text: appliedText(out) });
+        results.push({ itemId: item.id, name: item.name, ok: true, text: usedText(out) });
       } catch (err) {
         const c = conflictOf(err);
         const clash =
           (c?.reason === 'exists' || c?.reason === 'name') && c.entityId && entityKind !== 'resource'
             ? { id: c.entityId, name: entityName(entityKind, c.entityId) ?? item.name }
             : undefined;
+        // a use that needs a director (approved clips would hold stale takes) says which clips, from its plan
+        const text = await applyRefusalText(err, () =>
+          libraryApi.apply(scope.projectId, { itemId: item.id, dryRun: true }),
+        );
         results.push({
           itemId: item.id,
           name: item.name,
           ok: false,
-          text: libraryErrorText(err),
+          text,
           ...(clash ? { link: clash } : {}),
         });
       }
