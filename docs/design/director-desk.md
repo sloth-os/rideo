@@ -575,10 +575,10 @@ slot by slot:
 | Status | When | Badge |
 |---|---|---|
 | `current` | the state's row has the pin's item and version, staged `unit` | – |
-| `update` | the row names another version or another item, or the slot has no row (the pin came after the state) | "3D: v3 available" |
+| `update` | the row names another version or another item, or the slot has no row (the pin came after the state); a slot made local is `local` instead | "3D: v3 available" |
 | `pending` | the row is the pin's, staged `pending` | "3D: waiting" |
 | `refused` | the row is the pin's, staged `refused` | "3D: can't use Harbor v3" |
-| `local` | the person made that slot local in the desk | – |
+| `local` | the person made that slot local in the desk (its row is staged `unit` with `local`), whatever its pin is now: the desk never puts a unit back in a slot made local, so a pin moved since then is no update for this clip; the tooltip names what it was made local from and what is pinned now | – |
 | `unknown` | the stored state's units are not known (a state from before units, or written without the header) | – |
 | `approved` | the clip is approved and its state does not use the pinned version | "approved: keeps v2" |
 
@@ -597,7 +597,7 @@ desk's banner offers **Update shots**.
 | `unavailable`: the desk could not use it this time | `pending` | `pending:unavailable` | `pending` | open the scene again |
 | `unreadable`, `too_new` (a newer desk's), `too_large` (over 32 MiB) | `refused` | `refused:<why>` | `refused` | pin another version |
 | `wrong_kind` (not the slot's kind), `figure_kind` (the desk has no actor of that kind), `figure_rig` (another rig), `over_budget` (the scene's units pass what the desk takes), `set_ground` (the set's ground is not at height 0) | `refused` | `refused:<why>` | `refused` | pin another unit, or save one that fits from the desk |
-| made local in the desk | `unit` | `unit:local` | `local` | – |
+| made local in the desk (it stays so, whatever the slot's pin becomes) | `unit` | `unit:local` | `local` | – |
 | a desk from before units, or no header | – | – | `unknown` | – |
 
 `pending` pins are tried again at every open, `refused` ones only when the pin changes, so a unit that can never be
@@ -832,15 +832,16 @@ an `open` and why, and each publish's answer, to the browser's console (`[desk] 
   same byte for byte even when entities are pinned, and with units `set.unit` from the scene's location only, prop
   pins, figure pins with the figure's kind and height (null outside 0.1–4 m), kinds the desk did not announce left out,
   no unit on a location row; `X-Desk-State-Units` formatted and parsed (`-`, no header, `local`, a reason; 129 rows,
-  over 8 KiB and bad syntax refused, rows naming a slot twice no header) and `deskUnitDrift` for every status and the
-  badge's order (`desk-units.test.ts`); the bridge (`desk-bridge.test.ts`): a desk without the capability gets no
-  `options.units`, no pins and no `open.units`; a desk with units gets `options.units` with `publish`, then
-  `open.units` in slot order, fetched 2 at a time, once per version, without the pins the stored state uses, a file
-  that does not match or does not arrive left out, 48 MiB never passed, the buffers transferred; `unit-publish` saving
-  a new item, a new version with `basedOn` and the same bytes again, linked by the rule's cases (read-only, no
-  permission to edit, another pin, a `409` on the link: each `linked: false` with its reason), every refusal mapped to
-  its code, publishes one at a time, a publish on an open without units refused at once; each state's units sent with
-  its write, and none when they do not fit or name a slot twice (the state stored with its units unknown).
+  over 8 KiB and bad syntax refused, rows naming a slot twice no header) and `deskUnitDrift` for every status (a slot
+  made local staying `local` whatever its pin becomes) and the badge's order (`desk-units.test.ts`); the bridge
+  (`desk-bridge.test.ts`): a desk without the capability gets no `options.units`, no pins and no `open.units`; a desk
+  with units gets `options.units` with `publish`, then `open.units` in slot order, fetched 2 at a time, once per
+  version, without the pins the stored state uses, a file that does not match or does not arrive left out, 48 MiB
+  never passed, the buffers transferred; `unit-publish` saving a new item, a new version with `basedOn` and the same
+  bytes again, linked by the rule's cases (read-only, no permission to edit, another pin, a `409` on the link: each
+  `linked: false` with its reason), every refusal mapped to its code, publishes one at a time, a publish on an open
+  without units refused at once; each state's units sent with its write, and none when they do not fit or name a slot
+  twice (the state stored with its units unknown).
 - **Library units, integration** (`desk.test.ts`): `X-Desk-State-Units` kept on the clip with its state (`-` as none,
   no header as unknown), a header that does not parse refused with `422` and counted, the same bytes again keeping the
   rows, `DELETE` clearing them; the embedding origins' preflight allows `x-desk-state-units` (`embedding.test.ts`).

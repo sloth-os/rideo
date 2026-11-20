@@ -225,8 +225,10 @@ function driftStatus(
   used: DeskStateUnitUse | null,
 ): DeskUnitDriftStatus {
   if (unknown) return 'unknown';
+  // a slot made local stays local whatever its pin becomes: the desk never puts a unit back in it
+  if (used?.staged === 'unit' && used.local) return 'local';
   const uses = !!used && used.ref === pin.ref && used.version === pin.version;
-  if (uses && used.staged === 'unit') return used.local ? 'local' : 'current';
+  if (uses && used.staged === 'unit') return 'current';
   // an approved clip keeps its stored state: it does not use the pinned version, and nothing updates it
   if (approved) return 'approved';
   if (!uses) return 'update';
@@ -267,8 +269,13 @@ export function deskUnitDriftLine(d: DeskUnitDrift): string {
       return `${d.label}: ${pinned} waiting${why ? ` (${why})` : ''}`;
     case 'refused':
       return `${d.label}: can't use ${pinned}${why ? ` (${why})` : ''}`;
-    case 'local':
-      return `${d.label}: made local in the desk (from ${pinned})`;
+    case 'local': {
+      const from = d.used ?? { ref: d.pin.itemId, version: d.pin.version };
+      if (from.ref === d.pin.itemId && from.version === d.pin.version)
+        return `${d.label}: made local in the desk (from ${pinned})`;
+      const was = from.ref === d.pin.itemId ? `${d.pin.name} v${from.version}` : 'another unit';
+      return `${d.label}: made local in the desk (from ${was}); ${pinned} is pinned now`;
+    }
     case 'unknown':
       return `${d.label}: ${pinned}; what the stored desk uses is not known`;
     case 'approved':

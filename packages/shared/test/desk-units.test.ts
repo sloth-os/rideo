@@ -10,6 +10,7 @@ import {
   deskStateUses,
   deskUnitBadge,
   deskUnitDrift,
+  deskUnitDriftLine,
   deskUnitPinsToSend,
   formatDeskStateUnits,
   libraryUses,
@@ -257,6 +258,28 @@ describe('deskUnitDrift (docs/design/director-desk.md#drift-the-storyboard-badge
     expect(refused[0]!.status).toBe('refused');
     expect(deskUnitBadge(refused)).toMatchObject({ status: 'refused', text: "3D: can't use Harbor v3" });
     expect(deskUnitBadge(refused)!.title).toContain("Harbor: can't use Harbor v3 (it is over 32 MiB)");
+  });
+
+  it('keeps a slot made local local whatever its pin becomes: the desk never puts a unit back in it', () => {
+    // made local at v2 of the place's set, then v3 pinned; made local from another figure than Mira's pin
+    const moved = statuses((r) => [
+      { ...r.set, version: 2, local: true },
+      { ...r.cast, ref: 'lib_0000000000other', local: true },
+      r.el,
+    ]).drift;
+    expect(moved.map((d) => d.status)).toEqual(['local', 'local', 'current']);
+    expect(deskUnitBadge(moved)).toBeNull();
+    expect(moved.map(deskUnitDriftLine)).toEqual([
+      'Harbor: made local in the desk (from Harbor v2); Harbor v3 is pinned now',
+      'Mira: made local in the desk (from another unit); Mira figure v2 is pinned now',
+      'Oil lamp: Brass lamp v1, up to date',
+    ]);
+    // at the pinned version, as before
+    const same = statuses((r) => [{ ...r.set, local: true }]).drift;
+    expect(deskUnitDriftLine(same[0]!)).toBe('Harbor: made local in the desk (from Harbor v3)');
+    // an approved clip's slot made local is local too
+    const approved = statuses((r) => [{ ...r.set, version: 2, local: true }], 'approved').drift;
+    expect(approved[0]!.status).toBe('local');
   });
 
   it("names the first slot that needs attention: can't use, waiting, available, approved", () => {
