@@ -231,7 +231,9 @@ acknowledgeConsent?, dryRun?}` applies a version (`version`, else the item's `cu
 
 An archived item cannot be applied to an entity that does not use it yet (`409` `conflict`): unarchive it first; the
 entities that use it can still move to another of its versions. `replacePin` (default `true`) lets a pin replace
-another item's pin on its target. `dryRun: true` answers the plan and writes nothing; it asks for neither
+another item's pin on its target, whether the apply pins a 3D unit or brings a character's or element's version that
+carries a pin; with `false` either is refused (`409` `conflict` `{reason: "pinned", itemId}`), and a new version of
+the item the target pins still moves it. `dryRun: true` answers the plan and writes nothing; it asks for neither
 `acknowledgeConsent` nor `project.approve` (the plan's `realPerson` and `needs` say what the apply will ask), so an
 editor sees the plan of an update a director has to make. An apply reuses the files the project already holds (by
 sha256) and copies the others. Every apply is one commit:
@@ -492,7 +494,7 @@ page runs nothing of it in the studio's origin. A sha256 the version does not na
 | Code | Status | When |
 |---|---|---|
 | `library_conflict` | 412 | an `If-Match` (MCP `expectedRev`) that is not the item's revision (the answer's `ETag` is the current one); a new version whose `basedOn` is not the item's latest (`errors: [{latest}]`) |
-| `conflict` | 409 | Use in project when the item's id is taken in the project (`errors: [{reason: "exists", entityId}]`) or its name is (`{reason: "name", entityId}`); a pin with `replacePin: false` on an entity that pins another item (`{reason: "pinned", itemId}`); an archived item applied to an entity that does not use it |
+| `conflict` | 409 | Use in project when the item's id is taken in the project (`errors: [{reason: "exists", entityId}]`) or its name is (`{reason: "name", entityId}`); a pin, or an update or link whose version carries one, with `replacePin: false` on an entity that pins another item (`{reason: "pinned", itemId}`); an archived item applied to an entity that does not use it |
 | `not_found` | 404 | the item, the version, a file the version does not name, the target entity |
 | `validation_error` | 422 | a body, query or `meta` that fails its schema, parts out of order; a unit file that is not one or not of the item's kind; an image resource whose bytes are not a raster picture (`reason: payload`); a thumbnail that is not a PNG or over 256 px; a 3D item applied without a target or to the wrong one (a set on a prop, anything on a style); a version of another kind than its item |
 | `validation_error` | 413 | a part over its limit: a unit over 32 MiB, a thumbnail over 64 KiB, a resource file over its kind's limit |

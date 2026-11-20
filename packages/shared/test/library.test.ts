@@ -872,6 +872,66 @@ describe('planApply', () => {
     ).toEqual(['deskUnit']);
   });
 
+  it('refuses with replacePin: false an update or link whose version pins another item there too', () => {
+    const figure = (itemId: string, version: number) =>
+      DeskUnitPinSchema.parse({
+        kind: 'desk-figure',
+        itemId,
+        version,
+        sha256: HASH(`${itemId}${version}`),
+        name: 'Mira look',
+        actorKind: 'mannequin',
+        heightM: 1.7,
+        pinnedAt: NOW,
+        pinnedBy: actor,
+      });
+    const carried = ({ pinnedAt: _at, pinnedBy: _by, ...pin }: ReturnType<typeof figure>) => pin;
+    const { mira, v, item } = miraItem();
+    const linked = {
+      ...mira,
+      lock: { ...mira.lock, identityHash: identity.character(mira) },
+      library: { itemId: item.id, version: 1, digest: v.digest, mode: 'used' as const, at: NOW, by: actor },
+      deskUnit: figure('lib_0000000000figaaa', 1),
+    };
+    const payload = characterSnapshot(mira).payload;
+    const other = version(
+      item.id,
+      'character',
+      { ...payload, deskUnit: carried(figure('lib_0000000000figbbb', 2)) },
+      2,
+    );
+    const target = { target: { kind: 'character', id: mira.id } };
+    for (const entity of [linked, { ...linked, library: null }]) {
+      const docs = docsWith({ characters: { [mira.id]: entity } });
+      expect(
+        refusal(() => planApply(ctx(docs, itemOf(other), other, { ...target, replacePin: false }))),
+      ).toEqual({
+        code: 'conflict',
+        errors: [{ reason: 'pinned', itemId: 'lib_0000000000figaaa' }],
+      });
+      // by default the version's pin takes its place
+      const out = applyVersion({
+        ...ctx(docs, itemOf(other), other, target),
+        copied: new Map(mira.references.map((r) => [r.media.hash, r.media])),
+      });
+      expect((out.write!.doc as Character).deskUnit).toMatchObject({
+        itemId: 'lib_0000000000figbbb',
+        version: 2,
+      });
+    }
+    // another version of the item it pins is no other item's pin: it moves either way
+    const same = version(
+      item.id,
+      'character',
+      { ...payload, deskUnit: carried(figure('lib_0000000000figaaa', 2)) },
+      2,
+    );
+    const docs = docsWith({ characters: { [mira.id]: linked } });
+    expect(planApply(ctx(docs, itemOf(same), same, { ...target, replacePin: false })).changes).toContain(
+      'deskUnit',
+    );
+  });
+
   it('keeps the entity pin for a version without one and moves it for a version with one', () => {
     const pin = DeskUnitPinSchema.parse({
       kind: 'desk-set',

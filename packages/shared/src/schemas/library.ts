@@ -466,7 +466,10 @@ export const LibraryApplyInputSchema = z.object({
   target: LibraryTargetSchema.nullable().optional(),
   /** A locked target is relocked (its lock version kept when its identity is unchanged, else raised). */
   relock: z.boolean().default(true),
-  /** A pin may replace another item's pin on its target. */
+  /**
+   * A pin may replace another item's pin on its target: a 3D unit's, or the one a character's or element's version
+   * carries. False refuses that (conflict `pinned`); a new version of the item already pinned still moves it.
+   */
   replacePin: z.boolean().default(true),
   acknowledgeConsent: z.boolean().optional(),
   /** Answer the plan, write nothing. */

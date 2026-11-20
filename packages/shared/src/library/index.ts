@@ -812,13 +812,24 @@ function targetOf(ctx: LibraryApplyContext, kind: 'character' | 'element') {
   return target.id;
 }
 
+/**
+ * The entity's pin after an update, link or create: the version's pin when it carries one, else the entity's own. A
+ * pin of another item is re-pointed only with `replacePin`, as in mode pin; a new version of the same item moves it.
+ */
 function pinAfter(
   snapshot: LibrarySnapshotPin | null,
   current: DeskUnitPin | null | undefined,
+  name: string,
   ctx: LibraryApplyContext,
 ): DeskUnitPin | null {
   if (!snapshot) return current ?? null;
   if (current && current.itemId === snapshot.itemId && current.version === snapshot.version) return current;
+  if (current && current.itemId !== snapshot.itemId && !ctx.input.replacePin)
+    throw new LibraryError(
+      'conflict',
+      `${name} uses another library ${NOUN[current.kind]} (${current.name})`,
+      [{ reason: 'pinned', itemId: current.itemId }],
+    );
   return { ...snapshot, pinnedAt: ctx.now, pinnedBy: ctx.actor };
 }
 
@@ -942,7 +953,7 @@ function resolveCharacter(
     ...(voice ? { voice } : {}),
     lock,
     library: origin(ctx, mode === 'create' ? 'used' : mode === 'update' ? 'updated' : 'linked'),
-    deskUnit: pinAfter(payload.deskUnit, base?.deskUnit, ctx),
+    deskUnit: pinAfter(payload.deskUnit, base?.deskUnit, base?.name ?? payload.name, ctx),
   };
   if (!voice) delete next.voice;
   const keys = [
@@ -1073,7 +1084,7 @@ function resolveElement(ctx: LibraryApplyContext, payload: ElementSnapshot, medi
     ...draft,
     lock,
     library: origin(ctx, mode === 'create' ? 'used' : mode === 'update' ? 'updated' : 'linked'),
-    deskUnit: pinAfter(payload.deskUnit, base?.deskUnit, ctx),
+    deskUnit: pinAfter(payload.deskUnit, base?.deskUnit, base?.name ?? payload.name, ctx),
   };
   const changes = changed(
     base ? libraryDigestInput('element', elementSnapshot(base).payload) : null,

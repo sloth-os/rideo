@@ -1518,7 +1518,7 @@ function buildServer(studio: Studio): McpServer {
   );
   tool(
     'library_apply',
-    "Apply a library version to the project (one commit): without target, Use in project (a new character or element keeping the library's id and seed, or a new resource); with a target, update or link it (its lock relocked: the version kept when its identity is unchanged, else raised, takes made with the old identity go stale), or pin a 3D unit on it (a set on a location, a prop on a prop, a figure on a character; replacePin: false refuses to re-point another item's pin). dryRun answers the plan only. conflict (exists, name, pinned, archived), forbidden when the plan lists approved clips and you are no director, consent_required for a real person without acknowledgeConsent.",
+    "Apply a library version to the project (one commit): without target, Use in project (a new character or element keeping the library's id and seed, or a new resource); with a target, update or link it (its lock relocked: the version kept when its identity is unchanged, else raised, takes made with the old identity go stale), or pin a 3D unit on it (a set on a location, a prop on a prop, a figure on a character). replacePin: false refuses to re-point another item's pin, whether by a pin or by a version that carries one. dryRun answers the plan only. conflict (exists, name, pinned, archived), forbidden when the plan lists approved clips and you are no director, consent_required for a real person without acknowledgeConsent.",
     { projectId: PROJECT, ...LibraryApplyInputSchema.shape },
     (a, actor) => {
       const { projectId, ...input } = a;
