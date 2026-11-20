@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { IsoDateSchema } from '../schemas/common';
 import { AuthorSchema } from '../schemas/review';
+import { withArticle } from '../util/text';
 
 /**
  * Recipes (docs/design/agents.md#recipes): named, parameterized sequences of tool calls that run on the server for
@@ -212,7 +213,9 @@ export function recipeParams(
             ? Array.isArray(v) && v.every((x) => typeof x === 'string')
             : typeof v === 'string';
     if (!ok)
-      throw new RecipeParamsError(`${p.name} must be ${p.type === 'ids' ? 'a list of ids' : `a ${p.type}`}`);
+      throw new RecipeParamsError(
+        `${p.name} must be ${p.type === 'ids' ? 'a list of ids' : withArticle(p.type)}`,
+      );
     out[p.name] = v;
   }
   for (const k of Object.keys(given))

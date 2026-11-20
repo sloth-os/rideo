@@ -34,6 +34,28 @@ describe('recipes (docs/design/agents.md#recipes)', () => {
     expect(() => recipeParams(recipe, { texts: ['a'], colour: 'red' })).toThrow('unknown parameter colour');
   });
 
+  it('names each parameter type with its article when a value does not fit', () => {
+    const typed = RecipeInputSchema.parse({
+      name: 'Typed',
+      params: [
+        { name: 'clipId', type: 'id' },
+        { name: 'title', type: 'string' },
+        { name: 'count', type: 'number' },
+        { name: 'loud', type: 'boolean' },
+        { name: 'shotIds', type: 'ids' },
+      ],
+      steps: [{ tool: 'timeline_apply', args: { projectId: '{{projectId}}' } }],
+    });
+    for (const [name, value, message] of [
+      ['clipId', 7, 'clipId must be an id'],
+      ['title', 7, 'title must be a string'],
+      ['count', '7', 'count must be a number'],
+      ['loud', 'yes', 'loud must be a boolean'],
+      ['shotIds', 'shot', 'shotIds must be a list of ids'],
+    ] as const)
+      expect(() => recipeParams(typed, { [name]: value }), name).toThrow(new RecipeParamsError(message));
+  });
+
   it('fills placeholders keeping types, interpolates inside strings and reads earlier steps', () => {
     const scope = {
       projectId: 'prj_000000000001',

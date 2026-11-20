@@ -12,6 +12,7 @@ import {
   type Job,
   newId,
   type Screenplay,
+  withArticle,
 } from '@rideo/shared';
 import { AppError, invalid, notFound } from '../errors';
 import { sha256 } from '../util/crypto';
@@ -50,7 +51,7 @@ export class ElementService extends Service {
             .list<Element>('elements/')
             .some((e) => e.kind === input.kind && e.name.toLowerCase() === name.toLowerCase())
         )
-          throw invalid(`a ${input.kind} named ${name} exists`);
+          throw invalid(`${withArticle(input.kind)} named ${name} exists`);
         const id = newId('element');
         const e: Element = {
           id,

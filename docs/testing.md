@@ -157,8 +157,9 @@ starts, a file or a folder (by its newest file) more than a day old removed and 
   and labels; the inspector's transform keyframes and ramp presets, the transcript panel's filler and selection cuts,
   waveform drawing, and the compositor's overlay placement, opacity, matte alpha and LUT (a recording canvas); the
   Recipes card (built-in and studio recipes, the run dialog's parameters typed); brand text in the compositor
-  (two lines, the brand font and box, no box) and the editor's lower third and intro; recipes (parameters, placeholders,
-  the built-ins, the tools recipes may not use and no built-in using one); brand kits (font signatures, the bug's
+  (two lines, the brand font and box, no box) and the editor's lower third and intro; recipes (parameters, each type
+  named with its article in a refusal, placeholders, the built-ins, the tools recipes may not use and no built-in using
+  one); brand kits (font signatures, the bug's
   corner and size, `withBrand` over the other tracks for the whole film, titles and lower thirds in the brand's
   fonts, colors and box, intros that move the other tracks,
   `drawtext` with the brand font and box); search (the frames sampled from takes, footage and stills, what is

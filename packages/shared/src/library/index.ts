@@ -1032,7 +1032,7 @@ function resolveElement(ctx: LibraryApplyContext, payload: ElementSnapshot, medi
   if (base && base.kind !== payload.kind)
     throw new LibraryError(
       'validation_error',
-      `a library ${payload.kind} cannot update ${base.name}, which is a ${base.kind}`,
+      `a library ${payload.kind} cannot update ${base.name}, which is ${withArticle(base.kind)}`,
     );
   const mode: LibraryApplyPlan['mode'] = !base
     ? 'create'
@@ -1053,9 +1053,11 @@ function resolveElement(ctx: LibraryApplyContext, payload: ElementSnapshot, medi
       (e) => e.kind === payload.kind && key(e.name) === key(payload.name),
     );
     if (named)
-      throw new LibraryError('conflict', `a ${payload.kind} named ${named.name} is already in this project`, [
-        { reason: 'name', entityId: named.id },
-      ]);
+      throw new LibraryError(
+        'conflict',
+        `${withArticle(payload.kind)} named ${named.name} is already in this project`,
+        [{ reason: 'name', entityId: named.id }],
+      );
     // a name or alias another element of the kind answers to too (as its name or an alias) resolves to none
     // (elementIndex): said, not refused
     for (const alias of [payload.name, ...payload.aliases]) {

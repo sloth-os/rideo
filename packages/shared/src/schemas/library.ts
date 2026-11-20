@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { withArticle } from '../util/text';
 import { ProjectRoleSchema } from './accounts';
 import {
   CharacterReferenceSchema,
@@ -183,7 +184,7 @@ export const ElementSnapshotSchema = z
       ctx.addIssue({
         code: 'custom',
         path: ['deskUnit'],
-        message: fits ? `a ${e.kind} pins a ${fits}` : 'a style pins no 3D unit',
+        message: fits ? `${withArticle(e.kind)} pins ${withArticle(fits)}` : 'a style pins no 3D unit',
       });
   });
 export type ElementSnapshot = z.infer<typeof ElementSnapshotSchema>;
