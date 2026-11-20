@@ -43,8 +43,9 @@ export function deskBriefPins(brief: DeskBrief): DeskBriefPinSlot[] {
 
 /**
  * The pins whose files go in an open (docs/design/director-desk.md#unit-bytes-in-open): in slot order, each
- * `ref@version` once, without the pins the state handed over already uses (its row of the slot names the same item and
- * version, staged `unit`: the desk needs no file for it). `uses` null (not known): every pin goes.
+ * `ref@version` once, without the pins of a slot the state handed over needs no file for: its row is staged `unit`
+ * and names the same item and version, or says `local` (a slot made local takes no unit again, whatever its pin is
+ * now). `uses` null (not known): every pin goes.
  */
 export function deskUnitPinsToSend(
   pins: readonly DeskBriefPinSlot[],
@@ -55,7 +56,8 @@ export function deskUnitPinsToSend(
   const out: DeskBriefPinSlot[] = [];
   for (const p of pins) {
     const row = rows.get(p.slot);
-    if (row && row.staged === 'unit' && row.ref === p.pin.ref && row.version === p.pin.version) continue;
+    if (row?.staged === 'unit' && (row.local || (row.ref === p.pin.ref && row.version === p.pin.version)))
+      continue;
     const key = `${p.pin.ref}@${p.pin.version}`;
     if (seen.has(key)) continue;
     seen.add(key);

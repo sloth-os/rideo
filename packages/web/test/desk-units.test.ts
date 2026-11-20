@@ -3,7 +3,9 @@ import {
   type DeskBriefPinSlot,
   type DeskUnitPin,
   type DeskUnitPublishMessage,
+  deskUnitPinsToSend,
   ProjectSettingsSchema,
+  parseDeskStateUnits,
   type Scene,
 } from '@rideo/shared';
 import * as f from '@rideo/shared/testing';
@@ -187,6 +189,27 @@ describe('the files of an open (docs/design/director-desk.md#unit-bytes-in-open)
     expect(cut.units.map((u) => u.ref)).toEqual(['lib_e']);
     expect(cut.left.map((l) => l.why)).toEqual(['over_budget', 'over_budget', 'over_budget']);
     expect(two.requests.map((r) => /items\/([^/]+)/.exec(r)?.[1])).toEqual(['lib_e', 'lib_g', 'lib_s1']);
+  });
+
+  it('fetches no file for a slot made local, which so takes no share of the 48 MiB from a slot that needs one', async () => {
+    // the set made local at v1, the place's pin moved to v2 since; Mira's figure is not staged yet (a budget of 100
+    // bytes for 48 MiB, 60-byte files for a 30 MiB set and a 20 MiB figure)
+    const file = (tag: string) => {
+      const data = new Uint8Array(60);
+      data.set(new TextEncoder().encode(tag));
+      return data.buffer;
+    };
+    const setV2 = file('set v2');
+    const mira = file('mira figure');
+    const lib = library({ lib_set: setV2, lib_mira: mira });
+    const pins = deskUnitPinsToSend(
+      [slot('set', 'set', 'lib_set', setV2, 2), slot('cast:chr_mira', 'figure', 'lib_mira', mira)],
+      parseDeskStateUnits('set=lib_set@1:unit:local'),
+    );
+    const got = await fetchDeskUnits(pins, { fetch: lib.fetch, budget: 100 });
+    expect(got.units.map((u) => [u.ref, u.version])).toEqual([['lib_mira', 1]]);
+    expect(got.left).toEqual([]);
+    expect(lib.requests).toEqual(['/library/items/lib_mira/versions/1/files/' + sha(mira)]);
   });
 
   it('leaves out a file that sends nothing for 30 seconds, and stops all when told to', async () => {

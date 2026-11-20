@@ -482,9 +482,11 @@ The desk never asks for a unit: rideo knows which units a brief names and pushes
 like the state), once it has loaded the stored state and before it posts `open`:
 
 - **Which**: every pin of the brief, in slot order (the set, the cast, the elements), once per `ref@version`, except a
-  pin the stored state already uses: a row of `clip.deskState.units` with the same slot, `ref` and `version`, staged
-  `unit` (the desk needs no unit for a slot whose record already has that pin). When the stored state's units are not
-  known, every pin goes.
+  pin whose slot needs no file: the slot's row of `clip.deskState.units` is staged `unit` and names the same `ref` and
+  `version` (the desk's record already has that pin), or is staged `unit` with `local`, whatever its `ref` and
+  `version` (the person made the slot local, and the desk never places a unit there again, so a version or another item
+  pinned since takes no file, nor any of the 48 MiB below). When the stored state's units are not known, every pin
+  goes.
 - **From where**: `GET /api/library/items/:itemId/versions/:version/files/:sha256`, at most 2 at a time. The route is
   immutable, so the browser's HTTP cache serves a unit the next time.
 - **Checked**: the bytes' sha256 (WebCrypto) must be the pin's; a file that does not match is left out.

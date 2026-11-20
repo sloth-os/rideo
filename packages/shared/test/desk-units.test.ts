@@ -438,4 +438,18 @@ describe('deskUnitPinsToSend: the files of an open (docs/design/director-desk.md
     ];
     expect(deskUnitPinsToSend(pins, other).map((p) => p.slot)).toEqual(['set', 'cast:a', 'el:lamp']);
   });
+
+  it('leaves out a slot made local whatever its pin is now: the desk never places a unit in it again', () => {
+    // the set made local at v2 and pinned at v3 since; cast:a made local from another item than its pin
+    const uses = [
+      use('set', SET, 2, { local: true }),
+      use('cast:a', 'lib_0000000000other', 2, { local: true }),
+    ];
+    // cast:b pins the same figure version and is not local: that file still goes, for cast:b
+    expect(deskUnitPinsToSend(pins, uses).map((p) => p.slot)).toEqual(['cast:b', 'el:lamp']);
+    // as the header says it: the set made local at v1, the place's pin moved to v2
+    expect(
+      deskUnitPinsToSend([slot('set', 'set', SET, 2)], parseDeskStateUnits(`set=${SET}@1:unit:local`)),
+    ).toEqual([]);
+  });
 });
