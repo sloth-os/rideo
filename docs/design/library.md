@@ -246,7 +246,9 @@ sha256) and copies the others. Every apply is one commit:
   twice, or an episode copied from another), the answer is `409` `conflict` `{reason: "exists", entityId}`, and the
   picker offers **Link to the existing Mira** (apply with that `target`).
 - **The name**: a character's name (case-insensitive), or an element's kind and name, that another entity of the
-  project has: `409` `conflict` `{reason: "name", entityId}`, with the same offer. An alias that collides only warns.
+  project has: `409` `conflict` `{reason: "name", entityId}`, with the same offer. An element's name or alias that
+  another element of its kind has as an alias, or an alias that is another element's name, only warns: neither then
+  answers to it in the screenplay (`elementIndex`), not even the element whose name it is.
 - **Copied as they are**: the seed, the wardrobe ids, the reference ids, the approved references (approved), the
   consent records, the voice, and the 3D pin (with the apply's `pinnedAt` and `pinnedBy`).
 - **Lock versions are the project's.** The entity is locked only if the version was saved locked (with

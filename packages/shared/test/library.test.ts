@@ -16,6 +16,7 @@ import {
   type Element,
   ElementSchema,
   ElementSnapshotSchema,
+  elementIndex,
   elementSnapshot,
   isRealPersonSnapshot,
   isStale,
@@ -614,6 +615,26 @@ describe('planApply', () => {
     const docks = f.element({ name: 'Pier', aliases: ['The Docks'] });
     const plan = planApply(ctx(docsWith({ elements: { [docks.id]: docks } }), eItem, ev));
     expect(plan.warnings.join(' ')).toContain('the docks');
+  });
+
+  it("warns when an alias is another element's name: that element no longer answers to its own name", () => {
+    const harbor = f.element({ name: 'Harbor', aliases: ['Docks'] });
+    const ev = version('lib_0000000000harb00', 'element', elementSnapshot(harbor).payload);
+    const eItem = itemOf(ev, { entityId: harbor.id });
+    const docks = f.element({ name: 'docks' });
+    const docs = docsWith({ elements: { [docks.id]: docks } });
+    expect(planApply(ctx(docs, eItem, ev)).warnings).toEqual([
+      '“Docks” is also the name of docks: neither answers to it in the screenplay',
+    ]);
+    // what the warning says: after the apply the name resolves to neither
+    const out = applyVersion({
+      ...ctx(docs, eItem, ev),
+      copied: new Map(harbor.references.map((r) => [r.media.hash, r.media])),
+    });
+    expect(elementIndex([docks, out.write!.doc as Element])('location', 'Docks')).toBeNull();
+    // a prop of that name is another kind: nothing to say
+    const prop = f.element({ name: 'Docks', kind: 'prop' });
+    expect(planApply(ctx(docsWith({ elements: { [prop.id]: prop } }), eItem, ev)).warnings).toEqual([]);
   });
 
   it('keeps the lock version when the identity is unchanged and stales no take', () => {

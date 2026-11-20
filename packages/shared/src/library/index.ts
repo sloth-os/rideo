@@ -1046,13 +1046,18 @@ function resolveElement(ctx: LibraryApplyContext, payload: ElementSnapshot, medi
       throw new LibraryError('conflict', `a ${payload.kind} named ${named.name} is already in this project`, [
         { reason: 'name', entityId: named.id },
       ]);
-    // an alias another element of the kind also answers to resolves to none (elementIndex): said, not refused
+    // a name or alias another element of the kind answers to too (as its name or an alias) resolves to none
+    // (elementIndex): said, not refused
     for (const alias of [payload.name, ...payload.aliases]) {
       const other = Object.values(ctx.docs.elements).find(
-        (e) => e.kind === payload.kind && e.aliases.some((a) => key(a) === key(alias)),
+        (e) =>
+          e.kind === payload.kind &&
+          (key(e.name) === key(alias) || e.aliases.some((a) => key(a) === key(alias))),
       );
       if (other)
-        warnings.push(`“${alias}” is also a name of ${other.name}: neither answers to it in the screenplay`);
+        warnings.push(
+          `“${alias}” is also ${key(other.name) === key(alias) ? 'the name' : 'a name'} of ${other.name}: neither answers to it in the screenplay`,
+        );
     }
   }
   const versionRefs: ElementReference[] = payload.references.map((r) => ({
