@@ -196,7 +196,17 @@ function InboxButton() {
   );
 }
 
-export function AppHeader({ children }: { children?: ReactNode }) {
+export function AppHeader({
+  children,
+  libraryInMenu = false,
+}: {
+  children?: ReactNode;
+  /**
+   * The page's own phone menu holds the Library (a project's More): below `sm` the header leaves its link out, so the
+   * project's title keeps its room (docs/brand.md#layout-and-responsiveness).
+   */
+  libraryInMenu?: boolean;
+}) {
   const setTheme = useUi((s) => s.setTheme);
   const admin = useAuth((s) => s.me?.admin);
   // A host app may bring its own header, name and mark (docs/design/embedding.md#options)
@@ -226,7 +236,7 @@ export function AppHeader({ children }: { children?: ReactNode }) {
       </Link>
       <Link
         to="/library"
-        className="rounded p-1.5 text-muted hover:text-text"
+        className={cx('rounded p-1.5 text-muted hover:text-text', libraryInMenu && 'max-sm:hidden')}
         aria-label="Library"
         title="Library"
         data-testid="library-link"

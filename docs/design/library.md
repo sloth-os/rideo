@@ -562,7 +562,8 @@ changed`.
 
 ### The Library page
 
-`/library`, from the header's **Library** link next to **Brand kits**.
+`/library`, from the header's **Library** link next to **Brand kits** (on a phone in a project, from **More**: the
+header leaves the room to the project's title, [brand](../brand.md#layout-and-responsiveness)).
 
 - **Desktop**: two panes. The list has kind chips (**All**, **Characters**, **Places & props**, **Resources**, **3D
   sets**, **3D props**, **3D figures**), a tag filter (the tags of the items listed), search (names, descriptions, tags)

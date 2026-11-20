@@ -7,6 +7,7 @@ import {
   GitBranch,
   LayoutDashboard,
   LayoutGrid,
+  LibraryBig,
   type LucideIcon,
   MapPin,
   MoreHorizontal,
@@ -17,7 +18,7 @@ import {
   Users,
 } from 'lucide-react';
 import { type ComponentType, lazy, Suspense, useEffect, useState } from 'react';
-import { NavLink, useParams } from 'react-router';
+import { Link, NavLink, useParams } from 'react-router';
 import { ActivityFeed } from '../../components/ActivityFeed';
 import { AiNotice } from '../../components/AiNotice';
 import { JobRow } from '../../components/JobProgress';
@@ -26,6 +27,7 @@ import { editorWorker } from '../../engine';
 import { useProjectRole } from '../../lib/auth';
 import { useAi } from '../../lib/config';
 import { liveClient } from '../../lib/live-bridge';
+import { useStudioShell } from '../../lib/studio-context';
 import { useProject } from '../../store/project';
 import { AnalysisView } from '../analysis/AnalysisView';
 import { CastView } from '../cast/CastView';
@@ -128,6 +130,7 @@ export function Workspace() {
   const access = useProjectRole(docs?.project);
   const ai = useAi();
   const [more, setMore] = useState(false);
+  const shell = useStudioShell();
   useEffect(() => {
     let cancelled = false;
     load(projectId)
@@ -168,18 +171,23 @@ export function Workspace() {
   const overflow = nav.slice(4);
   return (
     <div className="flex h-full flex-col">
-      <AppHeader>
-        <div className="flex min-w-0 items-center gap-2">
-          <h1 className="truncate font-semibold" data-testid="project-title">
+      <AppHeader libraryInMenu>
+        {/*
+          The title shrinks for its badges to no less than 8rem (the whole row when that is narrower, as on a phone),
+          and the row clips what does not fit, so nothing runs under the header's controls
+          (docs/brand.md#layout-and-responsiveness)
+        */}
+        <div className="flex min-w-0 items-center gap-2 overflow-hidden">
+          <h1 className="min-w-[min(8rem,100%)] truncate font-semibold" data-testid="project-title">
             {docs.project.title}
           </h1>
-          <Badge tone="accent" className="hidden sm:inline-flex">
+          <Badge tone="accent" className="hidden sm:inline-flex" testid="project-stage">
             {docs.project.workflow.stage}
           </Badge>
           {head && head.branch !== 'main' ? (
-            <Badge tone="info">
-              <GitBranch className="size-3" />
-              {head.branch}
+            <Badge tone="info" className="min-w-0" title={head.branch} testid="project-branch">
+              <GitBranch className="size-3 shrink-0" />
+              <span className="truncate">{head.branch}</span>
             </Badge>
           ) : null}
         </div>
@@ -285,6 +293,25 @@ export function Workspace() {
               {n.label}
             </NavLink>
           ))}
+          {/*
+            Below `sm` the header's Library link moves here, leaving the header's room to the project's title
+            (docs/brand.md#layout-and-responsiveness); a host that hides the header has neither
+          */}
+          {shell.chrome.header ? (
+            <>
+              <div className="my-1 border-t border-border sm:hidden" role="separator" />
+              <Link
+                to="/library"
+                onClick={() => setMore(false)}
+                className="flex items-center gap-3 rounded px-3 py-2.5 text-sm sm:hidden"
+                role="menuitem"
+                data-testid="mnav-library"
+              >
+                <LibraryBig className="size-4 text-muted" />
+                Library
+              </Link>
+            </>
+          ) : null}
         </div>
       ) : null}
     </div>

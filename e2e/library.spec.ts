@@ -437,9 +437,16 @@ test('3D rows pin, move, change and unlink sets uploaded through the API; the Li
   await row.getByTestId('desk-use-version').click();
   await expect(row.getByTestId('desk-row-text')).toHaveText(`3D set: Harbor ${tag} v2`);
 
-  // The Library page, from the header: search, kind chips, tag filter
+  // The Library page, from the header (a phone's under the project's More): search, kind chips, tag filter
   await uploadUnit(request, 'set', { id: harbor.id, basedOn: 2 });
-  await page.getByTestId('library-link').click();
+  if (mobile) {
+    await expect(page.getByTestId('library-link')).toBeHidden();
+    await page.getByTestId('mnav-more').click();
+    await page.getByTestId('mnav-library').click();
+  } else {
+    await expect(page.getByTestId('project-stage')).toBeVisible();
+    await page.getByTestId('library-link').click();
+  }
   await expect(page).toHaveURL(/\/library$/);
   const names = page.getByTestId('library-item-name');
   await page.getByTestId('library-search').fill(tag);

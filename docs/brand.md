@@ -45,11 +45,11 @@ Text/background pairs meet WCAG AA (4.5:1 for body text, 3:1 for large text and 
 
 ## Components
 
-Buttons (`primary` = accent, `secondary` = surface-2, `ghost`, `danger`), Badge (status colours above),
-Card, Tabs, Dialog (Escape closes the one on top: a plan opened over a picker leaves the picker open), Toast
-(bottom-right on desktop, top on mobile), Progress (linear, with a job message), EmptyState, the workflow
-Stepper, and ConsistencyBadge (`passed 0.92` / `failed` / `unverified` / `stale` / `override`). Icons come
-from `lucide-react`: 16px in dense UI, 20px in navigation.
+Buttons (`primary` = accent, `secondary` = surface-2, `ghost`, `danger`), Badge (status colours above; a display class
+given to it, such as `hidden` below a breakpoint, replaces its own `inline-flex`), Card, Tabs, Dialog (Escape closes the
+one on top: a plan opened over a picker leaves the picker open), Toast (bottom-right on desktop, top on mobile),
+Progress (linear, with a job message), EmptyState, the workflow Stepper, and ConsistencyBadge (`passed 0.92` / `failed`
+/ `unverified` / `stale` / `override`). Icons come from `lucide-react`: 16px in dense UI, 20px in navigation.
 
 ## Layout and responsiveness
 
@@ -61,6 +61,11 @@ from `lucide-react`: 16px in dense UI, 20px in navigation.
 
 No view may scroll horizontally at 360px width, except the timeline lane, which scrolls inside its own
 container.
+
+The project header keeps the project's title on a phone: the title shrinks for its badges to no less than 8rem (the
+whole row when that is narrower, as on a phone), the row cuts whatever does not fit, so nothing runs under the engine
+state, the live dot or the header's links, and the stage badge waits for `sm` (640px). Below `sm` the header's Library
+link moves into the project's **More** menu.
 
 ## Logo
 

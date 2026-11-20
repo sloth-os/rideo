@@ -75,6 +75,25 @@ const TONES = {
 } as const;
 export type Tone = keyof typeof TONES;
 
+/**
+ * Tailwind's display utilities. One the caller gives a badge (`hidden` below a breakpoint, say) replaces the badge's
+ * own `inline-flex`: both on one element, the stylesheet's order decides, and it puts `inline-flex` after `hidden`.
+ */
+const DISPLAY = new Set([
+  'hidden',
+  'block',
+  'inline',
+  'inline-block',
+  'flex',
+  'inline-flex',
+  'grid',
+  'inline-grid',
+  'contents',
+  'flow-root',
+  'list-item',
+  'table',
+]);
+
 export function Badge({
   tone = 'neutral',
   children,
@@ -93,7 +112,8 @@ export function Badge({
       title={title}
       data-testid={testid}
       className={cx(
-        'inline-flex items-center gap-1 whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-medium',
+        className?.split(/\s+/).some((c) => DISPLAY.has(c)) ? null : 'inline-flex',
+        'items-center gap-1 whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-medium',
         TONES[tone],
         className,
       )}

@@ -6,7 +6,7 @@ import { MemoryRouter } from 'react-router';
 import { afterEach, describe, expect, it } from 'vitest';
 import { ConsistencyBadge, QualityBadge } from '../src/components/ConsistencyBadge';
 import { JobRow } from '../src/components/JobProgress';
-import { Dialog } from '../src/components/ui';
+import { Badge, Dialog } from '../src/components/ui';
 import { WorkflowStepper } from '../src/components/WorkflowStepper';
 import { LoginPage } from '../src/features/account/LoginPage';
 import { LineageBadge, MultiShotBadge } from '../src/features/clips/TakeActions';
@@ -273,5 +273,25 @@ describe('Dialog', () => {
     fireEvent.change(field, { target: { value: 'M' } });
     fireEvent.change(field, { target: { value: 'Mi' } });
     expect(document.activeElement).toBe(field);
+  });
+});
+
+describe('Badge', () => {
+  const classes = (e: Element | null) => (e?.getAttribute('class') ?? '').split(/\s+/);
+
+  it('gives way to a display the caller sets: hidden on phones stays hidden (docs/brand.md#components)', () => {
+    // Tailwind orders `inline-flex` after `hidden` in the stylesheet: with both on one element, the badge would show
+    const { container, rerender } = render(<Badge className="hidden sm:inline-flex">screenplay</Badge>);
+    expect(classes(container.firstElementChild)).toEqual(
+      expect.arrayContaining(['hidden', 'sm:inline-flex']),
+    );
+    expect(classes(container.firstElementChild)).not.toContain('inline-flex');
+    rerender(<Badge className="flex">screenplay</Badge>);
+    expect(classes(container.firstElementChild)).not.toContain('inline-flex');
+    // a breakpoint's display, or none at all, keeps the badge's own
+    rerender(<Badge className="min-w-0 sm:hidden">screenplay</Badge>);
+    expect(classes(container.firstElementChild)).toContain('inline-flex');
+    rerender(<Badge>screenplay</Badge>);
+    expect(classes(container.firstElementChild)).toContain('inline-flex');
   });
 });
