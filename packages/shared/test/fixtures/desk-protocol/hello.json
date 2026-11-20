@@ -1,7 +1,5 @@
 {
   "protocol": "3d-desk",
   "type": "hello",
-  "versions": [
-    1
-  ]
+  "versions": [1]
 }

@@ -48,9 +48,7 @@
         "durationSec": 2.5,
         "description": "Close-up: Mira looks up at the kite.",
         "action": "",
-        "castIds": [
-          "chr_unknown00000"
-        ],
+        "castIds": ["chr_unknown00000"],
         "elementIds": [],
         "framing": "close_up",
         "movement": "static",

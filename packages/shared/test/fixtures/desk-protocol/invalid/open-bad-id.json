@@ -48,14 +48,8 @@
         "durationSec": 3,
         "description": "Wide: Mira runs across the meadow with the kite, Pip chasing.",
         "action": "Mira runs left to right.",
-        "castIds": [
-          "chr_0123456789mira",
-          "chr_0123456789pipd"
-        ],
-        "elementIds": [
-          "ele_0123456789mead",
-          "ele_0123456789kite"
-        ],
+        "castIds": ["chr_0123456789mira", "chr_0123456789pipd"],
+        "elementIds": ["ele_0123456789mead", "ele_0123456789kite"],
         "framing": "wide",
         "movement": "tracking",
         "move": null,
@@ -80,9 +74,7 @@
         "durationSec": 2.5,
         "description": "Close-up: Mira looks up at the kite.",
         "action": "",
-        "castIds": [
-          "chr_0123456789mira"
-        ],
+        "castIds": ["chr_0123456789mira"],
         "elementIds": [],
         "framing": "close_up",
         "movement": "static",
