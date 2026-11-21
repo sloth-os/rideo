@@ -4,3 +4,5 @@ export const reviewed = `${n} scene(s) reviewed`;
 export const rushed = `${n} lines are too long for their shots`;
 export const scheme = 'an absolute http(s) URL';
 export const Pending = () => <p>{n} frames are not indexed yet</p>;
+export const Unpriced = () => <p>{n} usage items have no price</p>;
+export const priced = `${n} new usage items need a price`;

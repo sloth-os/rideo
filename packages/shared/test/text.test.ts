@@ -76,10 +76,13 @@ describe('count phrases in the sources', () => {
   });
   /** "shot(s)", "frame(s)": a hedge, not a count (a URL scheme's "http(s)" is not one). */
   const HEDGE = /[a-z](?<!http)\(s\)/i;
-  /** A count followed by a plural noun and a plural verb: " lines are", " frames wait". */
-  const FIXED = /^ [a-z]+s (are|were|have|need|pass|wait|jump|fail|use)\b/;
+  /**
+   * A count followed by a plural noun of up to three words and a plural verb: " lines are", " frames wait", " usage
+   * items have", " new usage items need".
+   */
+  const FIXED = /^ (?:[a-z-]+ ){0,2}[a-z]+s (are|were|have|need|pass|wait|jump|fail|use)\b/;
   /** A file holds FIXED's shape only after the end of a substitution or a JSX expression: only those files are parsed. */
-  const RAW_FIXED = /\} [a-z]+s (are|were|have|need|pass|wait|jump|fail|use)\b/;
+  const RAW_FIXED = /\} (?:[a-z-]+ ){0,2}[a-z]+s (are|were|have|need|pass|wait|jump|fail|use)\b/;
 
   const found = (file: string) => {
     const text = readFileSync(file, 'utf8');
@@ -129,6 +132,8 @@ describe('count phrases in the sources', () => {
       '{…} scene(s) reviewed',
       '{…} lines are too long for their shots',
       '{…} frames are not indexed yet',
+      '{…} usage items have no price',
+      '{…} new usage items need a price',
     ]);
   });
 });
