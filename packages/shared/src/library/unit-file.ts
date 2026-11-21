@@ -1,5 +1,6 @@
 import { DESK_UNIT_FILE_KINDS, type DeskUnitFileKind } from '../schemas/desk';
 import { LIBRARY_LIMITS } from '../schemas/library';
+import { plural } from '../util/text';
 
 /**
  * The unit file a host may read (docs/design/library.md#what-it-holds): the 3D-Editor's contract, the section "The
@@ -52,7 +53,7 @@ export function readDeskUnitPrefix(prefix: Uint8Array): { headerBytes: number; g
   if (prefix[10] !== 0 || prefix[11] !== 0) throw new DeskUnitFileError('its bytes 10 and 11 are not 0');
   const headerBytes = new DataView(prefix.buffer, prefix.byteOffset, prefixBytes).getUint32(12, true);
   if (headerBytes < 2 || headerBytes > maxHeaderBytes)
-    throw new DeskUnitFileError(`its header of ${headerBytes} bytes is not 2 bytes to 64 KiB`);
+    throw new DeskUnitFileError(`its header of ${plural(headerBytes, 'byte')} is not 2 bytes to 64 KiB`);
   return { headerBytes, gzip: prefix[9] === 1 };
 }
 

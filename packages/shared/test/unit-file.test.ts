@@ -74,6 +74,14 @@ describe('the unit file a host may read', () => {
     const long = real.slice();
     new DataView(long.buffer).setUint32(12, 64 * 1024 + 1, true);
     expect(why(long)).toBe('its header of 65537 bytes is not 2 bytes to 64 KiB');
+    // the header's length counted with its noun (docs/brand.md#voice): one byte, and none
+    const headerOf = (n: number) => {
+      const b = real.slice();
+      new DataView(b.buffer).setUint32(12, n, true);
+      return b;
+    };
+    expect(why(headerOf(1))).toBe('its header of 1 byte is not 2 bytes to 64 KiB');
+    expect(why(headerOf(0))).toBe('its header of 0 bytes is not 2 bytes to 64 KiB');
     // the header: UTF-8 JSON with a format, version, kind of the three and a name of 1–120 characters
     const notUtf8 = new TextEncoder().encode(JSON.stringify({ ...header, name: 'Red XX' }));
     notUtf8.set([0xc3, 0x28], notUtf8.indexOf(0x58));

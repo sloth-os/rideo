@@ -322,6 +322,10 @@ describe('what rideo reads of a unit file and a thumbnail', () => {
     );
     expect(await refusal(header(unitFile('set', '', { length: 70_000 })))).toBe('422 unit');
     expect(await refusal(header(unitFile('set', '', { length: 5000 })))).toBe('422 unit');
+    // the refusal says why, the header's length counted with its noun (docs/brand.md#voice)
+    await expect(header(unitFile('set', 'b', { length: 1 }))).rejects.toThrow(
+      'not a 3D unit file: its header of 1 byte is not 2 bytes to 64 KiB',
+    );
     expect(await refusal(header(Buffer.from('3DUNIT')))).toBe('422 unit');
     // what the 3D-Editor's contract adds (docs/embedding.md, "The unit file"): bytes 10 and 11 both 0, a UTF-8 header
     // naming a kind of the three and a name of 1–120 characters
