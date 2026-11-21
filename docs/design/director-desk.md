@@ -411,7 +411,7 @@ ends the backoff, and a later failure toasts again.
 
 | Route | Body | Returns |
 |---|---|---|
-| `GET /api/projects/:id/clips/:clipId/desk-state` | – | the bytes (`application/octet-stream`) with `X-Desk-State-Format`, `X-Desk-State-Version`, `ETag` (the sha256); `204` No Content when the clip names no state (no body, no `ETag`, `Cache-Control: no-store`: the usual answer of a first open, which a browser does not log as an error); `404` `not_found` only for a project or a clip that is not there; `503` `storage_error` when it names one whose file cannot be read (storage answered `404` for it, failed, or its bytes failed the hash check). A storage that failed may answer later, but a file that is missing or failed its hash check may be gone for good, which no retry mends: `DELETE` the state (the panel's **Start over**), and the next `open` uses the desk's own copy of the scene or the brief |
+| `GET /api/projects/:id/clips/:clipId/desk-state` | – | the bytes (`application/octet-stream`) with `X-Desk-State-Format`, `X-Desk-State-Version`, `ETag` (the sha256); `204` No Content when the clip names no state (no body, no `ETag`, `Cache-Control: no-store`: the usual answer of a first open, which a browser does not log as an error; rideo reads its empty body to the end, as every answer, or Chromium would report the read as cancelled); `404` `not_found` only for a project or a clip that is not there; `503` `storage_error` when it names one whose file cannot be read (storage answered `404` for it, failed, or its bytes failed the hash check). A storage that failed may answer later, but a file that is missing or failed its hash check may be gone for good, which no retry mends: `DELETE` the state (the panel's **Start over**), and the next `open` uses the desk's own copy of the scene or the brief |
 | `PUT /api/projects/:id/clips/:clipId/desk-state` | the bytes (`application/octet-stream`, at most 64 MiB) with `X-Desk-State-Format` and `X-Desk-State-Version`, and the state it replaces: `If-Match` with its `ETag`, or `If-None-Match: *` for none; `X-Desk-State-Replace: 1` when the person chose to replace that state (the panel's [Replace](#when-rideo-stores-it)) | `{deskState}` (`200`, with the new state's `ETag`; the same when the bytes were stored already, whatever the precondition); `412` `desk_state_conflict` when the stored state is not the one named (the answer's `ETag` is the stored state's, none when the clip names none; nothing is stored: the precondition is checked before the bytes are kept as a file, and again in the commit, which finds a state stored while the body was arriving). A `PUT` without a precondition replaces whatever is stored (scripts; the studio always sends one). Each write is a commit coalesced per clip and author; one with `X-Desk-State-Replace: 1` is a commit of its own, which never amends the tip, so the history keeps the state it replaces |
 | `DELETE /api/projects/:id/clips/:clipId/desk-state` | – | `204`: the clip names no state (the file stays, as all media). The next `open` sends none: the desk restores its own copy of the scene in a browser that has one (and the next state rideo stores writes it back), else stages the brief |
 
@@ -799,7 +799,9 @@ an `open` and why, and each publish's answer, to the browser's console (`[desk] 
   the person (`not_open` for Close's `save` in the status line only), and a disposed bridge that reports no status; the
   panel (`desk-panel.test.tsx`): no Follow menu of its own, `open`'s options (the three modes in the protocol's order,
   the mode last attached in this project, *camera* in another), its store, load and clear on the desk-state routes with
-  the precondition and the Replace header (a `204` loaded as none stored, a `404` as the failure it is), the close timeout's `AbortSignal` reaching `fetch`, a `412` made a conflict
+  the precondition and the Replace header (a `204` loaded as none stored, its empty body read to the end as the
+  clear's is, `api.test.ts`, a `404` as the failure it is), the close timeout's `AbortSignal` reaching `fetch`, a `412`
+  made a conflict
   with the stored `ETag`, a result applied with the brief and the retimed shots it was given (a length changed in the
   desk and one the brief retimed each refused with its own reason, the shot's own `brief_length` issue over a stale
   retimed list) and its mode remembered, the bridge flushed and disposed when the panel goes away, the iframe mounted
@@ -821,8 +823,10 @@ an `open` and why, and each publish's answer, to the browser's console (`[desk] 
   staged before the brief retimed the first shot, as the real desk tells it: `opened` lists that shot in
   `changes.retimed`, the desk's own **Update shots** brings it to the brief, and until then **Send longer**'s issue on
   it points to Update shots.
-  `e2e/director-desk.spec.ts` opens the desk on a scene (the page behind it inert, no Follow menu in the panel, the desk
-  opened on *Camera*, the iframe sandboxed without top navigation), sends the result and finds through the API every
+  `e2e/director-desk.spec.ts` opens the desk on a scene whose clip has no stored state (the read answered `204`, no
+  console error, and the browser reports the read finished, not cancelled; the page behind it inert, no Follow menu in
+  the panel, the desk opened on *Camera*, the iframe sandboxed without top navigation), sends the result and finds
+  through the API every
   shot's motion reference and staged lens and move with its planned framing and movement kept, and each uploaded clip
   ready with its probe and JPEG poster, the summary naming the mode, the plan's disagreement in the toast; the state
   stored on Close and given back on the next open, opened and closed again without an edit storing nothing (the same
@@ -833,7 +837,8 @@ an `open` and why, and each publish's answer, to the browser's console (`[desk] 
   has and the desk's `export_failed` in a toast; a stored state the desk cannot read kept (the notice and a toast, an
   edit not stored on Close) until **Replace the stored desk state** after its confirmation; a stored state the server
   cannot read (`503`): the panel failed with **Retry**, the desk not opened, **Retry** opening it, and **Start over**
-  after its confirmation clearing the state and opening the desk from the brief; *Poses* chosen in the desk's own Follow
+  after its confirmation clearing the state (its `DELETE` finished, not cancelled) and opening the desk from the
+  brief; *Poses* chosen in the desk's own Follow
   menu attached and remembered for the project after a reload (the desk opened on *Poses*), and a shot sent longer than
   its brief refused with "set its length back in the desk" (the brief reaching the result's plan); a desk opened on a
   state staged before the brief retimed the first shot: sent longer, that shot refused with "press Update shots in the

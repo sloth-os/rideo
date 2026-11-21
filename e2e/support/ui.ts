@@ -1,4 +1,20 @@
-import { expect, type Page } from '@playwright/test';
+import { expect, type Page, type Request } from '@playwright/test';
+
+/**
+ * How the requests of the page that `match` picks end, in the order they end: `finished`, or the failure the browser
+ * reports. An answer whose body the page never reads, an empty `204` too, ends as `net::ERR_ABORTED` in Chromium
+ * though the server answered (docs/architecture.md#layers).
+ */
+export function requestEnds(page: Page, match: (request: Request) => boolean): string[] {
+  const ends: string[] = [];
+  page.on('requestfinished', (r) => {
+    if (match(r)) ends.push('finished');
+  });
+  page.on('requestfailed', (r) => {
+    if (match(r)) ends.push(r.failure()?.errorText ?? 'failed');
+  });
+  return ends;
+}
 
 /**
  * Exports from the editor: this tab claims the `export.render` editor job, renders it with its engine

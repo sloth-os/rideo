@@ -2,6 +2,7 @@ import { type APIRequestContext, expect, type Page, test } from '@playwright/tes
 import { Api } from './support/api';
 import { libraryUnit, pinUnit } from './support/desk-units';
 import { PORTS } from './support/ports';
+import { requestEnds } from './support/ui';
 
 /**
  * The 3D-Editor's director's desk embedded in the Storyboard view (docs/design/director-desk.md), against the fake
@@ -98,16 +99,24 @@ test('the desk connects, its Send attaches every shot’s clip and camera, and i
   const shots = [...clip.shots].sort((a: any, b: any) => a.index - b.index);
   const plannedCamera = new Map(shots.map((s: any) => [s.id, s.camera]));
   // the first open of a clip with no stored state: the read answers 204 (none stored), and nothing is logged as an
-  // error (a 404 would be, as "Failed to load resource")
+  // error (a 404 would be, as "Failed to load resource"); its empty body is read, so the browser reports the read
+  // finished (unread, Chromium reports it cancelled, net::ERR_ABORTED), as every request of the desk state
   const consoleErrors: string[] = [];
   page.on('console', (m) => {
     if (m.type() === 'error') consoleErrors.push(`${m.text()} (${m.location().url})`);
   });
+  const deskStateEnds = requestEnds(page, (r) => r.url().endsWith(`/clips/${clip.id}/desk-state`));
+  const readEnds = requestEnds(
+    page,
+    (r) => r.method() === 'GET' && r.url().endsWith(`/clips/${clip.id}/desk-state`),
+  );
   const firstRead = page.waitForResponse(
     (r) => r.request().method() === 'GET' && r.url().endsWith(`/clips/${clip.id}/desk-state`),
   );
   await openDesk(page, pid);
   expect((await firstRead).status()).toBe(204);
+  await expect.poll(() => readEnds.length).toBeGreaterThan(0);
+  expect(readEnds).toEqual(['finished']);
   await expect(page.getByTestId('desk-title')).toHaveText(clip.title);
   // sandboxed: scripts, its own storage and downloads, never the studio's tab
   const frame = page.getByTestId('desk-frame');
@@ -254,6 +263,7 @@ test('the desk connects, its Send attaches every shot’s clip and camera, and i
   await page.getByTestId('desk-close').click();
   await expect(page.getByTestId('desk-panel')).toBeHidden();
   expect(await storedState(request, pid, clip.id)).toBe(mine);
+  expect(deskStateEnds.filter((end) => end !== 'finished')).toEqual([]);
 });
 
 test('a partial result attaches the shots it has, and the desk says which shot it left out', async ({
@@ -380,7 +390,14 @@ test('a stored state the desk cannot read is kept until the person replaces it; 
     'start over in the browser that has the newest work',
   );
   await noSidewaysScroll(page);
+  // the clear's 204 read to its end like every answer: the browser reports it finished, not cancelled
+  const cleared = requestEnds(
+    page,
+    (r) => r.method() === 'DELETE' && r.url().endsWith(`/clips/${clip.id}/desk-state`),
+  );
   await page.getByTestId('desk-start-over-confirm').click();
+  await expect.poll(() => cleared.length).toBeGreaterThan(0);
+  expect(cleared).toEqual(['finished']);
   await expect(d.getByTestId('desk-connected')).toHaveText('open');
   await expect(d.getByTestId('desk-given')).toHaveText('none');
   await expect(page.getByTestId('desk-status')).toContainText('Opened from the brief');

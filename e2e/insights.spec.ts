@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { Api } from './support/api';
+import { requestEnds } from './support/ui';
 
 /** The Insights view and telemetry from the studio (docs/design/observability.md), desktop and phone. */
 test('a generated project shows its cost, times, quality and improvements; the studio reports its vitals', async ({
@@ -21,6 +22,8 @@ test('a generated project shows its cost, times, quality and improvements; the s
   await api.waitJob(pid, plan.id);
   await api.waitIdle(pid, 120_000);
 
+  // each batch's 204 read to its end: the browser reports the request finished, not cancelled
+  const telemetry = requestEnds(page, (r) => r.method() === 'POST' && r.url().endsWith('/api/telemetry'));
   await page.goto(`/p/${pid}/insights`);
   const insights = page.getByTestId('insights');
   await expect(insights).toBeVisible();
@@ -47,4 +50,6 @@ test('a generated project shows its cost, times, quality and improvements; the s
       ),
     )
     .toBe(true);
+  await expect.poll(() => telemetry.length).toBeGreaterThan(0);
+  expect(telemetry.filter((end) => end !== 'finished')).toEqual([]);
 });

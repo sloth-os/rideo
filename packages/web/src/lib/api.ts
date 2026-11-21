@@ -255,6 +255,20 @@ export function etagValue(etag: string | null | undefined): string | null {
   return value || null;
 }
 
+/**
+ * Reads an answer's body to its end and drops it, an empty one too (a `204`'s). Chromium reports a fetch whose body is
+ * never read as cancelled (`net::ERR_ABORTED`, a failed request in DevTools and to anything on the DevTools protocol),
+ * though the server answered, and cancelling the body instead does the same. A body that does not arrive changes
+ * nothing: the status is the answer.
+ */
+export async function drain(res: Response): Promise<void> {
+  try {
+    await res.arrayBuffer();
+  } catch {
+    // the status is the answer
+  }
+}
+
 function observe(res: Response, path: string): void {
   if (res.status === 401 && !path.startsWith('/auth/')) onUnauthorized?.();
   if (res.status >= 500 && path !== '/telemetry') onServerError?.();
@@ -268,7 +282,10 @@ async function request<T>(
   signal?: AbortSignal,
 ): Promise<T> {
   const res = await send(method, path, body, headers, signal);
-  if (res.status === 204) return undefined as T;
+  if (res.status === 204) {
+    await drain(res);
+    return undefined as T;
+  }
   const text = await res.text();
   let json: unknown = null;
   try {
@@ -283,8 +300,8 @@ async function request<T>(
 
 /**
  * The desk's stored state of a clip (docs/design/director-desk.md#the-routes): its bytes, format, version and sha256
- * (the ETag); null when none is stored (`204`). Any other answer that is not the state, a `404` for a clip or project
- * that is not there included, is the failure it says.
+ * (the ETag); null when none is stored (`204`, its empty body read to the end). Any other answer that is not the state,
+ * a `404` for a clip or project that is not there included, is the failure it says.
  */
 async function deskState(
   id: string,
@@ -293,7 +310,10 @@ async function deskState(
   const path = `/projects/${id}/clips/${clipId}/desk-state`;
   const res = await send('GET', path);
   observe(res, path);
-  if (res.status === 204) return null;
+  if (res.status === 204) {
+    await drain(res);
+    return null;
+  }
   if (!res.ok) {
     const text = await res.text();
     let json: unknown = null;

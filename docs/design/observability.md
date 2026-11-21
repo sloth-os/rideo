@@ -155,7 +155,8 @@ The studio sends what only the browser knows to `POST /api/telemetry`
 names from fixed lists, no content of projects or people): Core Web Vitals (`PerformanceObserver`: LCP, FCP, TTFB,
 CLS, and the slowest interaction as INP), timings of the waits people notice (a project's first load, the editor
 ready, the first decoded frame, each export chunk) and error counts (uncaught errors, rejected promises, API errors by
-status class). Events are batched and sent every 15 s and when the page is hidden (`fetch` with `keepalive`). They
+status class). Events are batched and sent every 15 s and when the page is hidden (`fetch` with `keepalive`, its
+`204` read to the end so that the browser does not report the request as cancelled). They
 become the `rideo_web_*` metrics and, at debug level, log lines. `RIDEO_TELEMETRY=off` turns the endpoint (404) and
 the client off.
 
