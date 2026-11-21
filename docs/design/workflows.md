@@ -23,7 +23,7 @@ type StageDef = {
 - `reopen(stageId)` moves back to an earlier stage and clears later approvals (the history keeps them). Use
   it to rewrite the screenplay after production has started, for example.
 - Requirements are **named predicates** over the snapshot (the catalogue below). They are pure functions in
-  shared code, so the UI can show exactly what is missing ("2 characters are not locked").
+  shared code, so the UI can show exactly what is missing ("2 characters not locked").
 - Approvals by agents are allowed when `project.settings.approvals.allowAgents` is true (default). Every
   approval is attributed to its actor in the history.
 - Actions are not blocked by stage. You can regenerate a shot while editing, for example. Safety-critical
