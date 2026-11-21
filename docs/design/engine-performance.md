@@ -24,6 +24,7 @@ is never exhausted (a command asking for more threads than the pool has would ha
 
 | | Threads |
 |---|---|
+| a command that writes one frame (`-frames:v 1`: a poster, a scene thumbnail) | 1 for its decoder, its encoder and its filters |
 | the encoder (`-threads` before the output) | `min(8, navigator.hardwareConcurrency)` |
 | each input's decoder (`-threads` before its `-i`) | 2, or 1 when a command has more than 6 inputs |
 | the filter graph (`-filter_complex_threads` before the output) | as many as the encoder's, as far as the command fits the pool |
@@ -40,6 +41,15 @@ decoders' and the encoder's, until the command fits 30 of the 32 threads. Comman
 threads off: a soundtrack window opens every audio segment it plays as an input (about 13 a minute of five-second
 shots; the whole soundtrack of a ten-minute film opened 118 before [windows](editor.md#soundtrack)), and a chunk
 opens every item it shows.
+
+A command that writes one frame runs on one thread: the frame gains nothing from threads, and on threads the
+multi-threaded core now and then never returned from such a command, either while starting its threads (its log ended
+at the stream mapping) or after writing its frame (its log ended at its final statistics): an analysis waited on its
+second scene thumbnail until its test gave up. Measured on fresh cores with an analysis's commands, its three
+thumbnails hung in 2 analyses of 658 with the threads planned as above, in 34 of 91 with the decoder on one thread and
+the encoder and scalers on four, and in none of 855 on one thread; the analysis itself, on its planned threads, hung
+in none of the 1604. `-threads 1` before the output also keeps a `-vf` graph and its scalers on one thread (FFmpeg 5.1
+gives a simple filter graph the encoder's threads).
 
 The engine status in the header (its tooltip) and the presence the tab sends say how many threads the core runs
 (`engine.threads`, 1 for the single-threaded core).
