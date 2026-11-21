@@ -1,10 +1,17 @@
-import { type CommentThread, CommentThreadSchema } from '@rideo/shared';
+import { type CommentThread, CommentThreadSchema, type Review, ReviewSchema } from '@rideo/shared';
+import * as f from '@rideo/shared/testing';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { MemoryRouter, Route, Routes } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { GuestReviewPage } from '../src/features/review/GuestReviewPage';
 import { formatAt, ReviewPlayer } from '../src/features/review/ReviewPlayer';
+import { ReviewsCard } from '../src/features/review/ReviewsCard';
 import { useNotifications } from '../src/store/notifications';
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
 
 const take = {
   kind: 'take' as const,
@@ -128,5 +135,70 @@ describe('notifications store', () => {
       '/api/notifications/read',
       expect.objectContaining({ method: 'POST' }),
     );
+  });
+});
+
+/** A review asking for `required` approvals, `approved` of them given by distinct guests. */
+const reviewOf = (required: number, approved: number): Review =>
+  ReviewSchema.parse({
+    id: 'rev_000000000001',
+    title: 'First cut',
+    target: { kind: 'export', exportId: 'exp_000000000001' },
+    required,
+    decisions: Array.from({ length: approved }, (_, i) => ({
+      author: { kind: 'guest', id: `rev_000000000001:guest${i}`, name: `Guest ${i + 1}` },
+      decision: 'approve',
+      at: '2026-10-01T10:00:00.000Z',
+    })),
+    createdBy: { kind: 'user', id: 'usr_000000000001', name: 'Ben' },
+    createdAt: '2026-10-01T09:00:00.000Z',
+  });
+
+/** Approvals so far of those the review asks for (docs/brand.md#voice): the asked-for count names its noun. */
+describe('approvals counters', () => {
+  const cases: [required: number, approved: number, text: string][] = [
+    [1, 0, '0 of 1 approval'],
+    [1, 1, '1 of 1 approval'],
+    [2, 0, '0 of 2 approvals'],
+    [2, 1, '1 of 2 approvals'],
+    [2, 2, '2 of 2 approvals'],
+  ];
+
+  it.each(cases)('the project card counts %i asked for with %i given', (required, approved, text) => {
+    const docs = f.docs();
+    render(
+      <MemoryRouter>
+        <ReviewsCard docs={{ ...docs, reviews: { rev_000000000001: reviewOf(required, approved) } }} />
+      </MemoryRouter>,
+    );
+    expect(screen.getByTestId('review-approvals').textContent).toBe(`· ${text}`);
+  });
+
+  it.each(cases)('the guest page counts %i asked for with %i given', async (required, approved, text) => {
+    const review = reviewOf(required, approved);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              projectId: 'prj_000000000001',
+              project: { title: 'Kite Day' },
+              review,
+              items: [],
+              comments: [],
+            }),
+            { headers: { 'content-type': 'application/json' } },
+          ),
+      ),
+    );
+    render(
+      <MemoryRouter initialEntries={['/review/tok']}>
+        <Routes>
+          <Route path="/review/:token" element={<GuestReviewPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    expect((await screen.findByTestId('guest-approvals')).textContent).toBe(text);
   });
 });

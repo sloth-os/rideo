@@ -1,4 +1,4 @@
-import { sameTarget } from '@rideo/shared';
+import { plural, sameTarget } from '@rideo/shared';
 import { CheckCircle2, Link2Off, MessageSquareWarning } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { useParams } from 'react-router';
@@ -117,8 +117,8 @@ export function GuestReviewPage() {
         <Badge tone={STATUS_TONE[view.review.status]} testid="guest-status">
           {STATUS_LABEL[view.review.status]}
         </Badge>
-        <span className="text-[12px] text-muted">
-          {approvals}/{view.review.required} approvals
+        <span className="text-[12px] text-muted" data-testid="guest-approvals">
+          {approvals} of {plural(view.review.required, 'approval')}
         </span>
       </div>
       {!name ? (
