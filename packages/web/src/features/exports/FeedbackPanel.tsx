@@ -7,6 +7,7 @@ import {
   feedbackTime,
   fixOutcome,
   isTerminalJob,
+  plural,
   retakeCounts,
 } from '@rideo/shared';
 import { Download, Eye, Lightbulb, ListChecks, Play, RefreshCw, Sparkles, X } from 'lucide-react';
@@ -45,7 +46,7 @@ function Heard({ fb }: { fb: Feedback }) {
     <p className="text-[12px] text-muted" data-testid="feedback-heard">
       Watched by {fb.model}
       {fb.listened && fb.listener ? ` and heard by ${fb.listener}` : ''}
-      {d?.lines ? ` · ${d.heard} of ${d.lines} lines heard` : ''}
+      {d?.lines ? ` · ${d.heard} of ${plural(d.lines, 'line')} heard` : ''}
     </p>
   );
 }
@@ -180,8 +181,8 @@ export function FeedbackSummary({ e, projectId }: { e: Export; projectId: string
         )}
         {fb.status === 'succeeded' ? (
           <span className="text-[12px] text-muted">
-            {fb.issues.length} issues · {fb.recommendations.filter((r) => r.status === 'open').length} open
-            recommendations
+            {plural(fb.issues.length, 'issue')} ·{' '}
+            {plural(fb.recommendations.filter((r) => r.status === 'open').length, 'open recommendation')}
           </span>
         ) : null}
       </div>

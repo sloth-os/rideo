@@ -43,6 +43,8 @@ test('the screenplay and the storyboard are reviewed, revised by their review an
   // The storyboard: drawn, reviewed, approved
   await api.readyForStoryboard(pid);
   await page.goto(`/p/${pid}/storyboard`);
+  // One storyboarded scene, named in the singular (docs/brand.md#voice)
+  await expect(page.getByText('The first scene: approve a frame per shot')).toBeVisible();
   await page.getByTestId('generate-storyboard').click();
   await api.waitIdle(pid, 180_000);
   const board = page.getByTestId('ai-review-storyboard');

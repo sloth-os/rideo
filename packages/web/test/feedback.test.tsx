@@ -141,7 +141,7 @@ describe('feedback on the export card (docs/design/feedback.md#surfaces)', () =>
     expect(screen.getByTestId('feedback-overall').textContent).toBe('6.4/10');
     expect(screen.getByTestId('feedback-score-temporal').textContent).toContain('4.0');
     expect(screen.getByTestId('feedback-heard').textContent).toBe('Watched by gemini-3.7-flash');
-    expect(screen.getByText(/1 issues · 2 open recommendations/)).toBeTruthy();
+    expect(screen.getByText(/1 issue · 2 open recommendations/)).toBeTruthy();
     fireEvent.click(screen.getByTestId('show-feedback'));
     const dialog = screen.getByTestId('feedback-dialog');
     // Recommendations first: apply the first, dismiss the second.

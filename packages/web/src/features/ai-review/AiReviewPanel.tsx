@@ -1,5 +1,6 @@
 import {
   DEFAULT_MIN_DIMENSION,
+  plural,
   REVIEW_DIMENSIONS,
   type ReviewStage,
   type ReviewState,
@@ -362,7 +363,7 @@ export function ReviewCard({
               ? ` · earlier: ${review.history.map((h) => h.score.toFixed(1)).join(', ')}`
               : ''}
             {review.model ? ` · ${review.model}` : ''}
-            {` · ${review.issues.length} issue(s), ${openRecs} open recommendation(s)`}
+            {` · ${plural(review.issues.length, 'issue')}, ${plural(openRecs, 'open recommendation')}`}
           </p>
           {review.issues.length || review.recommendations.length ? (
             <div>

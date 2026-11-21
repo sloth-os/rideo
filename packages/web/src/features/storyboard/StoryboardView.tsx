@@ -6,6 +6,7 @@ import {
   clipBoardReviewState,
   formatDuration,
   isTerminalJob,
+  plural,
   type Shot,
   sortedClips,
   storyboardClips,
@@ -215,7 +216,7 @@ function AnimaticPanel() {
           </h3>
           <p className="text-[12px] text-muted">
             {animatic
-              ? `${frames} frames · ${formatDuration(timelineDuration(animatic))} with dialogue and captions`
+              ? `${plural(frames, 'frame')} · ${formatDuration(timelineDuration(animatic))} with dialogue and captions`
               : 'The frames with their dialogue, temp music and captions, played and exported in this browser.'}
           </p>
         </div>
@@ -422,7 +423,7 @@ export function StoryboardView() {
         title="Storyboard"
         subtitle={
           enabled
-            ? `The first ${scenes.length} scene(s): approve a frame per shot before any video is generated. Approved frames start the video pass.`
+            ? `${scenes.length === 1 ? 'The first scene' : `The first ${plural(scenes.length, 'scene')}`}: approve a frame per shot before any video is generated. Approved frames start the video pass.`
             : 'The storyboard is off for this project (Overview → Settings).'
         }
         actions={
@@ -459,7 +460,7 @@ export function StoryboardView() {
               onClick={() =>
                 api
                   .approveAllBoards(projectId)
-                  .then((r) => useUi.getState().toast(`${r.approved} frame(s) approved`, 'success'))
+                  .then((r) => useUi.getState().toast(`${plural(r.approved, 'frame')} approved`, 'success'))
                   .catch(reportError)
               }
               data-testid="approve-all-boards"
@@ -492,7 +493,7 @@ export function StoryboardView() {
       {enabled ? <AiReviewPanel stage="storyboard" /> : null}
       {enabled ? (
         <p className="text-[13px] text-muted" data-testid="storyboard-progress">
-          {progress.approved} of {progress.shots} frames approved
+          {progress.approved} of {plural(progress.shots, 'frame')} approved
           {progress.states.failed ? ` · ${progress.states.failed} failed` : ''}
           {progress.states.stale + progress.states.outdated
             ? ` · ${progress.states.stale + progress.states.outdated} to redraw`

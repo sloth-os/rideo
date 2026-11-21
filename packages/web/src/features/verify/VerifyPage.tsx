@@ -1,3 +1,4 @@
+import { plural } from '@rideo/shared';
 import { ShieldCheck, ShieldX, Upload } from 'lucide-react';
 import { useRef, useState } from 'react';
 import { ContentCredentialsPanel } from '../../components/ContentCredentials';
@@ -84,8 +85,8 @@ export function VerifyPage() {
                   <dd>{result.provenance ? new Date(result.provenance.createdAt).toLocaleString() : '—'}</dd>
                   <dt className="text-muted">Confidence</dt>
                   <dd>
-                    {Math.round(result.confidence * 100)}% ({result.framesAnalyzed} frames
-                    {result.corrected ? `, ${result.corrected} bit(s) corrected` : ''})
+                    {Math.round(result.confidence * 100)}% ({plural(result.framesAnalyzed, 'frame')}
+                    {result.corrected ? `, ${plural(result.corrected, 'bit')} corrected` : ''})
                   </dd>
                 </dl>
               </div>

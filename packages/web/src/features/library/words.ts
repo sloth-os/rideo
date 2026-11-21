@@ -11,6 +11,7 @@ import {
   LibraryTagSchema,
   type LibraryUses,
   type ProjectRole,
+  plural,
 } from '@rideo/shared';
 import { ApiError } from '../../lib/api';
 
@@ -66,8 +67,8 @@ export const DESK_LABEL: Record<DeskUnitKind, string> = {
   'desk-figure': '3D figure',
 };
 
-/** "1 object", "3 objects". */
-export const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+/** "1 object", "3 objects": the studio's one count helper (docs/brand.md#voice). */
+export { plural };
 
 /**
  * The library row of a linked entity: "Library: Mira v2 · v3 available". `link` is the project status's row for it

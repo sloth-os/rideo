@@ -1,0 +1,6 @@
+// The shapes test/text.test.ts finds in the sources (docs/brand.md#voice): read, never run or compiled.
+const n = 2;
+export const reviewed = `${n} scene(s) reviewed`;
+export const rushed = `${n} lines are too long for their shots`;
+export const scheme = 'an absolute http(s) URL';
+export const Pending = () => <p>{n} frames are not indexed yet</p>;

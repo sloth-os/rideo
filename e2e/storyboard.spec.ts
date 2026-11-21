@@ -31,6 +31,8 @@ test('the storyboard is drawn, reordered and approved; the animatic plays and ex
   await api.readyForStoryboard(pid);
 
   await page.goto(`/p/${pid}/storyboard`);
+  // The count agrees with its noun (docs/brand.md#voice)
+  await expect(page.getByText('The first 2 scenes: approve a frame per shot')).toBeVisible();
   await expect(page.getByTestId('approve-storyboard')).toBeDisabled();
   await page.getByTestId('generate-storyboard').click();
   const states = page.getByTestId('board-state');
