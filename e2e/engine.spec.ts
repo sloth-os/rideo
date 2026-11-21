@@ -340,3 +340,106 @@ test('an editor tab on a cut of many clips keeps its export lease while media re
   expect(done.attempts).toBe(1);
   expect(done.error?.code).not.toBe('lease_expired');
 });
+
+/**
+ * Every live connection of a page, held: what the page sends reaches the server only once the test releases it.
+ * `drop` closes the connection from the server's side, as a restart or a network change would; the page reconnects with
+ * a new session.
+ */
+async function holdLive(page: Page): Promise<{ release: () => void; drop: () => Promise<void> }[]> {
+  const sockets: { release: () => void; drop: () => Promise<void> }[] = [];
+  await page.routeWebSocket(/\/api\/live/, (ws) => {
+    const server = ws.connectToServer();
+    const held: (string | Buffer)[] = [];
+    let open = false;
+    ws.onMessage((message) => (open ? server.send(message) : held.push(message)));
+    sockets.push({
+      release: () => {
+        open = true;
+        for (const message of held.splice(0)) server.send(message);
+      },
+      drop: () => server.close({ code: 4000, reason: 'dropped by the test' }),
+    });
+  });
+  return sockets;
+}
+
+/** The editor-job claims of a page: the session each names and the server's answer. */
+function claimsOf(page: Page): { status: number; sessionId: string }[] {
+  const claims: { status: number; sessionId: string }[] = [];
+  page.on('response', (r) => {
+    if (r.url().endsWith('/api/editor/claim'))
+      claims.push({ status: r.status(), sessionId: r.request().postDataJSON().sessionId });
+  });
+  return claims;
+}
+
+/** The errors a page writes to its console. */
+function consoleErrorsOf(page: Page): string[] {
+  const errors: string[] = [];
+  page.on('console', (m) => {
+    if (m.type() === 'error') errors.push(`${m.text()} (${m.location().url})`);
+  });
+  return errors;
+}
+
+/**
+ * Editor jobs over the live channel (docs/design/editor.md#editor-jobs): a tab claims its project's editor jobs only
+ * once the server follows the project for its live session (the `subscribed` answer), at the first connect and after
+ * a reconnect, and so does a second tab on the project, so a claim (HTTP) never overtakes the subscription (WebSocket)
+ * and is refused. Here the tabs' live messages reach the server only when the test lets them.
+ */
+test('an editor tab claims only once the server follows its project, after a reconnect too', async ({
+  page,
+  request,
+}, testInfo) => {
+  const api = new Api(request);
+  const { id: pid } = await api.call<{ id: string }>('POST', '/projects', {
+    kind: 'edit',
+    title: `Claims (${testInfo.project.name})`,
+    settings: TINY,
+  });
+  const sockets = await holdLive(page);
+  const claims = claimsOf(page);
+  const consoleErrors = consoleErrorsOf(page);
+
+  await page.goto(`/p/${pid}/overview`);
+  await expect(page.getByTestId('live-status')).toHaveAttribute('data-status', 'live');
+  // connected, the project shown, its subscription not yet at the server: no claim
+  await page.waitForTimeout(1000);
+  expect(claims).toEqual([]);
+  sockets[0]!.release();
+  await expect.poll(() => claims.length).toBeGreaterThan(0);
+  const first = claims[0]!.sessionId;
+
+  // a reconnect: the new session's subscription is held again, and so is its claim
+  const before = claims.length;
+  await sockets[0]!.drop();
+  await expect.poll(() => sockets.length).toBe(2);
+  await expect(page.getByTestId('live-status')).toHaveAttribute('data-status', 'live');
+  await page.waitForTimeout(1000);
+  expect(claims.length).toBe(before);
+  sockets[1]!.release();
+  await expect.poll(() => claims.length).toBeGreaterThan(before);
+  const second = claims.at(-1)!.sessionId;
+  expect(second).not.toBe(first);
+
+  // a second tab on the project: its own session, its claims held until its subscription is answered too
+  const other = await page.context().newPage();
+  const otherSockets = await holdLive(other);
+  const otherClaims = claimsOf(other);
+  const otherErrors = consoleErrorsOf(other);
+  await other.goto(`/p/${pid}/overview`);
+  await expect(other.getByTestId('live-status')).toHaveAttribute('data-status', 'live');
+  await other.waitForTimeout(1000);
+  expect(otherClaims).toEqual([]);
+  otherSockets[0]!.release();
+  await expect.poll(() => otherClaims.length).toBeGreaterThan(0);
+  expect(new Set(otherClaims.map((c) => c.sessionId)).size).toBe(1);
+  expect([first, second]).not.toContain(otherClaims[0]!.sessionId);
+
+  // no claim refused, and nothing in either console
+  expect([...claims, ...otherClaims].filter((c) => c.status !== 200)).toEqual([]);
+  expect([...consoleErrors, ...otherErrors]).toEqual([]);
+  await other.close();
+});
