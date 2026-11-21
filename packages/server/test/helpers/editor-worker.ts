@@ -17,6 +17,7 @@ import {
   parseProbe,
   planAudioWindows,
   planChunks,
+  plural,
   posterCommand,
   probeCommand,
   renderInputs,
@@ -227,7 +228,7 @@ export async function startEditorWorker(
         await beat(
           chunk.index + 1,
           chunks.length + 1,
-          `rendered ${chunk.index + 1}/${chunks.length} chunk(s)`,
+          `rendered ${chunk.index + 1}/${plural(chunks.length, 'chunk')}`,
         );
         staged++;
         if (opts.dieAfterParts !== undefined && staged >= opts.dieAfterParts) throw new Died();

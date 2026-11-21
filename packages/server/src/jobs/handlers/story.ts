@@ -27,6 +27,7 @@ import {
   type Project,
   type ProjectDocs,
   type ProjectSettings,
+  plural,
   promptVersionOf,
   type ReferenceCheckInput,
   type ReferenceCheckOutput,
@@ -237,7 +238,7 @@ export async function screenplayGenerate(deps: HandlerDeps, ctx: JobContext) {
       };
     },
     (r) =>
-      `Generate screenplay “${r.title}” (${r.beats} beats, ${r.scenes} scenes, ${r.characters} characters, ${r.elements} locations and props)${r.castOnly ? '; only the cast may appear' : ''}`,
+      `Generate screenplay “${r.title}” (${plural(r.beats, 'beat')}, ${plural(r.scenes, 'scene')}, ${plural(r.characters, 'character')}, ${plural(r.elements, 'location or prop', 'locations and props')})${r.castOnly ? '; only the cast may appear' : ''}`,
   );
   // The screenplay is reviewed before the cast is made (docs/design/ai-review.md#how-a-review-runs)
   await deps.services.aiReviews
@@ -352,7 +353,7 @@ async function adaptBrief(
           },
         });
       },
-      `Adapt the brief for the video model (${out.moments.length} moment(s))`,
+      `Adapt the brief for the video model (${plural(out.moments.length, 'moment')})`,
     );
     return prompt;
   } catch (err) {
@@ -461,7 +462,7 @@ export async function screenplayExtend(deps: HandlerDeps, ctx: JobContext) {
           tx.set(docPath.element(e.id), e);
       return added.length;
     },
-    (n) => `Write ${n} more scene(s) from the outline`,
+    (n) => `Write ${plural(n, 'more scene')} from the outline`,
   );
   return { added: result };
 }

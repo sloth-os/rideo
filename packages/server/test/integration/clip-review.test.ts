@@ -98,7 +98,7 @@ describe('a scene watched before the edit', () => {
     expect(await metric('rideo_clip_reviews_total', 'fixed')).toBeGreaterThanOrEqual(1);
     expect(await metric('rideo_clip_review_fixes_total', 'fixed')).toBeGreaterThanOrEqual(1);
     const log = await stack.api<any[]>('GET', `/projects/${pid}/history?limit=20`);
-    expect(log.map((c) => c.message)).toContain('Fix 1 shot(s) of scene 1 before the edit');
+    expect(log.map((c) => c.message)).toContain('Fix 1 shot of scene 1 before the edit');
 
     // A fix whose take fails its checks: the shot keeps the take it had (selectIfPasses)
     const kept = fixed.selectedTakeId;

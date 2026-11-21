@@ -15,6 +15,7 @@ import {
   type Project,
   type ProjectDocs,
   type ProjectSettings,
+  plural,
   type Resource,
   type Screenplay,
   type Shot,
@@ -504,7 +505,7 @@ export class ClipService extends Service {
         return [...byClip].map(([clipId, shots]) => this.overrideIn(tx, actor, clipId, shots, reason));
       },
       {
-        message: `Override consistency for ${takes.length} take(s): ${reason.trim().slice(0, 120)}`,
+        message: `Override consistency for ${plural(takes.length, 'take')}: ${reason.trim().slice(0, 120)}`,
         meta: { override: true },
       },
     );

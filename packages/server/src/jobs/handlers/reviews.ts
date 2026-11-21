@@ -5,6 +5,7 @@ import {
   autoApplicable,
   boardNeedsGeneration,
   boardState,
+  byCount,
   CHARACTER_VIEWS,
   type Character,
   type Clip,
@@ -24,6 +25,7 @@ import {
   mergeSubjectReviews,
   orderedShotCharacters,
   type ProjectDocs,
+  plural,
   type ReviewTargets,
   reviewSettings,
   type StageIssue,
@@ -136,7 +138,7 @@ async function reviewCastRounds(deps: HandlerDeps, ctx: JobContext) {
     // References still being drawn are waited for: the review is of the cast as it will be
     const drawing = activeReferenceJobs(deps, ctx);
     if (drawing.length) {
-      ctx.progress(0, 1, `waiting for ${drawing.length} reference job(s)`);
+      ctx.progress(0, 1, `waiting for ${plural(drawing.length, 'reference job')}`);
       await ctx.waitFor(drawing.map((j) => j.id));
     }
     docs = await docsFor(deps, ctx);
@@ -275,7 +277,7 @@ async function reviewCastRounds(deps: HandlerDeps, ctx: JobContext) {
     if (review.verdict!.passed) return finish(deps, ctx, 'cast', review, round);
     const todo = settings.autoRevise && round - 1 < settings.maxRounds ? autoApplicable(review) : [];
     if (!todo.length) return finish(deps, ctx, 'cast', review, round);
-    ctx.progress(total, total, `drawing ${todo.length} cast member(s) again`);
+    ctx.progress(total, total, `drawing ${plural(todo.length, 'cast member')} again`);
     await markApplied(
       deps,
       ctx,
@@ -697,7 +699,7 @@ export function assembleCutReview(docs: ProjectDocs) {
   const failedTakes = items.length - passing;
   return {
     scores,
-    summary: `${passing} of ${items.length} takes of the cut pass every check${watchesTakes(docs.project.settings) ? ', watched whole' : ''}; ${weights.length} scene(s) reviewed${failedTakes ? `; ${failedTakes} take(s) to fix` : ''}.`,
+    summary: `${passing} of ${plural(items.length, 'take')} of the cut ${byCount(passing, 'passes', 'pass')} every check${watchesTakes(docs.project.settings) ? ', watched whole' : ''}; ${plural(weights.length, 'scene')} reviewed${failedTakes ? `; ${plural(failedTakes, 'take')} to fix` : ''}.`,
     strengths: [],
     issues: issues.slice(0, 200),
     recommendations: recommendations.slice(0, 100),
@@ -735,7 +737,11 @@ async function reviewCutRounds(deps: HandlerDeps, ctx: JobContext) {
         return !!take?.video && !take.consistency.quality?.watch;
       });
       if (unwatched.length) {
-        ctx.progress(0.1, 1, `watching ${unwatched.length} take(s) of the cut whole (round ${round})`);
+        ctx.progress(
+          0.1,
+          1,
+          `watching ${plural(unwatched.length, 'take')} of the cut whole (round ${round})`,
+        );
         const job = await ctx.spawn('takes.watch', {
           takes: unwatched.map(({ clipId, shotId, takeId }) => ({ clipId, shotId, takeId })),
         });
@@ -747,7 +753,7 @@ async function reviewCutRounds(deps: HandlerDeps, ctx: JobContext) {
     if (settings.scenes) {
       const stale = cutClips(docs).filter((c) => c.shots.length >= 2 && clipReviewState(c) !== 'current');
       if (stale.length) {
-        ctx.progress(0.4, 1, `reviewing ${stale.length} scene(s) of the cut (round ${round})`);
+        ctx.progress(0.4, 1, `reviewing ${plural(stale.length, 'scene')} of the cut (round ${round})`);
         const jobs = [];
         for (const c of stale)
           jobs.push(await ctx.spawn('clip.review', { clipId: c.id }, { dedupeKey: `review:${c.id}` }));
@@ -772,7 +778,7 @@ async function reviewCutRounds(deps: HandlerDeps, ctx: JobContext) {
         error: undefined,
         ...withCarried(parts, docs.aiReviews.cut, round),
       },
-      `Review the cut (round ${round}): ${parts.verdict.passed ? 'passed' : `${parts.issues.length} issue(s)`}`,
+      `Review the cut (round ${round}): ${parts.verdict.passed ? 'passed' : plural(parts.issues.length, 'issue')}`,
     );
     deps.metrics.aiReviewScore.observe({ stage: 'cut' }, review.verdict!.score);
     ctx.log.info(
@@ -799,7 +805,7 @@ async function reviewCutRounds(deps: HandlerDeps, ctx: JobContext) {
           })
         : [];
     if (!todo.length) return finish(deps, ctx, 'cut', review, round);
-    ctx.progress(0.7, 1, `generating ${todo.length} shot(s) of the cut again`);
+    ctx.progress(0.7, 1, `generating ${plural(todo.length, 'shot')} of the cut again`);
     await markApplied(
       deps,
       ctx,

@@ -6,6 +6,7 @@ import type {
   SoundCheckInput,
   SoundCheckOutput,
 } from '@rideo/shared';
+import { plural } from '@rideo/shared';
 
 /**
  * Feedback tasks of the mock (docs/design/feedback.md#mock-gateway): deterministic answers derived from the input, so
@@ -128,7 +129,7 @@ export function feedbackScene(
       ? (Object.entries(scores).map(([dimension, score]) => ({ dimension, score })) as unknown as Scores)
       : scores,
     transcript: [],
-    summary: `${watched ? 'Watched: s' : 'S'}cene ${input.scene.number} (${input.scene.heading}) seen in ${strips} strip(s)${watched ? ' and as one video' : ''}: ${input.shots.length} shot(s).`,
+    summary: `${watched ? 'Watched: s' : 'S'}cene ${input.scene.number} (${input.scene.heading}) seen in ${plural(strips, 'strip')}${watched ? ' and as one video' : ''}: ${plural(input.shots.length, 'shot')}.`,
     strengths: ['The cast stays recognisable from shot to shot.'],
     issues,
     recommendations: [
@@ -177,7 +178,7 @@ export function feedbackListen(input: FeedbackSceneInput, watched: boolean): Fee
   return {
     scores: { dialogue: mumbled.length ? 4 : 8, sound: 8 },
     transcript,
-    summary: `Scene ${input.scene.number} heard: ${transcript.length} line(s).`,
+    summary: `Scene ${input.scene.number} heard: ${plural(transcript.length, 'line')}.`,
     strengths: ['Clear voices.'],
     issues: mumbled.map((s) => ({
       shot: s.index,
@@ -206,7 +207,7 @@ export function feedbackFilm(input: FeedbackFilmInput): FeedbackFilmOutput {
   }
   return {
     scores,
-    summary: `${input.film.title}: ${input.scenes.length} scene(s) reviewed.`,
+    summary: `${input.film.title}: ${plural(input.scenes.length, 'scene')} reviewed.`,
     strengths: ['A clear premise.'],
     recommendations: [
       {

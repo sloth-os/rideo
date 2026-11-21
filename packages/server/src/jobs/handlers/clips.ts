@@ -17,6 +17,7 @@ import {
   normalizePlannedShots,
   plannedDuration,
   planShotGroups,
+  plural,
   promptVersionOf,
   reviewEnabled,
   reviewState,
@@ -167,7 +168,7 @@ export async function clipPlan(deps: HandlerDeps, ctx: JobContext) {
       return next;
     },
     (c) =>
-      `Plan clip ${c.index + 1} “${c.title}” (${c.shots.length} shots, ${c.shots.reduce((s, x) => s + x.durationSec, 0).toFixed(0)}s)`,
+      `Plan clip ${c.index + 1} “${c.title}” (${plural(c.shots.length, 'shot')}, ${c.shots.reduce((s, x) => s + x.durationSec, 0).toFixed(0)}s)`,
   );
   if (thenGenerate) {
     const fresh = await docsFor(deps, ctx);
@@ -206,7 +207,7 @@ export async function clipGenerate(deps: HandlerDeps, ctx: JobContext) {
       c.status = clipStatusOf(c);
       tx.set(docPath.clip(clipId), c);
     },
-    `Queue ${todo.length} shot(s) of clip ${clip.index + 1}`,
+    `Queue ${plural(todo.length, 'shot')} of clip ${clip.index + 1}`,
   );
   // Multi-shot models render groups of consecutive shots in one request (docs/design/multi-shot.md#when).
   const settings = docs.project.settings;
@@ -259,7 +260,7 @@ export async function clipGenerate(deps: HandlerDeps, ctx: JobContext) {
       c.status = clipStatusOf(c);
       tx.set(docPath.clip(clipId), c);
     },
-    `Clip ${clip.index + 1} generated (${results.length - failed.length}/${results.length} shots)`,
+    `Clip ${clip.index + 1} generated (${results.length - failed.length}/${plural(results.length, 'shot')})`,
   );
   if (failed.length === results.length) {
     throw new AppError(
@@ -393,7 +394,7 @@ export async function batchGenerate(deps: HandlerDeps, ctx: JobContext) {
     ctx.progress(
       Math.min(planned, target),
       target,
-      `${Math.round(planned)}s of ${Math.round(target)}s planned · ${started.size} clip(s) generating or done`,
+      `${Math.round(planned)}s of ${Math.round(target)}s planned · ${plural(started.size, 'clip')} generating or done`,
     );
     for (let i = inFlight.length - 1; i >= 0; i--) {
       if (['succeeded', 'failed', 'cancelled'].includes(deps.jobs.find(inFlight[i]!.id)?.status ?? ''))
@@ -555,7 +556,7 @@ export async function batchGenerate(deps: HandlerDeps, ctx: JobContext) {
           const [reviewed] = await ctx.waitFor([reviewJob.id]);
           const state = reviewState(await docsFor(deps, ctx), 'screenplay');
           if (reviewed?.status !== 'succeeded' || (state !== 'passed' && state !== 'overridden')) {
-            stopReason = `the new scenes did not pass their review (${written.length} scene(s))`;
+            stopReason = `the new scenes did not pass their review (${plural(written.length, 'scene')})`;
             break;
           }
         }

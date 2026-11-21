@@ -477,7 +477,7 @@ describe('story → movie workflow (REST, mock gateway)', () => {
       expect(clips.map((c) => c.id)).toEqual([clip.id]);
       const last = (await stack.api<any[]>('GET', `/projects/${pid}/history?limit=1`))[0];
       expect(last.message).toBe(
-        `Override consistency for ${rest.length} take(s): Visually verified against the references`,
+        `Override consistency for ${rest.length} take${rest.length === 1 ? '' : 's'}: Visually verified against the references`,
       );
     }
     const approved = await stack.api<Clip>('POST', `/projects/${pid}/clips/${clip.id}/approve`);

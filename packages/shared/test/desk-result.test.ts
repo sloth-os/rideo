@@ -256,6 +256,14 @@ describe('planDeskResult', () => {
       "the clip has 84 frames and the shot 72 (3 s at 24 fps): set its length back in the desk, or change the shot's duration in the studio",
     );
     expect(DESK_REFUSALS.length(10, 8, 1 / 3, 24)).toContain('(0.33 s at 24 fps)');
+    // a clip of one frame is counted in the singular (docs/brand.md#voice)
+    expect(DESK_REFUSALS.length(1, 24, 1, 24)).toMatch(
+      /^the clip has 1 frame and the shot 24 \(1 s at 24 fps\): /,
+    );
+    expect(DESK_REFUSALS.update(1, 24, 1, 24)).toMatch(
+      /^the clip has 1 frame and the shot 24 \(1 s at 24 fps\): /,
+    );
+    expect(DESK_REFUSALS.update(2, 24, 1, 24)).toMatch(/^the clip has 2 frames and the shot 24 /);
     // the shot's duration changed in rideo since the brief: render it again
     const retimed = { ...clip, shots: [s0, { ...s1, durationSec: 3 }] };
     expect(reasons(planDeskResult({ result, project, clip: retimed, mode: 'camera', brief }))).toEqual([

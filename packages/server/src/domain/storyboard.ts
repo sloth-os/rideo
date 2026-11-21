@@ -19,6 +19,7 @@ import {
   type ProjectDocs,
   parseFdx,
   parseFountain,
+  plural,
   type Screenplay,
   type ScriptFormat,
   StageReviewSchema,
@@ -172,7 +173,7 @@ export class StoryboardService extends Service {
         }
         return { approved };
       },
-      { message: (r) => `Approve ${r.approved} storyboard frame(s)` },
+      { message: (r) => `Approve ${plural(r.approved, 'storyboard frame')}` },
     );
     return result;
   }
@@ -198,7 +199,7 @@ export class StoryboardService extends Service {
         if (approved) tx.set(docPath.clip(clipId), next);
         return { approved, index: clip.index };
       },
-      { message: (r) => `Approve ${r.approved} storyboard frame(s) of scene ${r.index + 1}` },
+      { message: (r) => `Approve ${plural(r.approved, 'storyboard frame')} of scene ${r.index + 1}` },
     );
     return { approved: result.approved };
   }
@@ -255,7 +256,7 @@ export class StoryboardService extends Service {
     if (!timeline.tracks.some((t) => t.kind === 'video' && t.items.length))
       throw invalid('there are no storyboard frames yet; generate the storyboard first');
     await this.mutate(actor, projectId, (tx) => tx.set(docPath.animatic(), timeline), {
-      message: `Build the animatic (${timeline.tracks.find((t) => t.kind === 'video')!.items.length} frames)`,
+      message: `Build the animatic (${plural(timeline.tracks.find((t) => t.kind === 'video')!.items.length, 'frame')})`,
     });
     return timeline;
   }
@@ -363,14 +364,14 @@ export class StoryboardService extends Service {
       },
       {
         message: (r) =>
-          `Import screenplay “${r.title}” (${r.scenes} scenes, ${r.characters} characters, ${r.elements} locations)`,
+          `Import screenplay “${r.title}” (${plural(r.scenes, 'scene')}, ${plural(r.characters, 'character')}, ${plural(r.elements, 'location')})`,
       },
     );
     this.activity(
       projectId,
       actor,
       'screenplay.import',
-      `Imported “${result.title}” (${result.scenes} scenes)`,
+      `Imported “${result.title}” (${plural(result.scenes, 'scene')})`,
     );
     return result;
   }

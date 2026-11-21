@@ -15,6 +15,7 @@ import {
   isTerminalJob,
   mergeSceneReviews,
   type ProjectDocs,
+  plural,
   type ReviewStage,
   type ReviewState,
   type ReviewTargets,
@@ -446,7 +447,7 @@ export async function reviseScreenplayWith(
           tx.set(docPath.element(e.id), e);
       return changed.length;
     },
-    (n) => `Revise ${n} scene(s) after the screenplay review`,
+    (n) => `Revise ${plural(n, 'scene')} after the screenplay review`,
   );
   return result;
 }
@@ -532,7 +533,7 @@ async function reviewScreenplayRounds(deps: HandlerDeps, ctx: JobContext) {
     ctx.progress(
       round - 0.5,
       settings.maxRounds + 1,
-      `revising ${instructions.length} part(s) of the screenplay`,
+      `revising ${plural(instructions.length, 'part')} of the screenplay`,
     );
     await reviseScreenplayWith(deps, ctx, instructions);
     await markApplied(
@@ -671,7 +672,11 @@ async function reviewStoryboardRounds(deps: HandlerDeps, ctx: JobContext) {
     const answers: ({ number: number; durationSec: number; out: StageReviewOutput } | undefined)[] =
       new Array(clips.length);
     let reviewed = 0;
-    ctx.progress(0, clips.length, `reviewing the storyboard of ${clips.length} scene(s) (round ${round})`);
+    ctx.progress(
+      0,
+      clips.length,
+      `reviewing the storyboard of ${plural(clips.length, 'scene')} (round ${round})`,
+    );
     await eachLimit(
       clips.map((clip, k) => ({ clip, k })),
       subjectsAtOnce(SCENE_REVIEW_CONCURRENCY, settings.judgeSamples),

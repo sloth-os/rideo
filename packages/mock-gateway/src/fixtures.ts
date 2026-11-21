@@ -27,6 +27,7 @@ import type {
   TranslateInput,
   TranslateOutput,
 } from '@rideo/shared';
+import { plural } from '@rideo/shared';
 import { decodePng, isPng } from './png';
 import { allSignatures, colorDistance, presenceRatio, type Rgb } from './signature';
 
@@ -367,7 +368,7 @@ export function clipPlan(input: ClipPlanInput): ClipPlanOutput {
 
 export function mediaDescribe(input: MediaDescribeInput): MediaDescribeOutput {
   return {
-    summary: `${input.imageCount} image(s) and ${input.videoFrameCount} video frame(s) of a stormy coastline at dusk.`,
+    summary: `${plural(input.imageCount, 'image')} and ${plural(input.videoFrameCount, 'video frame')} of a stormy coastline at dusk.`,
     style: 'overcast, desaturated, handheld documentary feel',
     setting: 'windswept coast with a white lighthouse',
     people: Array.from({ length: Math.min(3, input.imageCount) }, (_, i) => ({
@@ -505,7 +506,7 @@ export function footageAnalyze(input: FootageAnalyzeInput): FootageAnalyzeOutput
     });
   }
   return {
-    summary: `${Math.round(input.durationSec)}s of footage in ${input.scenes.length} scene(s) with ${input.silences.length} silence(s) and ${input.blackSegments.length} black segment(s).`,
+    summary: `${Math.round(input.durationSec)}s of footage in ${plural(input.scenes.length, 'scene')} with ${plural(input.silences.length, 'silence')} and ${plural(input.blackSegments.length, 'black segment')}.`,
     suggestions,
   };
 }

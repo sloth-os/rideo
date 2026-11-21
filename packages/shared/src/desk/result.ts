@@ -10,6 +10,7 @@ import {
   type DeskShotResult,
 } from '../schemas/desk';
 import type { Project } from '../schemas/project';
+import { plural } from '../util/text';
 import { deskFormat, deskFrames } from './brief';
 
 /**
@@ -67,13 +68,13 @@ export const DESK_REFUSALS = {
   changed: 'the shot changed since the desk rendered it: render it again',
   /** Nothing changed in rideo: the person gave the shot another length in the desk. */
   length: (clipFrames: number, shotFrames: number, durationSec: number, fps: number) =>
-    `the clip has ${clipFrames} frames and the shot ${shotFrames} (${seconds(durationSec)} s at ${fps} fps): set its length back in the desk, or change the shot's duration in the studio`,
+    `the clip has ${plural(clipFrames, 'frame')} and the shot ${shotFrames} (${seconds(durationSec)} s at ${fps} fps): set its length back in the desk, or change the shot's duration in the studio`,
   /**
    * Nothing changed in rideo since the brief, but the brief retimed the shot since the desk staged it, and the person
    * sent it without Update shots.
    */
   update: (clipFrames: number, shotFrames: number, durationSec: number, fps: number) =>
-    `the clip has ${clipFrames} frames and the shot ${shotFrames} (${seconds(durationSec)} s at ${fps} fps): the brief changed the shot's length since the desk staged it; press Update shots in the desk, then send again`,
+    `the clip has ${plural(clipFrames, 'frame')} and the shot ${shotFrames} (${seconds(durationSec)} s at ${fps} fps): the brief changed the shot's length since the desk staged it; press Update shots in the desk, then send again`,
   /** Nothing changed in rideo: the desk rendered another size or frame rate than the brief's. */
   format: (
     clip: { width: number; height: number; fps: number },

@@ -1,9 +1,11 @@
 import {
+  byCount,
   type Localization,
   localizationState,
   localizeTimeline,
   newId,
   type ProjectDocs,
+  plural,
   type Timeline,
 } from '@rideo/shared';
 import { AppError, invalid } from '../errors';
@@ -31,7 +33,7 @@ export function cutVariant(docs: ProjectDocs, opts: { language: string | null; d
   if (lines.length)
     throw new AppError(
       'localization_incomplete',
-      `${lines.length} line(s) of the cut have no current ${loc.name} translation: translate again`,
+      `${plural(lines.length, 'line')} of the cut ${byCount(lines.length, 'has', 'have')} no current ${loc.name} translation: translate again`,
       lines.slice(0, 20).map((key) => ({ line: key })),
     );
   if (opts.dubbed) {
@@ -39,7 +41,7 @@ export function cutVariant(docs: ProjectDocs, opts: { language: string | null; d
     if (takes.length)
       throw new AppError(
         'localization_incomplete',
-        `${takes.length} speaking take(s) of the cut have no current ${loc.name} dub: dub again`,
+        `${plural(takes.length, 'speaking take')} of the cut ${byCount(takes.length, 'has', 'have')} no current ${loc.name} dub: dub again`,
         takes.slice(0, 20).map((takeId) => ({ takeId })),
       );
   }

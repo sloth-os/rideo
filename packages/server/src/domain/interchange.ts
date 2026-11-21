@@ -12,6 +12,7 @@ import {
   normalizeMediaBase,
   type OtioClipRef,
   type ProjectDocs,
+  plural,
   type Source,
   SourceSchema,
   sortedClips,
@@ -156,7 +157,9 @@ export class InterchangeService extends Service {
       (tx) => {
         tx.set(docPath.timeline(), result.timeline);
       },
-      { message: `Import ${result.name ? `“${result.name}” ` : ''}from OTIO (${result.clips} clips)` },
+      {
+        message: `Import ${result.name ? `“${result.name}” ` : ''}from OTIO (${plural(result.clips, 'clip')})`,
+      },
     );
     this.deps.metrics.interchange.inc({ format: 'otio', direction: 'import' });
     this.deps.log.info(

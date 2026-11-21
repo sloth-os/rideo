@@ -16,6 +16,7 @@ import {
   VideoItemSchema,
 } from '../schemas/timeline';
 import { itemDuration, itemEnd, layoutPrimary, primaryTrack } from '../timeline/ops';
+import { plural } from '../util/text';
 import {
   clipLabel,
   hasSound,
@@ -536,7 +537,7 @@ export function fromOtio(
     pending = null;
     pictureItems.push(item);
   }
-  if (gaps) note(`${gaps} gap(s) in the picture track (closed: Rideo's picture track has no gaps)`);
+  if (gaps) note(`${plural(gaps, 'gap')} in the picture track (closed: Rideo's picture track has no gaps)`);
   // Transitions stay within half the shorter neighbour, as the editor requires.
   pictureItems.forEach((item, i) => {
     if (!item.transitionIn || i === 0) return;

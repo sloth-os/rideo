@@ -1,5 +1,6 @@
 import {
   type EndpointStatus,
+  plural,
   SETTING_ENDPOINT_IDS,
   SETTING_FIELDS,
   type SettingEndpointId,
@@ -231,6 +232,6 @@ export class SettingsService {
     const count = Object.values(models).reduce((n, m) => n + m.length, 0);
     return failures.length === 3
       ? { ok: false, detail: `The gateway answered but listed no models (${failures.join('; ')})` }
-      : { ok: true, detail: `Connected: ${count} model(s)`, models };
+      : { ok: true, detail: `Connected: ${plural(count, 'model')}`, models };
   }
 }

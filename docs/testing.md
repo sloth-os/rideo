@@ -107,6 +107,11 @@ RIDEO_TEST_WEBDAV_URL=http://rideo:rideo@localhost:8080/ npx vitest run --projec
   for any accent, the brand tokens' WCAG contrast, merging); ustar headers (long names in the prefix, base-256 sizes,
   checksums), the entries a project file carries and the unsafe ones it refuses, the manifest, and the history
   rewrite of a copy (every commit names the new id, other documents and subtrees shared, merges kept).
+- **shared, counts** (`text.test.ts`, `workflow.test.ts`, `storyboard.test.ts`, `desk-result.test.ts`,
+  [voice](brand.md#voice)): `plural` and `byCount` (1 in the singular, 0, 2 and more in the plural, a plural of its own,
+  the word after the count chosen by the same rule); the gates' messages for 1 and for 2 (characters not locked or
+  without an approved reference, storyboard scenes to plan and draw, storyboard frames approved); a desk's clip of one
+  frame refused in the singular.
 - **server**: repository commit, log, diff, restore, branches, tags, coalescing and GC on `MemoryBackend`; the work
   tree's external edits (a listing that leaves out a file deletes nothing, a confirmed deletion does); on a store where
   every operation takes a while (`repo.test.ts`), a commit's objects written together and the ref after them, the
@@ -346,7 +351,8 @@ starts, a file or a folder (by its newest file) more than a day old removed and 
   table, unpriced usage, discarded attempts, the project ledger written behind and read back (a failed read made again,
   an unreadable ledger never written over, a false 404 read again, a missing one rebuilt from the jobs); the new metrics
   (`rideo_job_wait_seconds`, lane gauges, LLM seconds and tokens, HTTP route latency, storage buckets to 300 s);
-  the retrospective rules on fixtures (each rule firing and staying quiet); applying and dismissing recommendations
+  the retrospective rules on fixtures (each rule firing and staying quiet; each count's noun, verb and pronoun agreeing
+  for 1 and for 2); applying and dismissing recommendations
   (`feedback_stale`); the telemetry endpoint (validation, the cap, off).
 
 ### Integration

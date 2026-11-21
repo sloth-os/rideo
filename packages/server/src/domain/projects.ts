@@ -21,6 +21,7 @@ import {
   type ProjectSettingsPatch,
   ProjectSettingsSchema,
   type ProjectSummary,
+  plural,
   type Resource,
   type UpdateProjectInput,
   type WorkflowEvaluation,
@@ -201,7 +202,7 @@ export class ProjectService extends Service {
       },
       {
         message: (a) =>
-          `Set access: ${a.visibility === 'studio' ? 'studio-visible, ' : ''}${a.members.length} member(s)${a.invites.length ? `, ${a.invites.length} invited` : ''}`,
+          `Set access: ${a.visibility === 'studio' ? 'studio-visible, ' : ''}${plural(a.members.length, 'member')}${a.invites.length ? `, ${a.invites.length} invited` : ''}`,
       },
     );
     await this.deps.accounts.record(principal, 'project.access', {
@@ -417,7 +418,7 @@ export class ProjectService extends Service {
       (tx) => {
         for (const r of imported) tx.set(docPath.resource(r.id), r);
       },
-      { message: `Import ${imported.length} file(s) from the WebDAV inbox` },
+      { message: `Import ${plural(imported.length, 'file')} from the WebDAV inbox` },
     );
     const branch = await this.branchOf(projectId);
     for (const r of imported.filter((x) => x.kind !== 'image')) {

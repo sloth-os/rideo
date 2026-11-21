@@ -13,6 +13,7 @@ import {
   orderedShotCharacters,
   orderedShotElements,
   type ProjectDocs,
+  plural,
   promptVersionOf,
   type Shot,
   type ShotBoard,
@@ -269,7 +270,7 @@ export async function storyboardGenerate(deps: HandlerDeps, ctx: JobContext) {
     plans.push(await ctx.spawn('clip.plan', { sceneId: scene.id }, { dedupeKey: `plan:${scene.id}` }));
   }
   if (plans.length) {
-    ctx.progress(0.1, 1, `planning ${plans.length} scene(s)`);
+    ctx.progress(0.1, 1, `planning ${plural(plans.length, 'scene')}`);
     await ctx.waitFor(plans.map((j) => j.id));
     docs = await docsFor(deps, ctx);
   }
@@ -287,7 +288,7 @@ export async function storyboardGenerate(deps: HandlerDeps, ctx: JobContext) {
     docs.characters,
     docs.elements,
   );
-  ctx.progress(0.2, 1, `drawing ${targets.length} frame(s)`);
+  ctx.progress(0.2, 1, `drawing ${plural(targets.length, 'frame')}`);
   const done = await drawBoards(ctx, targets, { sheets: docs.project.settings.storyboard.sheet });
   // The frames are reviewed before any video (docs/design/ai-review.md#how-a-review-runs)
   await deps.services.aiReviews

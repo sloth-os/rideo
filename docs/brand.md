@@ -89,3 +89,8 @@ A play triangle whose left edge forms the stem of an "R", in Ember on a dark til
 
 Direct and production-minded: "Lock Mira to start generating", "3 shots need review", "Rendered 45:12 ·
 watermarked". Say what happens, never hype it.
+
+A count agrees with its noun and its verb: "1 shot needs review", "3 shots need review", "1 of 4 lines is not
+heard", never "shot(s)" or "1 shots". Every message that shows a count, in the studio, the server's messages, job
+progress, commit messages and the MCP tools' answers, writes it with `plural` and chooses the verb or pronoun after it
+with `byCount` (`@rideo/shared`).

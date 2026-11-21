@@ -8,6 +8,7 @@ import type {
   TakeWatchInput,
   TakeWatchOutput,
 } from '@rideo/shared';
+import { plural } from '@rideo/shared';
 
 /**
  * AI review tasks of the mock (docs/design/ai-review.md#mock-gateway): deterministic answers from the input, so tests
@@ -78,7 +79,7 @@ export function screenplayReview(input: ScreenplayReviewInput): StageReviewOutpu
   }
   return {
     scores,
-    summary: `${input.screenplay.title}: ${input.screenplay.scenes.length} scene(s) reviewed, ${issues.length} problem(s).`,
+    summary: `${input.screenplay.title}: ${plural(input.screenplay.scenes.length, 'scene')} reviewed, ${plural(issues.length, 'problem')}.`,
     strengths: ['A clear premise.'],
     issues,
     recommendations: [
@@ -149,7 +150,7 @@ export function storyboardReview(input: StoryboardSceneReviewInput, frames: numb
   }
   return {
     scores,
-    summary: `Scene ${input.scene.number}: ${input.shots.length} shot(s), ${frames} frame(s).`,
+    summary: `Scene ${input.scene.number}: ${plural(input.shots.length, 'shot')}, ${plural(frames, 'frame')}.`,
     strengths: ['Readable staging.'],
     issues,
     recommendations,
@@ -195,7 +196,7 @@ export function castReview(input: CastReviewInput, references: number): StageRev
       clarity: 8,
       style: 8,
     },
-    summary: `${subject.name}: ${references} reference(s) reviewed.`,
+    summary: `${subject.name}: ${plural(references, 'reference')} reviewed.`,
     strengths: references ? [`${subject.name} reads clearly.`] : [],
     issues: bad
       ? [
