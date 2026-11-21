@@ -674,11 +674,12 @@ describe('accounts', () => {
           resolve(seen);
         }, 800);
       });
-    // the director (a new session) and an admin follow the project
-    expect(await listen(await signedIn('ana@studio.test'))).not.toContainEqual(
-      expect.stringMatching(/^error:forbidden/),
-    );
-    expect(await listen(users.mira!)).not.toContainEqual(expect.stringMatching(/^error:forbidden/));
+    // the director (a new session) and an admin follow the project: the server answers their subscribe
+    // (docs/design/realtime-sync.md#server--client)
+    for (const seen of [await listen(await signedIn('ana@studio.test')), await listen(users.mira!)]) {
+      expect(seen).not.toContainEqual(expect.stringMatching(/^error:forbidden/));
+      expect(seen).toContain('subscribed');
+    }
     const ben = as({ cookie: users.ben });
     // Ben loses access: his subscription is refused
     await as({ cookie: users.ana })('PUT', `/projects/${pid}/access`, {
@@ -687,7 +688,10 @@ describe('accounts', () => {
         { email: 'cleo@studio.test', role: 'reviewer' },
       ],
     });
-    expect(await listen(users.ben!)).toContainEqual(expect.stringMatching(/^error:forbidden/));
+    const refused = await listen(users.ben!);
+    expect(refused).toContainEqual(expect.stringMatching(/^error:forbidden/));
+    // ...and not answered `subscribed`: his tab claims none of the project's editor jobs
+    expect(refused).not.toContain('subscribed');
     await expect(ben('GET', `/projects/${pid}/state`)).rejects.toMatchObject({ status: 403 });
   });
 });

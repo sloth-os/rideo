@@ -52,7 +52,55 @@ describe('live hub', () => {
     const late = new FakeSocket();
     hub.attach(late);
     late.receive({ type: 'subscribe', projectId: 'p2', lastSeq: 2 });
-    expect(late.sent.at(-1)).toMatchObject({ type: 'resync', projectId: 'p2' });
+    expect(late.sent.slice(-2)).toMatchObject([
+      { type: 'resync', projectId: 'p2' },
+      { type: 'subscribed', projectId: 'p2' },
+    ]);
+    hub.close();
+  });
+
+  // docs/design/realtime-sync.md#server--client, docs/design/editor.md#editor-jobs
+  it('answers a subscribe once it follows the project, after the events it replays, with its ref', async () => {
+    const hub = new LiveHub();
+    for (let i = 0; i < 3; i++) hub.activity('p1', actor, 'x', `event ${i}`);
+    const gates = new Map<string, () => void>();
+    const authorize = (projectId: string) =>
+      new Promise<boolean>((resolve) => gates.set(projectId, () => resolve(projectId !== 'p-closed')));
+    const tab = new FakeSocket();
+    const id = hub.attach(tab, undefined, { userId: 'u1', authorize });
+    // what a claim would find when the answer is sent: the answer never comes before the session follows the project
+    const followedAtAnswer: boolean[] = [];
+    const send = tab.send.bind(tab);
+    tab.send = (data: string) => {
+      if (JSON.parse(data).type === 'subscribed') followedAtAnswer.push(hub.isSubscribed(id, 'p1'));
+      send(data);
+    };
+    const tick = () => new Promise((r) => setTimeout(r, 5));
+    tab.receive({ type: 'subscribe', projectId: 'p1', lastSeq: 1, ref: 7 });
+    await tick();
+    // still asking whether the tab may follow: no answer, and a claim would be refused
+    expect(tab.sent.filter((m) => m.type === 'subscribed')).toEqual([]);
+    expect(hub.isSubscribed(id, 'p1')).toBe(false);
+    gates.get('p1')!();
+    await tick();
+    expect(tab.sent.slice(1).map((m) => (m.type === 'event' ? m.seq : m))).toEqual([
+      2,
+      3,
+      { type: 'subscribed', projectId: 'p1', ref: 7 },
+    ]);
+    expect(followedAtAnswer).toEqual([true]);
+    // a refused subscribe gets the error, not the answer
+    tab.receive({ type: 'subscribe', projectId: 'p-closed', ref: 8 });
+    await tick();
+    gates.get('p-closed')!();
+    await tick();
+    expect(tab.sent.at(-1)).toEqual({ type: 'error', message: 'forbidden: you may not follow p-closed' });
+    expect(tab.sent.filter((m) => m.type === 'subscribed')).toHaveLength(1);
+    // a subscribe without a ref gets an answer without one
+    const plain = new FakeSocket();
+    hub.attach(plain);
+    plain.receive({ type: 'subscribe', projectId: 'p1' });
+    expect(plain.sent.at(-1)).toEqual({ type: 'subscribed', projectId: 'p1' });
     hub.close();
   });
 

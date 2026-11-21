@@ -184,14 +184,19 @@ export class LiveHub {
     return session.id;
   }
 
-  /** Subscribes a session to a project when it may read it. */
-  private async follow(session: Session, projectId: string, lastSeq?: number): Promise<void> {
+  /**
+   * Subscribes a session to a project when it may read it, then answers `subscribed` (with the `subscribe`'s `ref`):
+   * from that answer on, an editor-job claim of the session for the project finds it followed
+   * (docs/design/editor.md#editor-jobs).
+   */
+  private async follow(session: Session, projectId: string, lastSeq?: number, ref?: number): Promise<void> {
     if (session.authorize && !(await session.authorize(projectId))) {
       this.send(session, { type: 'error', message: `forbidden: you may not follow ${projectId}` });
       return;
     }
     session.projects.add(projectId);
     if (lastSeq !== undefined) this.replay(session, projectId, lastSeq);
+    this.send(session, { type: 'subscribed', projectId, ...(ref === undefined ? {} : { ref }) });
   }
 
   private onMessage(session: Session, raw: Buffer | string): void {
@@ -211,7 +216,7 @@ export class LiveHub {
     const msg = res.data;
     switch (msg.type) {
       case 'subscribe': {
-        void this.follow(session, msg.projectId, msg.lastSeq);
+        void this.follow(session, msg.projectId, msg.lastSeq, msg.ref);
         break;
       }
       case 'unsubscribe':
