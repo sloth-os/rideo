@@ -364,6 +364,49 @@ async function holdLive(page: Page): Promise<{ release: () => void; drop: () => 
   return sockets;
 }
 
+/**
+ * The `subscribed` answers the server sends a page, held: the page learns that the server follows a project only when
+ * the test releases them. Everything else passes both ways at once.
+ */
+async function holdSubscribed(page: Page): Promise<{ held: () => number; release: () => void }> {
+  const held: (() => void)[] = [];
+  let count = 0;
+  let open = false;
+  await page.routeWebSocket(/\/api\/live/, (ws) => {
+    const server = ws.connectToServer();
+    server.onMessage((message) => {
+      let type: unknown;
+      try {
+        type = typeof message === 'string' ? JSON.parse(message).type : undefined;
+      } catch {
+        type = undefined;
+      }
+      if (open || type !== 'subscribed') {
+        ws.send(message);
+        return;
+      }
+      count++;
+      held.push(() => ws.send(message));
+    });
+  });
+  return {
+    held: () => count,
+    release: () => {
+      open = true;
+      for (const send of held.splice(0)) send();
+    },
+  };
+}
+
+/** The editor-job claims a page sends, before any answer: the session each names. */
+function claimsSentBy(page: Page): string[] {
+  const sent: string[] = [];
+  page.on('request', (r) => {
+    if (r.url().endsWith('/api/editor/claim')) sent.push(r.postDataJSON().sessionId);
+  });
+  return sent;
+}
+
 /** The editor-job claims of a page: the session each names and the server's answer. */
 function claimsOf(page: Page): { status: number; sessionId: string }[] {
   const claims: { status: number; sessionId: string }[] = [];
@@ -442,4 +485,42 @@ test('an editor tab claims only once the server follows its project, after a rec
   expect([...claims, ...otherClaims].filter((c) => c.status !== 200)).toEqual([]);
   expect([...consoleErrors, ...otherErrors]).toEqual([]);
   await other.close();
+});
+
+/**
+ * In-app navigation (docs/design/editor.md#editor-jobs): a tab already connected, its live session known, opens a
+ * project from the dashboard. The tab asks for work the moment the project opens, before the project is loaded and
+ * subscribed; here the server's `subscribed` answer is held, so the tab must claim nothing until it arrives, then
+ * claim and be answered.
+ */
+test('an editor tab that opens a project from the dashboard claims only after the subscribed answer', async ({
+  page,
+  request,
+}, testInfo) => {
+  const api = new Api(request);
+  const { id: pid } = await api.call<{ id: string }>('POST', '/projects', {
+    kind: 'edit',
+    title: `Claims after navigating (${testInfo.project.name})`,
+    settings: TINY,
+  });
+  const answers = await holdSubscribed(page);
+  const sent = claimsSentBy(page);
+  const claims = claimsOf(page);
+  const consoleErrors = consoleErrorsOf(page);
+
+  // the dashboard first: the tab connects and has its live session before any project is open
+  await page.goto('/');
+  await expect(page.getByTestId('live-status')).toHaveAttribute('data-status', 'live');
+  await page.locator(`[data-testid="project-card"] a[href$="/p/${pid}"]`).click();
+  await expect(page).toHaveURL(new RegExp(`/p/${pid}`));
+  // the project open and subscribed, the server's answer held: no claim sent
+  await expect.poll(() => answers.held()).toBeGreaterThan(0);
+  await page.waitForTimeout(1000);
+  expect(sent).toEqual([]);
+
+  // the answer arrives: the tab claims, and every claim is answered 200
+  answers.release();
+  await expect.poll(() => claims.length).toBeGreaterThan(0);
+  expect(claims.filter((c) => c.status !== 200)).toEqual([]);
+  expect(consoleErrors).toEqual([]);
 });
