@@ -398,6 +398,12 @@ function SceneRow({
   );
 }
 
+/** The scenes the storyboard draws, by their count: none yet before the screenplay has scenes (docs/brand.md#voice). */
+function firstScenes(count: number): string {
+  if (count === 0) return 'The first scenes of the screenplay';
+  return count === 1 ? 'The first scene' : `The first ${plural(count, 'scene')}`;
+}
+
 /**
  * The storyboard stage (docs/design/storyboard.md): the frames of the first scenes as a grid to review, reorder,
  * redraw and approve, the production scenes with their reviews, the animatic, and the shot list downloads.
@@ -423,7 +429,7 @@ export function StoryboardView() {
         title="Storyboard"
         subtitle={
           enabled
-            ? `${scenes.length === 1 ? 'The first scene' : `The first ${plural(scenes.length, 'scene')}`}: approve a frame per shot before any video is generated. Approved frames start the video pass.`
+            ? `${firstScenes(scenes.length)}: approve a frame per shot before any video is generated. Approved frames start the video pass.`
             : 'The storyboard is off for this project (Overview → Settings).'
         }
         actions={

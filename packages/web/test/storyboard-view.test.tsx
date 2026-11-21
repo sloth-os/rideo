@@ -81,6 +81,28 @@ function showStoryboard(n: number) {
 }
 
 describe('storyboard counts (docs/brand.md#voice)', () => {
+  it('names no count before the screenplay has scenes', () => {
+    const docs = f.docs({ screenplay: f.screenplay({ scenes: [] }) });
+    useProject.setState({
+      ...emptySlice,
+      projectId: docs.project.id,
+      docs,
+      workflow: evaluateWorkflow(docs),
+    });
+    render(
+      <MemoryRouter>
+        <StoryboardView />
+      </MemoryRouter>,
+    );
+    expect(
+      screen.getByText(
+        'The first scenes of the screenplay: approve a frame per shot before any video is generated. Approved frames start the video pass.',
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByText(/The first 0/)).toBeNull();
+    expect(screen.getByText('No scenes yet')).toBeTruthy();
+  });
+
   it('names one scene and one frame in the singular', async () => {
     showStoryboard(1);
     expect(
