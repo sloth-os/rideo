@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { plural } from '@rideo/shared';
 import { Api, projectIdFrom } from './support/api';
 import { exportInThisTab } from './support/ui';
 
@@ -118,7 +119,7 @@ test('idea → screenplay → locked cast → pilot → production → edit → 
   await expect(page.getByTestId('approve-storyboard')).toBeDisabled();
   await page.getByTestId('approve-all-boards').click();
   await expect(page.getByTestId('storyboard-progress')).toContainText(
-    `${frames} of ${frames} frames approved`,
+    `${frames} of ${plural(frames, 'frame')} approved`,
   );
   await page.getByTestId('approve-storyboard').click();
   await expect(page).toHaveURL(/\/clips$/);
