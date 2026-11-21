@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { byCount, plural } from '@rideo/shared';
 import { Api } from './support/api';
 import { requestEnds } from './support/ui';
 
@@ -33,6 +34,13 @@ test('a generated project shows its cost, times, quality and improvements; the s
   await expect(page.getByTestId('insights-time')).toContainText('shot.generate');
   await expect(page.getByTestId('insights-first-try')).toContainText('%');
   await expect(page.getByTestId('insights-improvements')).toBeVisible();
+  // The stack prices the mock video and image models only: the story's model calls have no price. The warning's
+  // noun and verb agree with the count (docs/brand.md#voice).
+  const unpriced: number = (await api.call<any>('GET', `/projects/${pid}/insights`)).usage.totals.unpriced;
+  expect(unpriced).toBeGreaterThan(0);
+  await expect(page.getByTestId('insights-unpriced')).toHaveText(
+    `${plural(unpriced, 'usage item')} ${byCount(unpriced, 'has', 'have')} no price: set RIDEO_PRICES in Settings → Limits.`,
+  );
   const overflow = await page.evaluate(
     () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
   );
