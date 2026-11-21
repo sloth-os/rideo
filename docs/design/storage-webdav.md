@@ -146,6 +146,9 @@ All paths are under `RIDEO_WEBDAV_ROOT` (default `/rideo`).
 │       └── jobs/<jobId>.json     job records (operational, not versioned)
 ├── accounts/users/<userId>.json   people of the studio (docs/design/accounts.md)
 ├── accounts/tokens/<tokenId>.json agent tokens (the secret's SHA-256 only)
+├── library/items/<libId>.json     the studio library: an item's head (docs/design/library.md)
+├── library/items/<libId>/vNNNN.json  one manifest per version, written once
+├── library/files/<aa>/<sha256>    every file of every version, named by its sha256, stored once
 └── watermarks/<watermarkId>.json provenance registry (global)
 ```
 
@@ -206,6 +209,13 @@ Files uploaded by editor jobs (render parts, soundtrack, analysis thumbnails, sp
 `${RIDEO_DATA_DIR}/staging/<jobId>/` until the job's follow-up has consumed them; only the published
 results (export, thumbnails) are written to WebDAV. Staging folders of finished jobs are removed after the
 follow-up job completes, and orphans after 24 h.
+
+The scratch directory `${RIDEO_DATA_DIR}/tmp/` holds what is on its way somewhere else: an upload spooled from its
+request before its service takes it, a library file or a brand kit's file being copied, a job's working folder
+(`d-…`). Each is removed when its request or job ends; what a crash or a killed process left there is removed when the
+server starts: every file, and every folder by its newest file, written more than a day before. The log line
+`removed stale scratch files` gives how many (`removed`, 0 when nothing was left). The day spares what another
+process sharing the data directory may still be writing.
 
 ### Serving media to the browser
 

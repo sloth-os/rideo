@@ -1,6 +1,7 @@
-import { createWriteStream } from 'node:fs';
+import { createReadStream, createWriteStream } from 'node:fs';
 import { rm } from 'node:fs/promises';
 import { extname } from 'node:path';
+import type { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import {
   AddElementReferenceInputSchema,
@@ -9,7 +10,6 @@ import {
   ApproveInputSchema,
   AssembleInputSchema,
   BatchVariationsInputSchema,
-  BlockingInputSchema,
   BoardApproveInputSchema,
   BUNDLE_MIME,
   BundleImportModeSchema,
@@ -19,6 +19,7 @@ import {
   CloneVoiceInputSchema,
   ConsentInputSchema,
   CreateProjectInputSchema,
+  DESK_STATE_MAX_BYTES,
   DescribeCharacterInputSchema,
   ElementInputSchema,
   ElementReferenceViewSchema,
@@ -66,11 +67,13 @@ import {
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { AiReviewService } from '../domain/ai-review';
+import { DeskStateConflictError } from '../domain/desk';
 import type { Detection, Studio } from '../domain/studio';
 import { AppError, invalid } from '../errors';
 import type { AuthedRequest } from './auth-routes';
 
-const IdParam = z.object({ id: z.string().regex(/^prj_[0-9a-z]{10,32}$/) });
+/** A project route's `:id`, as the handlers read it (the app's permission hook checks it first, with this). */
+export const IdParam = z.object({ id: z.string().regex(/^prj_[0-9a-z]{10,32}$/) });
 
 function parse<T>(schema: z.ZodType<T>, value: unknown): T {
   return schema.parse(value ?? {});
@@ -141,6 +144,16 @@ function coalesceHeader(req: FastifyRequest): string | undefined {
   return typeof v === 'string' && /^[\w:.#/-]{1,120}$/.test(v) ? v : undefined;
 }
 
+/**
+ * A stored file served as it is (a project's media, a library file): its type is never sniffed into another one, and
+ * a browser that opens it as a page runs nothing of it (docs/api/rest.md#projects-and-documents).
+ */
+export function inertFile(reply: FastifyReply): FastifyReply {
+  return reply
+    .header('x-content-type-options', 'nosniff')
+    .header('content-security-policy', "default-src 'none'; sandbox");
+}
+
 /** Streams a project's media file with range support (the studio's player, the guest page of a review). */
 export async function sendMedia(
   studio: Studio,
@@ -162,7 +175,7 @@ export async function sendMedia(
   }
   const res = await studio.deps.media.stream(projectId, path, r);
   if (!res) throw new AppError('not_found', `media ${path} not found`);
-  reply
+  inertFile(reply)
     .header('accept-ranges', 'bytes')
     .header('cache-control', 'private, max-age=31536000, immutable')
     .type(res.mime);
@@ -610,33 +623,6 @@ export function registerRoutes(app: FastifyInstance, studio: Studio): void {
   app.post('/api/projects/:id/clips/:clipId/generate', async (req, reply) =>
     reply.code(202).send(await studio.clips.generateClip(actor(), pid(req), p(req, 'clipId'))),
   );
-  // The 3D director's desk (docs/design/director-desk.md#surfaces)
-  app.get('/api/projects/:id/clips/:clipId/blocking', async (req) =>
-    studio.storyboard.getBlocking(pid(req), p(req, 'clipId')),
-  );
-  app.put('/api/projects/:id/clips/:clipId/blocking', async (req) => {
-    const body = parse(BlockingInputSchema, req.body);
-    return studio.storyboard.setBlocking(actor(), pid(req), p(req, 'clipId'), body.blocking, {
-      fix: body.fix,
-    });
-  });
-  app.post('/api/projects/:id/clips/:clipId/blocking/generate', async (req, reply) =>
-    reply.code(202).send(await studio.storyboard.generateBlocking(actor(), pid(req), p(req, 'clipId'))),
-  );
-  app.get('/api/projects/:id/clips/:clipId/shots/:shotId/blocking.png', async (req, reply) => {
-    const width = Number((req.query as { width?: string }).width ?? 1024);
-    return reply
-      .type('image/png')
-      .header('cache-control', 'no-store')
-      .send(
-        await studio.storyboard.renderBlocking(
-          pid(req),
-          p(req, 'clipId'),
-          p(req, 'shotId'),
-          Number.isFinite(width) ? width : 1024,
-        ),
-      );
-  });
   // A production scene's storyboard and its review (docs/design/ai-review.md#production-storyboards)
   app.post('/api/projects/:id/clips/:clipId/storyboard', async (req, reply) =>
     reply.code(202).send(await studio.storyboard.storyboardClip(actor(), pid(req), p(req, 'clipId'))),
@@ -682,6 +668,69 @@ export function registerRoutes(app: FastifyInstance, studio: Studio): void {
       parse(ShotUpdateInputSchema, req.body),
     ),
   );
+  // The 3D-Editor's director's desk (docs/design/director-desk.md#surfaces): a clip's brief and the desk's state
+  app.get('/api/projects/:id/clips/:clipId/desk-brief', async (req) =>
+    studio.desk.brief(pid(req), p(req, 'clipId')),
+  );
+  app.get('/api/projects/:id/clips/:clipId/desk-state', async (req, reply) => {
+    const stored = await studio.desk.state(pid(req), p(req, 'clipId'));
+    // none stored: 204, no body, no ETag (a 404 would be an error in the browser's console on every first open)
+    if (!stored) return reply.code(204).header('cache-control', 'no-store').send();
+    const { deskState, file } = stored;
+    return reply
+      .type('application/octet-stream')
+      .header('content-length', deskState.media.size)
+      .header('x-desk-state-format', deskState.format)
+      .header('x-desk-state-version', String(deskState.version))
+      .header('etag', `"${deskState.media.hash}"`)
+      .header('cache-control', 'no-store')
+      .send(createReadStream(file));
+  });
+  app.delete('/api/projects/:id/clips/:clipId/desk-state', async (req, reply) => {
+    await studio.desk.clearState(actor(), pid(req), p(req, 'clipId'));
+    return reply.code(204).send();
+  });
+  // A state is bytes: every body reaches the service as a stream, whatever its type, counted there and never parsed
+  // or held in memory. The route has no JSON or text parser (it would read and parse a body the service refuses, answer
+  // malformed JSON with a 400 and a long one with a 413 of its own, none of them counted or logged): the service
+  // refuses any other type with a counted, logged 422 and lets the rest of the body through unread.
+  app.register(async (scope) => {
+    scope.removeAllContentTypeParsers();
+    scope.addContentTypeParser('*', (_req, payload, done) => done(null, payload));
+    scope.put(
+      '/api/projects/:id/clips/:clipId/desk-state',
+      { bodyLimit: DESK_STATE_MAX_BYTES },
+      async (req, reply) => {
+        const header = (name: string) => {
+          const v = req.headers[name];
+          return typeof v === 'string' ? v : undefined;
+        };
+        const length = header('content-length');
+        const body = req.body as NodeJS.ReadableStream | undefined;
+        const stream = body && typeof (body as { pipe?: unknown }).pipe === 'function' ? body : req.raw;
+        try {
+          const deskState = await studio.desk.saveState(actor(), pid(req), p(req, 'clipId'), {
+            format: header('x-desk-state-format'),
+            version: header('x-desk-state-version'),
+            contentType: header('content-type'),
+            contentLength: length !== undefined && /^\d+$/.test(length) ? Number(length) : undefined,
+            ifMatch: header('if-match'),
+            ifNoneMatch: header('if-none-match'),
+            replace: header('x-desk-state-replace')?.trim() === '1',
+            units: header('x-desk-state-units'),
+            body: stream as Readable,
+          });
+          // the bytes are stored as they came: the state's ETag, which the next write names in If-Match
+          reply.header('etag', `"${deskState.media.hash}"`);
+          return { deskState };
+        } catch (err) {
+          // the state that is stored instead, for the client to replace on purpose (none when the clip names none)
+          if (err instanceof DeskStateConflictError && err.stored) reply.header('etag', `"${err.stored}"`);
+          throw err;
+        }
+      },
+    );
+  });
   // Take edits and extensions (docs/design/take-editing.md)
   app.post('/api/projects/:id/clips/:clipId/shots/:shotId/takes/:takeId/edit', async (req, reply) =>
     reply

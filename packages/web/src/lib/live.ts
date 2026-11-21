@@ -27,6 +27,11 @@ export interface LiveHandlers {
   onWorkspaceReady?: (projects: number) => void;
   /** The answer to an editor job's heartbeat (docs/design/editor.md#editor-jobs). */
   onJobHeartbeat?: (reply: { jobId: string; leased: boolean; cancelled: boolean }) => void;
+  /**
+   * The server follows the project for this tab's session now: it answered the latest `subscribe` (after every
+   * (re)connect). The tab's editor jobs of the project may be claimed from here (docs/design/editor.md#editor-jobs).
+   */
+  onSubscribed?: (projectId: string) => void;
 }
 
 /**
@@ -36,6 +41,11 @@ export interface LiveHandlers {
 export class LiveClient {
   private ws: WebSocket | null = null;
   private readonly subscriptions = new Map<string, number>();
+  /** The `ref` of each project's latest `subscribe`: only the answer to that one counts. */
+  private readonly refs = new Map<string, number>();
+  private lastRef = 0;
+  /** The projects the server follows for this connection's session (their latest `subscribe` answered). */
+  private readonly followed = new Set<string>();
   private instanceId: string | null = null;
   private retry = 0;
   private heartbeat: ReturnType<typeof setInterval> | null = null;
@@ -62,6 +72,7 @@ export class LiveClient {
       this.heartbeat = null;
       this.ws = null;
       this.sessionId = null;
+      this.followed.clear();
       this.handlers.onStatus('offline');
       if (!this.closed) {
         const delay = Math.min(10_000, 500 * 2 ** this.retry++);
@@ -103,11 +114,13 @@ export class LiveClient {
         const restarted = this.instanceId !== null && this.instanceId !== msg.instanceId;
         this.instanceId = msg.instanceId;
         this.sessionId = msg.sessionId;
+        // a new session follows nothing until the server answers its subscriptions
+        this.followed.clear();
         this.handlers.onStatus('live');
         this.attachWorkspace();
         for (const [projectId, seq] of this.subscriptions) {
           if (restarted) this.handlers.onResync(projectId, 'server restarted');
-          this.send({ type: 'subscribe', projectId, ...(restarted ? {} : { lastSeq: seq }) });
+          this.sendSubscribe(projectId, restarted ? undefined : seq);
         }
         if (this.presence) this.send(this.presence);
         return;
@@ -122,6 +135,12 @@ export class LiveClient {
       }
       case 'resync':
         this.handlers.onResync(msg.projectId, msg.reason);
+        return;
+      case 'subscribed':
+        // the answer to an earlier subscribe (the tab left the project since, or subscribed again) does not count
+        if (!this.subscriptions.has(msg.projectId) || this.refs.get(msg.projectId) !== msg.ref) return;
+        this.followed.add(msg.projectId);
+        this.handlers.onSubscribed?.(msg.projectId);
         return;
       case 'ui': {
         const command = msg.command;
@@ -152,12 +171,30 @@ export class LiveClient {
   /** Subscribes from a snapshot's sequence number (events already in the snapshot are skipped). */
   subscribe(projectId: string, seq: number): void {
     this.subscriptions.set(projectId, seq);
-    this.send({ type: 'subscribe', projectId, lastSeq: seq });
+    this.sendSubscribe(projectId, seq);
+  }
+
+  /** A `subscribe` with a `ref` of its own; the project is not followed until the server answers this one. */
+  private sendSubscribe(projectId: string, lastSeq?: number): void {
+    const ref = ++this.lastRef;
+    this.refs.set(projectId, ref);
+    this.followed.delete(projectId);
+    this.send({ type: 'subscribe', projectId, ...(lastSeq === undefined ? {} : { lastSeq }), ref });
   }
 
   unsubscribe(projectId: string): void {
     this.subscriptions.delete(projectId);
+    this.refs.delete(projectId);
+    this.followed.delete(projectId);
     this.send({ type: 'unsubscribe', projectId });
+  }
+
+  /**
+   * Whether the server follows the project for this tab's session: the session's latest `subscribe` to it was answered
+   * (`subscribed`). An editor-job claim for the project is refused until then (docs/design/editor.md#editor-jobs).
+   */
+  follows(projectId: string): boolean {
+    return this.sessionId !== null && this.followed.has(projectId);
   }
 
   resetSeq(projectId: string, seq: number): void {

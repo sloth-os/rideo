@@ -1,8 +1,8 @@
 import { z } from 'zod';
 import { CameraMoveIdSchema } from '../directing';
 import { StageReviewSchema, StageVerdictSchema } from './ai-review';
-import { SceneBlockingSchema } from './blocking';
 import { ActorSchema, IdSchema, IsoDateSchema, MediaRefSchema } from './common';
+import { DESK_UNIT_LIMITS, DeskStateUnitUseSchema } from './desk';
 import { FeedbackIssueSchema, FeedbackRecommendationSchema, FeedbackScoresSchema } from './feedback';
 import { ContentCredentialsStampSchema } from './provenance';
 import { FocusPointSchema } from './timeline';
@@ -440,6 +440,24 @@ export const ClipReviewSchema = z.object({
 });
 export type ClipReview = z.infer<typeof ClipReviewSchema>;
 
+/**
+ * The desk's state of the clip's scene (docs/design/director-desk.md#the-desk-state): the 3D-Editor desk's opaque
+ * bytes, stored as an immutable media file (`media/desk/<scene-slug>-<hash12>.bin`) that rideo never reads.
+ */
+export const ClipDeskStateSchema = z.object({
+  /** As the desk gave it: `3d-editor.desk-state`. */
+  format: z.string().min(1).max(100),
+  version: z.number().int().nonnegative(),
+  media: MediaRefSchema,
+  updatedAt: IsoDateSchema,
+  /**
+   * What the state uses of the studio library, slot by slot, as the desk said when it was stored
+   * (docs/design/director-desk.md#what-a-stored-state-uses): absent or null when not known.
+   */
+  units: z.array(DeskStateUnitUseSchema).max(DESK_UNIT_LIMITS.stateUnits).nullable().optional(),
+});
+export type ClipDeskState = z.infer<typeof ClipDeskStateSchema>;
+
 export const ClipSchema = z.object({
   id: IdSchema,
   index: z.number().int().nonnegative(),
@@ -452,10 +470,10 @@ export const ClipSchema = z.object({
   notes: z.string().max(4000).default(''),
   /** Its scene's takes watched before the edit (docs/design/ai-review.md#scenes-before-the-edit). */
   review: ClipReviewSchema.nullable().default(null),
-  /** The scene blocked in 3D (docs/design/director-desk.md). */
-  blocking: SceneBlockingSchema.nullable().default(null),
   /** A production scene's storyboard review (docs/design/ai-review.md#production-storyboards). */
   boardReview: StageReviewSchema.nullable().default(null),
+  /** The 3D-Editor desk's state of the scene (docs/design/director-desk.md#the-desk-state); null: none stored. */
+  deskState: ClipDeskStateSchema.nullable().default(null),
 });
 export type Clip = z.infer<typeof ClipSchema>;
 

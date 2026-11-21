@@ -1,5 +1,6 @@
 import {
   type ProjectDocs,
+  plural,
   type Review,
   type ReviewTarget,
   reviewItems,
@@ -143,8 +144,8 @@ function ReviewRow({ docs, review: r, focused }: { docs: ProjectDocs; review: Re
       </div>
       <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[12px] text-muted">
         <span>{targetLabel(docs, r)}</span>
-        <span>
-          · {approvals}/{r.required} approvals
+        <span data-testid="review-approvals">
+          · {approvals} of {plural(r.required, 'approval')}
         </span>
         {r.gate ? (
           <Badge tone={r.gateApprovedAt ? 'success' : 'info'} testid="review-gate">

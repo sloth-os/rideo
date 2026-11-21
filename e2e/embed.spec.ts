@@ -98,4 +98,10 @@ test('the studio under the host’s own routes, without its header', async ({ pa
   await expect(page).toHaveURL(/\/video\/p\/prj_[0-9a-z]+\/resources$/);
   await page.reload();
   await expect(page.getByTestId('view-resources')).toBeVisible();
+  // nor does a phone's More hold the Library: it is the header's link, moved (docs/brand.md#layout-and-responsiveness)
+  if (test.info().project.name === 'mobile') {
+    await page.getByTestId('mnav-more').click();
+    await expect(page.getByRole('menu')).toBeVisible();
+    await expect(page.getByTestId('mnav-library')).toHaveCount(0);
+  }
 });

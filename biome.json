@@ -10,7 +10,8 @@
       "!**/test-results",
       "!**/playwright-report",
       "!**/*.json.snap",
-      "!packages/mock-gateway/openapi"
+      "!packages/mock-gateway/openapi",
+      "!packages/shared/test/fixtures/desk-protocol"
     ]
   },
   "formatter": {

@@ -2,11 +2,11 @@ import type { Clip, Shot } from '@rideo/shared';
 import { Circle, RotateCcw, Square, Video } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button, Dialog } from '../../components/ui';
-import { rememberUpload } from '../../engine/media-files';
 import { prepareMedia } from '../../engine/prepare';
 import { api } from '../../lib/api';
 import { useProject } from '../../store/project';
 import { reportError } from '../../store/ui';
+import { uploadReference } from './reference-upload';
 
 type Phase =
   | 'asking'
@@ -153,12 +153,7 @@ export function PerformanceRecorder({
       const probe = prepared.probe
         ? { ...prepared.probe, durationSec: prepared.probe.durationSec || take.seconds }
         : null;
-      const resource = await api.upload(projectId, file, {
-        role: 'reference',
-        probe,
-        poster: prepared.poster,
-      });
-      rememberUpload(resource.media, file);
+      const resource = await uploadReference(projectId, file, { probe, poster: prepared.poster });
       await api.updateShot(projectId, clip.id, shot.id, {
         motionReference: { resourceId: resource.id, mode: 'performance' },
       });

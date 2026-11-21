@@ -1,7 +1,9 @@
 import {
+  byCount,
   formatDuration,
   isStillMedia,
   isTerminalJob,
+  plural,
   type SearchKind,
   type SearchResponse,
   type SearchResult,
@@ -212,7 +214,9 @@ export function SearchView() {
             <p className="text-[12px] text-muted" data-testid="search-summary">
               {res.results.length} result{res.results.length === 1 ? '' : 's'}, matched{' '}
               {res.mode === 'semantic' ? 'by meaning' : 'by words'}
-              {res.pending ? ` · ${res.pending} frames are not indexed yet` : ''}
+              {res.pending
+                ? ` · ${plural(res.pending, 'frame')} ${byCount(res.pending, 'is', 'are')} not indexed yet`
+                : ''}
             </p>
             <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3" data-testid="search-results">
               {res.results.map((r) => (
@@ -256,7 +260,7 @@ export function SearchView() {
             <span data-testid="search-empty">
               {res.indexed
                 ? 'Try other words, or fewer filters.'
-                : `Nothing is indexed yet${res.pending ? `: ${res.pending} frames wait` : ''}.`}
+                : `Nothing is indexed yet${res.pending ? `: ${plural(res.pending, 'frame')} ${byCount(res.pending, 'waits', 'wait')}` : ''}.`}
             </span>
           </EmptyState>
         )

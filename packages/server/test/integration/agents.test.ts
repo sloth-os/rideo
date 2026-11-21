@@ -56,6 +56,63 @@ describe('recipes', () => {
     expect(
       await bad([{ tool: 'timeline_apply', args: { projectId: '{{projectId}}', ops: '{{nope}}' } }]),
     ).toBe('422 validation_error');
+    // nor a library tool that changes the library or a project through it, nor one that reads the studio library
+    // or where its items are used: a recipe's job does not carry its caller's library permissions, and would read as
+    // the studio (docs/design/agents.md#recipes); the status of the run's project stays
+    for (const [tool, args] of [
+      ['library_apply', { projectId: '{{projectId}}', itemId: 'lib_0000000000000001' }],
+      ['library_uses', { itemId: 'lib_0000000000000001' }],
+      ['library_list', {}],
+    ] as const) {
+      const library = await stack
+        .api('POST', '/recipes', {
+          name: 'Use the harbour set',
+          steps: [
+            { tool: 'library_status', args: { projectId: '{{projectId}}' } },
+            { tool, args },
+          ],
+        })
+        .catch((err: ApiError) => err);
+      expect(library, tool).toMatchObject({
+        status: 422,
+        body: {
+          code: 'validation_error',
+          detail: expect.stringMatching(
+            new RegExp(
+              `^step 2: recipes may not use ${tool}, .+: use the Library page, REST or MCP directly$`,
+            ),
+          ),
+        },
+      });
+    }
+    // nor a step aimed at a project by its id, not even the one it will run in, nor a tool that takes no project: a
+    // recipe acts only on the project it runs in, which its steps name {{projectId}}
+    for (const [steps, detail] of [
+      [
+        [{ tool: 'character_create', args: { projectId: pid, name: 'Ghost' } }],
+        `step 1 (character_create): projectId is "${pid}": it must be {{projectId}}, the project the recipe runs in`,
+      ],
+      [
+        [{ tool: 'ui_notify', args: { message: 'Done' } }],
+        'step 1 (ui_notify): projectId is missing: it must be {{projectId}}, the project the recipe runs in',
+      ],
+      [
+        [{ tool: 'project_import', args: { url: 'https://example.test/film.rideo', mode: 'replace' } }],
+        'step 1: recipes may not use project_import, which takes no projectId: a recipe acts only on the project it runs in',
+      ],
+    ] as const)
+      expect(
+        await stack.api('POST', '/recipes', { name: 'Elsewhere', steps }).catch((err: ApiError) => err),
+      ).toMatchObject({ status: 422, body: { code: 'validation_error', detail } });
+    const reads = await stack.api<Recipe>('POST', '/recipes', {
+      name: 'Library status',
+      steps: [{ tool: 'library_status', args: { projectId: '{{projectId}}' } }],
+    });
+    const status = await stack.api<Job>('POST', `/projects/${pid}/recipes/${reads.id}/run`, { params: {} });
+    expect(expectSucceeded(await stack.waitJob(pid, status.id)).result).toMatchObject({
+      steps: [{ step: 1, tool: 'library_status', ok: true }],
+    });
+    await stack.api('DELETE', `/recipes/${reads.id}`);
     // One title per text, then the cut read back
     const recipe = await stack.api<Recipe>('POST', '/recipes', {
       name: 'Titles from a list',
@@ -265,6 +322,71 @@ describe('agents over MCP', () => {
       for (const s of again.shots) expect(s.takes.length).toBe(4);
       const unknown = await call('recipe_run', { projectId: pid, recipeId: 'rcp_000000000404' });
       expect(unknown).toMatchObject({ error: true, body: { code: 'not_found' } });
+      // An agent's recipe may not save to the library either
+      const saving = await call('recipe_create', {
+        name: 'Save the cast',
+        params: [{ name: 'characterId', type: 'id', required: true }],
+        steps: [
+          {
+            tool: 'library_save',
+            args: { projectId: '{{projectId}}', entity: { kind: 'character', id: '{{characterId}}' } },
+          },
+        ],
+      });
+      expect(saving).toMatchObject({
+        error: true,
+        body: {
+          code: 'validation_error',
+          message: expect.stringMatching(
+            /^step 1: recipes may not use library_save, .+Library page, REST or MCP/,
+          ),
+        },
+      });
+      // nor read the studio library: the job would read it as the studio
+      const reading = await call('recipe_create', {
+        name: 'Read the library',
+        steps: [{ tool: 'library_get', args: { itemId: 'lib_0000000000000001' } }],
+      });
+      expect(reading).toMatchObject({
+        error: true,
+        body: {
+          code: 'validation_error',
+          message: expect.stringMatching(
+            /^step 1: recipes may not use library_get, .+Library page, REST or MCP/,
+          ),
+        },
+      });
+      // nor aim a step at a project by its id, nor run on one through a parameter: a recipe acts only on the project it
+      // runs in
+      const aimed = await call('recipe_create', {
+        name: 'Elsewhere',
+        steps: [{ tool: 'character_create', args: { projectId: pid, name: 'Ghost' } }],
+      });
+      expect(aimed).toMatchObject({
+        error: true,
+        body: {
+          code: 'validation_error',
+          message: `step 1 (character_create): projectId is "${pid}": it must be {{projectId}}, the project the recipe runs in`,
+        },
+      });
+      const other = (
+        await stack.api<{ id: string }>('POST', '/projects', { kind: 'story', title: 'Another' })
+      ).id;
+      const viaParam = await call('recipe_create', {
+        name: 'Somewhere',
+        params: [{ name: 'target', type: 'id', required: true }],
+        steps: [{ tool: 'character_create', args: { projectId: '{{target}}', name: 'Ghost' } }],
+      });
+      expect(viaParam.error).toBe(false);
+      expect(
+        await call('recipe_run', { projectId: pid, recipeId: viaParam.body.id, params: { target: other } }),
+      ).toMatchObject({
+        error: true,
+        body: {
+          code: 'validation_error',
+          message: `step 1 (character_create): projectId is "${other}": it must be ${pid}, the project the recipe runs in`,
+        },
+      });
     } finally {
       await client.close();
     }

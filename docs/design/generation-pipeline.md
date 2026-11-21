@@ -56,8 +56,7 @@ type Job = {
 | `screenplay.review` | llm | the screenplay reviewed by the text model, revised and reviewed again up to `settings.review.maxRounds`; a pass approves the gate on autopilot ([AI review](ai-review.md)) |
 | `screenplay.revise` | llm | rewrites the scenes and the outline as instructions say (a review's fix) |
 | `storyboard.review` | control | each storyboarded scene reviewed with its frames by the vision model; frames redrawn and scenes re-planned, then reviewed again |
-| `scene.block` | llm | the 3D blocking of one clip's scene by the text model, normalized and its cameras solved ([director's desk](director-desk.md)) |
-| `clip.storyboard` | control | a production scene's storyboard: blocked, drawn, reviewed (rounds with fixes) and approved ([production storyboards](ai-review.md#production-storyboards)) |
+| `clip.storyboard` | control | a production scene's storyboard: drawn, reviewed (rounds with fixes) and approved ([production storyboards](ai-review.md#production-storyboards)) |
 | `cast.review` | llm | the cast's references reviewed by the vision model, drawn again and reviewed again; a pass approves, locks and approves `cast_locked` on autopilot |
 | `takes.watch` | llm | takes watched whole from their stored videos (`take.watch`) without generating anything ([takes watched whole](ai-review.md#takes-watched-whole)) |
 | `cut.review` | control | the cut reviewed before export: its takes watched whole, its scenes reviewed, fixes applied; a pass approves `cut_approved` on autopilot ([the cut before export](ai-review.md#the-cut-before-export)) |
@@ -163,7 +162,7 @@ loop:
                                 // then screenplay.review of the new scenes (sceneIds), revised up to maxRounds;
                                 // a review that still fails stops the batch for a person
   clip.plan(next scene)
-  clip.storyboard(clip)         // settings.storyboard.production: blocked, drawn, reviewed and approved;
+  clip.storyboard(clip)         // settings.storyboard.production: drawn, reviewed and approved;
                                 // a storyboard that still fails its review stops the batch for a person
   enqueue clip.generate(clip)   // at most settings.batch.lookahead (3) clip jobs in flight;
                                 // each ends with its scene review and fixes (clip.review), and on autopilot

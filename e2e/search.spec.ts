@@ -67,6 +67,10 @@ test('footage and stills are indexed and found by what they show; a match goes o
   await expect(page.getByTestId('search-status')).toContainText('0 frames indexed');
   await expect(page.getByTestId('search-status')).toContainText('3 waiting');
   await expect(page.getByTestId('search-mode')).toContainText('by words');
+  // Searched before anything is indexed: the frames that wait, counted with their verb (docs/brand.md#voice)
+  await page.getByTestId('search-input').fill('daylight');
+  await page.getByTestId('search-submit').click();
+  await expect(page.getByTestId('search-empty')).toHaveText('Nothing is indexed yet: 3 frames wait.');
   await page.getByTestId('search-index').click();
   await expect(page.getByTestId('search-status')).toContainText('3 frames indexed in 2 files', {
     timeout: 60_000,

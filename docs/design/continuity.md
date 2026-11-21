@@ -53,6 +53,25 @@ them (their references show them empty, [elements](elements.md)).
 later scenes lost the user's brief. With version 2 it also gets the brief, the dialogue level, the last written scene
 in full (action, dialogue, continuity) and the outline beats after the ones it writes (so it can set up what comes).
 
+**The project's names.** A project can hold characters, places and props before the writer starts: used from the
+[studio library](library.md) for a new episode, made by hand, or kept from an earlier screenplay. A writer that did
+not know them invented its own ("Mia" for Mira, "the old docks" for the Harbor), and the scenes linked to new, empty
+entities. So `screenplay.generate` and `screenplay.extend` (prompt versions 1 and 2) get `existing` (`existingNames`,
+shared): each character's name, role and look in one line (`identity`: age and gender, ethnicity, build, hair and
+marks, or the summary when the identity is empty), and each location's and prop's kind, name and aliases (styles are
+left out: no scene names one). The writer keeps those exact names, never a nickname, a shortened or a new name, for
+every person, place or object of the film that is one of them, with its role and look, and names only the others anew.
+The lists stay short: at most 40 characters (by role, the locked ones first, then by name) and 80 locations and props
+(locations first, the locked ones first, then by name), each look at most 160 characters, each element with at most 5
+aliases of at most 160 characters together: about 40,000 characters at the very worst (40,069 with every name, look
+and alias at its longest, more when they hold characters JSON escapes), a few hundred for a season's cast and places.
+A project without any sends no `existing`, so a new project's prompts are as before. The merge then
+links the scenes to them, case-insensitively by name, a character also by its first name and an element by an alias. A
+matched entity keeps its id, seed, references, lock and every field the writer does not write, its library link and 3D
+pin among them: a locked character or element is left as it is; an unlocked character takes the writer's role,
+summary, look, outfits and personality, and a fresh voice from the writer's description unless its voice is locked
+([V2](dialogue.md#rules)); an unlocked element only gets a description it lacked.
+
 **Dialogue level.** `settings.dialogue.level` (`any` by default, or a CEFR level `A1` … `C2`) is sent to every task
 that writes or plans dialogue. The table `DIALOGUE_LEVELS` (shared) holds what each level means for a writer:
 

@@ -41,7 +41,7 @@ flowchart LR
     REST[REST /api]
     LIVE[Live hub /api/live WS]
     MCP[MCP /mcp]
-    SVC[Application services<br/>projects · story · clips · timeline · analysis · export · history · workflow]
+    SVC[Application services<br/>projects · story · clips · timeline · analysis · export · history · workflow · library]
     JOBS[Job queue + handlers<br/>server lanes · client lane]
     CONS[Consistency engine]
     WM[Watermark service]
@@ -89,7 +89,7 @@ flowchart LR
 | Infrastructure | `packages/server/src/{storage,vcs,media,gateway,ai,jobs,watermark,provenance,live}` | WebDAV I/O, commits, ffmpeg, SDK/proxy clients, job execution, watermarking, WebSocket fan-out. |
 | Surfaces | `packages/server/src/http`, `packages/server/src/mcp` | REST routes and MCP tools: thin adapters that validate input and call services. |
 | Studio host and settings | `packages/server/src/http/host.ts`, `packages/server/src/settings` | Builds the studio from the environment over the settings file and swaps it in-process when settings change ([settings](design/settings.md)). |
-| UI | `packages/web` | Studio UI. Its state is a projection of server documents, updated by live events (timeline edits apply optimistically). |
+| UI | `packages/web` | Studio UI. Its state is a projection of server documents, updated by live events (timeline edits apply optimistically). It reads every answer of the API to its end, an empty `204` too: Chromium reports a `fetch` whose body is never read as cancelled (`net::ERR_ABORTED` in DevTools), though the server answered. |
 | Editor engine | `packages/web/src/engine` | ffmpeg.wasm and WebCodecs media work: upload preparation, local proxies, analysis signals, chunked rendering, and the editor-job worker. |
 | Browser workspace | `packages/web/src/workspace` | The IndexedDB project store that answers the server's storage operations, and project files built and read in the browser ([browser storage](design/browser-storage.md)). |
 | Library | `packages/web/src/embed` | `RideoStudio` and `mountRideo`: the studio for other apps, with its runtime base, routing and theme ([embedding](design/embedding.md)). |
@@ -137,7 +137,7 @@ uploads the outputs and completes it. See [editor](design/editor.md#editor-jobs)
 .
 ├── packages
 │   ├── shared/src
-│   │   ├── schemas/        zod: media, project, screenplay, character, clip, timeline, resource, analysis, export, job, editor, vcs, events, live
+│   │   ├── schemas/        zod: media, project, screenplay, character, clip, timeline, resource, analysis, export, job, editor, vcs, events, live, library
 │   │   ├── timeline/       ops reducer, queries, story assembly, suggestion application
 │   │   ├── workflow/       declarative stage tables + evaluator
 │   │   ├── prompt/         identity + shot prompt compiler

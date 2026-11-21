@@ -49,15 +49,15 @@ export interface EditorWorkerOptions {
 const abortError = () => new DOMException('The operation was cancelled', 'AbortError');
 
 /**
- * The tab's editor-job worker (docs/design/editor.md#editor-jobs): while a project is open it claims that
- * project's editor jobs one at a time, runs them with the engine, heartbeats on a timer (and with progress),
- * stages outputs and completes them. A cancelled job or a lost lease stops the run without reporting it. Hidden
- * tabs keep going: heartbeats are timed by a worker and the job holds a Web Lock; a tab that comes back claims at
- * once (docs/design/engine-performance.md#rendering-in-a-background-tab).
+ * The tab's editor-job worker (docs/design/editor.md#editor-jobs): while a project is open, and once the server follows
+ * that project for the tab's live session, it claims the project's editor jobs one at a time, runs them with the engine,
+ * heartbeats on a timer (and with progress), stages outputs and completes them. A cancelled job or a lost lease stops
+ * the run without reporting it. Hidden tabs keep going: heartbeats are timed by a worker and the job holds a Web Lock;
+ * a tab that comes back claims at once (docs/design/engine-performance.md#rendering-in-a-background-tab).
  */
 export class EditorWorker {
   private projectId: string | null = null;
-  private sessionOf: () => string | null = () => null;
+  private sessionOf: (projectId: string) => string | null = () => null;
   private current: {
     job: Job;
     controller: AbortController;
@@ -68,7 +68,6 @@ export class EditorWorker {
   } | null = null;
   private live: LiveHeartbeat | null = null;
   private claiming = false;
-  private retries = 0;
   private timer: ReturnType<typeof setInterval> | null = null;
 
   constructor(private readonly opts: EditorWorkerOptions) {
@@ -77,8 +76,14 @@ export class EditorWorker {
     });
   }
 
-  /** Where the live session id comes from (the tab's live client). */
-  setSession(source: () => string | null): void {
+  /**
+   * The tab's live session that follows a project: its id once the server answered the session's subscription to the
+   * project (`subscribed`), else null (the tab's live client). The worker claims only through such a session: the
+   * server refuses a claim of a session that does not follow the project, and the claim (HTTP) could otherwise reach
+   * the server before the subscription (WebSocket) does. The live client pokes the worker when the answer comes, after
+   * every (re)connect.
+   */
+  setSession(source: (projectId: string) => string | null): void {
     this.sessionOf = source;
   }
 
@@ -121,20 +126,21 @@ export class EditorWorker {
     this.opts.onChange?.(this.busy);
   }
 
-  /** Claims the next job when idle (called on job events, on reconnect and by the poll timer). */
+  /**
+   * Claims the next job when idle (called when the server follows the project for the tab's session, on job events and
+   * by the poll timer); nothing while no session follows the project.
+   */
   async poke(): Promise<void> {
     if (this.claiming || this.current || !this.projectId) return;
-    const sessionId = this.sessionOf();
+    const sessionId = this.sessionOf(this.projectId);
     if (!sessionId) return;
     this.claiming = true;
     let job: Job | null = null;
     try {
       job = (await this.opts.api.editorClaim(sessionId, this.projectId)).job;
-      this.retries = 0;
-    } catch (err) {
-      // The claim can overtake the live subscription (HTTP vs WebSocket): retry shortly.
-      if (err instanceof ApiError && err.code === 'conflict' && this.retries++ < 5)
-        setTimeout(() => void this.poke(), 300 * this.retries);
+    } catch {
+      // Refused (the session closed meanwhile, or the tab left the project) or failed: the next poke claims again,
+      // when the new session follows the project, on a job event or by the poll.
     } finally {
       this.claiming = false;
     }

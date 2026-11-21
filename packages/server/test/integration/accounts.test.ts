@@ -1,3 +1,5 @@
+import { watch } from 'node:fs';
+import { join } from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { type RunningMockIdp, startMockIdp } from '@rideo/mock-gateway';
@@ -57,6 +59,23 @@ const as =
     if (!res.ok) throw new ApiError(res.status, json);
     return json as T;
   };
+
+/** The status of a request whose path goes out exactly as written (the router decodes percent-escapes itself). */
+async function rawStatus(method: string, path: string, auth: Auth = {}, body?: unknown): Promise<number> {
+  const headers: Record<string, string> = { accept: 'application/json, text/event-stream' };
+  if (auth.cookie) headers.cookie = auth.cookie;
+  if (body !== undefined) headers['content-type'] = 'application/json';
+  const res = await fetch(`${stack.url}${path}`, {
+    method,
+    headers,
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  await res.body?.cancel();
+  return res.status;
+}
+
+/** A project id with its last letter percent-escaped: the router decodes it to the id. */
+const escapedId = (id: string) => `${id.slice(0, -1)}%${id.charCodeAt(id.length - 1).toString(16)}`;
 
 /** Signs in through the mock provider; returns the session cookie. */
 async function signIn(
@@ -188,6 +207,332 @@ describe('accounts', () => {
     expect(
       (await as({ token: 'studio-token' })<ProjectSummary[]>('GET', '/projects')).length,
     ).toBeGreaterThan(0);
+  });
+
+  it('authenticates and authorizes by the matched route, however its path is percent-encoded', async () => {
+    const initialize = {
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'initialize',
+      params: { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: { name: 'x', version: '0' } },
+    };
+    const escaped = escapedId(pid);
+    const clip = 'clp_0123456789abcdef';
+    const by = (cookie: string | undefined) => (method: string, path: string, body?: unknown) =>
+      rawStatus(method, path, { cookie }, body);
+    const [dora, ana, ben] = [by(users.dora), by(users.ana), by(users.ben)];
+    const seen = {
+      // nobody signed in: /api, /mcp and /metrics answer 401 whichever letter of their path is escaped
+      nobody: {
+        projects: await rawStatus('GET', '/%61pi/projects'),
+        mcp: await rawStatus('POST', '/%6dcp', {}, initialize),
+        metrics: await rawStatus('GET', '/%6detrics'),
+        // the open routes stay open
+        health: await rawStatus('GET', '/%61pi/health'),
+      },
+      // a signed-in person who is not a member, with a letter of the project id escaped
+      dora: {
+        state: await dora('GET', `/api/projects/${escaped}/state`),
+        add: await dora('POST', `/api/projects/${escaped}/characters`, { name: 'Ghost' }),
+      },
+      // a member reads it under the same escaped id
+      ana: await ana('GET', `/api/projects/${escaped}/state`),
+      // an escaped letter of the route's own words keeps the route's permission: an editor may not approve
+      ben: {
+        approve: await ben('POST', `/api/projects/${pid}/clips/${clip}/approve`, {}),
+        escaped: await ben('POST', `/api/projects/${pid}/clips/${clip}/appro%76e`, {}),
+      },
+    };
+    expect(seen).toEqual({
+      nobody: { projects: 401, mcp: 401, metrics: 401, health: 200 },
+      dora: { state: 403, add: 403 },
+      ana: 200,
+      ben: { approve: 403, escaped: 403 },
+    });
+    const state = await as({ cookie: users.ana })<any>('GET', `/projects/${pid}/state`);
+    expect(Object.values(state.docs.characters).map((c: any) => c.name)).not.toContain('Ghost');
+  });
+
+  it('answers a malformed project id 422 before it asks who may use the project, whoever calls', async () => {
+    /** `<status> <code>` of a request to a project route as someone. */
+    const outcome = async (auth: Auth, method: string, path: string, body?: unknown) => {
+      try {
+        await as(auth)(method, `/projects/${path}`, body);
+        return 'ok';
+      } catch (err) {
+        return `${(err as ApiError).status} ${(err as ApiError).body?.code}`;
+      }
+    };
+    const callers: Record<string, Auth> = {
+      dora: { cookie: users.dora },
+      ana: { cookie: users.ana },
+      mira: { cookie: users.mira },
+      studio: { token: 'studio-token' },
+    };
+    // not an id, another case, too short, another kind's id, and one the router decodes to a path
+    const ids = [
+      'not-an-id',
+      'PRJ_0123456789abcdef',
+      'prj_short',
+      'chr_0123456789abcdef',
+      'prj_bad%2F..%2Fx',
+    ];
+    const seen: Record<string, string[]> = {};
+    for (const [who, auth] of Object.entries(callers)) {
+      const answers = new Set<string>();
+      for (const id of ids) {
+        answers.add(await outcome(auth, 'GET', `${id}/state`));
+        answers.add(await outcome(auth, 'POST', `${id}/characters`, { name: 'Ghost' }));
+        answers.add(await outcome(auth, 'PATCH', id, { title: 'Ghost film' }));
+        answers.add(await outcome(auth, 'GET', `${id}/access`));
+        answers.add(await outcome(auth, 'GET', `${id}/comments`));
+      }
+      seen[who] = [...answers];
+    }
+    expect(seen).toEqual({
+      dora: ['422 validation_error'],
+      ana: ['422 validation_error'],
+      mira: ['422 validation_error'],
+      studio: ['422 validation_error'],
+    });
+    // a well-formed id of a project the caller is not a member of: 403
+    expect(await outcome(callers.dora!, 'GET', `${pid}/state`)).toBe('403 forbidden');
+    expect(await outcome(callers.dora!, 'POST', `${pid}/characters`, { name: 'Ghost' })).toBe(
+      '403 forbidden',
+    );
+  });
+
+  it('answers a malformed project id validation_error over MCP before it asks who may use the project, whoever calls', async () => {
+    const mira = as({ cookie: users.mira });
+    const denials = async () =>
+      (await mira<AuditEvent[]>('GET', '/audit?limit=1000')).filter((e) => e.type === 'auth.denied').length;
+    const scoped = await as({ cookie: users.ana })<any>('POST', '/tokens', {
+      name: 'Scoped',
+      role: 'editor',
+      projectIds: [pid],
+    });
+    const callers: Record<string, Record<string, string>> = {
+      dora: { cookie: users.dora! },
+      ana: { cookie: users.ana! },
+      mira: { cookie: users.mira! },
+      studio: { authorization: 'Bearer studio-token' },
+      scoped: { authorization: `Bearer ${scoped.secret}` },
+    };
+    // reads, edits, the library, an approval and access: what each permission guards
+    const calls: [string, Record<string, unknown>][] = [
+      ['project_get', {}],
+      ['character_create', { name: 'Ghost' }],
+      ['library_status', {}],
+      ['library_save', { entity: { kind: 'character', id: 'chr_0123456789abcdef' } }],
+      ['workflow_approve', { gate: 'brief_ready' }],
+      ['project_access', {}],
+    ];
+    const before = await denials();
+    const seen: Record<string, string[]> = {};
+    const clients: Record<string, Client> = {};
+    try {
+      for (const [who, headers] of Object.entries(callers)) {
+        const client = new Client({ name: 'Claude Code', version: '1.0.0' });
+        await client.connect(
+          new StreamableHTTPClientTransport(new URL(`${stack.url}/mcp`), { requestInit: { headers } }),
+        );
+        clients[who] = client;
+        const answers = new Set<string>();
+        for (const [tool, args] of calls)
+          for (const projectId of ['not-an-id', 'PRJ_0123456789abcdef', 'prj_short', 'prj_bad/../x']) {
+            const r = await client.callTool({ name: tool, arguments: { ...args, projectId } });
+            const body = JSON.parse((r.content as { text: string }[])[0]!.text);
+            answers.add(r.isError ? body.code : 'ok');
+          }
+        seen[who] = [...answers];
+      }
+      expect(seen).toEqual({
+        dora: ['validation_error'],
+        ana: ['validation_error'],
+        mira: ['validation_error'],
+        studio: ['validation_error'],
+        scoped: ['validation_error'],
+      });
+      // nobody was asked about a project, so nobody was denied
+      expect(await denials()).toBe(before);
+      // a well-formed id is still asked about: Dora is not a member of Ana's project
+      const r = await clients.dora!.callTool({ name: 'project_get', arguments: { projectId: pid } });
+      expect(JSON.parse((r.content as { text: string }[])[0]!.text)).toMatchObject({ code: 'forbidden' });
+    } finally {
+      for (const client of Object.values(clients)) await client.close();
+    }
+  });
+
+  it('keeps a recipe to the project it runs in: one aimed at a project its runner may not use is refused when saved, run or queued', async () => {
+    const dora = as({ cookie: users.dora });
+    const characters = async (projectId: string) =>
+      Object.values<{ name: string }>(
+        (await stack.api<any>('GET', `/projects/${projectId}/state`)).docs.characters,
+      ).map((c) => c.name);
+    const anas = await characters(pid);
+    const mine = (await dora<any>('POST', '/projects', { kind: 'story', title: 'Dora’s film' })).id as string;
+    // Dora may not use Ana's project
+    await expect(dora('GET', `/projects/${pid}/state`)).rejects.toMatchObject({ status: 403 });
+    // saved: Ana's project written into a step, or a tool that acts on the studio rather than a project
+    for (const [steps, detail] of [
+      [
+        [
+          { tool: 'character_create', args: { projectId: pid, name: 'Intruder' } },
+          { tool: 'library_status', args: { projectId: pid } },
+        ],
+        `step 1 (character_create): projectId is "${pid}": it must be {{projectId}}, the project the recipe runs in`,
+      ],
+      [
+        [{ tool: 'project_list', args: {} }],
+        'step 1: recipes may not use project_list, which takes no projectId: a recipe acts only on the project it runs in',
+      ],
+    ] as const)
+      await expect(dora('POST', '/recipes', { name: 'Elsewhere', steps })).rejects.toMatchObject({
+        status: 422,
+        body: { code: 'validation_error', detail },
+      });
+    // run: Ana's project through a parameter
+    const recipe = await dora<any>('POST', '/recipes', {
+      name: 'Cast someone',
+      params: [{ name: 'target', type: 'id', required: true }],
+      steps: [{ tool: 'character_create', args: { projectId: '{{target}}', name: 'Intruder' } }],
+    });
+    const aimed = `step 1 (character_create): projectId is "${pid}": it must be ${mine}, the project the recipe runs in`;
+    await expect(
+      dora('POST', `/projects/${mine}/recipes/${recipe.id}/run`, { params: { target: pid } }),
+    ).rejects.toMatchObject({ status: 422, body: { code: 'validation_error', detail: aimed } });
+    // queued directly, past the run's check, and run as no one: the job fails before its step
+    const queued = await stack.server.studio.deps.jobs.enqueue({
+      projectId: mine,
+      kind: 'recipe.run',
+      params: { recipeId: recipe.id, params: { target: pid } },
+      actor: { kind: 'user', id: 'dora', name: 'Dora' },
+      branch: 'main',
+    });
+    expect(await stack.waitJob(mine, queued.id)).toMatchObject({
+      status: 'failed',
+      error: { code: 'validation_error', message: aimed },
+    });
+    expect(await characters(pid)).toEqual(anas);
+    // on her own project it runs
+    const run = await dora<any>('POST', `/projects/${mine}/recipes/${recipe.id}/run`, {
+      params: { target: mine },
+    });
+    expect((await stack.waitJob(mine, run.id)).status).toBe('succeeded');
+    expect(await characters(mine)).toEqual(['Intruder']);
+    expect(await characters(pid)).toEqual(anas);
+    await dora('DELETE', `/recipes/${recipe.id}`);
+  });
+
+  it('keeps the studio library and its project routes to their callers, however the path is percent-encoded', async () => {
+    const ana = as({ cookie: users.ana });
+    const state = await ana<any>('GET', `/projects/${pid}/state`);
+    const keeper = Object.values(state.docs.characters as Record<string, { id: string; name: string }>).find(
+      (c) => c.name === 'Keeper',
+    )!;
+    const saved = await ana<any>('POST', `/projects/${pid}/library/save`, {
+      entity: { kind: 'character', id: keeper.id },
+    });
+    const escaped = escapedId(pid);
+    const target = { kind: 'character', id: keeper.id };
+    const dora = (method: string, path: string, body?: unknown) =>
+      rawStatus(method, `/api/projects/${escaped}/library${path}`, { cookie: users.dora }, body);
+    const seen = {
+      // nobody signed in: the library is no one's to read or change
+      nobody: {
+        list: await rawStatus('GET', '/%61pi/library/items'),
+        archive: await rawStatus('PATCH', `/%61pi/library/items/${saved.item.id}`, {}, { archived: true }),
+      },
+      // a signed-in person who is not a member: 403 on the project's library routes
+      dora: {
+        status: await dora('GET', ''),
+        save: await dora('POST', '/save', { entity: target, newItem: true }),
+        apply: await dora('POST', '/apply', { itemId: saved.item.id, target }),
+        detach: await dora('POST', '/detach', { target, what: 'library' }),
+      },
+      // a member reads it under the same escaped id
+      ana: await rawStatus('GET', `/api/projects/${escaped}/library`, { cookie: users.ana }),
+      // a malformed project id is 422 before anyone is asked about the project
+      malformed: {
+        dora: await rawStatus('GET', '/api/projects/not-an-id/library', { cookie: users.dora }),
+        ana: await rawStatus('POST', '/api/projects/prj_short/library/save', { cookie: users.ana }, {}),
+        mira: await rawStatus('GET', '/api/projects/chr_0123456789abcdef/library', { cookie: users.mira }),
+      },
+    };
+    expect(seen).toEqual({
+      nobody: { list: 401, archive: 401 },
+      dora: { status: 403, save: 403, apply: 403, detach: 403 },
+      ana: 200,
+      malformed: { dora: 422, ana: 422, mira: 422 },
+    });
+    // nothing changed: Keeper is still linked to Ana's item, which is not archived
+    const status = await ana<any>('GET', `/projects/${pid}/library`);
+    expect(status.links.map((l: any) => [l.entity.id, l.itemId])).toEqual([[keeper.id, saved.item.id]]);
+    expect((await ana<any>('GET', `/library/items/${saved.item.id}`)).archived).toBe(false);
+  });
+
+  it('answers a library upload it will refuse before reading its parts', async () => {
+    // a reviewer token reads the library and may not publish to it (Ana's: Ben's tokens are counted below)
+    const reader = await as({ cookie: users.ana })<any>('POST', '/tokens', {
+      name: 'Library reader',
+      role: 'reviewer',
+    });
+    const [item] = (await as({ token: reader.secret })<any>('GET', '/library/items')).items;
+    expect(item).toBeDefined();
+    const meta = {
+      kind: 'desk-set',
+      name: 'Harbor',
+      unit: {
+        format: '3d-editor.desk-unit',
+        formatVersion: 1,
+        meta: {
+          dimensionsM: [40, 30, 12],
+          objects: 22,
+          triangles: 48_000,
+          actor: null,
+          credits: [],
+          deskVersion: '1.4.0',
+          digest: 'c'.repeat(64),
+        },
+      },
+    };
+    const upload = (payload: number, order: 'meta first' | 'payload first' = 'meta first') => {
+      const f = new FormData();
+      const file = new Blob([new Uint8Array(payload)], { type: 'application/octet-stream' });
+      if (order === 'payload first') f.append('payload', file, 'unit.bin');
+      f.append('meta', JSON.stringify(meta));
+      if (order === 'meta first') f.append('payload', file, 'unit.bin');
+      return f;
+    };
+    const post = async (path: string, auth: Auth, body: FormData) => {
+      const headers: Record<string, string> = auth.token
+        ? { authorization: `Bearer ${auth.token}` }
+        : { cookie: auth.cookie! };
+      const res = await fetch(`${stack.url}/api${path}`, { method: 'POST', headers, body });
+      await res.body?.cancel();
+      return res.status;
+    };
+    // what the uploads write to the temporary folder while they are answered
+    const tmp = join(stack.dataDir, 'tmp');
+    const written: string[] = [];
+    const watcher = watch(tmp, (_event, name) => name && written.push(name));
+    const reviewer = { token: reader.secret };
+    const seen = {
+      reviewer: {
+        outOfOrder: await post('/library/items', reviewer, upload(64, 'payload first')),
+        overLimit: await post('/library/items', reviewer, upload(33 * 1024 * 1024)),
+        version: await post(`/library/items/${item.id}/versions`, reviewer, upload(64, 'payload first')),
+      },
+      // a person who may publish: an item that is not there is 404 whatever the parts
+      ana: await post(
+        '/library/items/lib_0000000000000000/versions',
+        { cookie: users.ana },
+        upload(64, 'payload first'),
+      ),
+    };
+    watcher.close();
+    expect(seen).toEqual({ reviewer: { outOfOrder: 403, overLimit: 403, version: 403 }, ana: 404 });
+    expect(written).toEqual([]);
   });
 
   it('lets agents act for their owner within a token’s scope, over REST and MCP', async () => {
@@ -329,11 +674,12 @@ describe('accounts', () => {
           resolve(seen);
         }, 800);
       });
-    // the director (a new session) and an admin follow the project
-    expect(await listen(await signedIn('ana@studio.test'))).not.toContainEqual(
-      expect.stringMatching(/^error:forbidden/),
-    );
-    expect(await listen(users.mira!)).not.toContainEqual(expect.stringMatching(/^error:forbidden/));
+    // the director (a new session) and an admin follow the project: the server answers their subscribe
+    // (docs/design/realtime-sync.md#server--client)
+    for (const seen of [await listen(await signedIn('ana@studio.test')), await listen(users.mira!)]) {
+      expect(seen).not.toContainEqual(expect.stringMatching(/^error:forbidden/));
+      expect(seen).toContain('subscribed');
+    }
     const ben = as({ cookie: users.ben });
     // Ben loses access: his subscription is refused
     await as({ cookie: users.ana })('PUT', `/projects/${pid}/access`, {
@@ -342,7 +688,10 @@ describe('accounts', () => {
         { email: 'cleo@studio.test', role: 'reviewer' },
       ],
     });
-    expect(await listen(users.ben!)).toContainEqual(expect.stringMatching(/^error:forbidden/));
+    const refused = await listen(users.ben!);
+    expect(refused).toContainEqual(expect.stringMatching(/^error:forbidden/));
+    // ...and not answered `subscribed`: his tab claims none of the project's editor jobs
+    expect(refused).not.toContain('subscribed');
     await expect(ben('GET', `/projects/${pid}/state`)).rejects.toMatchObject({ status: 403 });
   });
 });

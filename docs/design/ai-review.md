@@ -24,7 +24,7 @@ continue anyway.
 | Screenplay | `screenplay.review` (text model), revisions and rounds | `screenplay_approved` |
 | Cast & elements | `cast.review` (vision model: every character's and element's references), new references and rounds | the references it passed, the characters and elements locked, `cast_locked` (speaking characters' voices are still picked by a person when dialogue uses TTS) |
 | Resources | nothing is generated | `resources_ready` at once |
-| Storyboard | `storyboard.review` (vision model, frames beside their [blocking](director-desk.md)), redraws and rounds | the frames, `storyboard_approved` |
+| Storyboard | `storyboard.review` (vision model, every frame), redraws and rounds | the frames, `storyboard_approved` |
 | Pilot | every take watched whole and heard (the gate), then the scene watched and heard (`clip.review`) | the pilot clip when its [clip gate](#the-clip-gate) holds, then `pilot_approved` |
 | Production, per scene | the extension's new scenes by `screenplay.review` (`sceneIds`); the scene's storyboard by `clip.storyboard`; its takes and the scene as for the pilot | its frames, then the clip when its clip gate holds |
 | Production | every clip approved and the target reached | `production_approved` |
@@ -160,7 +160,10 @@ and started again six times.
 | `storytelling` | Do the frames tell the scene's beats in order? |
 | `feasibility` | Can each frame be animated: clear poses, a simple action, nothing the model will break (hands on small objects, mechanisms)? |
 | `pacing` | Do the shots' lengths fit their action and their lines? |
-| `blocking` | With a [blocking](director-desk.md): does each frame keep its camera view (the camera angle, who stands where and faces which way)? Scored only when the frames have one |
+
+Stored storyboard reviews may name a `blocking` dimension (scored while rideo had its own desk, until November 14,
+2026, [removed](director-desk.md#what-happened-to-the-blocking)): their issues and recommendations still read and are
+listed under it, while no reviewer is asked for it and it has no bar.
 
 | Cast | What the reviewer asks |
 |---|---|
@@ -210,10 +213,8 @@ the elements it reviewed, and approves `cast_locked`; voices that dialogue needs
 
 **Storyboard** (`storyboard.review`, lane `llm`, the vision model): one call per storyboarded scene with the scene
 (heading, continuity, summary), its neighbours, the cast's looks, and every shot in order (label, length, camera,
-description, action, cast, lines) followed by its frame (512 px wide, labelled `Shot C2·S3`) and, when the scene is
-[blocked](director-desk.md), the shot's camera view (`Blocking C2·S3`) and its blocking line; the scene's blocking
-issues are part of the input. The scenes' answers are merged: scores weighted by the scenes' lengths, issues and
-recommendations in scene order.
+description, action, cast, lines) followed by its frame (512 px wide, labelled `Shot C2·S3`). The scenes' answers are
+merged: scores weighted by the scenes' lengths, issues and recommendations in scene order.
 
 **Rounds.** When a review fails, `settings.review.autoRevise` is on and fewer than `maxRounds` revisions were made,
 the job applies the open recommendations of priority 1 and 2 that carry an action, and reviews again:
@@ -252,12 +253,15 @@ approved is storyboarded, one of the first `storyboard.scenes` included. The sto
 written by then (the screenplay job writes the pilot's), so in the riding demo (2026-10-29) the third scene, written
 by production within the first three, was generated with no frames at all.
 
-`clip.storyboard` (lane `control`) blocks the scene ([director's desk](director-desk.md)), draws every frame that is
+`clip.storyboard` (lane `control`) draws every frame that is
 missing, failed, stale or outdated (the first shot first, the others with it as their scene reference), and reviews
 the scene's frames with the storyboard reviewer (one call, as for a storyboarded scene). A failing review applies its
 fixes (`redraw_board`, `replan_scene`) and reviews again, up to `maxRounds`; a pass approves the scene's frames as the
 system. The review is the clip's `boardReview` (a `StageReview` with `stage: storyboard`, current while its subject,
-`clipBoardSubject`, is the clip's shots and frames).
+`clipBoardSubject`, is the clip's shots and frames). A scene whose review passed while its frames are not all approved
+has them approved again without a model call only when none of them needs drawing; a frame that is missing, failed,
+stale or outdated (its shot's prompt changed without changing the review's subject, as an upgrade can do) makes the
+batch storyboard the scene again, which draws that frame and reviews the scene once more.
 
 A scene whose review still fails stops the batch (`stopReason: the storyboard of scene 7 did not pass its review`), and
 the Inbox lists it. A person applies or dismisses the recommendations, redraws frames, approves them by hand, or
@@ -422,7 +426,7 @@ cut review when it finishes on autopilot; it runs on request at any time (*Revie
 | `POST /api/projects/:id/ai-reviews/:stage/recommendations/:rid/dismiss` | `ai_review_dismiss` |
 | `POST /api/projects/:id/ai-reviews/:stage/override` `{note}` | `ai_review_override` |
 | `POST /api/projects/:id/clips/:clipId/review` `{fix?}` → job (the record comes with the clip) | `clip_review` |
-| `POST /api/projects/:id/clips/:clipId/storyboard` → job (`clip.storyboard`: block, draw, review, approve one scene) | `clip_storyboard` |
+| `POST /api/projects/:id/clips/:clipId/storyboard` → job (`clip.storyboard`: draw, review, approve one scene) | `clip_storyboard` |
 | `POST /api/projects/:id/clips/:clipId/board-review/override` `{note}` | `clip_board_review_override` |
 | `POST /api/projects/:id/takes/watch` `{takes?: [{clipId, shotId, takeId}]}` → job (`takes.watch`; the cut's takes when empty) | `takes_watch` |
 

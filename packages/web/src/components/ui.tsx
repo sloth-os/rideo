@@ -75,6 +75,25 @@ const TONES = {
 } as const;
 export type Tone = keyof typeof TONES;
 
+/**
+ * Tailwind's display utilities. One the caller gives a badge (`hidden` below a breakpoint, say) replaces the badge's
+ * own `inline-flex`: both on one element, the stylesheet's order decides, and it puts `inline-flex` after `hidden`.
+ */
+const DISPLAY = new Set([
+  'hidden',
+  'block',
+  'inline',
+  'inline-block',
+  'flex',
+  'inline-flex',
+  'grid',
+  'inline-grid',
+  'contents',
+  'flow-root',
+  'list-item',
+  'table',
+]);
+
 export function Badge({
   tone = 'neutral',
   children,
@@ -93,7 +112,8 @@ export function Badge({
       title={title}
       data-testid={testid}
       className={cx(
-        'inline-flex items-center gap-1 whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-medium',
+        className?.split(/\s+/).some((c) => DISPLAY.has(c)) ? null : 'inline-flex',
+        'items-center gap-1 whitespace-nowrap rounded-full border px-2 py-0.5 text-[11px] font-medium',
         TONES[tone],
         className,
       )}
@@ -226,6 +246,12 @@ export function EmptyState({
   );
 }
 
+/** The open dialogs, in the order they opened: Escape closes the last one only (a plan opened over a picker). */
+const openDialogs: { close: () => void }[] = [];
+const closeTopDialog = (e: KeyboardEvent) => {
+  if (e.key === 'Escape') openDialogs.at(-1)?.close();
+};
+
 export function Dialog({
   open,
   onClose,
@@ -242,15 +268,19 @@ export function Dialog({
   wide?: boolean;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  // The latest onClose: a new one on each render neither moves the dialog in the stack nor takes the focus back
+  const close = useRef(onClose);
+  close.current = onClose;
   useEffect(() => {
     if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', onKey);
+    const entry = { close: () => close.current() };
+    if (openDialogs.push(entry) === 1) window.addEventListener('keydown', closeTopDialog);
     ref.current?.querySelector<HTMLElement>('input,textarea,select,button')?.focus();
-    return () => window.removeEventListener('keydown', onKey);
-  }, [open, onClose]);
+    return () => {
+      openDialogs.splice(openDialogs.indexOf(entry), 1);
+      if (!openDialogs.length) window.removeEventListener('keydown', closeTopDialog);
+    };
+  }, [open]);
   if (!open) return null;
   return (
     <div

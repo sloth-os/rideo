@@ -1,4 +1,4 @@
-import { type Character, LINE_HEARD_RATIO, type Shot, type Take, takeState } from '@rideo/shared';
+import { type Character, LINE_HEARD_RATIO, plural, type Shot, type Take, takeState } from '@rideo/shared';
 import { ShieldAlert, ShieldCheck, ShieldQuestion, ShieldX, UserCheck } from 'lucide-react';
 import { NO_ELEMENTS, useProject } from '../store/project';
 import { Badge } from './ui';
@@ -75,7 +75,9 @@ export function QualityBadge({ take }: { take: Take }) {
       : null,
     q.physics !== null ? `physics ${q.physics.toFixed(2)}` : null,
     q.continuity !== null ? `continuity ${q.continuity.toFixed(2)}` : null,
-    q.sound?.lines.length ? `${q.sound.lines.length - unheard}/${q.sound.lines.length} lines heard` : null,
+    q.sound?.lines.length
+      ? `${q.sound.lines.length - unheard}/${plural(q.sound.lines.length, 'line')} heard`
+      : null,
     q.sound?.transcript ? `heard: “${q.sound.transcript}”` : null,
     q.watch
       ? `watched whole (${q.watch.via}): ${q.watch.overall}/10 · motion ${q.watch.motion.toFixed(2)} · action ${score(q.watch.action)} · camera ${score(q.watch.camera)} · identity ${q.watch.identity.toFixed(2)}`

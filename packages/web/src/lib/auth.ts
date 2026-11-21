@@ -21,15 +21,23 @@ interface AuthState {
   signOut(): Promise<void>;
 }
 
+/** The ask of `/api/auth/me` on its way: callers meanwhile share it. */
+let asking: Promise<void> | null = null;
+
 export const useAuth = create<AuthState>((set, get) => ({
   me: null,
   loaded: false,
-  async load() {
-    try {
-      set({ me: await api.me(), loaded: true });
-    } catch {
-      set({ loaded: true });
-    }
+  load() {
+    asking ??= api
+      .me()
+      .then(
+        (me) => set({ me, loaded: true }),
+        () => set({ loaded: true }),
+      )
+      .finally(() => {
+        asking = null;
+      });
+    return asking;
   },
   async signOut() {
     await api.logout().catch(() => undefined);
@@ -38,6 +46,18 @@ export const useAuth = create<AuthState>((set, get) => ({
     if (!getRuntime().embedded) window.location.assign(appUrl('/login'));
   },
 }));
+
+/**
+ * Who is signed in once `/api/auth/me` has answered: it waits for the ask on its way (or makes one), and asks again
+ * when the last ask failed; null when it still cannot be told. What only one auth mode allows waits for this rather
+ * than taking the `me` of a tab that has not heard yet (docs/design/realtime-sync.md#who-sees-and-steers-which-tabs).
+ */
+export async function whoAmI(): Promise<AuthMe | null> {
+  const { me, load } = useAuth.getState();
+  if (me) return me;
+  await load();
+  return useAuth.getState().me;
+}
 
 /** The sign-in route (router path) that comes back to `returnTo` (a router path too, docs/design/subpath.md). */
 export function loginUrl(returnTo = routePath(window.location.pathname) + window.location.search): string {

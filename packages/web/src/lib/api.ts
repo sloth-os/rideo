@@ -3,17 +3,18 @@ import type {
   Annotation,
   AuditEvent,
   AuthMe,
-  BlockingView,
   BranchInfo,
   BrandKit,
   BrandSlot,
   Character,
   Clip,
+  ClipDeskState,
   CommentTarget,
   CommentThread,
   CommitSummary,
   ConsentInput,
   DeliveryInput,
+  DeskState,
   Diff,
   EditKind,
   EditorJobKind,
@@ -43,7 +44,6 @@ import type {
   ReviewItem,
   ReviewStage,
   ReviewTarget,
-  SceneBlocking,
   Screenplay,
   SearchKind,
   SearchResponse,
@@ -76,6 +76,8 @@ export class ApiError extends Error {
   constructor(
     readonly status: number,
     readonly problem: ProblemDetails,
+    /** The answer's headers, when it had some (a desk state's `412` names the stored state's `ETag`). */
+    readonly headers: Headers | null = null,
   ) {
     super(problem.detail || problem.title || `HTTP ${status}`);
     this.name = 'ApiError';
@@ -135,6 +137,8 @@ export interface PublicConfig {
     interchange?: { mediaBase: string };
     /** Telemetry from the studio (docs/design/observability.md#telemetry-from-the-studio). */
     telemetry?: boolean;
+    /** The 3D-Editor's desk page (docs/design/director-desk.md#the-setting); null or absent: no desk. */
+    desk?: { url: string } | null;
   };
   llm: { provider: string; model: string; vision: string } | null;
   models: Record<'image' | 'video' | 'music', { id: string; limits?: Record<string, unknown> | null }[]>;
@@ -196,16 +200,18 @@ interface StagedFile {
   complete?: boolean;
 }
 
-async function request<T>(
+/** A request with the token and the workspace; the answer as it comes. */
+async function send(
   method: string,
   path: string,
   body?: unknown,
   headers: Record<string, string> = {},
-): Promise<T> {
+  signal?: AbortSignal,
+): Promise<Response> {
   const token = getToken();
   const isForm = typeof FormData !== 'undefined' && body instanceof FormData;
   const isBlob = (typeof Blob !== 'undefined' && body instanceof Blob) || body instanceof Uint8Array;
-  const res = await fetch(apiUrl(path), {
+  return fetch(apiUrl(path), {
     method,
     headers: {
       ...(body !== undefined && !isForm
@@ -222,8 +228,64 @@ async function request<T>(
         : isForm || isBlob
           ? (body as FormData | Blob | Uint8Array<ArrayBuffer>)
           : JSON.stringify(body),
+    ...(signal ? { signal } : {}),
   });
-  if (res.status === 204) return undefined as T;
+}
+
+/** The problem of a failed answer, after the 401 and 5xx hooks. */
+function problemOf(res: Response, json: unknown): ApiError {
+  const problem = (json ?? {}) as Partial<ProblemDetails>;
+  return new ApiError(
+    res.status,
+    {
+      type: problem.type ?? 'about:blank',
+      title: problem.title ?? res.statusText,
+      status: res.status,
+      detail: problem.detail ?? res.statusText,
+      code: problem.code ?? 'internal_error',
+      errors: problem.errors,
+    },
+    res.headers ?? null,
+  );
+}
+
+/** The sha256 an `ETag` names, without a weak prefix and the quotes; null for none. */
+export function etagValue(etag: string | null | undefined): string | null {
+  const value = (etag ?? '').trim().replace(/^W\//, '').replace(/"/g, '');
+  return value || null;
+}
+
+/**
+ * Reads an answer's body to its end and drops it, an empty one too (a `204`'s). Chromium reports a fetch whose body is
+ * never read as cancelled (`net::ERR_ABORTED`, a failed request in DevTools and to anything on the DevTools protocol),
+ * though the server answered, and cancelling the body instead does the same. A body that does not arrive changes
+ * nothing: the status is the answer.
+ */
+export async function drain(res: Response): Promise<void> {
+  try {
+    await res.arrayBuffer();
+  } catch {
+    // the status is the answer
+  }
+}
+
+function observe(res: Response, path: string): void {
+  if (res.status === 401 && !path.startsWith('/auth/')) onUnauthorized?.();
+  if (res.status >= 500 && path !== '/telemetry') onServerError?.();
+}
+
+async function request<T>(
+  method: string,
+  path: string,
+  body?: unknown,
+  headers: Record<string, string> = {},
+  signal?: AbortSignal,
+): Promise<T> {
+  const res = await send(method, path, body, headers, signal);
+  if (res.status === 204) {
+    await drain(res);
+    return undefined as T;
+  }
   const text = await res.text();
   let json: unknown = null;
   try {
@@ -231,20 +293,80 @@ async function request<T>(
   } catch {
     json = { detail: text };
   }
-  if (res.status === 401 && !path.startsWith('/auth/')) onUnauthorized?.();
-  if (res.status >= 500 && path !== '/telemetry') onServerError?.();
-  if (!res.ok) {
-    const problem = (json ?? {}) as Partial<ProblemDetails>;
-    throw new ApiError(res.status, {
-      type: problem.type ?? 'about:blank',
-      title: problem.title ?? res.statusText,
-      status: res.status,
-      detail: problem.detail ?? res.statusText,
-      code: problem.code ?? 'internal_error',
-      errors: problem.errors,
-    });
-  }
+  observe(res, path);
+  if (!res.ok) throw problemOf(res, json);
   return json as T;
+}
+
+/**
+ * The desk's stored state of a clip (docs/design/director-desk.md#the-routes): its bytes, format, version and sha256
+ * (the ETag); null when none is stored (`204`, its empty body read to the end). Any other answer that is not the state,
+ * a `404` for a clip or project that is not there included, is the failure it says.
+ */
+async function deskState(
+  id: string,
+  clipId: string,
+): Promise<{ format: string; version: number; sha256: string; data: ArrayBuffer } | null> {
+  const path = `/projects/${id}/clips/${clipId}/desk-state`;
+  const res = await send('GET', path);
+  observe(res, path);
+  if (res.status === 204) {
+    await drain(res);
+    return null;
+  }
+  if (!res.ok) {
+    const text = await res.text();
+    let json: unknown = null;
+    try {
+      json = text ? JSON.parse(text) : null;
+    } catch {
+      json = { detail: text };
+    }
+    throw problemOf(res, json);
+  }
+  return {
+    format: res.headers.get('x-desk-state-format') ?? '',
+    version: Number(res.headers.get('x-desk-state-version') ?? 0),
+    sha256: etagValue(res.headers.get('etag')) ?? '',
+    data: await res.arrayBuffer(),
+  };
+}
+
+/**
+ * The state a desk state write replaces (docs/design/director-desk.md#when-rideo-stores-it): `If-Match` with its
+ * sha256 (`*` for whatever is stored), or `If-None-Match: *` when none is stored; `replace` when the person chose to
+ * replace it (`X-Desk-State-Replace: 1`: a commit of its own, so the project's history keeps the state it replaces).
+ */
+export type DeskStatePrecondition = ({ ifMatch: string } | { ifNoneMatch: '*' }) & { replace?: true };
+
+/**
+ * Stores a clip's desk state (`PUT …/desk-state`) over the state the precondition names. A `412`
+ * `desk_state_conflict` (another session stored or restored another state, or cleared it) is an ApiError whose headers
+ * carry the stored state's `ETag`. `signal` aborts the upload (closing the desk waits for it at most 10 seconds).
+ * `units` is the `X-Desk-State-Units` value (docs/design/director-desk.md#what-a-stored-state-uses); none: not known.
+ */
+function saveDeskState(
+  id: string,
+  clipId: string,
+  state: DeskState,
+  precondition: DeskStatePrecondition,
+  signal?: AbortSignal,
+  units?: string,
+): Promise<{ deskState: ClipDeskState }> {
+  const named: Record<string, string> = {
+    ...('ifMatch' in precondition
+      ? { 'if-match': precondition.ifMatch === '*' ? '*' : `"${precondition.ifMatch}"` }
+      : { 'if-none-match': '*' }),
+    ...(precondition.replace ? { 'x-desk-state-replace': '1' } : {}),
+    ...(units !== undefined ? { 'x-desk-state-units': units } : {}),
+  };
+  return request<{ deskState: ClipDeskState }>(
+    'PUT',
+    `/projects/${id}/clips/${clipId}/desk-state`,
+    new Uint8Array(state.data),
+    { 'x-desk-state-format': state.format, 'x-desk-state-version': String(state.version), ...named },
+    signal,
+  );
 }
 
 /** A download of the shot list (the token rides in the query like media URLs). */
@@ -447,6 +569,12 @@ export const api = {
     request<Job>('POST', `${p(id)}/clips/${clipId}/review`, body),
   updateShot: (id: string, clipId: string, shotId: string, body: Record<string, unknown>) =>
     request<Clip>('PATCH', `${p(id)}/clips/${clipId}/shots/${shotId}`, body),
+  // The 3D-Editor's director's desk (docs/design/director-desk.md#the-routes)
+  deskState,
+  saveDeskState,
+  /** The clip names no desk state any more (the desk panel's Start over). */
+  clearDeskState: (id: string, clipId: string) =>
+    request<void>('DELETE', `${p(id)}/clips/${clipId}/desk-state`),
   // Take edits and extensions (docs/design/take-editing.md)
   editTake: (
     id: string,
@@ -580,13 +708,6 @@ export const api = {
   // Storyboard and animatic (docs/design/storyboard.md#surfaces)
   generateStoryboard: (id: string, sceneIds?: string[]) =>
     request<Job>('POST', `${p(id)}/storyboard/generate`, sceneIds?.length ? { sceneIds } : {}),
-  // The 3D director's desk (docs/design/director-desk.md#surfaces)
-  getBlocking: (id: string, clipId: string) =>
-    request<BlockingView>('GET', `${p(id)}/clips/${clipId}/blocking`),
-  setBlocking: (id: string, clipId: string, blocking: SceneBlocking, fix = false) =>
-    request<BlockingView>('PUT', `${p(id)}/clips/${clipId}/blocking`, { blocking, fix }),
-  generateBlocking: (id: string, clipId: string) =>
-    request<Job>('POST', `${p(id)}/clips/${clipId}/blocking/generate`, {}),
   storyboardClip: (id: string, clipId: string) =>
     request<Job>('POST', `${p(id)}/clips/${clipId}/storyboard`, {}),
   overrideBoardReview: (id: string, clipId: string, note: string) =>

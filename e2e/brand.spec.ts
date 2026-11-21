@@ -29,9 +29,13 @@ test('a brand kit is made, applied to a project, and its lower third and bug rea
   ]);
   const kitName = `Northwind (${testInfo.project.name})`;
 
-  // The kit
+  // The kit, from the header's Brand kits (on a phone under the project's More, docs/brand.md#layout-and-responsiveness)
   await page.goto(`/p/${pid}/overview`);
-  await page.getByTestId('brand-kits-link').click();
+  if (testInfo.project.name === 'mobile') {
+    await expect(page.getByTestId('brand-kits-link')).toBeHidden();
+    await page.getByTestId('mnav-more').click();
+    await page.getByTestId('mnav-brand-kits').click();
+  } else await page.getByTestId('brand-kits-link').click();
   await expect(page).toHaveURL(/\/brand$/);
   await page.getByTestId('kit-name').fill(kitName);
   await page.getByTestId('kit-create').click();

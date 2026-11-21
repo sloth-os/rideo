@@ -83,3 +83,57 @@ describe('project summaries', () => {
     ]);
   });
 });
+
+describe('the studio library in a summary (docs/design/library.md#where-it-is-used)', () => {
+  it('lists links and pins, and a summary written before the field still reads, as version 1', () => {
+    const docs = f.docs();
+    const mira = f.character();
+    const by = { kind: 'user' as const, id: 'usr_0000000000aaaa', name: 'Sam' };
+    docs.characters = {
+      [mira.id]: {
+        ...mira,
+        library: {
+          itemId: 'lib_0000000000mira00',
+          version: 2,
+          digest: 'd'.repeat(64),
+          mode: 'used',
+          at: '2026-11-20T00:00:00.000Z',
+          by,
+        },
+        deskUnit: {
+          kind: 'desk-figure',
+          itemId: 'lib_0000000000fig000',
+          version: 1,
+          sha256: 'e'.repeat(64),
+          name: 'Mira look',
+          actorKind: null,
+          heightM: null,
+          pinnedAt: '2026-11-20T00:00:00.000Z',
+          pinnedBy: by,
+        },
+      },
+    };
+    const d = projectDigest({ projectId: docs.project.id, docs, branch: 'main', commit: 'c1', agents: [] });
+    expect(d.version).toBe(1);
+    expect(d.library).toEqual([
+      {
+        itemId: 'lib_0000000000fig000',
+        version: 1,
+        via: 'deskUnit',
+        entity: { kind: 'character', id: mira.id, name: mira.name },
+      },
+      {
+        itemId: 'lib_0000000000mira00',
+        version: 2,
+        via: 'library',
+        entity: { kind: 'character', id: mira.id, name: mira.name },
+      },
+    ]);
+    const { library: _, ...before } = d;
+    expect(ProjectDigestSchema.parse(JSON.parse(JSON.stringify(before))).library).toBeUndefined();
+    expect(
+      projectDigest({ projectId: docs.project.id, docs: f.docs(), branch: 'main', commit: 'c1', agents: [] })
+        .library,
+    ).toEqual([]);
+  });
+});

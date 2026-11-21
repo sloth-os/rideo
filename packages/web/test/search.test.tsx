@@ -63,7 +63,10 @@ const response: SearchResponse = {
 };
 
 let calls: { url: string; method: string }[];
+/** What the search answers: `response` unless a test says otherwise. */
+let answer: SearchResponse;
 beforeEach(() => {
+  answer = response;
   const docs = f.docs();
   useProject.setState({ ...emptySlice, projectId: docs.project.id, docs, workflow: evaluateWorkflow(docs) });
   calls = [];
@@ -76,7 +79,7 @@ beforeEach(() => {
         return new Response(JSON.stringify({ job: { id: 'job_000000000001', kind: 'search.index' } }), {
           status: 202,
         });
-      if (url.includes('/search?')) return new Response(JSON.stringify(response));
+      if (url.includes('/search?')) return new Response(JSON.stringify(answer));
       return new Response('{}');
     }),
   );
@@ -110,7 +113,7 @@ describe('search view (docs/design/search.md#searching)', () => {
     fireEvent.click(screen.getByTestId('search-submit'));
     expect(await screen.findAllByTestId('search-result')).toHaveLength(2);
     expect(screen.getByTestId('search-summary').textContent).toContain(
-      '2 results, matched by words · 1 frames',
+      '2 results, matched by words · 1 frame is not indexed yet',
     );
     expect(screen.getAllByTestId('result-caption')[0]?.textContent).toContain(
       'Boats in the harbour at night',
@@ -123,6 +126,46 @@ describe('search view (docs/design/search.md#searching)', () => {
     fireEvent.click((await screen.findAllByTestId('result-show'))[1]!);
     expect((await screen.findByTestId('where')).textContent).toContain(`/p/${pid}/clips`);
     expect(useProject.getState().highlight).toMatchObject({ kind: 'take', id: 'tak_000000000001' });
+  });
+});
+
+describe('search counts (docs/brand.md#voice)', () => {
+  /** The words the search view shows under the search box after a search the server answers with `said`. */
+  async function searched(said: SearchResponse, testid: 'search-summary' | 'search-empty') {
+    answer = said;
+    const pid = useProject.getState().projectId!;
+    render(
+      <MemoryRouter initialEntries={[`/p/${pid}/search`]}>
+        <Routes>
+          <Route path="/p/:projectId/search" element={<SearchView />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    await screen.findByTestId('search-status');
+    fireEvent.change(screen.getByTestId('search-input'), { target: { value: 'harbour' } });
+    fireEvent.click(screen.getByTestId('search-submit'));
+    const text = (await screen.findByTestId(testid)).textContent;
+    cleanup();
+    return text;
+  }
+
+  it('says how many frames are not indexed yet, the verb agreeing with the count', async () => {
+    expect(await searched({ ...response, pending: 1 }, 'search-summary')).toBe(
+      '2 results, matched by words · 1 frame is not indexed yet',
+    );
+    expect(await searched({ ...response, pending: 2 }, 'search-summary')).toBe(
+      '2 results, matched by words · 2 frames are not indexed yet',
+    );
+  });
+
+  it('says how many frames wait when nothing is indexed yet, the verb agreeing with the count', async () => {
+    const empty = { ...response, indexed: 0, results: [] };
+    expect(await searched({ ...empty, pending: 1 }, 'search-empty')).toBe(
+      'Nothing is indexed yet: 1 frame waits.',
+    );
+    expect(await searched({ ...empty, pending: 2 }, 'search-empty')).toBe(
+      'Nothing is indexed yet: 2 frames wait.',
+    );
   });
 });
 

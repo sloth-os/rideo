@@ -16,6 +16,7 @@ import {
   orderedShotCharacters,
   orderedShotElements,
   parseAnalysisLog,
+  plural,
   promptVersionOf,
   type Shot,
   type ShotContext,
@@ -489,7 +490,11 @@ export async function shotGroup(deps: HandlerDeps, ctx: JobContext) {
           ? shots.flatMap((shot, k) => (attemptDone(final[k]!.report) ? [] : [{ shot, segment: final[k]! }]))
           : [];
       if (remake.length) {
-        ctx.progress(0.95, 1, `${passed}/${shots.length} shots passed; ${remake.length} made again alone`);
+        ctx.progress(
+          0.95,
+          1,
+          `${passed}/${plural(shots.length, 'shot')} passed; ${remake.length} made again alone`,
+        );
         const jobs: Job[] = [];
         for (const { shot, segment } of remake) {
           // From the segment's first frame, which has the sequence's look, when that frame can be trusted
@@ -511,7 +516,7 @@ export async function shotGroup(deps: HandlerDeps, ctx: JobContext) {
         }
         await ctx.waitFor(jobs.map((j) => j.id));
       }
-      ctx.progress(1, 1, `${passed}/${shots.length} shots passed`);
+      ctx.progress(1, 1, `${passed}/${plural(shots.length, 'shot')} passed`);
       return { shots: shots.length, passed, remade: remake.length, tasks: taskIds.length };
     });
   } catch (err) {

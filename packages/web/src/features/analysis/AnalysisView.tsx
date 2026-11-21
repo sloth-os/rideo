@@ -1,4 +1,4 @@
-import { type Analysis, type EditSuggestion, formatDuration, isTerminalJob } from '@rideo/shared';
+import { type Analysis, type EditSuggestion, formatDuration, isTerminalJob, plural } from '@rideo/shared';
 import { Bot, Check, ListChecks, ScanSearch, Sparkles, Wand2, X } from 'lucide-react';
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
@@ -19,7 +19,7 @@ function describeParams(s: EditSuggestion): string {
     case 'tighten_silence':
       return `${r(p.start, p.end)} → keep ${p.keepSec}s`;
     case 'highlight':
-      return `${p.segments.length} segment(s)`;
+      return plural(p.segments.length, 'segment');
     case 'transition':
       return `${p.type} at ${p.at.toFixed(1)}s (${p.duration}s)`;
     case 'title':
@@ -213,7 +213,7 @@ export function AnalysisView() {
             {current.transcript.length ? (
               <details className="text-[13px]">
                 <summary className="cursor-pointer text-muted">
-                  Transcript ({current.transcript.length} segments)
+                  Transcript ({plural(current.transcript.length, 'segment')})
                 </summary>
                 <ul className="mt-2 space-y-1">
                   {current.transcript.map((t) => (

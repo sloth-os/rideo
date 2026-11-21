@@ -1,5 +1,6 @@
 import {
   apiBaseProblem,
+  deskUrlProblem,
   type EndpointStatus,
   endpointOfSetting,
   type ResolvedEndpoints,
@@ -157,6 +158,7 @@ export function checkValue(field: SettingField, value: string): string | null {
   if (field.kind === 'number' && !Number.isFinite(Number(v))) return 'a number';
   if (endpointOfSetting(field.env)?.url === field.env) return apiBaseProblem(v);
   if (CHECKED_URLS.has(field.env) && !HTTP_URL.test(v)) return 'an http:// or https:// URL';
+  if (field.env === 'RIDEO_DESK_URL') return deskUrlProblem(v);
   return null;
 }
 

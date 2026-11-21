@@ -19,11 +19,15 @@ export const PORTS = {
   host: E2E_PORT + 6,
   /** The main studio behind slow media storage: ranged media reads are held (docs/design/engine-performance.md). */
   slowMedia: E2E_PORT + 8,
+  /** The fake 3D desk the main studio embeds, on `localhost` (docs/design/director-desk.md#tests). */
+  desk: E2E_PORT + 9,
   /** The mock mm-gateway. */
   gateway: E2E_PORT + 10,
   /** Studios whose model a spec overloads until it is paused (docs/design/ai-gateway.md#outages): one per viewport. */
   outage: E2E_PORT + 11,
   outageMobile: E2E_PORT + 12,
+  /** The studio whose desk is the fake desk in units mode, `desk.html?units=1` (docs/design/director-desk.md#tests). */
+  units: E2E_PORT + 13,
 } as const;
 
 export const at = (port: number, path = '') => `http://127.0.0.1:${port}${path}`;

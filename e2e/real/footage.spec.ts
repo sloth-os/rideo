@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { plural } from '@rideo/shared';
 import { Api, makeFootage, projectIdFrom } from '../support/api';
 import { counters } from './support';
 
@@ -30,7 +31,10 @@ test('footage → the vision model summarizes it and suggests edits → accept �
   expect((await counters(request))('rideo_llm_calls_total', { status: 'ok', task: 'footage.analyze' })).toBe(
     before('rideo_llm_calls_total', { status: 'ok', task: 'footage.analyze' }) + 1,
   );
-  expect(analysis.summary).toMatch(/\S.* \(9\.\ds, \d+ scene\(s\)/);
+  // the model's summary, then the measured signals, each count with its noun (docs/brand.md#voice): "… (9.0s, 3 scenes, …"
+  expect(analysis.summary).toMatch(
+    new RegExp(`\\S.* \\(9\\.\\ds, ${plural(analysis.scenes.length, 'scene')}, `),
+  );
   const ai = analysis.suggestions.filter((s: { source: string }) => s.source === 'ai');
   expect(ai.length, 'suggestions from the model').toBeGreaterThan(0);
   for (const s of ai) {

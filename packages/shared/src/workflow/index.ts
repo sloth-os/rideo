@@ -9,6 +9,7 @@ import type { ProjectKind } from '../schemas/project';
 import { outlineDuration } from '../schemas/screenplay';
 import type { VideoItem } from '../schemas/timeline';
 import { storyboardProgress } from '../storyboard';
+import { byCount, plural } from '../util/text';
 
 export type StageId =
   | 'brief'
@@ -309,7 +310,9 @@ const CHECKS: Record<RequirementId, Check> = {
     const unlocked = Object.values(d.characters).filter((c) => !c.lock.locked);
     return {
       ok: Object.keys(d.characters).length > 0 && unlocked.length === 0,
-      message: unlocked.length ? `${unlocked.length} character(s) not locked` : 'Add and lock the cast',
+      message: unlocked.length
+        ? `${plural(unlocked.length, 'character')} not locked`
+        : 'Add and lock the cast',
       details: unlocked.map((c) => c.name),
     };
   },
@@ -318,7 +321,7 @@ const CHECKS: Record<RequirementId, Check> = {
     return {
       ok: Object.keys(d.characters).length > 0 && missing.length === 0,
       message: missing.length
-        ? `${missing.length} character(s) without an approved reference`
+        ? `${plural(missing.length, 'character')} without an approved reference`
         : 'Add references',
       details: missing.map((c) => c.name),
     };
@@ -330,7 +333,7 @@ const CHECKS: Record<RequirementId, Check> = {
     return {
       ok: missing.length === 0,
       message: missing.length
-        ? `${missing.length} speaking character(s) without a locked voice`
+        ? `${plural(missing.length, 'speaking character')} without a locked voice`
         : 'Every speaking character has a locked voice',
       details: missing.map((c) => c.name),
     };
@@ -345,10 +348,10 @@ const CHECKS: Record<RequirementId, Check> = {
     const p = storyboardProgress(d);
     if (p.scenes === 0) return { ok: false, message: 'Write the screenplay first' };
     if (p.planned < p.scenes)
-      return { ok: false, message: `${p.scenes - p.planned} storyboard scene(s) to plan and draw` };
+      return { ok: false, message: `${plural(p.scenes - p.planned, 'storyboard scene')} to plan and draw` };
     return {
       ok: p.shots > 0 && p.approved === p.shots,
-      message: `${p.approved} of ${p.shots} storyboard frames approved`,
+      message: `${p.approved} of ${plural(p.shots, 'storyboard frame')} approved`,
       details: p.pending,
     };
   },
@@ -357,7 +360,7 @@ const CHECKS: Record<RequirementId, Check> = {
     return {
       ok: unlocked.length === 0,
       message: unlocked.length
-        ? `${unlocked.length} location(s) or prop(s) not locked`
+        ? `${plural(unlocked.length, 'location or prop', 'locations or props')} not locked`
         : 'Every location and prop in use is locked',
       details: unlocked.map((e) => e.name),
     };
@@ -367,7 +370,7 @@ const CHECKS: Record<RequirementId, Check> = {
     return {
       ok: missing.length === 0,
       message: missing.length
-        ? `${missing.length} location(s) or prop(s) without an approved reference`
+        ? `${plural(missing.length, 'location or prop', 'locations or props')} without an approved reference`
         : 'Every location and prop in use has a reference',
       details: missing.map((e) => e.name),
     };
@@ -377,7 +380,7 @@ const CHECKS: Record<RequirementId, Check> = {
     return {
       ok: unlocked.length === 0,
       message: unlocked.length
-        ? `${unlocked.length} location(s) or prop(s) to lock before production`
+        ? `${plural(unlocked.length, 'location or prop', 'locations or props')} to lock before production`
         : 'Every location and prop is locked',
       details: unlocked.map((e) => e.name),
     };
@@ -394,7 +397,7 @@ const CHECKS: Record<RequirementId, Check> = {
     const pending = clips.filter((c) => c.status !== 'approved');
     return {
       ok: clips.length > 0 && pending.length === 0,
-      message: pending.length ? `${pending.length} clip(s) awaiting approval` : 'No clips yet',
+      message: pending.length ? `${plural(pending.length, 'clip')} awaiting approval` : 'No clips yet',
       details: pending.map((c) => c.title),
     };
   },
@@ -435,7 +438,7 @@ const CHECKS: Record<RequirementId, Check> = {
     return {
       ok: problems.length === 0,
       message: problems.length
-        ? `${problems.length} timeline item(s) fail the consistency gate`
+        ? `${plural(problems.length, 'timeline item')} ${byCount(problems.length, 'fails', 'fail')} the consistency gate`
         : 'All takes verified',
       details: problems,
     };

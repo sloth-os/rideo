@@ -124,6 +124,36 @@ export class Layout {
     return joinPath(this.brandKitsDir(), assertId(id, 'brandKit'), file);
   }
 
+  /** The studio library (docs/design/library.md#storage): heads, version manifests and content-addressed files. */
+  libraryDir(): string {
+    return joinPath(this.root, 'library');
+  }
+
+  libraryItemsDir(): string {
+    return joinPath(this.libraryDir(), 'items');
+  }
+
+  libraryItem(id: string): string {
+    return joinPath(this.libraryItemsDir(), `${assertId(id, 'libraryItem')}.json`);
+  }
+
+  /** `items/<lib_id>/v0001.json` … `v1000.json`. */
+  libraryVersion(id: string, version: number): string {
+    if (!Number.isInteger(version) || version < 1 || version > 1000)
+      throw new Error(`invalid library version ${version}`);
+    return joinPath(
+      this.libraryItemsDir(),
+      assertId(id, 'libraryItem'),
+      `v${String(version).padStart(4, '0')}.json`,
+    );
+  }
+
+  /** `files/<aa>/<sha256>`: one file per content, shared by every version and item. */
+  libraryFile(sha256: string): string {
+    if (!/^[0-9a-f]{64}$/.test(sha256)) throw new Error(`invalid library file ${sha256}`);
+    return joinPath(this.libraryDir(), 'files', sha256.slice(0, 2), sha256);
+  }
+
   /** The studio's recipes (docs/design/agents.md#recipes). */
   recipesDir(): string {
     return joinPath(this.root, 'recipes');

@@ -4,6 +4,7 @@ import {
   type CommentThread,
   languageName,
   type ProjectDocs,
+  plural,
   sortedClips,
   speakingCharacters,
   threadsFor,
@@ -33,7 +34,7 @@ function shotLines(clip: Clip, docs: ProjectDocs): string[] {
         .filter(Boolean)
         .join(', ');
       const who = s.characterIds.map((id) => docs.characters[id]?.name ?? id).join(', ');
-      return `shot ${s.index + 1} (\`${s.id}\`, ${sec(s.durationSec)}): ${s.description} — camera: ${cam}${who ? `; with ${who}` : ''}; ${s.takes.length} take(s)${take ? `, selected \`${take.id}\` (${take.consistency.status})` : ''}`;
+      return `shot ${s.index + 1} (\`${s.id}\`, ${sec(s.durationSec)}): ${s.description} — camera: ${cam}${who ? `; with ${who}` : ''}; ${plural(s.takes.length, 'take')}${take ? `, selected \`${take.id}\` (${take.consistency.status})` : ''}`;
     });
 }
 
@@ -156,7 +157,7 @@ ${
   bullet(
     speaking.map((c) => {
       const v = voiceOf(c);
-      return `${c.name} (\`${c.id}\`): ${voiceStatus(c)}${v.description ? ` — “${v.description}”` : ''}${v.candidates.length ? `; ${v.candidates.length} candidate(s)` : ''}`;
+      return `${c.name} (\`${c.id}\`): ${voiceStatus(c)}${v.description ? ` — “${v.description}”` : ''}${v.candidates.length ? `; ${plural(v.candidates.length, 'candidate')}` : ''}`;
     }),
   ) || '_Nobody speaks yet._'
 }
@@ -178,7 +179,7 @@ export function dubPrompt(docs: ProjectDocs, language: string): string {
     .filter((i) => i.kind === 'text' && i.style.preset === 'caption').length;
   return `# Dub “${docs.project.title}” into ${languageName(language)} (\`${language}\`)
 
-Project \`${docs.project.id}\`. ${lines} caption line(s) in the cut; languages so far: ${existing.length ? existing.join(', ') : 'none'}.
+Project \`${docs.project.id}\`. ${plural(lines, 'caption line')} in the cut; languages so far: ${existing.length ? existing.join(', ') : 'none'}.
 
 ## Steps
 

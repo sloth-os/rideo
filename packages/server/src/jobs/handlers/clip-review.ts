@@ -16,6 +16,7 @@ import {
   meanAttempts,
   mergeSceneOutputs,
   overallScore,
+  plural,
   type SceneReview,
   sceneFixes,
   shotsWithoutTakes,
@@ -322,7 +323,7 @@ export async function clipReview(deps: HandlerDeps, ctx: JobContext) {
 
         // The fixes: each shot revised and generated again; its take selected (and put in the cut, once there is
         // one) only when it passes every check
-        ctx.progress(0.3, 1, `generating ${todo.length} shot(s) again`);
+        ctx.progress(0.3, 1, `generating ${plural(todo.length, 'shot')} again`);
         const docs = await docsFor(deps, ctx);
         const appliedAt = new Date().toISOString();
         fixes = [];
@@ -351,7 +352,7 @@ export async function clipReview(deps: HandlerDeps, ctx: JobContext) {
             fixes,
             before: null,
           },
-          `Fix ${fixes.length} shot(s) of scene ${scene} before the edit`,
+          `Fix ${plural(fixes.length, 'shot')} of scene ${scene} before the edit`,
         );
       }
       const results = await ctx.waitFor(fixes.map((f) => f.jobId!));

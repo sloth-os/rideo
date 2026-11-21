@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   can,
+  libraryAllows,
   minRole,
   PERMISSIONS,
   type ProjectAccess,
@@ -78,5 +79,35 @@ describe('permissions (docs/design/accounts.md#users-roles-and-projects)', () =>
     expect(routePermission('DELETE', '/branches/main')).toBe('project.manage');
     expect(routePermission('POST', '/comments')).toBe('project.comment');
     expect(routePermission('DELETE', '/characters/chr_1')).toBe('project.edit');
+  });
+});
+
+describe('the studio library (docs/design/library.md#permissions)', () => {
+  const ana = { userId: 'usr_0000000000ana1', admin: false, token: null };
+  const admin = { userId: 'usr_0000000000adm1', admin: true, token: null };
+  const token = (role: 'reviewer' | 'editor' | 'director', projectIds: string[] | null, of = ana) => ({
+    ...of,
+    token: { role, projectIds },
+  });
+
+  it('lets every caller read, people and unscoped editor tokens publish, owners and admins manage', () => {
+    for (const s of [ana, admin, token('reviewer', ['prj_0000000000aaaa']), token('editor', null)])
+      expect(libraryAllows(s, 'read')).toBe(true);
+    expect(libraryAllows(ana, 'publish')).toBe(true);
+    expect(libraryAllows(admin, 'publish')).toBe(true);
+    expect(libraryAllows(token('editor', null), 'publish')).toBe(true);
+    expect(libraryAllows(token('director', null), 'publish')).toBe(true);
+    // a token limited to some projects, or below editor, never publishes studio-wide
+    expect(libraryAllows(token('director', ['prj_0000000000aaaa']), 'publish')).toBe(false);
+    expect(libraryAllows(token('reviewer', null), 'publish')).toBe(false);
+    // managing: the owner, her unscoped editor tokens, an admin in person
+    expect(libraryAllows(ana, 'manage', ana.userId)).toBe(true);
+    expect(libraryAllows(ana, 'manage', 'usr_0000000000bob1')).toBe(false);
+    expect(libraryAllows(ana, 'manage')).toBe(false);
+    expect(libraryAllows(token('editor', null), 'manage', ana.userId)).toBe(true);
+    expect(libraryAllows(token('reviewer', null), 'manage', ana.userId)).toBe(false);
+    expect(libraryAllows(token('editor', ['prj_0000000000aaaa']), 'manage', ana.userId)).toBe(false);
+    expect(libraryAllows(admin, 'manage', ana.userId)).toBe(true);
+    expect(libraryAllows(token('director', null, admin), 'manage', ana.userId)).toBe(false);
   });
 });

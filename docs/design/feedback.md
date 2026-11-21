@@ -223,6 +223,9 @@ better. Rules are data (`RETROSPECTIVE_RULES`, server), each a predicate over th
 | `target_missed` | quality | the film is more than 10% off its target length |
 | `retake_results` | quality | shots have a new take since the previous feedback: how many got better, stayed the same or got worse ([what changed since the last feedback](#what-changed-since-the-last-feedback)) |
 
+Each message's counts agree with their nouns and verbs ([voice](../brand.md#voice)): "1 line is too long for its
+shot", "3 lines are too long for their shots", "1 of 12 lines is not heard in the film".
+
 The film call adds lessons the rules cannot see (`source: vision`). The retrospective is part of the document and of
 the report, and the [insights](observability.md#insights) page lists it next to the run's numbers.
 

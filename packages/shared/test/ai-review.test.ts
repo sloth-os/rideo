@@ -139,7 +139,7 @@ describe('AI review verdict (docs/design/ai-review.md#the-verdict)', () => {
       'physics',
       'realism',
     ]);
-    // Each stage's own dimensions; the storyboard's blocking only while the desk is on, so never required
+    // Each stage's own dimensions, all of them required
     const stage = (scores: Record<string, unknown>) =>
       StageReviewOutputSchema.parse({ scores, summary: 'x' });
     const storyboard = [

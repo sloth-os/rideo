@@ -1,5 +1,5 @@
 import type { TelemetryEvent } from '@rideo/shared';
-import { getToken, setServerErrorHandler } from './api';
+import { drain, getToken, setServerErrorHandler } from './api';
 import { useConfigStore } from './config';
 import { apiUrl } from './runtime';
 
@@ -57,6 +57,8 @@ export async function flushTelemetry(): Promise<void> {
     });
     // Off on the server: stop sending.
     if (res.status === 404) enabled = false;
+    // the answer (an empty 204) read to its end, or the browser reports the request as cancelled
+    await drain(res);
   } catch {
     // Telemetry never gets in the way: drop the batch.
   }

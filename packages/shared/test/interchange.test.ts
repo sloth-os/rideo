@@ -314,7 +314,7 @@ describe('OpenTimelineIO', () => {
       'speed 8× on “Again” (Rideo plays 0.25–4×)',
       '“Again” runs past the end of its media',
       'transition into “Close” shortened: “Again” has no more media',
-      "1 gap(s) in the picture track (closed: Rideo's picture track has no gaps)",
+      "1 gap in the picture track (closed: Rideo's picture track has no gaps)",
     ]);
     const picture = r.timeline.tracks[0]!.items as VideoItem[];
     expect(picture.map((i) => [i.label, i.in, i.out, i.speed, i.transitionIn?.duration ?? null])).toEqual([

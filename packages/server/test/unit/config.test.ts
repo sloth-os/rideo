@@ -233,6 +233,57 @@ describe('config', () => {
     expect(issues({ MM_GATEWAY_URL: 'gateway:8000' })).toEqual(['MM_GATEWAY_URL']);
     expect(issues({ RIDEO_BASE_PATH: '//evil.test' })).toEqual(['RIDEO_BASE_PATH']);
     expect(issues({ RIDEO_THEME: '{"colors":{"accent":"red;}"}}' })).toEqual(['RIDEO_THEME']);
+    // the desk's page: https, or http on localhost; a page, not a folder (docs/design/director-desk.md#the-setting)
+    expect(issues({ RIDEO_DESK_URL: 'http://desk.example.com/desk.html' })).toEqual(['RIDEO_DESK_URL']);
+    expect(issues({ RIDEO_DESK_URL: 'https://desk.example.com/' })).toEqual(['RIDEO_DESK_URL']);
+    expect(issues({ RIDEO_DESK_URL: 'desk.html' })).toEqual(['RIDEO_DESK_URL']);
+    expect(issues({ RIDEO_DESK_URL: 'http://localhost:5174/desk.html' })).toEqual([]);
+  });
+
+  it("refuses a desk on the studio's own host name when accounts are on (docs/design/director-desk.md#topology-and-headers)", () => {
+    const accounts = {
+      RIDEO_OIDC_ISSUER: 'https://idp.test',
+      RIDEO_OIDC_CLIENT_ID: 'rideo',
+      RIDEO_PUBLIC_URL: 'https://studio.example.com',
+    };
+    const refusal = (env: Record<string, string>) => {
+      try {
+        loadConfig(env);
+        return null;
+      } catch (err) {
+        const issues = (err as { issues: { path: string[]; message: string }[] }).issues;
+        return issues.find((i) => i.path.join('.') === 'RIDEO_DESK_URL')?.message ?? null;
+      }
+    };
+    // another port of the studio's host gets its host-only session cookie
+    const sameHost = refusal({ ...accounts, RIDEO_DESK_URL: 'https://studio.example.com:8443/desk.html' });
+    expect(sameHost).toMatch(/another host than the studio's \(studio\.example\.com\)/);
+    expect(sameHost).toMatch(/session cookie/);
+    expect(refusal({ ...accounts, RIDEO_DESK_URL: 'https://STUDIO.example.com/desk/desk.html' })).toMatch(
+      /another host/,
+    );
+    // without a public URL the studio is on localhost
+    const local = { ...accounts, RIDEO_PUBLIC_URL: '' };
+    expect(refusal({ ...local, RIDEO_DESK_URL: 'http://localhost:5174/desk.html' })).toMatch(/another host/);
+    expect(refusal({ ...local, RIDEO_DESK_URL: 'http://127.0.0.1:5174/desk.html' })).toBeNull();
+    // another host (a subdomain is one) is fine
+    expect(loadConfig({ ...accounts, RIDEO_DESK_URL: 'https://desk.example.com/desk.html' }).desk).toEqual({
+      url: 'https://desk.example.com/desk.html',
+    });
+    // without accounts there is no session cookie to send
+    expect(
+      loadConfig({
+        RIDEO_PUBLIC_URL: 'https://studio.example.com',
+        RIDEO_DESK_URL: 'https://studio.example.com:8443/desk.html',
+      }).desk,
+    ).toEqual({ url: 'https://studio.example.com:8443/desk.html' });
+  });
+
+  it('reads the desk page (docs/design/director-desk.md#the-setting)', () => {
+    expect(loadConfig({}).desk).toBeNull();
+    expect(loadConfig({ RIDEO_DESK_URL: ' https://desk.example.com/desk.html ' }).desk).toEqual({
+      url: 'https://desk.example.com/desk.html',
+    });
   });
 
   it('merges the settings file under the environment (docs/design/settings.md#where-values-come-from)', () => {

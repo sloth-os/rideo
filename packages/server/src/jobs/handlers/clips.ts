@@ -1,5 +1,6 @@
 import {
   approvedElementReferences,
+  boardNeedsGeneration,
   boardState,
   type Clip,
   clipBoardReviewState,
@@ -16,6 +17,7 @@ import {
   normalizePlannedShots,
   plannedDuration,
   planShotGroups,
+  plural,
   promptVersionOf,
   reviewEnabled,
   reviewState,
@@ -35,7 +37,6 @@ import { assertCastReady, assertVoicesReady, clipStatusOf } from '../../domain/c
 import { AppError, notFound } from '../../errors';
 import { throwIfAborted } from '../../util/abort';
 import type { JobContext } from '../queue';
-import { ensureBlocking } from './blocking';
 import { commitAs, docsFor, type HandlerDeps } from './common';
 import { approveClipOnAutopilot, approveProductionOnAutopilot } from './reviews';
 
@@ -138,7 +139,7 @@ export async function clipPlan(deps: HandlerDeps, ctx: JobContext) {
     ctx,
     (tx) => {
       const existing = tx.list<Clip>('clips/').find((c) => c.sceneId === sceneId);
-      // A plan again keeps the scene's set and marks: its new shots get cameras when it is blocked again
+      // A plan again keeps the clip (its id and notes) with the new shots
       const next: Clip = existing
         ? {
             ...existing,
@@ -160,14 +161,14 @@ export async function clipPlan(deps: HandlerDeps, ctx: JobContext) {
             approvedBy: null,
             notes: '',
             review: null,
-            blocking: null,
             boardReview: null,
+            deskState: null,
           };
       tx.set(docPath.clip(next.id), next);
       return next;
     },
     (c) =>
-      `Plan clip ${c.index + 1} “${c.title}” (${c.shots.length} shots, ${c.shots.reduce((s, x) => s + x.durationSec, 0).toFixed(0)}s)`,
+      `Plan clip ${c.index + 1} “${c.title}” (${plural(c.shots.length, 'shot')}, ${c.shots.reduce((s, x) => s + x.durationSec, 0).toFixed(0)}s)`,
   );
   if (thenGenerate) {
     const fresh = await docsFor(deps, ctx);
@@ -175,7 +176,6 @@ export async function clipPlan(deps: HandlerDeps, ctx: JobContext) {
     assertVoicesReady(deps, clip.shots, fresh.characters, fresh.project.settings);
     await ctx.spawn('clip.generate', { clipId: clip.id }, { dedupeKey: `clip:${clip.id}` });
   }
-  if (thenBoard) await ensureBlocking(deps, ctx, [clip.id]);
   if (thenBoard)
     for (const shot of clip.shots)
       await ctx.spawn('shot.board', { clipId: clip.id, shotId: shot.id }, { dedupeKey: `board:${shot.id}` });
@@ -207,7 +207,7 @@ export async function clipGenerate(deps: HandlerDeps, ctx: JobContext) {
       c.status = clipStatusOf(c);
       tx.set(docPath.clip(clipId), c);
     },
-    `Queue ${todo.length} shot(s) of clip ${clip.index + 1}`,
+    `Queue ${plural(todo.length, 'shot')} of clip ${clip.index + 1}`,
   );
   // Multi-shot models render groups of consecutive shots in one request (docs/design/multi-shot.md#when).
   const settings = docs.project.settings;
@@ -260,7 +260,7 @@ export async function clipGenerate(deps: HandlerDeps, ctx: JobContext) {
       c.status = clipStatusOf(c);
       tx.set(docPath.clip(clipId), c);
     },
-    `Clip ${clip.index + 1} generated (${results.length - failed.length}/${results.length} shots)`,
+    `Clip ${clip.index + 1} generated (${results.length - failed.length}/${plural(results.length, 'shot')})`,
   );
   if (failed.length === results.length) {
     throw new AppError(
@@ -394,7 +394,7 @@ export async function batchGenerate(deps: HandlerDeps, ctx: JobContext) {
     ctx.progress(
       Math.min(planned, target),
       target,
-      `${Math.round(planned)}s of ${Math.round(target)}s planned · ${started.size} clip(s) generating or done`,
+      `${Math.round(planned)}s of ${Math.round(target)}s planned · ${plural(started.size, 'clip')} generating or done`,
     );
     for (let i = inFlight.length - 1; i >= 0; i--) {
       if (['succeeded', 'failed', 'cancelled'].includes(deps.jobs.find(inFlight[i]!.id)?.status ?? ''))
@@ -471,9 +471,9 @@ export async function batchGenerate(deps: HandlerDeps, ctx: JobContext) {
       }
       assertCastReady(next.shots, docs.characters, docs.elements);
       assertVoicesReady(deps, next.shots, docs.characters, docs.project.settings);
-      // Production storyboards (docs/design/ai-review.md#production-storyboards): the scene is blocked, drawn, reviewed
-      // and its frames approved before any of its video is made; one of the storyboard stage's scenes too when the
-      // stage did not draw it (written after it)
+      // Production storyboards (docs/design/ai-review.md#production-storyboards): the scene is drawn, reviewed and its
+      // frames approved before any of its video is made; one of the storyboard stage's scenes too when the stage did
+      // not draw it (written after it)
       const sb = docs.project.settings.storyboard;
       if (sb?.production && sb.enabled !== false && !clipFramesApproved(next, docs)) {
         const state = clipBoardReviewState(next);
@@ -481,7 +481,10 @@ export async function batchGenerate(deps: HandlerDeps, ctx: JobContext) {
           stopReason = `the storyboard of scene ${next.index + 1} did not pass its review`;
           break;
         }
-        if ((state === 'passed' || state === 'overridden') && !boardTried.has(next.id)) {
+        // A passed review only approves the frames again when none needs drawing: a frame outdated without the
+        // review's subject changing (a prompt changed by an upgrade) is drawn again by the storyboard, which reviews it
+        const redraw = next.shots.some((s) => boardNeedsGeneration(boardState(s, docs)));
+        if ((state === 'passed' || state === 'overridden') && !redraw && !boardTried.has(next.id)) {
           await deps.services.storyboard.approveFrames(ctx.actor, ctx.job.projectId, next.id);
           boardTried.add(next.id);
           continue;
@@ -553,7 +556,7 @@ export async function batchGenerate(deps: HandlerDeps, ctx: JobContext) {
           const [reviewed] = await ctx.waitFor([reviewJob.id]);
           const state = reviewState(await docsFor(deps, ctx), 'screenplay');
           if (reviewed?.status !== 'succeeded' || (state !== 'passed' && state !== 'overridden')) {
-            stopReason = `the new scenes did not pass their review (${written.length} scene(s))`;
+            stopReason = `the new scenes did not pass their review (${plural(written.length, 'scene')})`;
             break;
           }
         }

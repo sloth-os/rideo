@@ -9,8 +9,7 @@ import {
   TASK_MARKER_PATTERN,
   VOICE_REFERENCE_LABEL,
 } from '@rideo/shared';
-import { screenplayReview, screenplayRevise, storyboardReview } from './ai-review';
-import { castReview, sceneBlock, takeWatch } from './blocking';
+import { castReview, screenplayReview, screenplayRevise, storyboardReview, takeWatch } from './ai-review';
 import { feedbackFilm, feedbackListen, feedbackScene, soundCheck } from './feedback';
 import {
   characterDescribe,
@@ -293,9 +292,6 @@ export function answer(req: ChatRequest, opts: ChatOptions = {}): string {
       break;
     case 'storyboard.review':
       out = storyboardReview(input, imagesOf(req.parts).length);
-      break;
-    case 'scene.block':
-      out = sceneBlock(input);
       break;
     case 'take.watch':
       out = takeWatch(input, videoCount > 0);

@@ -3,6 +3,7 @@ import type {
   CharacterDescribeOutput,
   ClipPlanInput,
   ClipPlanOutput,
+  ExistingNames,
   FocusInput,
   FocusOutput,
   FootageAnalyzeInput,
@@ -26,6 +27,7 @@ import type {
   TranslateInput,
   TranslateOutput,
 } from '@rideo/shared';
+import { plural } from '@rideo/shared';
 import { decodePng, isPng } from './png';
 import { allSignatures, colorDistance, presenceRatio, type Rgb } from './signature';
 
@@ -144,19 +146,46 @@ const PROP_LOOKS: Record<string, string> = {
   'sealed letter': 'cream envelope sealed with dark green wax and a tide-mark stain',
 };
 
+/** The places and props the mock writer sets its scenes in, in turn, and the names it must not introduce again. */
+interface World {
+  places: string[];
+  props: string[];
+  known: Set<string>;
+}
+
+const STOCK: World = { places: PLACES.map((p) => p.toLowerCase()), props: PROPS, known: new Set() };
+
+/**
+ * The project's own locations and props first, under their exact names (docs/design/continuity.md#storytelling), then
+ * the stock ones none of them is called (by name or alias).
+ */
+function worldOf(existing: ExistingNames | undefined): World {
+  if (!existing?.elements.length) return STOCK;
+  const known = new Set(
+    existing.elements.flatMap((e) => [e.name, ...e.aliases]).map((n) => n.trim().toLowerCase()),
+  );
+  const own = (kind: 'location' | 'prop') =>
+    existing.elements.filter((e) => e.kind === kind).map((e) => e.name);
+  const stock = (names: string[]) => names.filter((n) => !known.has(n));
+  const places = [...own('location'), ...stock(STOCK.places)];
+  const props = [...own('prop'), ...stock(PROPS)];
+  return { places: places.length ? places : STOCK.places, props: props.length ? props : PROPS, known };
+}
+
 function sceneFor(
   index: number,
   beat: { title: string; summary: string; estDurationSec: number },
   names: string[],
+  world: World = STOCK,
 ): LlmScene {
   const a = names[index % names.length]!;
   const b = names[(index + 1) % names.length]!;
-  const place = PLACES[index % 5]!;
+  const place = world.places[index % world.places.length]!;
   const time = index % 2 === 0 ? 'NIGHT' : 'DAY';
   return {
     beatIndex: index,
-    heading: `${index % 3 === 1 ? 'EXT.' : 'INT.'} ${place} - ${time}`,
-    location: place.toLowerCase(),
+    heading: `${index % 3 === 1 ? 'EXT.' : 'INT.'} ${place.toUpperCase()} - ${time}`,
+    location: place,
     timeOfDay: time.toLowerCase(),
     summary: beat.summary,
     action: `${a} and ${b} face each other as ${beat.summary.charAt(0).toLowerCase()}${beat.summary.slice(1)}`,
@@ -168,7 +197,7 @@ function sceneFor(
       },
     ],
     characters: [a, b],
-    props: [PROPS[index % PROPS.length]!],
+    props: [world.props[index % world.props.length]!],
     estDurationSec: beat.estDurationSec,
     continuity: `${time.toLowerCase()}, ${index % 2 === 0 ? 'rain on the windows, lamplight from the left' : 'grey overcast daylight'}; ${a} and ${b} in their usual clothes`,
   };
@@ -187,6 +216,41 @@ function elementsOf(scenes: LlmScene[]) {
     description: PROP_LOOKS[name] ?? name,
   }));
   return { locations, props };
+}
+
+const ROLES: readonly string[] = ['protagonist', 'antagonist', 'supporting', 'minor'];
+const firstName = (name: string) => name.trim().split(/\s+/)[0]!;
+
+/**
+ * Two leads picked by the prompt, under their first names. The project's characters come first, under their exact
+ * names and roles, as the writer is told (docs/design/continuity.md#storytelling); stock ones fill the cast to two,
+ * none with a first name of theirs.
+ */
+function castOf(input: ScreenplayGenerateInput): LlmCharacter[] {
+  const pick = hash(input.prompt) % CAST.length;
+  const own = input.existing?.characters ?? [];
+  const taken = new Set(own.map((c) => firstName(c.name).toLowerCase()));
+  const kept = own.slice(0, 2).map((c) => {
+    // The look stands in as character.describe's does: the stock character of that first name, else one by name.
+    const look =
+      CAST.find((s) => firstName(s.name).toLowerCase() === firstName(c.name).toLowerCase()) ??
+      CAST[hash(c.name) % CAST.length]!;
+    return {
+      ...look,
+      name: c.name,
+      role: (ROLES.includes(c.role) ? c.role : 'supporting') as LlmCharacter['role'],
+    };
+  });
+  const stock = [0, 1, 2]
+    .map((k) => CAST[(pick + k) % CAST.length]!)
+    .filter((c) => !taken.has(firstName(c.name).toLowerCase()))
+    .slice(0, 2 - kept.length)
+    .map((c, i) => ({
+      ...c,
+      name: firstName(c.name),
+      role: (kept.length + i === 0 ? 'protagonist' : 'supporting') as LlmCharacter['role'],
+    }));
+  return [...kept, ...stock];
 }
 
 export function screenplayGenerate(input: ScreenplayGenerateInput): ScreenplayGenerateOutput {
@@ -209,18 +273,17 @@ export function screenplayGenerate(input: ScreenplayGenerateInput): ScreenplayGe
           ? 'resolution'
           : PURPOSES[1 + Math.floor(((i - 1) / Math.max(1, count - 2)) * 5)]!,
   }));
-  const pick = hash(input.prompt) % CAST.length;
-  const cast = [CAST[pick]!, CAST[(pick + 1) % CAST.length]!].map((c, i) => ({
-    ...c,
-    role: (i === 0 ? 'protagonist' : 'supporting') as LlmCharacter['role'],
-  }));
-  const names = cast.map((c) => c.name.split(' ')[0]!);
+  const cast = castOf(input);
+  const names = cast.map((c) => c.name);
+  const world = worldOf(input.existing);
   const scenes: LlmScene[] = [];
   let covered = 0;
   for (let i = 0; i < outline.length && (covered < input.pilotDurationSec || scenes.length === 0); i++) {
-    scenes.push(sceneFor(i, outline[i]!, names));
+    scenes.push(sceneFor(i, outline[i]!, names, world));
     covered += outline[i]!.estDurationSec;
   }
+  // The element library covers the whole outline, not only the written scenes; the project's own are not introduced.
+  const library = elementsOf(outline.map((b, i) => sceneFor(i, b, names, world)));
   return {
     title,
     logline: `${names[0]} receives letters that describe tomorrow — ${input.prompt.slice(0, 120)}`,
@@ -233,9 +296,9 @@ export function screenplayGenerate(input: ScreenplayGenerateInput): ScreenplayGe
       camera: 'slow deliberate moves, locked-off wides',
       lighting: 'low-key with warm practicals',
     },
-    characters: cast.map((c) => ({ ...c, name: c.name.split(' ')[0]! })),
-    // The element library covers the whole outline, not only the written scenes.
-    ...elementsOf(outline.map((b, i) => sceneFor(i, b, names))),
+    characters: cast,
+    locations: library.locations.filter((e) => !world.known.has(e.name.toLowerCase())),
+    props: library.props.filter((e) => !world.known.has(e.name.toLowerCase())),
     outline,
     scenes,
     ended: true,
@@ -247,9 +310,12 @@ export function screenplayGenerate(input: ScreenplayGenerateInput): ScreenplayGe
 export function screenplayExtend(input: ScreenplayExtendInput): ScreenplayExtendOutput {
   const names = input.characters.map((c) => c.name);
   const scenes = input.beats.map((b) => sceneFor(b.index, b, names.length ? names : ['Someone']));
-  // Only introduce the places and props the story does not know yet.
+  // Only introduce the places and props the story does not know yet, by name or (the project's own) alias.
   const known = new Set(
-    [...(input.locations ?? []), ...(input.props ?? [])].map((e) => e.name.toLowerCase()),
+    [
+      ...[...(input.locations ?? []), ...(input.props ?? [])].map((e) => e.name),
+      ...(input.existing?.elements ?? []).flatMap((e) => [e.name, ...e.aliases]),
+    ].map((n) => n.trim().toLowerCase()),
   );
   const fresh = elementsOf(scenes);
   return {
@@ -302,7 +368,7 @@ export function clipPlan(input: ClipPlanInput): ClipPlanOutput {
 
 export function mediaDescribe(input: MediaDescribeInput): MediaDescribeOutput {
   return {
-    summary: `${input.imageCount} image(s) and ${input.videoFrameCount} video frame(s) of a stormy coastline at dusk.`,
+    summary: `${plural(input.imageCount, 'image')} and ${plural(input.videoFrameCount, 'video frame')} of a stormy coastline at dusk.`,
     style: 'overcast, desaturated, handheld documentary feel',
     setting: 'windswept coast with a white lighthouse',
     people: Array.from({ length: Math.min(3, input.imageCount) }, (_, i) => ({
@@ -440,7 +506,7 @@ export function footageAnalyze(input: FootageAnalyzeInput): FootageAnalyzeOutput
     });
   }
   return {
-    summary: `${Math.round(input.durationSec)}s of footage in ${input.scenes.length} scene(s) with ${input.silences.length} silence(s) and ${input.blackSegments.length} black segment(s).`,
+    summary: `${Math.round(input.durationSec)}s of footage in ${plural(input.scenes.length, 'scene')} with ${plural(input.silences.length, 'silence')} and ${plural(input.blackSegments.length, 'black segment')}.`,
     suggestions,
   };
 }

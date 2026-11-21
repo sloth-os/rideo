@@ -1,8 +1,8 @@
 import type { StorageRequest, StorageResult } from '@rideo/shared';
-import { getToken } from '../lib/api';
+import { drain, getToken } from '../lib/api';
 import { apiUrl } from '../lib/runtime';
 import { workspaceId } from './id';
-import { WorkspaceProvider } from './provider';
+import { type WorkspaceIo, WorkspaceProvider } from './provider';
 import { WorkspaceStore } from './store';
 
 export { setWorkspaceEnabled, workspaceEnabled, workspaceId } from './id';
@@ -22,6 +22,33 @@ function headers(): Record<string, string> {
   const token = getToken();
   return { ...(token ? { authorization: `Bearer ${token}` } : {}), 'x-rideo-workspace': workspaceId() };
 }
+
+/**
+ * The HTTP transfers of storage operations (docs/design/browser-storage.md#the-protocol): the bytes the server writes,
+ * fetched, and the bytes it reads, sent. The answer to a send (`204`) is read to its end like every answer, or the
+ * browser reports the request as cancelled.
+ */
+export const transfers: Pick<WorkspaceIo, 'fetchTransfer' | 'putTransfer'> = {
+  async fetchTransfer(id) {
+    const res = await fetch(apiUrl(`/workspace/transfers/${id}`), { headers: headers() });
+    if (!res.ok) throw new Error(`the server's file did not arrive (${res.status})`);
+    return res.blob();
+  },
+  async putTransfer(id, data, meta) {
+    const res = await fetch(apiUrl(`/workspace/transfers/${id}`), {
+      method: 'PUT',
+      headers: {
+        ...headers(),
+        'content-type': 'application/octet-stream',
+        'x-rideo-size': String(meta.size),
+        'x-rideo-range': `${meta.start}-${meta.end}`,
+      },
+      body: data,
+    });
+    await drain(res);
+    if (res.status !== 204) throw new Error(`the server did not take the file (${res.status})`);
+  },
+};
 
 export function workspaceStore(): Promise<WorkspaceStore> {
   store ??= WorkspaceStore.open().then(async (s) => {
@@ -82,27 +109,7 @@ export async function serveStorage(
 ): Promise<void> {
   if (!provider) {
     const s = await workspaceStore();
-    provider ??= new WorkspaceProvider(s, {
-      send: (msg) => sendRef.current?.(msg),
-      async fetchTransfer(id) {
-        const res = await fetch(apiUrl(`/workspace/transfers/${id}`), { headers: headers() });
-        if (!res.ok) throw new Error(`the server's file did not arrive (${res.status})`);
-        return res.blob();
-      },
-      async putTransfer(id, data, meta) {
-        const res = await fetch(apiUrl(`/workspace/transfers/${id}`), {
-          method: 'PUT',
-          headers: {
-            ...headers(),
-            'content-type': 'application/octet-stream',
-            'x-rideo-size': String(meta.size),
-            'x-rideo-range': `${meta.start}-${meta.end}`,
-          },
-          body: data,
-        });
-        if (res.status !== 204) throw new Error(`the server did not take the file (${res.status})`);
-      },
-    });
+    provider ??= new WorkspaceProvider(s, { send: (msg) => sendRef.current?.(msg), ...transfers });
   }
   sendRef.current = send;
   await provider.handle(request);

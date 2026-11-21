@@ -40,6 +40,21 @@ export interface ShotReferences {
 }
 
 /**
+ * A keyframe's images with the scene reference frame last, when there is one (docs/design/continuity.md): the prompt
+ * names it with its own phrase, not in the list of references.
+ */
+export function withSceneReference(
+  refs: ShotReferences,
+  sceneReferenceUri: string | null,
+): { refs: ShotReferences; sceneReference: boolean } {
+  if (!sceneReferenceUri) return { refs, sceneReference: false };
+  return {
+    refs: { ...refs, referenceUris: [...refs.referenceUris, sceneReferenceUri] },
+    sceneReference: true,
+  };
+}
+
+/**
  * R3/E3: deterministic references bounded by the model, a cast sheet when the cast exceeds the budget and an
  * element sheet when the elements outnumber their slots; the judge sees every judged element (E4).
  */

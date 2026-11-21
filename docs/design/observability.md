@@ -103,9 +103,12 @@ cost), as does a take replaced by a regeneration: the cost of quality, which the
 | `rideo_take_watch_score` | histogram | – | overall scores 0–10 of takes watched whole |
 | `rideo_clip_review_watched_total` | counter | `watched` (`video`, `frames`) | scene reviews by what the vision model watched |
 | `rideo_autopilot_approvals_total` | counter | `step` (`cast`, `resources`, `frames`, `clip`, `pilot`, `production`, `cut`) | approvals autopilot made after a passing review |
-| `rideo_blocking_total` | counter | `source` (`ai`, `user`), `outcome` (`clean`, `issues`) | blockings saved on the [director's desk](director-desk.md) |
-| `rideo_blocking_issues_total` | counter | `code` | issues of the blockings saved |
-| `rideo_blocking_line_fixes_total` | counter | – | cameras the solver brought back over the line |
+| `rideo_desk_state_saves_total` | counter | `outcome` (`saved`, `unchanged`, `conflict`, `refused`) | desk states sent to the server for the [director's desk](director-desk.md#the-desk-state) (`conflict`: a `412`, the stored state not the one the `PUT`'s `If-Match` or `If-None-Match` named, logged as `desk state conflict`; `refused`: too large, another format or version, without its headers, not `application/octet-stream`, an `X-Desk-State-Units` header that does not parse; every body reaches the service as a stream, so every refusal is counted and logged as `desk state refused`, none answered by the framework). A clip naming a state whose file cannot be read (the `503` of `GET …/desk-state`) is logged as `desk state unreadable` (warn) with the file's path and the error |
+| `rideo_desk_briefs_total` | counter | – | briefs of the [director's desk](director-desk.md#the-brief) served (REST and MCP) |
+| `rideo_library_total` | counter | `event`, `kind` | operations of the [studio library](library.md#observability): items and versions published, saves, uses, updates, links, pins, detaches, archives, conflicts and refusals |
+| `rideo_library_bytes_total` | counter | `op` (`upload`, `from_project`, `to_project`) | bytes written to the library and copied into projects |
+| `rideo_library_apply_seconds` | histogram | `op` (`save`, `apply`) | how long a Save to library or an apply took |
+| `rideo_library_items` | gauge | `kind` | items in the studio library |
 | `rideo_http_request_seconds` | histogram | `method`, `route` (the route pattern), `status` (class: `2xx`…) | REST latency |
 | `rideo_storage_seconds` | histogram | `op` | WebDAV operations, buckets up to 300 s (uploads to slow cloud drives) |
 | `rideo_storage_ops_per_request` | histogram | – | storage operations one request made |
@@ -152,7 +155,8 @@ The studio sends what only the browser knows to `POST /api/telemetry`
 names from fixed lists, no content of projects or people): Core Web Vitals (`PerformanceObserver`: LCP, FCP, TTFB,
 CLS, and the slowest interaction as INP), timings of the waits people notice (a project's first load, the editor
 ready, the first decoded frame, each export chunk) and error counts (uncaught errors, rejected promises, API errors by
-status class). Events are batched and sent every 15 s and when the page is hidden (`fetch` with `keepalive`). They
+status class). Events are batched and sent every 15 s and when the page is hidden (`fetch` with `keepalive`, its
+`204` read to the end so that the browser does not report the request as cancelled). They
 become the `rideo_web_*` metrics and, at debug level, log lines. `RIDEO_TELEMETRY=off` turns the endpoint (404) and
 the client off.
 

@@ -285,13 +285,6 @@ export class Metrics {
       'Frames corrected by an edit of the frame instead of drawn again, by source (storyboard, keyframe)',
     ),
   );
-  /** AI-blocked shots against their planned layout (docs/design/director-desk.md#following-the-shot-plan). */
-  readonly blockingPlanFits = this.add(
-    new Counter(
-      'rideo_blocking_plan_fits_total',
-      'AI-blocked shots against their planned layout, by outcome (agreed, refit, mismatch)',
-    ),
-  );
   /** Briefs adapted for the video model (docs/design/first-pass.md#the-brief-adapted-for-the-video-model). */
   readonly briefAdaptations = this.add(
     new Counter(
@@ -306,22 +299,22 @@ export class Metrics {
       'Cast references checked against their subject as they are drawn, by kind (character, element) and outcome (matched, mismatched, error)',
     ),
   );
-  /** The 3D director's desk (docs/design/director-desk.md#observability). */
-  readonly blockings = this.add(
-    new Counter('rideo_blocking_total', 'Blockings saved, by source (ai, user) and outcome (clean, issues)'),
-  );
-  readonly blockingIssues = this.add(
-    new Counter('rideo_blocking_issues_total', 'Issues found in blockings when they were saved, by code'),
-  );
-  readonly blockingLineFixes = this.add(
-    new Counter('rideo_blocking_line_fixes_total', 'Cameras the solver brought back over the line of action'),
-  );
   /** Gates and clips approved by autopilot after their reviews (docs/design/ai-review.md#autopilot-every-step-reviewed-and-approved). */
   readonly autopilotApprovals = this.add(
     new Counter(
       'rideo_autopilot_approvals_total',
       'Approvals autopilot made after a passing review, by step (cast, resources, frames, clip, pilot, production, cut)',
     ),
+  );
+  /** The 3D-Editor's director's desk (docs/design/director-desk.md#observability). */
+  readonly deskStateSaves = this.add(
+    new Counter(
+      'rideo_desk_state_saves_total',
+      'Desk states sent to the server, by outcome (saved: a new state stored, unchanged: the stored one again, conflict: refused with 412, the stored state not the one If-Match or If-None-Match named, refused: too large, another format or version, without its headers, or not application/octet-stream)',
+    ),
+  );
+  readonly deskBriefs = this.add(
+    new Counter('rideo_desk_briefs_total', "Briefs of the director's desk served (REST and MCP)"),
   );
   readonly httpSeconds = this.add(
     new Histogram(
@@ -444,6 +437,27 @@ export class Metrics {
   readonly brand = this.add(
     new Counter('rideo_brand_total', 'Brand kits created, applied, removed and files added'),
   );
+  /** The studio library (docs/design/library.md#observability). */
+  readonly library = this.add(
+    new Counter(
+      'rideo_library_total',
+      'Library operations by event (created, version, unchanged, conflict, refused, saved, used, updated, linked, pinned, detached, archived, unarchived, current) and kind',
+    ),
+  );
+  readonly libraryBytes = this.add(
+    new Counter(
+      'rideo_library_bytes_total',
+      'Bytes written to the library (upload, from_project) and copied into projects (to_project), by op',
+    ),
+  );
+  readonly libraryApplySeconds = this.add(
+    new Histogram(
+      'rideo_library_apply_seconds',
+      'How long a library save or apply took, by op',
+      [0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10, 30, 60],
+    ),
+  );
+  readonly libraryItems = this.add(new Gauge('rideo_library_items', 'Items in the studio library, by kind'));
   /** Recipe steps run (docs/design/agents.md#recipes). */
   readonly recipeSteps = this.add(
     new Counter('rideo_recipe_steps_total', 'Recipe steps run by tool and outcome'),

@@ -375,20 +375,21 @@ version 3 adds "anyone looking into the camera" to what a frame and a take avoid
 
 ## The desk on request
 
-The [director's desk](director-desk.md) blocks every scene in 3D and gives the image model each shot's camera view and
-blocking line. On real models its AI blocking chose cameras that disagreed with the shot plan (a frontal view of
-Clover for a side two-shot of Rosie brushing her, Sammy from behind for a reaction facing the camera): the frames got
-three accounts of the same picture (the shot's description, the blocking line, the camera view) and followed none
-consistently. The storyboard review scored blocking 5 on the riding demo and 4 on the first measured storyboard, and
-blocking a scene took about ten minutes of reasoning. New projects are created with the desk off
-(`blocking.enabled: false`): the shot's description is the one account, written with its screen positions
-([the planner's rules](#one-rubric-for-the-maker-and-the-reviewer)). A person turns the desk on, or blocks a scene by
-hand, when a scene needs it. What would let the AI blocking back on is in [what is left](#what-is-left).
+Rideo's own director's desk (October 2026 to November 14, 2026, [replaced since](director-desk.md#why)) blocked every
+scene in 3D and gave the image model each shot's camera view and blocking line. On real models its AI blocking chose
+cameras that disagreed with the shot plan (a frontal view of Clover for a side two-shot of Rosie brushing her, Sammy
+from behind for a reaction facing the camera): the frames got three accounts of the same picture (the shot's
+description, the blocking line, the camera view) and followed none consistently. The storyboard review scored blocking
+5 on the riding demo and 4 on the first measured storyboard, and blocking a scene took about ten minutes of reasoning.
+From October 30 new projects were created with the desk off (`blocking.enabled: false`): the shot's description is the
+one account, written with its screen positions ([the planner's rules](#one-rubric-for-the-maker-and-the-reviewer)).
 
 The runs above [never showed the image model a camera view](#the-image-model-never-saw-its-references). Measured again with
 references delivered (fp46, the frozen plans of fp39, one run of four scenes): 7.00 with blocking 4.4 and continuity 5.8, against
-7.27 and 5.6 with the desk off, and the reviews now fault the blocking itself ("crosses the 180-degree line", "line crosses on
-nearly every cut"). The desk stays off, now on a measurement that tests it.
+7.27 and 5.6 with the desk off, and the reviews faulted the blocking itself ("crosses the 180-degree line", "line crosses on
+nearly every cut"). The desk stayed off, on a measurement that tested it, until it was removed: a person now stages a
+scene on the [3D-Editor's desk](director-desk.md), whose reference clips reach the video model as motion references, and
+no prompt carries a blocking.
 
 ## Frames that follow their shot
 
@@ -1593,7 +1594,8 @@ model's; a take watch that finds it could have the take made again). Wan's own p
    [made again as a new project does](#a-failed-take-made-again-as-a-new-project-does)), while the doubled kite and
    the tree that failed them stayed. Nor did the scene's continuity left out of the takes' prompts stop the doubling
    ([fp87](#the-scenes-continuity-left-out-of-the-takes-tried-not-built)).
-6. **Close framings drawn whole** (fixed, fp7) and **the AI blocking**: its cameras now follow each shot's planned
-   layout where its marks allow ([following the shot plan](director-desk.md#following-the-shot-plan)), yet with the
-   desk on the storyboards scored 6.1 and 6.6 (fp27) against 7.2 and 6.8 without it: the image model does not draw
-   from the mannequins' camera views better, and the desk stays off. Riders and four-legged figures are not built.
+6. **Close framings drawn whole** (fixed, fp7) and **the AI blocking** (removed): its cameras followed each shot's
+   planned layout where its marks allowed, yet with the desk on the storyboards scored 6.1 and 6.6 (fp27) against 7.2
+   and 6.8 without it: the image model did not draw from the mannequins' camera views better. Rideo's own desk was
+   removed on November 14, 2026; a person stages a scene on the [3D-Editor's desk](director-desk.md), which builds
+   riders and four-legged figures and reaches the video model through motion references.

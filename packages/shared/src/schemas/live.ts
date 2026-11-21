@@ -150,6 +150,16 @@ export const ServerMessageSchema = z.discriminatedUnion('type', [
     event: ProjectEventSchema,
   }),
   z.object({ type: z.literal('resync'), projectId: z.string(), reason: z.string() }),
+  /**
+   * The answer to a `subscribe` once the server follows the project for this session (after the events it replays),
+   * with the `subscribe`'s `ref`: an editor-job claim of the session for the project finds it followed from now on
+   * (docs/design/realtime-sync.md#server--client).
+   */
+  z.object({
+    type: z.literal('subscribed'),
+    projectId: z.string(),
+    ref: z.number().int().nonnegative().optional(),
+  }),
   z.object({ type: z.literal('ui'), command: UiCommandSchema }),
   z.object({ type: z.literal('pong') }),
   /** The answer to a `job-heartbeat` (docs/design/editor.md#editor-jobs). */
@@ -197,7 +207,13 @@ export const PresenceSchema = z.object({
 export type Presence = z.infer<typeof PresenceSchema>;
 
 export const ClientMessageSchema = z.discriminatedUnion('type', [
-  z.object({ type: z.literal('subscribe'), projectId: z.string(), lastSeq: z.number().int().optional() }),
+  z.object({
+    type: z.literal('subscribe'),
+    projectId: z.string(),
+    lastSeq: z.number().int().optional(),
+    /** Comes back in the `subscribed` answer: the tab tells the answer to its latest `subscribe` from an earlier one's. */
+    ref: z.number().int().nonnegative().optional(),
+  }),
   z.object({ type: z.literal('unsubscribe'), projectId: z.string() }),
   PresenceSchema.extend({ type: z.literal('presence') }),
   z.object({

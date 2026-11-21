@@ -29,8 +29,10 @@ RIDEO_TEST_WEBDAV_URL=http://rideo:rideo@localhost:8080/ npx vitest run --projec
 ### Unit
 
 - **shared**: every zod schema (including rejection cases); timeline reducer (every op, ripple and magnetic
-  invariants, invalid ops); `activeAt` for transitions; story assembly; suggestion application; workflow
-  evaluator for every requirement; prompt compiler determinism and reference selection under
+  invariants, invalid ops); `activeAt` for transitions; story assembly (the project's names the writer is told,
+  `existingNames`: one-line entries within their bounds, none for a new project; the writer's merge keeping the ids,
+  seeds, references, locks, library links, 3D pins and locked voices of the entities it matches); suggestion
+  application; workflow evaluator for every requirement; prompt compiler determinism and reference selection under
   `max_input_images`; watermark core (DCT orthonormality, CRC, layout determinism, embed/extract round trip
   on synthetic frames, PSNR ≥ 45 dB, no false positive on unmarked frames); JSON diff; canonical JSON;
   media planners and parsers (probe banners from FFmpeg 4.4 and the 5.1 wasm core, analysis logs including
@@ -105,6 +107,14 @@ RIDEO_TEST_WEBDAV_URL=http://rideo:rideo@localhost:8080/ npx vitest run --projec
   for any accent, the brand tokens' WCAG contrast, merging); ustar headers (long names in the prefix, base-256 sizes,
   checksums), the entries a project file carries and the unsafe ones it refuses, the manifest, and the history
   rewrite of a copy (every commit names the new id, other documents and subtrees shared, merges kept).
+- **shared, counts** (`text.test.ts`, `workflow.test.ts`, `storyboard.test.ts`, `desk-result.test.ts`,
+  [voice](brand.md#voice)): `plural` and `byCount` (1 in the singular, 0, 2 and more in the plural, a plural of its own,
+  the word after the count chosen by the same rule); the words of every package (`packages/*/src`: string literals,
+  template texts and JSX texts read with the TypeScript parser) holding no count that hedges its plural ("shot(s)") and
+  no count followed by a plural noun of up to three words and a verb kept whatever the count ("${n} lines are",
+  "${n} usage items have"), with a fixture holding both shapes found; the gates' messages for 1 and for 2 (characters
+  not locked or without an approved reference, storyboard
+  scenes to plan and draw, storyboard frames approved); a desk's clip of one frame refused in the singular.
 - **server**: repository commit, log, diff, restore, branches, tags, coalescing and GC on `MemoryBackend`; the work
   tree's external edits (a listing that leaves out a file deletes nothing, a confirmed deletion does); on a store where
   every operation takes a while (`repo.test.ts`), a commit's objects written together and the ref after them, the
@@ -122,16 +132,19 @@ RIDEO_TEST_WEBDAV_URL=http://rideo:rideo@localhost:8080/ npx vitest run --projec
   `client` lane: claim order, leases, heartbeats, expiry and session release, cancel, staged files);
   consistency gate scoring, preconditions R1/R2, stale detection R6, override rules R8, fail-closed R9; LLM
   adapters' request shapes and JSON repair (and audio parts for the speaker check, video parts for the audio-visual
-  model); streamed chat completions (deltas joined, the usage of the last event, a refused `stream` asked again
+  model); the writer's prompts of both versions reading `existing` and keeping its names (`writer-names.test.ts`);
+  streamed chat completions (deltas joined, the usage of the last event, a refused `stream` asked again
   without it but an "upstream" error not, a stream gone quiet ended by the timeout, a streamed error retryable); the
   proxy client waiting for slow headers only as long as the call's timeout and still sending multipart uploads; LLM
   calls made again while the provider turns them away for load (`503`, `429` with its `Retry-After`, a dropped
   connection, mm-gateway's `upstream_error` and `generation_service_error`), giving up after the retries, never for
   `400`, `504` or mm-gateway's `provider_not_configured`, a
-  timeout or failed connection made a retryable `llm_error` for the job, and a cancelled job not waiting; live hub sequencing, replay and resync, and job heartbeats on the live channel (leased, lost, cancelled); config parsing (TTS, speaker-check and audio-visual endpoints); the vision judge told who is absent and counting
+  timeout or failed connection made a retryable `llm_error` for the job, and a cancelled job not waiting; live hub sequencing, replay and resync, a subscribe answered (`subscribed`, with its `ref`) only once the hub follows the project, after the events it replays, and not when refused, and job heartbeats on the live channel (leased, lost, cancelled); presence claims decided in the order they come and refused on a project the tab may not follow, and UI commands only to the tabs on their project, a session id narrowing and, without accounts, reaching its tab anywhere as before (`hub.test.ts`); config parsing (TTS, speaker-check and audio-visual endpoints); the vision judge told who is absent and counting
 only those names as extras, and reading verdicts that name a character instead of its id with strays dropped
 (`judge.test.ts`); gateway output downloads made again after a dropped connection or a `5xx`, then a retryable
-`gateway_error`, and a `404` failing at once (`media-download.test.ts`); the ElevenLabs and OpenAI TTS clients
+`gateway_error`, and a `404` failing at once (`media-download.test.ts`); the scratch directory swept when the server
+starts, a file or a folder (by its newest file) more than a day old removed and the count logged, newer ones kept
+(`media-tmp.test.ts`); the ElevenLabs and OpenAI TTS clients
   against a fake proxy (design, save, clone, speech with timings and seeds, retryable failures, metrics); the
   speaker-check merge (V4: same, different, missing and silent voices, no judge, judge outage); sound effects
   through a fake proxy (request shape, length clamp, retryable failures, `rideo_post_audio_total`) and the
@@ -139,16 +152,32 @@ only those names as extras, and reading verdicts that name a character instead o
   capabilities, `max_fps`, `off` and pinned models; the finishing filter for models and ffmpeg; the delivery
   encoders; ustar archives with long names and checksums); accounts (the PKCE authorization request, RS256 and ES256
   ID tokens and every rejection: signature, issuer, audience, expiry, issue time, nonce, malformed, an unknown key
-  read again from the JWKS; sessions by hash across a restart and their expiry; the audit log's filters; cookies
-  and safe return paths); notifications (per person, newest first, pushed to that person's tabs only, read marks
-  across a restart, the last 500); interchange (the default WebDAV root, embedded or external; review notes on
-  takes as markers); the web's sign-in page; FCPXML and XML parsed as XML with awkward titles and labels; the
-  inspector's transform keyframes and ramp presets, the transcript panel's filler and selection cuts, waveform
-  drawing, and the compositor's overlay placement, opacity, matte alpha and LUT (a recording canvas); the
+  read again from the JWKS; sessions by hash across a restart and their expiry; the audit log's filters; cookies and
+  safe return paths; an MCP tool reached without a caller refused outside auth mode `none` while a recipe still runs it,
+  `mcp-principal.test.ts`, which also gives every MCP tool that takes a `projectId` a malformed one and expects
+  `validation_error`, from the tool, a recipe's step, the prompts and the project resources); recipes and the studio
+  library (`recipes.test.ts`: a recipe that names any library tool but `library_status` (`library_list`,
+  `library_get`, `library_uses`, `library_save`, `library_update`, `library_apply`, `library_detach`) refused when it
+  is saved, naming the step and the tool, `library_status` kept; one saved before the rule refused when a run starts,
+  with no job queued, and its job refused before any step runs; and the one project a recipe acts on, with two real
+  projects and the MCP tools: a step's `projectId` written out (another project's id, or any), left out, or a tool that
+  takes none (`project_list`, `project_import`, `settings_update`, `recipe_delete`, …) refused when saved, naming the
+  step and the argument; a recipe saved before the rule, or a parameter or a list's item filled with another project,
+  refused when a run starts, with no job queued; a job enqueued directly with another project refused before its first
+  step, and a step an earlier result aims at the other project refused before it runs, the other project untouched;
+  `recipe_run` refused when saved, run and in a job; every built-in saved and started; no tool argument but `projectId`
+  names a project); notifications (per person, newest first, pushed to that
+  person's tabs only, read marks across a restart, the last 500); interchange (the default WebDAV root, embedded or
+  external; review notes on takes as markers); the web's sign-in page; FCPXML and XML parsed as XML with awkward titles
+  and labels; the inspector's transform keyframes and ramp presets, the transcript panel's filler and selection cuts,
+  waveform drawing, and the compositor's overlay placement, opacity, matte alpha and LUT (a recording canvas); the
   Recipes card (built-in and studio recipes, the run dialog's parameters typed); brand text in the compositor
-  (two lines, the brand font and box, no box) and the editor's lower third and intro; recipes (parameters, placeholders,
-  the built-ins); brand kits (font signatures, the bug's corner and size, `withBrand` over the other tracks for the
-  whole film, titles and lower thirds in the brand's fonts, colors and box, intros that move the other tracks,
+  (two lines, the brand font and box, no box) and the editor's lower third and intro; recipes (parameters, each type
+  named with its article in a refusal, placeholders, the built-ins, the tools recipes may not use and no built-in using
+  one, and a step's `projectId` checked when saved, when a run starts with its parameters and list items filled in, and
+  as the job fills it in before the step); brand kits (font signatures, the bug's
+  corner and size, `withBrand` over the other tracks for the whole film, titles and lower thirds in the brand's
+  fonts, colors and box, intros that move the other tracks,
   `drawtext` with the brand font and box); search (the frames sampled from takes, footage and stills, what is
   indexed with whom it shows, index runs that drop, copy and caption, names as single terms, BM25 and cosine
   ranking with the best frame per file, names first, the REST query); the Search view (the index's state, indexing,
@@ -177,38 +206,143 @@ only those names as extras, and reading verdicts that name a character instead o
   listings per caller, the trash beside the project, another person's workspace refused, a closed tab failing its
   operations, a reconnecting tab waited for, preconditions passed through); prefix stripping for both proxy styles,
   `X-Forwarded-Prefix` that cannot name another host, the page's `<base>`.
-- **web**: live-event store reducer and optimistic timeline edits (queued, the rest replayed on each answer, a
+- **web**: every answer of the API read to its end, an empty `204` too (the desk state's read and clear, a `DELETE`,
+  a telemetry batch, a transfer the server reads and its refusal; a body that fails to arrive is still the answer,
+  `api.test.ts`), live-event store reducer and optimistic timeline edits (queued, the rest replayed on each answer, a
   refused edit dropped and one that no longer applies skipped, live timeline commits held back while edits are
   pending, a reload keeping the shown timeline), live client
   (sequence dedupe, UI-command acks, restart resync, job heartbeats sent when open and their answers handed on), UI
-  command dispatch, the limited media fetch (`media-fetch.test.ts`: at most its limit at once, a slot handed on when a
+  command dispatch (a command for another project than the tab shows, or for a project on a page of none, left alone
+  and refused so the tab acknowledges it `ok: false`; in auth mode none carried out as before; one that arrives before
+  the tab knows its auth mode waiting for `/api/auth/me`, one ask shared and asked again after a failed one, then
+  carried out in mode none and refused in another mode, commands for the shown project or none never waiting,
+  `ui-commands.test.ts`), the limited media fetch (`media-fetch.test.ts`: at most its limit at once, a slot handed on when a
   body ends, fails, is cancelled or aborted, a waiting request dropped when aborted), lane media read only once a block
   comes on screen (`editor-depth.test.tsx`), WebCodecs codec/container
   selection, render engine choice, the editor-job worker against a fake API (claims only with a project and a
   session, one job at a time, progress heartbeats, heartbeats on the live channel too and a job stopped when the live
   channel says it is lost or cancelled, failures reported with their code, cancellations and lost leases not reported,
-  claim retry when the claim overtakes the live subscription, one page heartbeat in flight at a time), timeline
+  claims only through a session that follows the project, a refused claim left to the next poke, one page heartbeat
+  in flight at a time; `live.test.ts`: a project followed only once the server answers the session's latest
+  subscribe, again after every reconnect, and the tab's claims held until then: none before the answer, one after,
+  none on the new session until its resubscription is answered), timeline
   edge-drag
   ops, and rendering of the workflow stepper, consistency badge, job rows and take badges (lineage and
-  multi-shot segments), and the preview's duck automation (`automateDuck`, the shared breakpoints from any
+  multi-shot segments), dialogs (Escape closes the one on top only; a render leaves the focus in the field typed
+  in), and the preview's duck automation (`automateDuck`, the shared breakpoints from any
   playback start); editing tools (`editing-tools.test.ts`: the edit history's stacks, the keymap and its labels, paste,
   split targets, nudges, drops and a freeze's edges; `compositor.test.ts`: mirror, adjustments and key per pixel, the
   wipe's side, dips over white with xfade's weights from whole frames, slides, the circle's gradient, dips and circles
   handed to the canvas while WebGPU gets the rest; `engine-performance.test.ts`: scissors of wipes and slides,
   mirrored UVs and the uniforms of adjustments, key and vignette, and the thread budget counting every scaler so a
-  command stays in ffmpeg.wasm's pool, reading the 118 inputs of a long cut's soundtrack on the main thread); the
+  command stays in ffmpeg.wasm's pool, reading the 118 inputs of a long cut's soundtrack on the main thread, a poster or
+  a scene thumbnail (one frame) on one thread); the
   direct panel sending only the camera fields that changed (`direct-panel.test.tsx`: a lens then an aperture changed
-  before the store hears of the first keep both). Resuming an interrupted render
+  before the store hears of the first keep both); counts that agree with their nouns and verbs, for 1 and for 2
+  (`search.test.tsx`: the frames not indexed yet and the frames that wait; `storyboard-view.test.tsx`: the first scene
+  or scenes, no count before the screenplay has scenes, the frames approved and the toast of Approve all;
+  `feedback.test.tsx`: the Insights view's usage items without a price; `review.test.tsx`: approvals so far of 1 and
+  of 2 asked for, on the project's Reviews card and the guest page). Resuming an interrupted render
   is covered by the editor-jobs integration test, local proxies by the story e2e spec.
-- **blocking** (`packages/shared/test/blocking.test.ts`): the camera solver (framing, lens, distance, the front side,
-  over the shoulder, moves and the library move they make), the 180° rule (a crossed cut mirrored back, an orbit kept,
-  the main pair), the blocking line and the figures' legend, normalization (cast, set bounds, overlaps, missing
-  cameras), the AI floor plan to a blocking, the checks, the camera view drawing the same pixels with each shot's
-  figures only, and prompts with a blocking (the line, the camera view phrase, frames outdated when it moves).
+- **documents from before the 3D-Editor's desk** (`packages/shared/test/legacy-desk.test.ts`): a clip and a project
+  stored with rideo's own desk (`clip.blocking`, `settings.blocking`) still parse and lose those fields, and stored
+  storyboard reviews whose issues and recommendations name the `blocking` dimension still parse while no reviewer is
+  asked for it ([what happened to the blocking](design/director-desk.md#what-happened-to-the-blocking)).
+- **the 3D-Editor's desk** (`packages/shared/test/desk-protocol.test.ts`, `desk-brief.test.ts`, `desk-result.test.ts`,
+  `shot-update.test.ts`, `packages/server/test/unit/batch-boards.test.ts`, `desk-precondition.test.ts`,
+  `packages/web/test/desk-bridge.test.ts`, `desk-panel.test.tsx`, `desk-results.test.ts`): the protocol's schemas
+  against a verbatim copy of the 3D-Editor's fixtures (`packages/shared/test/fixtures/desk-protocol/`: every valid one
+  parses, each invalid one is refused but `state-units-bad-staged.json`, a state read with its units unknown), a result
+  over its limits, and the desk page's URL rule; the brief from rideo's
+  documents, row by row (odd sizes, interiors, the time of day, heights in every form it reads, feet and inches before
+  a weight, the order and limits of the cast and elements, layouts filtered to the shot's own cast, a clip without
+  shots, clip ids such as `constructor`); a result's plan (the mode each shot carries, of several the one last attached,
+  else the first in the protocol's order, every refusal, a shot listed twice, a clip that is not MP4, a length or format
+  the desk changed told apart from a shot or project changed in rideo since the brief, a shot the brief retimed told
+  apart from a length changed in the desk by the shot's own `brief_length` issue, `changes.retimed` only for a shot
+  without one (a stale list after Update shots), a still dropped for its signature or size, the summary naming the modes
+  attached, the shot's PATCH parsed to only the lens and the move); a partial camera in the shot update schema left
+  without defaults; the production batch storyboarding a passed scene whose frames are outdated; a desk state write's
+  precondition evaluated as RFC 9110 does (`If-Match` by strong comparison, with a list and `*`, and `If-None-Match`)
+  and the conflict's message (the stored `ETag` or the clear, never "newer"); the bridge with fake windows and ports
+  (the handshake, the 15-second timeout after a `load` no `hello` answered and after the desk loads again, `open` with a
+  copy of the stored state and again after a second `hello`, a stored state that cannot be loaded failing the panel with
+  Retry and Start over and nothing stored, `bad_message`, states stored on Close, before a result, at most every 10
+  minutes (from the last write, a state that comes during one too) and when the panel goes away, each write naming the
+  state it replaces (`If-Match`, `If-None-Match: *`), a stored state kept after `state_unreadable` or a `412` until the
+  person replaces it (the notice chosen by the stored `ETag`, the desk's message a sentence of its own, one toast across
+  a desk page that loads again, a desk that sent no state asked for it with `save` and its late answer stored at once,
+  the Replace marked as one), a Close held open by a `412` its last write or a write on its way met, a `412` naming a
+  state this tab sent taken as the stored one and tried once (a lost answer, a panel that opened again while the last
+  one's write was uploading, even one sent after its load) but kept as a conflict once the tab saw the server move past
+  that state (another session restored it after this tab's own later write, a `412`, or a later panel's load or Start
+  over found another; one whose write went unanswered, once an answer named another state than the one that write
+  replaces; a state whose write was refused is never the tab's own, its bytes stored elsewhere before Replace or after),
+  a failing write tried again with a backoff and one toast, the same bytes not stored again with the real sha256 against
+  the `ETag`, Close not waiting for a result and at most 10 seconds for the write, `result-ack`, a result applied with
+  its connection's brief and retimed shots, the desk's errors as toasts only when meant for the person, desk text cut to
+  300 characters); the panel (`desk-panel.test.tsx`: no Follow menu of its own, `open`'s modes and the mode last
+  attached in the project, the store's precondition, Replace header and `AbortSignal` reaching `fetch`, a `412` made a
+  conflict, a result applied with the brief and retimed shots it was given (the shot's own issue over a stale retimed
+  list) and its mode remembered, the bridge flushed when the panel goes away, the iframe mounted anew for another clip,
+  Replace (three confirmations) and Start over only after their confirmations); a result uploaded and attached shot by
+  shot with its JPEG poster ([director's desk](design/director-desk.md#tests)).
+- **the studio library** (`packages/shared/test/library.test.ts`, `accounts.test.ts`, `digest.test.ts`,
+  `documents.test.ts`, `packages/server/test/unit/library-store.test.ts`, `library-upload.test.ts`): the schemas of
+  every kind and their limits; the snapshot digest blind to reference ids, wardrobe ids, `createdAt` and
+  `consent.recordedAt` and changed by identity, wardrobe text, reference hashes, seed and pin; snapshots keeping only
+  approved references, with consent records, seeds, wardrobe ids and the 3D pin; the apply plan (create keeping the
+  item's id and seed above every version the project recorded, locked or not, and counting the takes it makes stale,
+  `conflict` for a taken id or name, an alias that is another element's alias or name only warned, update relocking by
+  the identity hash, outfits keeping the target's ids (by id, then by name, each once), stale takes and approved clips
+  needing `project.approve` for a create as for an update, the locked refusals, 3D items onto their kinds of target
+  only, `replacePin: false` refused by a pin and by an update or link whose version carries one, no edit made here
+  counted for a pin or a voice the apply keeps, resources always created, archived items refused); `libraryAllows` for
+  people, admins, the studio token and agent tokens with and without projects; a digest with and without `library`,
+  still version 1; documents without `library` and `deskUnit` still parsing, and a pin changing no identity hash; the
+  store on memory and file backends (versions written once, a leftover manifest skipped, two versions at once, heads
+  read once and read again after a read that failed, the same bytes stored once) and the service on in-memory storage
+  (`unchanged`, `412` `library_conflict` for a stale `If-Match` and a stale `basedOn`, archive, a head it cannot read
+  answered with a retryable `storage_error`, a save with `newItem` making a new item whatever `itemId` names,
+  permissions through real principals, pins and detach (counted under the item's kind), an approved clip's update
+  planned for an editor, refused to them and done by a director, and so a Use in project of a character used again whose
+  old take an approved clip holds, a video resource's poster saved by its bytes: a PNG the project called a JPEG as
+  `image/png`, one that is not a raster picture left out) and its uploads (`meta` first, a unit of 32 MiB + 1 byte
+  refused with `413`, a unit whose prefix, header or kind is wrong, thumbnails that are not PNG, over 64 KiB or over 256
+  px, a client gone in the middle of a part leaving no temporary file, a raster picture known by its signature and an
+  SVG or a page not taken for one, a video or an audio resource kept under one type of its kind without its parameters
+  and a list such as `video/mp4, text/html` refused, saying "an audio resource" or "a video resource"), and the unit
+  file as the 3D-Editor's contract lays it out (`packages/shared/test/unit-file.test.ts`, the server's
+  `library-upload.test.ts` and the browser's `desk-units.test.ts`: the 3D-Editor's own unit file,
+  `units/unit-file-prop.json`, read as a prop of version 1 and uploaded as a desk-prop under its sha256; a prefix with
+  bytes 10–11 set, a header that is not UTF-8 or names no kind of the three or no name of 1–120 characters, and a
+  version other than 1 refused) ([the library](design/library.md#tests)).
+- **library units** (`packages/shared/test/desk-protocol.test.ts`, `desk-brief.test.ts`, `desk-units.test.ts`,
+  `packages/web/test/desk-bridge.test.ts`): the new fixtures (valid ones parse, invalid ones refused but
+  `state-units-bad-staged.json`, a state read with its units unknown) and the capability read leniently; the brief
+  unchanged byte for byte without units and, with them, the set from the scene's location, props, figures with their
+  kind and height, only the kinds the desk announced; `X-Desk-State-Units` formatted and parsed, and `state.units` that
+  name a slot twice read as not known and sent as no header (the state stored all the same); `deskUnitDrift` for every
+  status (a slot made local stays `local` whatever its pin becomes); the bridge sending no unit field to a desk without
+  the capability, `open.units` in slot order without the pins the stored state uses (2 fetches at a time, sha256
+  checked, never past 48 MiB), `unit-publish` saved, linked by the contract's rule and acknowledged with the mapped
+  codes, one at a time, one it cannot read refused `invalid` at once ([library units](design/director-desk.md#tests)).
 - **reviews of every step** (`packages/shared/test/ai-review-gates.test.ts`): the whole-take watch's verdict and its
   merge into the quality checks, the scene review's verdict, the clip gate, the cast review's subject and merge
   (fixes pointed at the character), the `cast.reviewPassed` gate (off for older projects, continue anyway), the cut's
   subject, a production scene's storyboard review state.
+
+- **the studio library's pages** (`library-ui.test.tsx`): the library and 3D rows' texts (available, edited here, none,
+  a pin the studio lacks), an apply's plan in words (lock versions, stale takes, the approval warning in the plan's own
+  verb and who may confirm), refusals in words by their code (one that needs a director said with its plan's approved
+  clips), tags, the loop of "Use v3 in all N projects" (pins at another version, reviewers skipped, refusals listed),
+  the Save, plan and Use from library dialogs on a mocked API (the consent box, a `412` offering Save anyway, "Link to
+  the existing Mira" with Escape closing only the plan over the picker, items checked under another search or tag used
+  too, a use or an update refused for a director naming the approved clips, a director's use naming the clips it left
+  with stale takes), a resource row naming the resource that holds the version it would add, and the Library page: its
+  changes with the item's revision (Make current, Archive; a change made meanwhile reloaded and said), no action bar for
+  someone with nothing to do, singular counts, a style called Style, and Used in saying why it could not be read with
+  Try again ([the library](design/library.md#tests)).
 
 - **web, settings, workspace and library** (`settings.test.tsx`, `workspace.test.ts`, `runtime.test.ts`,
   `embed.test.tsx`, `library-build.test.ts`, `pwa.test.tsx`): the Settings page (sections from the table and the
@@ -228,19 +362,15 @@ only those names as extras, and reading verdicts that name a character instead o
   table, unpriced usage, discarded attempts, the project ledger written behind and read back (a failed read made again,
   an unreadable ledger never written over, a false 404 read again, a missing one rebuilt from the jobs); the new metrics
   (`rideo_job_wait_seconds`, lane gauges, LLM seconds and tokens, HTTP route latency, storage buckets to 300 s);
-  the retrospective rules on fixtures (each rule firing and staying quiet); applying and dismissing recommendations
+  the retrospective rules on fixtures (each rule firing and staying quiet; each count's noun, verb and pronoun agreeing
+  for 1 and for 2); applying and dismissing recommendations
   (`feedback_stale`); the telemetry endpoint (validation, the cap, off).
 
 ### Integration
 
-- **The director's desk** (`director-desk.test.ts`): a storyboarded scene blocked by the AI before its frames (a
-  camera per shot, no crossed line), every frame's prompt carrying its blocking line and the camera view as a labelled
-  reference; a blocking saved from the desk with a camera moved over the line (`line_crossed`, the moved shot's frame
-  outdated), fixed back by the solver, refused when it does not validate; the camera view as a PNG over REST and as
-  MCP image content; a scene blocked again on request (`rideo_blocking_total`).
-- **Autopilot** (`autopilot.test.ts`): a new project's defaults (every review on, the desk on) taken from the brief to
+- **Autopilot** (`autopilot.test.ts`): a new project's defaults (every review on) taken from the brief to
   the export on autopilot: each gate approved by the system after its review (screenplay, cast, storyboard, cut;
-  `resources_ready` at once), the cast approved and locked by its review, every clip blocked, its frames approved
+  `resources_ready` at once), the cast approved and locked by its review, every clip's frames approved
   before its video, every take watched whole by the vision model, every scene watched as one video and passed, the
   production scenes' storyboard reviews passed (the one written within the storyboard stage's scenes too: the stage
   draws only the scenes written by then), and the export queued for a studio tab; a cast review that still fails
@@ -266,7 +396,8 @@ only those names as extras, and reading verdicts that name a character instead o
   records in the browser, a server restart followed by the reconnecting tab, a project file exported and imported
   into another browser as a copy (history rewritten, media served), the trash, `storage_offline` when the tab is gone.
 - **Embedding origins** (`embedding.test.ts`): preflights and calls of `RIDEO_CORS_ORIGINS` answered with the CORS and
-  CORP headers, others not; the live channel refused to other sites (4003).
+  CORP headers (a preflight allowing the desk state's `x-desk-state-format`, `x-desk-state-version`,
+  `x-desk-state-replace`, `if-match` and `if-none-match`), others not; the live channel refused to other sites (4003).
 - **Render plan** (`render.test.ts`): the shared chunk graphs and soundtrack graph run through native ffmpeg
   (a cut followed by a crossfade; a split and trimmed clip before a wipe, with speed and fades; text) and
   every chunk must have exactly its planned frame count; the concatenated chunks must equal the planned
@@ -278,7 +409,8 @@ only those names as extras, and reading verdicts that name a character instead o
   (`test/helpers/editor-worker.ts`) that implements the browser's jobs with native ffmpeg and the same shared
   planners: claim/lease/heartbeat, staged uploads, resume after a lost lease, cancel, and the follow-up
   jobs; a lease kept by heartbeats on the live WebSocket alone, refused to another session, and expiring when they
-  stop.
+  stop; a claim of a session that does not follow the project yet refused (`409`, subscribe first) and accepted once
+  its subscribe is answered (`subscribed`, the worker waits for it too).
 - **Busy storage and an overloaded provider** (`overload.test.ts`): a studio on the scripted flaky WebDAV server: a
   loaded project's reads ask the storage nothing; a save goes through `423`s, a `503` and a dropped connection (the
   retries in `/metrics`); after a restart a false 404 for the project is looked at again; the work tree catches up; a
@@ -324,6 +456,38 @@ only those names as extras, and reading verdicts that name a character instead o
   a generated, verified end frame and an image end frame as `last_frame` (dropped for a model without last
   frames); an image start frame and a pose reference video; resource validation; variations with offset seeds
   and continued numbering (the mock records every request it gets).
+- **Director's desk** (`desk.test.ts`): `desk-brief` and the MCP tool `desk_brief` return the same brief; the desk state
+  stored as an immutable media file the clip names, given back with its format, version and `ETag`, the same bytes again
+  changing nothing, a commit per state coalesced per clip and author, a Replace (`X-Desk-State-Replace: 1`) a commit of
+  its own that keeps the replaced state in the history, a restored clip with its state, `DELETE`; `204` (no body, no
+  `ETag`, not cached) when no state is named, also on the studio that keeps projects in browsers, `404` for a project
+  or clip that is not there, `503` `storage_error` for a named state whose file is gone, cleared by a `DELETE`; a `PUT`'s
+  precondition (`If-None-Match: *` and `If-Match` stored or refused with `412` `desk_state_conflict` and the stored
+  `ETag`, which the answer's `detail` names, or says the state was cleared, the `ETag` a `PUT` answers, the same bytes
+  accepted whatever the precondition, a `PUT` without one replacing whatever is stored, conflicts counted and logged, no
+  media file kept for a `412` found before the bytes are kept), checked again in the commit once the body has arrived (a
+  state stored while a slow body arrived is kept); states over 64 MiB refused by their `Content-Length` and as a chunked
+  body arrives (413), other formats, versions and every other body type, malformed and empty JSON included, never parsed
+  (422), each counted as `refused` and logged; a request aborted before the service reads its body leaving no temporary
+  file or open file; clip ids such as `constructor` and `__proto__` answered `404`; a partial camera through `PATCH` and
+  `shot_update` keeping framing and movement; the state kept in the browser's storage; `RIDEO_DESK_URL` saved and
+  reaching `GET /api/config` as `features.desk`. Library units: `X-Desk-State-Units` kept on the clip with its state
+  (`-` as none, no header as unknown), a header that does not parse refused with `422` and counted, the same bytes
+  again keeping the rows, a `DELETE` clearing them; the embedding origins' preflight allowing `x-desk-state-units`
+  (`embedding.test.ts`).
+- **Library** (`library.test.ts`): a desk set uploaded, listed, read, served with `Range`, `304` and `HEAD`, a new
+  version with a stale `If-Match` and with a stale `basedOn` (`412` `library_conflict`), renamed, archived (gone from
+  the default list, still served) and its uses; Mira saved from project A (`consent_required` until acknowledged), used
+  in project B with the same id and seed and her references copied, a v2 from A making B's status `behind`, B's dry run
+  and update (lock + 1); a name conflict linking instead; a resource used as a new resource; an image resource that is
+  an SVG or a page refused (`payload`), a PNG kept as one whatever its part says, and a library file and a project's
+  media served with `nosniff` and a sandboxing policy; Save to library of a project's SVG refused (`payload`, nothing
+  copied), of a PNG the project called a JPEG kept as `image/png` with the project's resource retyped in the same commit
+  (not edited here), and a video whose type is a list refused saved (nothing copied) or uploaded; a figure pinned on a
+  character and a set on a location, unpinned again; the audit events and the metrics. MCP's `library_*` tools give the
+  same answers on the same server; with projects in browsers, the library stays in the data directory, an apply goes
+  through the tab that holds the project and fails with `storage_offline` without it. The editor refused an approved
+  clip's update and the scoped token refused publishing are unit tests (`library-store.test.ts`).
 - **Take editing** (`take-editing.test.ts`): a relit take is a verified, watermarked derived take that keeps the
   sound and dialogue, signed as an AI edit with its parent as ingredient; a new-angle edit; an extension from the
   last frame (+N s, trimmed to what was asked); generative extend after a take (a signed, watermarked extension
@@ -350,7 +514,19 @@ only those names as extras, and reading verdicts that name a character instead o
   becomes a membership at sign-in; what reviewers, editors, directors and outsiders may do (403s), studio visibility,
   admins and the studio token; agent tokens capped by role and projects over REST and MCP (commits by the agent on
   behalf of its owner, MCP sessions bound to their caller, revocation); people disabled by an admin; the audit log
-  for admins and directors; live subscriptions refused to people without access.
+  for admins and directors; live subscriptions refused to people without access (an error, no `subscribed` answer)
+  and answered for readers; the guards decided by the matched route however the path is percent-encoded (without a
+  session, `/%61pi/projects`, `/%61pi/library/items`, `/%6dcp` and `/%6detrics` answered `401`; a non-member under a
+  project id with an escaped letter, its library routes included, and an editor's `appro%76e` answered `403`); a
+  malformed project id (`not-an-id`, another case, too short, another kind's
+  id, an escaped path) answered `422 validation_error` to a member, a non-member, an admin and the studio token on every
+  project route, the library's included, before any permission is asked, and over MCP `validation_error` to the same
+  callers and a scoped token from reads, edits, library tools, an approval and access (no `auth.denied` recorded, a
+  well-formed id of another's project still `forbidden`); a library upload from a reviewer token answered
+  `403` before its parts are read (a person's for an item that is not there `404`), nothing written to the temporary
+  folder; a recipe kept to the project it runs in: a non-member's recipe with the director's project id in a step (or
+  `project_list`) refused when saved, one passing that project through a parameter refused when run and, enqueued
+  directly, failing before its step, the director's project untouched, and the same recipe run on her own project.
 - **Installable app** (`pwa.test.ts`): devices subscribed (https only), a failed recipe pushed to them encrypted and
   VAPID-signed (decrypted as the device would), a device its push service forgot dropped, unsubscribing; the Inbox
   across projects (an agent's review and commit, the gate, today's failures).
@@ -364,14 +540,19 @@ only those names as extras, and reading verdicts that name a character instead o
   takes and references with embeddings (`semantic`): synonyms found, a character's takes named first, an unapproved
   reference dropped on its own; MCP `media_search`, `search_status`, `search_index`.
 - **Brand kits** (`brand.test.ts`): a kit with fonts (a broken one refused), a logo, a video intro and an outro still,
-  served back; the bug set; the kit applied to a project (files copied into its media); a lower third and an intro
-  that moves it; an export with the bug checked pixel by pixel (the logo in its corner over the intro), its length;
-  the brand removed and the kit deleted; MCP `brand_kits_list`, `brand_kit_update`, `project_brand`.
-- **Agents** (`agents.test.ts`): studio recipes validated (unknown tools, arguments, placeholders) and run with
+  served back with `nosniff` and a sandboxing policy; the bug set; the kit applied to a project (files copied into its
+  media); a lower third and an intro that moves it; an export with the bug checked pixel by pixel (the logo in its
+  corner over the intro), its length; the brand removed and the kit deleted; MCP `brand_kits_list`,
+  `brand_kit_update`, `project_brand`.
+- **Agents** (`agents.test.ts`): studio recipes validated (unknown tools, arguments, placeholders, a step that is
+  `library_apply`, `library_uses` or `library_list` refused with the step and the tool named, a step with a project's
+  id written out, one without its `projectId` and a `project_import` step refused with the step and the argument named,
+  a recipe of `library_status` saved and run) and run with
   `forEach` over a list parameter, a failing step stopping the recipe with its error, built-ins that cannot be
   deleted, metrics; the built-in *Cast every voice* designing, choosing and locking the voices; MCP prompts filled
-  with the scene (and refused for an unknown one), the new resources, `batch_variations` on a planned clip and a
-  recipe created and run by an agent.
+  with the scene (and refused for an unknown one), the new resources, `batch_variations` on a planned clip, a
+  recipe created and run by an agent, an agent's recipe that names `library_save` or `library_get` refused, one with a
+  project's id written out refused when saved, and one run with another project through a parameter refused.
 - **Editor depth** (`editor-depth.test.ts`): `.cube` LUT uploads (and a broken one refused); a cut with a LUT, a
   ramped item and a keyframed picture-in-picture on an overlay track rendered by the reference worker and checked
   pixel by pixel (the LUT's colour, the overlay where its keyframes put it, the ramp's source frames, the length);
@@ -394,6 +575,11 @@ only those names as extras, and reading verdicts that name a character instead o
   the keyframe and the video three times each, and the kept take names the extra.
 - **Re-check** (in `continuity.test.ts`): takes made with the judge off are `unverified`; with the judge back,
   `consistency.recheck` turns them `passed` from their evidence frames without a new generation.
+- **The project's names** (`writer-names.test.ts`): a new project's writer gets no `existing`; a project that holds a
+  locked character and a location with an alias before its screenplay gets them in `existing` for
+  `screenplay.generate` and `screenplay.extend`, and the mock writer, which keeps those names as the real one is told
+  to, makes scenes that link to them: one character of that name, unchanged (same id, seed and lock), the first scene
+  at that place, and no second element for it.
 - **Observability** (`observability.test.ts`): a clip generated on the mock fills `job.usage`, the project's
   `.rideo/usage.json` (priced with `RIDEO_PRICES`) and `/metrics`; `GET /insights` and MCP `project_insights`.
 - **Interchange** (`interchange.test.ts`): an edit project's cut handed off in the four formats (the OTIO's clip URL
@@ -427,7 +613,15 @@ only those names as extras, and reading verdicts that name a character instead o
   through tools (including designing, picking and locking a voice, importing a screenplay and reading the
   storyboard and the shot list), and asserts that a WebSocket subscriber
   received the matching `commit`, `job` and
-  `activity` events and that `ui_*` commands reach a fake browser session with acks.
+  `activity` events and that `ui_*` commands reach a fake browser session with acks; in auth mode none a session id
+  reaches a tab on no project and a toast without a project every tab, as before.
+- **Live UI with accounts** (`live-ui.test.ts`) with the mock identity provider, two people each directing their own
+  projects: a tab claiming a project its person may not follow is refused twice (follow and presence) and gets none of
+  that project's commands; `ui_sessions` lists to each caller its own tabs and those on projects it may read, showing
+  only those projects (a tab followed on a readable project but present on another shows no presence), and refuses a
+  project the caller may not read; a session id never takes a command to a tab on another project, from the caller's
+  project or without one, directly, through an agent token or from a recipe run on the caller's project, while
+  `ui_notify` without a project reaches the caller's own tabs.
 - **WebDAV editing** (`webdav-sync.test.ts`): the work tree appears behind the commits; edit `screenplay.json` through
   the WebDAV client and sync (a commit by `webdav`); an invalid edit raises a `sync-issue`; the inbox import creates
   resources.
@@ -437,55 +631,62 @@ only those names as extras, and reading verdicts that name a character instead o
 ### End-to-end (Playwright)
 
 Projects: `desktop` (1440×900) runs every spec except `responsive`; `mobile` (412×915, touch) runs
-`responsive`, `mcp-sync`, `provenance`, `elements`, `dialogue`, `storyboard`, `directing`, `take-editing`,
+`responsive`, `mcp-sync`, `provenance`, `elements`, `dialogue`, `storyboard`, `director-desk`, `directing`, `take-editing`,
 `multi-shot`, `post-audio`, `localization`, `finishing`, `accounts`, `review`, `interchange`, `editor-depth`,
 `editing-tools`, `recipes`, `brand`, `search`, `performance`, `engine`, `pwa`, `settings`, `browser-storage`, `subpath`, `embed`,
-`feedback` and `insights`. The
+`feedback`, `insights`, `library` and `desk-units`. The
 web server stops with SIGTERM so the stack removes its data; stale stack directories older than an hour are removed
 when a new stack starts. Specs:
 
 | Spec | Flow |
 |---|---|
 | `story.spec.ts` | brief → screenplay → cast (generate, approve, lock; design, pick and lock every voice; then the locations and props in the Elements view) → storyboard (generate, approve all frames, approve) → pilot from the approved frames (the speaking take carries TTS dialogue) → approve → batch (30 s target) → approve → editor (assemble; the Dialogue track holds the mixes; split, inspector trim, edge-drag trim; the preview plays local proxies because H.264 is hidden from WebCodecs) → export rendered in the tab (`auto` → ffmpeg.wasm) → verify watermark |
-| `mcp-sync.spec.ts` | page open; the test drives MCP tools as “Claude Code” (create character, add reference, lock, `ui_navigate`, `ui_focus`, `ui_notify`) and asserts the page updates live, attributed to the agent, without a reload; an agent's `export_render` is claimed and rendered by the open tab (`auto` → WebCodecs) and watermarked by the server |
+| `mcp-sync.spec.ts` | page open; the test drives MCP tools as “Claude Code” (create character, add reference, lock, `ui_navigate`, `ui_focus`, `ui_notify`) and asserts the page updates live, attributed to the agent, without a reload; an agent's `export_render` is claimed and rendered by the open tab (`auto` → WebCodecs) and watermarked by the server; in auth mode none, an agent's `ui_navigate` for another project with the tab's `sessionId` that reaches the tab before `/api/auth/me` has answered (the answer held) waits for it, then is carried out and acknowledged `ok: true` |
 | `footage.spec.ts` | upload (probe + poster in the browser) → analysis signals in the browser → AI suggestions → accept → auto edit → exports with the ffmpeg.wasm and WebCodecs engines → both listed and verified |
 | `history.spec.ts` | edit → history → diff → restore → UI updates |
 | `take-editing.spec.ts` | (desktop and mobile) relight a take and extend another by 2 s from the take tiles (lineage badges); generative extend of the first item in the editor (the lanes on desktop, the item list on phones) |
-| `accounts.spec.ts` | (desktop and mobile, on the stack's second server with accounts and a mock identity provider) sign-in; a director adds a reviewer by email in the Members card; an agent token created, used and revoked; people and the audit log; the reviewer's view (banner, no settings); sign-out |
+| `accounts.spec.ts` | (desktop and mobile, on the stack's second server with accounts and a mock identity provider) sign-in; a director adds a reviewer by email in the Members card; an agent token created, used and revoked; people and the audit log; the reviewer's view (banner, no settings); sign-out; an agent with a token of the director's on her open project: someone who is not a member opening the same address is refused and present nowhere, so `ui_sessions` on the project lists her tab alone and `ui_notify`'s toast shows in her tab, not in theirs ([who sees and steers which tabs](design/realtime-sync.md#who-sees-and-steers-which-tabs)) |
 | `pwa.spec.ts` | (desktop and mobile) the manifest and the service worker; the Inbox from the header: an agent's commit, a failed recipe, a gate approved; notifications on this device turned on and off (a stand-in subscription: headless browsers have no push service); the shell starting offline |
-| `engine.spec.ts` | (desktop and mobile, WebGPU on SwiftShader through Vulkan) the studio cross-origin isolated; the same graded, overlaid frame from WebGPU and the canvas; an ffmpeg.wasm export on threads; a WebCodecs export composited by WebGPU in a hidden tab (worker heartbeats, the job's Web Lock); a 4K original previewed from a WebCodecs editing proxy in OPFS. A cut of 40 quarter-second items exported with ffmpeg.wasm, its threads planned for 8 cores: the chunk and the soundtrack read their 40 inputs on the main thread and stay in the 32-thread pool. A cut of 40 different clips opened through the stack's slow-media proxy (every ranged media read held 20 s on the browser's six HTTP/1.1 connections): the tab claims the queued export at once and finishes it on its first lease (with every lane reading at once, the claim, the heartbeats and the export's inputs waited minutes behind the held reads and the lease was lost) |
+| `engine.spec.ts` | (desktop and mobile, WebGPU on SwiftShader through Vulkan) the studio cross-origin isolated; the same graded, overlaid frame from WebGPU and the canvas; an ffmpeg.wasm export on threads; a WebCodecs export composited by WebGPU in a hidden tab (worker heartbeats, the job's Web Lock); a 4K original previewed from a WebCodecs editing proxy in OPFS. A cut of 40 quarter-second items exported with ffmpeg.wasm, its threads planned for 8 cores: the chunk and the soundtrack read their 40 inputs on the main thread and stay in the 32-thread pool. A cut of 40 different clips opened through the stack's slow-media proxy (every ranged media read held 20 s on the browser's six HTTP/1.1 connections): the tab claims the queued export at once and finishes it on its first lease (with every lane reading at once, the claim, the heartbeats and the export's inputs waited minutes behind the held reads and the lease was lost). An editor tab whose live messages reach the server only when the test lets them: connected and on its project, it claims nothing until its subscription reaches the server, then claims; after the server drops the connection, the new session claims nothing until its resubscription is let through, then claims with the new session id; no claim refused (`409`, subscribe first) and nothing in the console. An editor tab already connected that opens a project from the dashboard (in-app navigation, its live session known), the server's `subscribed` answer held: it sends no claim until the answer arrives, then claims and every claim is answered `200`, nothing in the console |
 | `performance.spec.ts` | (desktop and mobile, a fake camera and microphone) a performance recorded on a shot: countdown, recording, stop, playback, used as the shot's performance; the model shown; the regenerated take acted by `mock-performance-v1` and verified |
-| `search.spec.ts` | (desktop and mobile) footage and a still indexed from the Search view, found by words at the matched frame, filtered by kind, *Show* in Resources; the editor's overlay picker finds the still and puts it at the playhead |
-| `brand.spec.ts` | (desktop and mobile) a brand kit made on the Brand kits page with a logo and the bug on; applied to a project from its overview; a lower third from the kit's template in the editor; the export with the bug (on by default) rendered in the tab |
+| `search.spec.ts` | (desktop and mobile) a search before anything is indexed says how many frames wait ("3 frames wait"); footage and a still indexed from the Search view, found by words at the matched frame, filtered by kind, *Show* in Resources; the editor's overlay picker finds the still and puts it at the playhead |
+| `brand.spec.ts` | (desktop and mobile) a brand kit made on the Brand kits page (on a phone reached through the project's More) with a logo and the bug on; applied to a project from its overview; a lower third from the kit's template in the editor; the export with the bug (on by default) rendered in the tab |
 | `recipes.spec.ts` | (desktop and mobile) a studio recipe (a title per text) run from the overview's Recipes card with its parameter; the titles in the cut; the recipe deleted |
 | `editor-depth.spec.ts` | (desktop and mobile) footage added as an overlay at the playhead, the picture-in-picture preset, *Remove the background* (the mock's segmentation model); an ease-in ramp and a `.cube` LUT uploaded from the inspector on the primary item; filmstrips and waveforms in the lanes (desktop); the layered cut exported with ffmpeg.wasm; the analysis's transcript and *Remove filler words* splitting the picture track |
 | `editing-tools.spec.ts` | (desktop and mobile) desktop: a marker with `M`, named; `S` splits, `Ctrl+Z` and `Ctrl+Shift+Z`; `Ctrl+D`; a freeze frame from the context menu; detached audio dragged 0.93 s onto the marker (snapping, with its guide) and down onto the Music track; a locked track refusing `Delete`, a hidden one; mirror, exposure, chroma key and a slide on the last item; `?`; the cut exported with ffmpeg.wasm, its threads planned for 8 cores (the page reports 8) so the 32-thread pool is met on any machine. Phones: a marker from the Markers card, a freeze frame, mirror, *Undo*, *Redo*, *Duplicate* and an adjustment from the inspector, *Unlock* of a locked track; no sideways scroll. A slow server (every op held 1.5 s): two markers and a freeze frame made at once wait in order ("Saving 3 edits…"), *Undo* pressed meanwhile takes back the freeze frame only, and history shows the commits in the order made |
 | `interchange.spec.ts` | (desktop and mobile) the Exports view's hand-off card with a mounted media location: the OTIO download points into it (remembered after a reload), FCPXML, XML and EDL download; a re-edited OTIO (trimmed, plus a clip from elsewhere) imported: one clip placed, the stranger listed |
-| `review.spec.ts` | (desktop and mobile) a note at 0:01.0 with a box drawn on the take, a reply, resolved (the tile's open count); a review of the pilot with a share link deciding `pilot_approved`; the client, in a separate browser without an account, names themselves, draws an arrow, comments and asks for changes (no sideways scroll); the studio's bell leads to the note live; after the pilot clip is approved the client's approval approves the gate; the revoked link opens nothing |
+| `review.spec.ts` | (desktop and mobile) a note at 0:01.0 with a box drawn on the take, a reply, resolved (the tile's open count); a review of the pilot with a share link deciding `pilot_approved` ("0 of 1 approval", and a second review asking for 2 "0 of 2 approvals"); the client, in a separate browser without an account, names themselves, draws an arrow, comments and asks for changes (no sideways scroll); the studio's bell leads to the note live; after the pilot clip is approved the client's approval approves the gate ("1 of 1 approval" on the guest page and the card); the revoked link opens nothing |
 | `finishing.spec.ts` | (desktop and mobile) a vertical delivery from the export dialog: focus tracks prepared, reframed, cut down, upscaled by the enhancement model, three thumbnails on the card; a ProRes master listed with its download and stems |
 | `localization.spec.ts` | (desktop and mobile) captions set to word by word; Spanish added with dubbing (the close-up lip-synced); a line corrected in the translations dialog makes its dub stale until *Dub* runs again; the dubbed Spanish variant exported with sidecar subtitles (language badge, VTT download) |
 | `post-audio.spec.ts` | (desktop and mobile) the Mix card: ducking on after assembly, depth −18 dB, *Score the cut* with a direction (Cue 1 on the Music track), *Add sound effects* (an Effects track, its lane on desktop); an export rendered in the tab at broadcast loudness with stems; the export card shows about −23 LUFS and the three stem downloads |
 | `multi-shot.spec.ts` | (desktop and mobile) the multi-shot setting off and on in the project settings; a clip on `mock-multishot-v1` renders two shots in one request (`shot 1 of 2`, `shot 2 of 2` badges) and the third alone |
 | `directing.spec.ts` | (desktop and mobile) the Direct panel sets a push-in, an 85 mm lens, f/2 and a generated end frame; two variations are generated, compared side by side and B is chosen |
-| `director-desk.spec.ts` | (desktop and mobile) a storyboarded scene blocked by the AI: the desk's plan, its cameras and the drawn camera view with the blocking line; a character dragged across the plan, posed, a camera move and *Auto camera*; saved (the frames it changed say *shot edited*), fixed, redrawn; the cast review's panel in the Cast view passing; no sideways scroll |
-| `storyboard.spec.ts` | (desktop and mobile) generate the storyboard, approve a frame, move it later, approve all; download the shot list CSV and PDF; build the animatic, play it, export it in the tab (listed as an animatic export); approve the storyboard; import a Fountain screenplay in the Story view |
+| `director-desk.spec.ts` | (desktop and mobile, against the fake desk on its own origin) the Storyboard view's *Director's desk* on a planned scene: its first open reads no stored state (`204`, its empty body read to the end: the browser reports the read finished, not failed) and logs no console error, the panel connects (the page behind it inert, no Follow menu of its own, the desk opened on *Camera*, the iframe sandboxed without top navigation), the desk's **Send** attaches every shot's clip as its motion reference with the staged lens and move, the planned framing and movement kept (checked through the API: the resources ready with their probe and JPEG poster) and the toast names the mode and lists the shot whose camera disagrees with the plan; the state stored on Close and given back on the next open, opened and closed without an edit storing nothing (the same file, no commit), the desk's own **Done** storing its last state; an edit stored when the person leaves the view with the browser's back instead of Close; a state another session stored meanwhile kept at Close (the panel stays with the notice, Close again closes), and so is a state this tab stored that another session put back after storing another one (a restore: the tab saw the server move past it); a partial result attaching the shots it has, with the desk's `export_failed` in a toast; a stored state the desk cannot read kept (notice and toast, an edit not stored on Close) until **Replace the stored desk state** after its confirmation; a stored state the server cannot read: the panel failed with **Retry**, the desk not opened until Retry, and **Start over** after its confirmation clearing the state (its `DELETE`'s `204` read to the end too) and opening the desk from the brief; *Poses* chosen in the desk's own Follow menu, attached and remembered for the project after a reload, and a shot the desk sent longer than its brief refused with "set its length back in the desk"; a desk opened on a state staged before the brief retimed the first shot (`opened` lists it): sent longer, that shot refused with "press Update shots in the desk", and after the desk's Update shots with "set its length back in the desk"; a desk page served without its headers: the timeout message after 15 seconds, Close still closing; an approved clip opened read-only and its result refused; the v1 fake desk getting no unit field though the scene's location pins a library set; no sideways scroll |
+| `library.spec.ts` | (desktop and mobile) Mira saved to the library from episode 1 through the consent dialog, used in episode 2 from the Cast view's picker (the same id and seed, checked through the API), episode 2's screenplay written by the writer keeping her (its scenes cast her id), a project with a Mira of its own offered "Link to the existing Mira" (Mira kept checked under another search, Escape closing only the plan over the picker, then plan, consent, linked and locked), a v2 published from episode 1 and the update in episode 2 with its plan and the approval warning of its approved clip, the item's Used in; desk units uploaded through the REST API: a location's 3D row Choose (sets only), Use v2, the Library page's search, kind chips and tag filter (the list kept beside the item on a wide screen, the item alone with its action bar on a phone), Use v3 for the project and Use v4 in every project, a tag added, a prop archived (gone from the list and the props' picker, back under Show archived), Change and Unlink; no sideways scroll; on phones (360×740, 390×844, 412×915 at a device pixel ratio of 1) the Cast, Elements and Resources cards keep names longer than a phone's line whole, wrapped, beside their badges and Save to library ([the library](design/library.md#tests)) |
+| `desk-units.spec.ts` | (desktop and mobile, on the units studio with the fake desk in units mode) a scene whose place, cast member and prop are pinned opening with their pins in slot order and their bytes (sha256 checked), the state's units recorded on the clip at Close, no badge, and the next open sending no file for the pins the stored state uses; **Publish set** on an unpinned place creating an item, linking the place in one commit and acknowledged `linked`; **Publish new version** making v2 and moving the pin; another scene at the place showing "3D: v2 available" until its desk opens again with v2's bytes, the Library page's Used in counting the clips whose stored state uses v2 ("1 clip uses v2", then "2 clips use v2"); an approved clip's desk publishing, acknowledged not linked ("the scene is read-only"); no sideways scroll ([library units](design/director-desk.md#tests)) |
+| `ai-review.spec.ts` | (desktop and mobile) the screenplay and the storyboard reviewed, revised by their review and passing before the next stage (the storyboard of one scene says "The first scene"); the project settings' review gates at 8 (a new bar saved), frames corrected by editing them and how long the staging check reasons; one screenplay draft until the settings ask for more; the Story view's adapted brief; the cast review's panel in the Cast view passing; no sideways scroll |
+| `storyboard.spec.ts` | (desktop and mobile) before the screenplay has scenes, the view's subtitle naming no count ("The first scenes of the screenplay", no "The first 0"); the view's subtitle counting "The first 2 scenes"; generate the storyboard, approve a frame, move it later, approve all; download the shot list CSV and PDF; build the animatic, play it, export it in the tab (listed as an animatic export); approve the storyboard; import a Fountain screenplay in the Story view |
 | `dialogue.spec.ts` | (desktop and mobile) the Cast view's voice panel: design three voices, the previews play, pick one, lock it; clone a recording of a real person through the consent dialog and lock it; the gate stops asking for voices; the dialogue mode setting |
 | `elements.spec.ts` | (desktop and mobile) the screenplay's location in the Elements view → generate, approve, lock; add a prop and link it to a scene in the Story view |
 | `provenance.spec.ts` | (desktop and mobile) uploading a likeness opens the consent dialog; a real person needs subject, grantor and date and marks the character; the disclosure setting labels the export; the export card and the public Verify page show the Content Credentials |
-| `responsive.spec.ts` | every main view on mobile: no horizontal overflow, navigation reachable, primary actions visible |
+| `responsive.spec.ts` | every main view on mobile: no horizontal overflow, navigation reachable, primary actions visible; the project header at 360, 390, 412, 640, 768, 1024 and 1440 px (device pixel ratio 1), on the main studio (auth none) and signed in on the accounts studio (OIDC, an administrator), with a long and a short title, on main and on a long-named branch: the title never wider than its text and never under 48 px (all of it when shorter), the stage badge whole from 640 px and hidden below, the branch badge's whole icon with the branch named in its tooltip, no box over another or off the screen, no sideways scroll; below 768 px the Library, Brand kits and Settings under More, from 768 px in the header |
 | `feedback.spec.ts` | (desktop and mobile) the project settings' continuity controls (dialogue level B1, continuity-aware prompts, quality checks, feedback after each export); a story export's feedback on its card (overall score, dimension bars, summary); *Show feedback*: scenes, an issue's *Play from here* seeking the export, a `regenerate_shot` recommendation applied (the shot regenerating, the recommendation marked applied) and another dismissed, the retrospective, the report download; no sideways scroll on phones |
-| `insights.spec.ts` | (desktop and mobile) the Insights view of a generated project: cost (with `RIDEO_PRICES` on the stack) by model and job kind, times per job kind, take quality, the feedback score and the retrospective; the studio's telemetry reaching `/metrics` (`rideo_web_vitals_seconds`); no sideways scroll on phones |
+| `insights.spec.ts` | (desktop and mobile) the Insights view of a generated project: cost (with `RIDEO_PRICES` on the stack) by model and job kind, the story's model calls without a price counted in a warning whose noun and verb agree with the count, times per job kind, take quality, the feedback score and the retrospective; the studio's telemetry reaching `/metrics` (`rideo_web_vitals_seconds`), its request finished, not reported as failed (the `204` read to the end); no sideways scroll on phones |
 | `settings.spec.ts` | (desktop and mobile, each on a studio of its own) without a gateway the dashboard says AI is off; Settings: sections and search, a locked value, the gateway tested, an invalid value refused under its field and its section opened, the gateway saved and applied (the dashboard and the live channel follow without a reload, a film can be started); the text model's API base URL and API key set with the gateway's admin token, registered in the mock gateway (the card says so, the vision card shares the key, **Test** answers), the key replaced and removed; then the gateway cleared again; no horizontal scroll |
-| `browser-storage.spec.ts` | (desktop and mobile, on the studio without WebDAV and gateway) a project kept in IndexedDB with its upload and poster; its project file downloaded; deleted and imported back; imported again as a copy; still there after a reload. Desktop: analysis by rules, auto edit and an export rendered in the tab, the export stored in the browser and served by the service worker from IndexedDB |
+| `browser-storage.spec.ts` | (desktop and mobile, on the studio without WebDAV and gateway) a project kept in IndexedDB with its upload and poster; its project file downloaded; deleted and imported back; imported again as a copy; still there after a reload. Desktop: analysis by rules (the footage's gap in its sound suggested as "Tighten the 2.5s pause"), auto edit and an export rendered in the tab, the export stored in the browser and served by the service worker from IndexedDB |
 | `subpath.spec.ts` | (desktop and mobile) the studio under `/studio` with the prefix kept and under `/rideo` through a prefix-stripping proxy: the bare prefix, the injected `<base>`, the live channel, a project's deep link reloaded, the MCP command, the manifest and the service worker's scope, no request outside the prefix, problems for unknown API routes |
-| `embed.spec.ts` | (desktop and mobile) a host app built with Vite against `@rideo/web` on another origin: its theme and name, light mode, the host's styles and the studio's kept apart, the browser-storage studio reached across origins (live channel too), hash routes heard by the host, `navigate` and `setTheme` from the host, an upload probed by ffmpeg.wasm loaded from the host's build, the project in the host origin's IndexedDB; browser routing under the host's `/video` without the studio's header |
+| `embed.spec.ts` | (desktop and mobile) a host app built with Vite against `@rideo/web` on another origin: its theme and name, light mode, the host's styles and the studio's kept apart, the browser-storage studio reached across origins (live channel too), hash routes heard by the host, `navigate` and `setTheme` from the host, an upload probed by ffmpeg.wasm loaded from the host's build, the project in the host origin's IndexedDB; browser routing under the host's `/video` without the studio's header (on a phone, nor the Library its More takes from the header) |
 
 The e2e stack starts through Playwright's `webServer` (`e2e/support/stack.ts`, ports in `e2e/support/ports.ts`): the
 mock gateway, the main studio with the embedded WebDAV (temporary data dir) serving the built web app, a studio with
 accounts, one that keeps projects in browsers without a gateway (and allows the host page's origin), one under
 `/studio` with a prefix-stripping proxy in front of it at `/rideo`, two whose settings the settings spec changes, a
 slow-media proxy in front of the main studio (`e2e/support/slow-media-proxy.ts`: HTTP/1.1, every ranged media read held
-20 s, everything else at once), and the library's host page (`e2e/fixtures/embed`, built by `npm run build:e2e-host` against `dist-lib`). The main studio
+20 s, everything else at once), the library's host page (`e2e/fixtures/embed`, built by `npm run build:e2e-host` against `dist-lib`),
+and a fake 3D desk on its own origin (`e2e/fixtures/desk`, served by `e2e/support/desk-page.ts` on `localhost` with
+the headers a desk page needs; the main studio's `RIDEO_DESK_URL` names it), and a units studio whose `RIDEO_DESK_URL`
+is the same fake desk with `?units=1` (library units: the capability, pins and unit bytes, publishing, `state.units`)
+while the main studio keeps the desk of before. The main studio
 starts last, so its readiness means all are up. `npm run test:e2e` builds the app, the library and the host first. Tiny media sizes (320×180)
 and short durations keep the suite fast. Playwright's Chromium decodes H.264 with WebCodecs, so the story
 spec emulates a browser without an H.264 decoder (an init script hides AVC from `VideoDecoder`): the preview

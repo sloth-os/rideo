@@ -88,6 +88,41 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+/*
+ * A title that gives way with an ellipsis but never below the smaller of its own width and 3rem
+ * (docs/brand.md#layout-and-responsiveness). Its text (`.fit-title-text`) adds nothing to its width; a sizer of no
+ * height does, from two copies of the text in `data-text`: the whole text, free to break anywhere, gives its natural
+ * width and no floor, and the text cut at 3rem gives the floor. As a flex item, such a title is never wider than its
+ * text, and never narrower than its floor unless its row is.
+ */
+.fit-title-text {
+  display: block;
+  width: 0;
+  min-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fit-title-sizer {
+  display: block;
+  height: 0;
+  overflow: hidden;
+  visibility: hidden;
+}
+.fit-title-sizer::before,
+.fit-title-sizer::after {
+  content: attr(data-text);
+  display: block;
+}
+.fit-title-sizer::before {
+  white-space: normal;
+  word-break: break-all;
+}
+.fit-title-sizer::after {
+  max-width: 3rem;
+  white-space: nowrap;
+}
+
 /* Live-update pulse: remote changes and agent ui_focus highlight an entity. */
 @keyframes rideo-pulse {
   0% {

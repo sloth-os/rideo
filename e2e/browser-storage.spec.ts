@@ -127,6 +127,8 @@ test('the editor without mm-gateway: analysis by rules, auto edit and an export,
   await expect(page).toHaveURL(/\/analysis$/);
   await expect(page.getByTestId('analysis-summary')).toContainText('completed', { timeout: 120_000 });
   await expect(page.getByTestId('accept-suggestion').first()).toBeVisible();
+  // the footage's 2.5 s gap in its sound, named with the definite article whatever its length ("Tighten the 2.5s pause")
+  await expect(page.getByTestId('suggestions')).toContainText(/Tighten the \d+\.\ds pause/);
   await page.getByTestId('accept-all').click();
   await page.getByTestId('auto-edit').click();
   await expect(page).toHaveURL(/\/editor$/);

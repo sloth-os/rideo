@@ -16,6 +16,7 @@ import {
   MediaProcessParamsSchema,
   MediaProcessResultSchema,
   type MediaRef,
+  plural,
   type Resource,
   stagedPieces,
 } from '@rideo/shared';
@@ -214,7 +215,7 @@ export class EditorService extends Service {
         });
       },
       {
-        message: `Footage signals: ${result.signals.scenes.length} scene(s), ${result.signals.silences.length} silence(s)`,
+        message: `Footage signals: ${plural(result.signals.scenes.length, 'scene')}, ${plural(result.signals.silences.length, 'silence')}`,
         branch: job.branch,
       },
     );
@@ -253,7 +254,7 @@ export class EditorService extends Service {
         height: result.height,
         durationSec: result.durationSec,
       },
-      `Rendered export ${params.exportId.slice(-6)} in the browser (${result.engine}, ${result.parts.length} part(s))`,
+      `Rendered export ${params.exportId.slice(-6)} in the browser (${result.engine}, ${plural(result.parts.length, 'part')})`,
     );
     const next = await this.deps.jobs.enqueue({
       projectId: job.projectId,

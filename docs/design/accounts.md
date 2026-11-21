@@ -58,16 +58,20 @@ MCP, the live WebSocket and editor jobs:
 
 | Permission | Minimal role | Covers |
 |---|---|---|
-| `project.read` | reviewer | state, documents, media, history, jobs, exports, live updates |
+| `project.read` | reviewer | state, documents, media, history, jobs, exports, live updates, presence on it ([live UI](realtime-sync.md#who-sees-and-steers-which-tabs)) |
 | `project.comment` | reviewer | review comments and annotations ([review](review.md)) |
-| `project.edit` | editor | documents, timeline, uploads, generation, exports, editor jobs |
+| `project.edit` | editor | documents, timeline, uploads, generation, exports, editor jobs, agents' `ui_*` commands to its tabs |
 | `project.approve` | director | workflow gates, clip approvals, take overrides |
 | `project.manage` | director | settings, access (members, visibility), branches, deletion |
 
 REST routes map to a permission declaratively (`ROUTE_PERMISSIONS`: method and path pattern → permission; reads
 default to `project.read`, writes to `project.edit`); MCP tools declare theirs when they are registered. A call
-without the permission fails with `forbidden` (403) and an `auth.denied` audit event. The project list only shows
-projects the caller may read.
+without the permission fails with `forbidden` (403) and an `auth.denied` audit event. A route's project id is checked
+first, as its handler checks it: a malformed one fails with `validation_error` (422) for every caller, before any
+permission is asked (no `auth.denied`); an MCP tool checks its `projectId` the same way
+([MCP](mcp.md#transport-and-auth)). The project list only shows projects the caller may read. The studio library
+belongs to no project: `libraryAllows` (`read`, `publish`, `manage`) sits next to this table and is checked the same
+way ([the library](library.md#permissions)).
 
 ## Agent tokens
 
@@ -90,6 +94,7 @@ Security-relevant events are appended as JSON lines to `<dataDir>/audit/<yyyy-mm
 | `user.updated` | studio role, disabled |
 | `project.access` | members, invites and visibility changed |
 | `project.approval` | gates approved, clips approved, takes overridden |
+| `library.publish`, `library.apply`, `library.change` | the studio library: an item or a version published, a version used, updated, linked or pinned in a project, an item archived, unarchived or given another current version ([the library](library.md#audit)) |
 
 `GET /api/audit?since&until&projectId&actor&type&limit` (admins; directors for their projects) reads it newest
 first. Logins, denials and token use are also counted in `rideo_auth_total{event, outcome}`.

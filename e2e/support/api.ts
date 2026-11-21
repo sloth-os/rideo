@@ -157,8 +157,7 @@ export const TINY = {
   resolution: { width: 320, height: 180 },
   targetDurationSec: 30,
   pilotDurationSec: 10,
-  // The AI reviews and the director's desk have specs of their own (e2e/ai-review.spec.ts, e2e/clip-review.spec.ts,
-  // e2e/director-desk.spec.ts)
+  // The AI reviews have specs of their own (e2e/ai-review.spec.ts, e2e/clip-review.spec.ts)
   review: {
     screenplay: false,
     storyboard: false,
@@ -168,22 +167,19 @@ export const TINY = {
     watchTakes: false,
     extensions: false,
   },
-  blocking: { enabled: false },
   storyboard: { production: false },
 };
 
-/** TINY with a spec's settings, the nested review, blocking and storyboard settings merged into TINY's. */
+/** TINY with a spec's settings, the nested review and storyboard settings merged into TINY's. */
 export function tinyWith(settings: Record<string, unknown> = {}) {
-  const { review, blocking, storyboard, ...rest } = settings as {
+  const { review, storyboard, ...rest } = settings as {
     review?: object;
-    blocking?: object;
     storyboard?: object;
   };
   return {
     ...TINY,
     ...rest,
     review: { ...TINY.review, ...review },
-    blocking: { ...TINY.blocking, ...blocking },
     storyboard: { ...TINY.storyboard, ...storyboard },
   };
 }

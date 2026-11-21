@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { ActorSchema, IdSchema, IsoDateSchema, MediaRefSchema } from './common';
+import { DeskUnitPinSchema, LibraryOriginSchema } from './library-link';
 
 export const CharacterRoleSchema = z.enum(['protagonist', 'antagonist', 'supporting', 'minor']);
 
@@ -166,6 +167,10 @@ export const CharacterSchema = z.object({
   references: z.array(CharacterReferenceSchema).default([]),
   seed: z.number().int().nonnegative().max(0xffffffff),
   lock: CharacterLockSchema,
+  /** The library version it came from or was saved as (docs/design/library.md#copy-on-apply); not identity. */
+  library: LibraryOriginSchema.nullable().optional(),
+  /** Its 3D figure from the library (docs/design/library.md#pins-on-entities); not identity. */
+  deskUnit: DeskUnitPinSchema.nullable().optional(),
 });
 export type Character = z.infer<typeof CharacterSchema>;
 

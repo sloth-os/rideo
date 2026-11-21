@@ -51,10 +51,13 @@ ride alone", put pandas in its reference.
 
 A shot's **elements** are its scene's location plus its own `elementIds`. Like the cast, the element library is
 defined up front: `screenplay.generate` asks the writer for **every location and prop of the whole film** (the
-full outline, not only the written scenes) and creates draft (unlocked) elements for them; scenes link to
-them by name or alias (case-insensitive). `screenplay.extend` reuses those names; a name it still introduces
-becomes a new draft element. The shot planner (`clip.plan`) receives the scene's props and returns, per
-shot, the props visible in it.
+full outline, not only the written scenes) and creates draft (unlocked) elements for the new ones; scenes link to
+them by name or alias (case-insensitive). The locations and props the project already has (used from the
+[studio library](library.md), made by hand, or kept from an earlier screenplay) are listed to the writer with their
+aliases, and it keeps their names, so a new episode's scenes link to the library's places instead of inventing new
+ones ([the project's names](continuity.md#storytelling)). `screenplay.extend` gets the same list and reuses those
+names; a name it still introduces becomes a new draft element. The shot planner (`clip.plan`) receives the scene's
+props and returns, per shot, the props visible in it.
 
 ## Rules
 
@@ -115,6 +118,28 @@ batch again; it continues where it stopped.
 | Kind | Lane | Does |
 |---|---|---|
 | `element.refs` | image | generate reference views for one element (the first approved view is the image input of the next) |
+
+## From the library
+
+Places and props recur across episodes, which are projects of their own: the [studio library](library.md) keeps an
+element once, in versions, for every project of the studio.
+
+- **Save to library** on an element's card (`library_save`) saves its kind, name, description, aliases, approved
+  references, seed, whether it was locked, and its 3D pin as a new version; the element records the link
+  (`element.library`).
+- **Use from library** in the Elements view (`library_apply`) copies an element into the project with the item's
+  `ele_` id when no element of the project has it, and the same seed and reference ids: scenes, prompts, the judge and
+  the desk see the same place in every episode. It is locked only if the version was; locked or not, it gets a lock
+  version this project never recorded for that id (1 + the highest of its takes and boards), so no older take passes
+  as current (E6), and an approved clip holding one makes the Use need a director (`project.approve`). A taken id, or
+  a kind and name another element has, answers `409` `conflict`, and the picker offers to link the existing element
+  instead.
+- **Update** to another version replaces the library-owned fields (name, description, aliases, references, seed).
+  Relocking follows E2: the lock version goes up only when `identityHash` changes, and E6 marks exactly the takes that
+  used the old one stale; when an approved clip uses them, the update needs a director (`project.approve`).
+- **The 3D row.** A location pins its 3D set, a prop its 3D prop (`element.deskUnit`), and the desk stages them in every
+  scene that uses the element. A pin is shape, not identity: `identityHash` leaves it out, it can move while the element
+  is locked, and it never makes a take stale ([pins](library.md#pins-on-entities)). A style has no 3D row.
 
 ## Surfaces
 

@@ -16,6 +16,7 @@ the socket closes, the tab reconnects and, seeing a new `instanceId`, resyncs.
 | Message | Meaning |
 |---|---|
 | `{type: "hello", sessionId, instanceId, serverTime}` | Sent on connect. `instanceId` changes on server restart, which tells clients to resync. |
+| `{type: "subscribed", projectId, ref?}` | The answer to a `subscribe` once the server follows the project for this session, after the events it replays (or the `resync`), with the `subscribe`'s `ref`. A refused `subscribe` gets the `error` below instead. From this answer on, an editor-job claim of this session for the project finds it followed: the tab claims only after it, again after every reconnect ([editor jobs](editor.md#editor-jobs)). |
 | `{type: "event", projectId, seq, event}` | A project event (below). `seq` increases per project. |
 | `{type: "resync", projectId, reason}` | The client must refetch `GET /api/projects/:id/state` (a sequence gap it cannot replay). |
 | `{type: "ui", command}` | A UI command from an agent (below). |
@@ -29,10 +30,10 @@ the socket closes, the tab reconnects and, seeing a new `instanceId`, resyncs.
 
 | Message | Meaning |
 |---|---|
-| `{type: "subscribe", projectId, lastSeq?}` | Start receiving events. With `lastSeq`, the server replays newer events from its ring buffer (the last 1000 per project), or sends `resync` when too far behind. With accounts the caller needs to read the project ([accounts](accounts.md)); otherwise the server answers `{type: "error", message: "forbidden: …"}`. |
+| `{type: "subscribe", projectId, lastSeq?, ref?}` | Start receiving events. With `lastSeq`, the server replays newer events from its ring buffer (the last 1000 per project), or sends `resync` when too far behind. With accounts the caller needs to read the project ([accounts](accounts.md)); otherwise the server answers `{type: "error", message: "forbidden: …"}`. The server answers `subscribed` with the same `ref` (a number the tab picks for each `subscribe`), so a tab that unsubscribed and subscribed again tells the answer to its latest `subscribe` from an earlier one's. |
 | `{type: "unsubscribe", projectId}` | Stop. |
-| `{type: "presence", projectId, route, selection?, viewport, engine?}` | What the user is looking at, and the tab's editor engine (`{ffmpeg, webcodecs: {video, audio}, busyJobId, threads, compositor, hidden}`: ffmpeg.wasm's threads, `webgpu` or `canvas` compositing, and whether the tab is hidden, [engine performance](engine-performance.md)). Agents read it with `ui_sessions`. |
-| `{type: "ui-ack", commandId, ok, error?}` | Acknowledges a UI command. |
+| `{type: "presence", projectId, route, selection?, viewport, engine?}` | What the user is looking at, and the tab's editor engine (`{ffmpeg, webcodecs: {video, audio}, busyJobId, threads, compositor, hidden}`: ffmpeg.wasm's threads, `webgpu` or `canvas` compositing, and whether the tab is hidden, [engine performance](engine-performance.md)). Agents read it with `ui_sessions`. Its project needs the same permission as `subscribe`: a tab claiming one it may not follow is answered `{type: "error", message: "forbidden: you may not follow …"}` and is present nowhere, so it gets nothing for that project ([who sees and steers which tabs](#who-sees-and-steers-which-tabs)). |
+| `{type: "ui-ack", commandId, ok, error?}` | Acknowledges a UI command: `ok: false` with the reason when the tab did not carry it out. |
 | `{type: "ping"}` | Heartbeat every 20 s; the server closes the socket after 60 s of silence. |
 | `{type: "job-heartbeat", jobId, progress?}` | An editor job's heartbeat, sent by the tab that holds its lease (this session) every 10 s and with progress, like `POST /api/editor/jobs/:jobId/heartbeat` ([editor jobs](editor.md#editor-jobs)): it keeps the lease when the tab's HTTP requests are stuck behind media downloads. |
 | `{type: "workspace", workspaceId, changed?}` | Browser storage: this tab serves its browser's projects; `changed` names projects it changed by itself (an import) ([protocol](browser-storage.md#the-protocol)). |
@@ -57,7 +58,8 @@ those paths.
 - Events are published **after** the commit's ref update, in commit order. The per-project lock serializes
   commits, so `seq` order equals commit order.
 - On reconnect the client resubscribes with its last `seq`. On a different `instanceId`, or after a
-  `resync`, it reloads the snapshot and continues from the snapshot's `seq`, which `GET /state` returns.
+  `resync`, it reloads the snapshot and continues from the snapshot's `seq`, which `GET /state` returns. A new
+  connection is a new session that follows nothing until the server answers its `subscribe` (`subscribed`).
 - A page renders from `GET /state` alone; the recent history (`GET /history?limit=100`) arrives in the background and
   fills the History view and the activity when it does. The first history after a restart took 26.5 s on OpenList, and
   pages used to wait for both ([maintenance](storage-webdav.md#maintenance) also warms the log).
@@ -83,11 +85,42 @@ The web app maps commands to router navigation, element focus (the element with
 acknowledges each command. `ui_*` MCP tools wait up to 3 s for acks and report `{delivered, acked}` per
 session.
 
+### Who sees and steers which tabs
+
+A command goes to the tabs on its project: those subscribed to it or present on it. Outside auth mode `none`
+([accounts](accounts.md), or the studio's API token) the `ui_*` tools never cross from one person's projects into
+another's (`LiveHub.sendUi`, `UiService`):
+
+- **Commands** reach only the tabs on their project, and their caller must be allowed to use that project: the tool
+  asks `project.edit` of it (a recipe's run asked it when the run started, and its steps name the run's project,
+  [recipes](agents.md#recipes)). A `sessionId` picks one of those tabs and never adds another: a tab elsewhere is not
+  reached (`delivered: []`, the answer a session that does not exist gets too). `ui_notify` without a `projectId`
+  reaches only the caller's own tabs (an agent token's: its owner's).
+- **`ui_sessions`** lists the tabs the caller may see: their own, and those on projects they may read, each showing
+  only those projects (`projectIds`, and `presence` when it is on one of them, or on no project in the caller's own
+  tab, else `null`). With a `projectId`, which the caller must read, it lists the tabs on that project and shows that
+  project alone.
+- **Presence** counts only on a project the tab may follow: a claim on another is refused like a `subscribe`, and the
+  tab is present nowhere until its next claim, so it gets no command for that project.
+- **The web app** carries out a command only for the project the tab shows (or one without a project): any other it
+  leaves alone and acknowledges `ok: false` ("this tab shows another project"), whatever the server sends.
+
+In auth mode `none` there is one person and every tab is theirs, as before: a `sessionId` reaches its tab wherever it is
+(an agent can take the tab to a project it has just created), `ui_notify` without a project reaches every tab,
+`ui_sessions` lists every tab with all its projects, and the web app carries out commands for any project. A tab tells
+the mode from `GET /api/auth/me`, which it asks when it opens, at the same time as it connects the live channel: a
+command for another project than it shows that arrives first waits for that answer (and asks again when the first ask
+failed) before the tab carries it out or refuses it; the mode is never guessed. Commands for the project the tab shows,
+or without a project, do not wait.
+
 ## Presence
 
 The browser sends `presence` on every route change and selection change, and whenever its editor engine
 changes state. The hub keeps `{sessionId, projectId, route, selection, viewport, engine, connectedAt,
-lastSeen}` so agents can ask "what is the user looking at?" (`ui_sessions`) and aim their commands.
+lastSeen}` so agents can ask "what is the user looking at?" (`ui_sessions`) and aim their commands. Claims are decided
+in the order they arrive: a claim on a project the tab does not follow yet is checked first, and an older answer never
+replaces a newer claim. Outside auth mode `none`, agents see only the tabs and projects they may
+([above](#who-sees-and-steers-which-tabs)).
 
 When a session disconnects, the editor jobs leased to it go back to `queued` at once (instead of waiting for
 the lease to expire), and another tab of the project can resume them.

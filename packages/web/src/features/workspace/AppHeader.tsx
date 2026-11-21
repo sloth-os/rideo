@@ -2,6 +2,7 @@ import {
   Cpu,
   Inbox,
   KeyRound,
+  LibraryBig,
   Loader2,
   LogOut,
   Moon,
@@ -83,7 +84,8 @@ export function EngineStatus() {
       ) : (
         <Cpu className="size-3.5" />
       )}
-      <span className="hidden md:inline">{label}</span>
+      {/* from `lg`: below it the header's room goes to the project's title and badges (docs/brand.md) */}
+      <span className="hidden lg:inline">{label}</span>
     </span>
   );
 }
@@ -195,7 +197,18 @@ function InboxButton() {
   );
 }
 
-export function AppHeader({ children }: { children?: ReactNode }) {
+export function AppHeader({
+  children,
+  linksInMenu = false,
+}: {
+  children?: ReactNode;
+  /**
+   * The page's own menu holds the studio's links (a project's More, which shows below `md`): there the header leaves
+   * out Library, Brand kits and Settings, so the project's title and its badges keep their room
+   * (docs/brand.md#layout-and-responsiveness).
+   */
+  linksInMenu?: boolean;
+}) {
   const setTheme = useUi((s) => s.setTheme);
   const admin = useAuth((s) => s.me?.admin);
   // A host app may bring its own header, name and mark (docs/design/embedding.md#options)
@@ -216,12 +229,21 @@ export function AppHeader({ children }: { children?: ReactNode }) {
       <LiveDot />
       <Link
         to="/brand"
-        className="rounded p-1.5 text-muted hover:text-text"
+        className={cx('rounded p-1.5 text-muted hover:text-text', linksInMenu && 'max-md:hidden')}
         aria-label="Brand kits"
         title="Brand kits"
         data-testid="brand-kits-link"
       >
         <Palette className="size-4" />
+      </Link>
+      <Link
+        to="/library"
+        className={cx('rounded p-1.5 text-muted hover:text-text', linksInMenu && 'max-md:hidden')}
+        aria-label="Library"
+        title="Library"
+        data-testid="library-link"
+      >
+        <LibraryBig className="size-4" />
       </Link>
       <Link
         to="/verify"
@@ -234,7 +256,7 @@ export function AppHeader({ children }: { children?: ReactNode }) {
       {admin ? (
         <Link
           to="/settings"
-          className="rounded p-1.5 text-muted hover:text-text"
+          className={cx('rounded p-1.5 text-muted hover:text-text', linksInMenu && 'max-md:hidden')}
           aria-label="Settings"
           title="Settings"
           data-testid="settings-link"

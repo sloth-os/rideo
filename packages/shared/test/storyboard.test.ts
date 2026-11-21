@@ -98,12 +98,27 @@ describe('board frames (docs/design/storyboard.md#board-frames)', () => {
     expect(boardNeedsGeneration('unapproved')).toBe(false);
   });
 
+  it('counts one storyboard scene and one frame in the singular (docs/brand.md#voice)', () => {
+    const { docs, board } = setup({ storyboard: { scenes: 1 } });
+    expect(checkRequirement('storyboard.approved', docs)).toMatchObject({
+      message: '1 storyboard scene to plan and draw',
+    });
+    const shot = f.shot({ index: 0 });
+    const planned = {
+      ...docs,
+      clips: f.byId([f.clip({ index: 0, sceneId: scene(0).id, shots: [{ ...shot, board: board(shot) }] })]),
+    };
+    expect(checkRequirement('storyboard.approved', planned)).toMatchObject({
+      message: '0 of 1 storyboard frame approved',
+    });
+  });
+
   it('gates the pilot on the approved frames of the first scenes', () => {
     const { docs, board } = setup();
     expect(storyboardScenes(docs).map((s) => s.index)).toEqual([0, 1]);
     expect(checkRequirement('storyboard.approved', docs)).toMatchObject({
       ok: false,
-      message: '2 storyboard scene(s) to plan and draw',
+      message: '2 storyboard scenes to plan and draw',
     });
     const shots = [f.shot({ index: 0 }), f.shot({ index: 1 })];
     const clips: Clip[] = [

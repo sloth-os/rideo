@@ -9,7 +9,6 @@ import {
   JUDGE_FRAME_LABEL,
   JUDGE_REFERENCE_LABEL,
   JudgeOutputSchema,
-  SceneBlockOutputSchema,
   ScorePlanOutputSchema,
   ScreenplayGenerateOutputSchema,
   ScreenplayReviseOutputSchema,
@@ -577,59 +576,7 @@ describe('proxy LLM formats', () => {
     });
   });
 
-  it("answers the director's desk and the reviews of every step (docs/design/ai-review.md#mock-gateway)", async () => {
-    const plan = SceneBlockOutputSchema.parse(
-      await chat('scene.block', {
-        scene: {
-          heading: 'EXT. BEACH - DAY',
-          location: 'the beach',
-          timeOfDay: 'day',
-          continuity: '',
-          summary: '',
-          action: '',
-        },
-        place: { name: 'the beach', description: 'sand and sea' },
-        props: [{ name: 'beach ball', description: 'red and white' }],
-        cast: [
-          { name: 'Rosie', heightM: 1.2, look: 'a panda' },
-          { name: 'Sammy', heightM: 1.25, look: 'a panda' },
-        ],
-        shots: [
-          {
-            index: 0,
-            framing: 'wide',
-            movement: 'static',
-            lensMm: null,
-            description: 'Both on the sand',
-            action: '',
-            endState: '',
-            characters: ['Rosie', 'Sammy'],
-            speakers: [],
-            continuity: 'cut',
-          },
-          {
-            index: 1,
-            framing: 'close_up',
-            movement: 'static',
-            lensMm: null,
-            description: 'Rosie, cross the line',
-            action: '',
-            endState: '',
-            characters: ['Rosie'],
-            speakers: [],
-            continuity: 'cut',
-          },
-        ],
-        conventions: 'metres',
-      }),
-    );
-    expect(plan.set).toMatchObject({ ground: 'sand' });
-    expect(plan.set.landmarks[0]).toMatchObject({ shape: 'water' });
-    expect(plan.actors.map((a) => [a.name, a.facingDeg])).toEqual([
-      ['Rosie', 90],
-      ['Sammy', 270],
-    ]);
-    expect(plan.shots.map((x) => x.camera.angle)).toEqual(['front', 'back']);
+  it('answers the whole-take watch and the cast review (docs/design/ai-review.md#mock-gateway)', async () => {
     const watched = TakeWatchOutputSchema.parse(
       await chat(
         'take.watch',

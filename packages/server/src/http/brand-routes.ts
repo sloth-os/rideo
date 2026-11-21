@@ -7,6 +7,7 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { Studio } from '../domain/studio';
 import { invalid } from '../errors';
+import { inertFile } from './routes';
 
 const parse = <T>(schema: z.ZodType<T>, value: unknown): T => schema.parse(value ?? {});
 const KitParam = z.object({ kitId: z.string().regex(/^bkt_[0-9a-z]{10,32}$/) });
@@ -48,7 +49,8 @@ export function registerBrandRoutes(app: FastifyInstance, studio: Studio): void 
   app.get('/api/brand-kits/:kitId/files/:file', async (req, reply) => {
     const { file } = parse(z.object({ file: z.string().regex(/^[a-z0-9][a-z0-9._-]{0,199}$/) }), req.params);
     const res = await studio.brand.file(kit(req), file);
-    reply.type(res.mime).header('cache-control', 'private, max-age=31536000, immutable');
+    // as a library file or a project's media: its type never sniffed into another, nothing of it run as a page
+    inertFile(reply).type(res.mime).header('cache-control', 'private, max-age=31536000, immutable');
     return reply.send(res.stream);
   });
   app.put('/api/projects/:id/brand', async (req) => {

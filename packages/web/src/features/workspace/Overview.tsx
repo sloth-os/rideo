@@ -399,18 +399,6 @@ function SettingsDialog({
               (v) => setS({ ...s, storyboard: { ...s.storyboard, production: v } }),
               'storyboardProduction',
             )}
-            {toggle(
-              'Block each scene in 3D on the director’s desk before its frames are drawn',
-              s.blocking.enabled,
-              (v) => setS({ ...s, blocking: { ...s.blocking, enabled: v } }),
-              'blockingEnabled',
-            )}
-            {toggle(
-              'Give the image model each shot’s camera view as its layout',
-              s.blocking.layoutImage,
-              (v) => setS({ ...s, blocking: { ...s.blocking, layoutImage: v } }),
-              'blockingLayoutImage',
-            )}
             <Field label="Scenes to storyboard">
               <Input
                 type="number"

@@ -61,13 +61,14 @@ again.
 
 | Kind | Lane | Does |
 |---|---|---|
-| `storyboard.generate` | control | plan the storyboarded scenes that have no clip (`clip.plan`), block each in 3D when `settings.blocking.enabled` (`scene.block` for a scene without a blocking; an incomplete one is completed: [director's desk](director-desk.md)), then `shot.board` for every shot whose frame is missing, failed, stale or outdated: each scene's first shot first, then its other shots in parallel; waits for them. With `settings.storyboard.sheet` a scene whose every frame is drawn gets its `clip.sheet` first, and its shots start from their panels. A frame whose cast or elements are not locked (rule R1) fails the job once, naming them, before any frame is drawn (the plans are kept), so a recipe stops at this step with the reason instead of one failed `shot.board` per frame |
+| `storyboard.generate` | control | plan the storyboarded scenes that have no clip (`clip.plan`), then `shot.board` for every shot whose frame is missing, failed, stale or outdated: each scene's first shot first, then its other shots in parallel; waits for them. With `settings.storyboard.sheet` a scene whose every frame is drawn gets its `clip.sheet` first, and its shots start from their panels. A frame whose cast or elements are not locked (rule R1) fails the job once, naming them, before any frame is drawn (the plans are kept), so a recipe stops at this step with the reason instead of one failed `shot.board` per frame |
 | `clip.sheet` | image | [scene sheets](#scene-sheets): the scene's shots drawn together as the panels of one image, up to six a sheet, and cut apart at the gutters; returns each shot's panel |
 | `shot.board` | image | R1/E1 preconditions, the keyframe with references, judge and retries (the shot pipeline's keyframe step, shared code), and the shot's TTS dialogue when the server has a TTS provider and every speaker has a locked voice; commits `shot.board` (unapproved). Given a panel of its scene's sheet, the panel is its first attempt, checked like any drawn frame |
 
-**The blocking.** A shot of a blocked scene is drawn with its blocking line in the keyframe prompt and its camera view
-as the last reference image ([what the image and video models get](director-desk.md#what-the-image-and-video-models-get)).
-The line is part of the prompt hash, so moving a mannequin or a camera makes the frame *outdated*.
+**The desk.** A scene staged on the [director's desk](director-desk.md) changes its shots' motion references and
+cameras, never their frames' prompts otherwise: a lens or a move the desk changed makes the shot's frame *outdated* (the
+camera line is part of the prompt hash), a new motion reference does not
+([what the image and video models get](director-desk.md#what-the-image-and-video-models-get)).
 
 **Production scenes.** With `settings.storyboard.production`, every scene the batch makes is storyboarded the same
 way before its video, one scene at a time (`clip.storyboard`), and reviewed and approved on its own
@@ -198,7 +199,7 @@ The **Storyboard** view (`/p/:id/storyboard`) shows the storyboarded scenes (and
 frames) as rows of frame cards (image, shot
 number, length, camera, description, lines, state) with approve, regenerate and move earlier/later; the header
 generates the storyboard, approves every current frame, and links the shot list downloads; the **Animatic** panel
-builds, plays and exports the animatic. Each row opens its scene on the [director's desk](director-desk.md#the-desk).
+builds, plays and exports the animatic. Each row opens its scene on the [director's desk](director-desk.md#the-desk) when the studio has one (`RIDEO_DESK_URL`).
 The Story view imports a screenplay file.
 
 ## Observability

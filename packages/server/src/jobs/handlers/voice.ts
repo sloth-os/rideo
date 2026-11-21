@@ -5,6 +5,7 @@ import {
   docPath,
   fnv1a32,
   newId,
+  plural,
   type VoiceCandidate,
   voiceOf,
   voiceSampleText,
@@ -66,8 +67,8 @@ export async function voiceDesign(deps: HandlerDeps, ctx: JobContext) {
         voice: { ...v, description: v.description || description, candidates },
       });
     },
-    `Design ${candidates.length} voices for ${c.name}`,
+    `Design ${plural(candidates.length, 'voice')} for ${c.name}`,
   );
-  ctx.progress(1, 1, `${candidates.length} voices`);
+  ctx.progress(1, 1, plural(candidates.length, 'voice'));
   return { candidates: candidates.length };
 }

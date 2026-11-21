@@ -23,6 +23,7 @@ import {
   meanAttempts,
   mergeSceneOutputs,
   type ProjectDocs,
+  plural,
   rushedLines,
   type SceneReview,
   shotSpans,
@@ -388,7 +389,11 @@ export async function exportFeedback(deps: HandlerDeps, ctx: JobContext) {
         review.output = mergeSceneOutputs(seen.status === 'fulfilled' ? seen.value : null, heardOut);
         review.listened = !!heardOut;
         done++;
-        ctx.progress(0.2 + (0.65 * done) / groups.length, 1, `watched ${done}/${groups.length} scenes`);
+        ctx.progress(
+          0.2 + (0.65 * done) / groups.length,
+          1,
+          `watched ${done}/${plural(groups.length, 'scene')}`,
+        );
         return review;
       });
       throwIfAborted(ctx.signal);
@@ -552,7 +557,7 @@ export async function exportFeedback(deps: HandlerDeps, ctx: JobContext) {
         deps,
         ctx,
         (tx) => tx.set(docPath.feedback(feedbackId), feedback),
-        `Feedback on export ${exportId.slice(-6)}: ${feedback.overall !== null ? `${feedback.overall.toFixed(1)}/10` : 'measured'}, ${feedback.issues.length} issues, ${feedback.recommendations.length} recommendations`,
+        `Feedback on export ${exportId.slice(-6)}: ${feedback.overall !== null ? `${feedback.overall.toFixed(1)}/10` : 'measured'}, ${plural(feedback.issues.length, 'issue')}, ${plural(feedback.recommendations.length, 'recommendation')}`,
         { exportId, feedbackId },
       );
       deps.metrics.feedback.inc({ outcome: 'succeeded' });
