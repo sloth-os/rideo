@@ -294,81 +294,87 @@ describe('feedback on the export card (docs/design/feedback.md#surfaces)', () =>
 });
 
 describe('insights (docs/design/observability.md#insights)', () => {
-  it('shows cost, time, quality and improvements', async () => {
-    const insights: Insights = {
-      usage: {
-        version: 1,
-        projectId: 'prj_0000000000aaaaaa',
-        updatedAt: '2026-10-25T00:00:00.000Z',
-        totals: {
-          ...emptyUsage(),
-          costUsd: 12.5,
-          videoSeconds: 125,
-          images: 30,
-          llmCalls: 40,
-          byModel: {
-            'wan3.0-video-prime': {
-              modality: 'video',
-              calls: 25,
-              seconds: 2000,
-              units: 125,
-              costUsd: 12.5,
-              unpriced: 0,
-            },
-          },
-        },
-        byKind: {
-          'shot.generate': {
-            jobs: 25,
-            succeeded: 25,
-            failed: 0,
-            cancelled: 0,
-            runSeconds: 3000,
-            waitSeconds: 600,
+  /** A project's insights; `unpriced` usage items had no price (docs/design/observability.md#usage-ledger). */
+  const insightsOf = (unpriced = 0): Insights => ({
+    usage: {
+      version: 1,
+      projectId: 'prj_0000000000aaaaaa',
+      updatedAt: '2026-10-25T00:00:00.000Z',
+      totals: {
+        ...emptyUsage(),
+        costUsd: 12.5,
+        videoSeconds: 125,
+        images: 30,
+        llmCalls: 40,
+        unpriced,
+        byModel: {
+          'wan3.0-video-prime': {
+            modality: 'video',
+            calls: 25,
+            seconds: 2000,
+            units: 125,
             costUsd: 12.5,
+            unpriced: 0,
           },
         },
       },
-      jobs: [
-        {
-          kind: 'shot.generate',
-          count: 25,
+      byKind: {
+        'shot.generate': {
+          jobs: 25,
           succeeded: 25,
           failed: 0,
           cancelled: 0,
-          p50Sec: 95,
-          p90Sec: 240,
-          waitP50Sec: 20,
-          errors: {},
+          runSeconds: 3000,
+          waitSeconds: 600,
+          costUsd: 12.5,
         },
-      ],
-      takes: {
-        total: 25,
-        passed: 24,
-        failed: 0,
-        unverified: 1,
-        overridden: 0,
-        firstTry: 20,
-        qualityFailed: 2,
-        meanAttempts: 1.3,
       },
-      characters: [{ characterId: 'chr_0000000000aaaaaa', name: 'Sammy', checks: 30, failures: 12 }],
-      stages: [],
-      feedback: [
-        {
-          exportId: exportDoc.id,
-          createdAt: '2026-10-25T00:00:00.000Z',
-          overall: 6.4,
-          scores: feedback.scores,
-        },
-      ],
-      retrospective: feedback.retrospective,
-    };
+    },
+    jobs: [
+      {
+        kind: 'shot.generate',
+        count: 25,
+        succeeded: 25,
+        failed: 0,
+        cancelled: 0,
+        p50Sec: 95,
+        p90Sec: 240,
+        waitP50Sec: 20,
+        errors: {},
+      },
+    ],
+    takes: {
+      total: 25,
+      passed: 24,
+      failed: 0,
+      unverified: 1,
+      overridden: 0,
+      firstTry: 20,
+      qualityFailed: 2,
+      meanAttempts: 1.3,
+    },
+    characters: [{ characterId: 'chr_0000000000aaaaaa', name: 'Sammy', checks: 30, failures: 12 }],
+    stages: [],
+    feedback: [
+      {
+        exportId: exportDoc.id,
+        createdAt: '2026-10-25T00:00:00.000Z',
+        overall: 6.4,
+        scores: feedback.scores,
+      },
+    ],
+    retrospective: feedback.retrospective,
+  });
+  const show = (insights: Insights) => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => new Response(JSON.stringify(insights))),
     );
     render(<InsightsView />);
+  };
+
+  it('shows cost, time, quality and improvements', async () => {
+    show(insightsOf());
     await waitFor(() => expect(screen.getByTestId('insights')).toBeTruthy());
     expect(screen.getByTestId('insights-cost-total').textContent).toContain('$12.50');
     // 12.50 for the 25 s export: $30.00 per minute.
@@ -377,6 +383,18 @@ describe('insights (docs/design/observability.md#insights)', () => {
     expect(screen.getByTestId('insights-first-try').textContent).toContain('80%');
     expect(screen.getByTestId('insights-quality').textContent).toContain('Sammy: 12/30 failed');
     expect(screen.getByTestId('insights-improvements').textContent).toContain('thrown away');
+    // every usage item priced: no warning
+    expect(screen.queryByTestId('insights-unpriced')).toBeNull();
+  });
+
+  it('says how many usage items have no price, its noun and verb agreeing with the count (docs/brand.md#voice)', async () => {
+    const warning = async (unpriced: number) => {
+      cleanup();
+      show(insightsOf(unpriced));
+      return (await screen.findByTestId('insights-unpriced')).textContent;
+    };
+    expect(await warning(1)).toBe('1 usage item has no price: set RIDEO_PRICES in Settings → Limits.');
+    expect(await warning(2)).toBe('2 usage items have no price: set RIDEO_PRICES in Settings → Limits.');
   });
 });
 

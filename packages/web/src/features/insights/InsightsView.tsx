@@ -1,4 +1,4 @@
-import { type Insights, isTerminalJob } from '@rideo/shared';
+import { byCount, type Insights, isTerminalJob, plural } from '@rideo/shared';
 import { BarChart3, Clock, Coins, ShieldCheck, Sparkles } from 'lucide-react';
 import { type ReactNode, useEffect, useMemo, useState } from 'react';
 import { Badge, Card, EmptyState, SectionHeader, Spinner } from '../../components/ui';
@@ -162,8 +162,9 @@ export function InsightsView() {
             <Stat label="Model calls" value={t.llmCalls} />
           </div>
           {t.unpriced ? (
-            <p className="text-[12px] text-warning">
-              {t.unpriced} usage items have no price: set RIDEO_PRICES in Settings → Limits.
+            <p className="text-[12px] text-warning" data-testid="insights-unpriced">
+              {plural(t.unpriced, 'usage item')} {byCount(t.unpriced, 'has', 'have')} no price: set
+              RIDEO_PRICES in Settings → Limits.
             </p>
           ) : null}
           <Rows
