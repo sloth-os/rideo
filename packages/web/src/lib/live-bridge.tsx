@@ -8,10 +8,9 @@ import { useProject } from '../store/project';
 import { useUi } from '../store/ui';
 import { serveStorage, setWorkspaceEnabled, workspaceEnabled, workspaceId } from '../workspace';
 import { useWorkspaceStatus } from '../workspace/status';
-import { useAuth } from './auth';
 import { useConfigStore } from './config';
 import { LiveClient } from './live';
-import { handleUiCommand, shownProject } from './ui-commands';
+import { handleAgentUi, shownProject } from './ui-commands';
 
 let client: LiveClient | null = null;
 
@@ -58,11 +57,7 @@ export function LiveBridge() {
         if (store.projectId === projectId)
           void store.load(projectId).then((s) => c.resetSeq(projectId, s.seq));
       },
-      // Commands for another project than the tab shows are refused, except in auth mode none (one person)
-      onUi: (cmd) =>
-        handleUiCommand(cmd, (to) => nav.current.navigate(to), nav.current.path, {
-          anyProject: useAuth.getState().me?.mode === 'none',
-        }),
+      onUi: (cmd) => handleAgentUi(cmd, () => nav.current),
       onNotification: (n) => {
         useNotifications.getState().push(n);
         useUi.getState().toast(n.title, 'info');

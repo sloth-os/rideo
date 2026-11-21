@@ -105,7 +105,11 @@ another's (`LiveHub.sendUi`, `UiService`):
 
 In auth mode `none` there is one person and every tab is theirs, as before: a `sessionId` reaches its tab wherever it is
 (an agent can take the tab to a project it has just created), `ui_notify` without a project reaches every tab,
-`ui_sessions` lists every tab with all its projects, and the web app carries out commands for any project.
+`ui_sessions` lists every tab with all its projects, and the web app carries out commands for any project. A tab tells
+the mode from `GET /api/auth/me`, which it asks when it opens, at the same time as it connects the live channel: a
+command for another project than it shows that arrives first waits for that answer (and asks again when the first ask
+failed) before the tab carries it out or refuses it; the mode is never guessed. Commands for the project the tab shows,
+or without a project, do not wait.
 
 ## Presence
 

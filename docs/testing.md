@@ -205,7 +205,10 @@ starts, a file or a folder (by its newest file) more than a day old removed and 
   pending, a reload keeping the shown timeline), live client
   (sequence dedupe, UI-command acks, restart resync, job heartbeats sent when open and their answers handed on), UI
   command dispatch (a command for another project than the tab shows, or for a project on a page of none, left alone
-  and refused so the tab acknowledges it `ok: false`; in auth mode none carried out as before, `ui-commands.test.ts`), the limited media fetch (`media-fetch.test.ts`: at most its limit at once, a slot handed on when a
+  and refused so the tab acknowledges it `ok: false`; in auth mode none carried out as before; one that arrives before
+  the tab knows its auth mode waiting for `/api/auth/me`, one ask shared and asked again after a failed one, then
+  carried out in mode none and refused in another mode, commands for the shown project or none never waiting,
+  `ui-commands.test.ts`), the limited media fetch (`media-fetch.test.ts`: at most its limit at once, a slot handed on when a
   body ends, fails, is cancelled or aborted, a waiting request dropped when aborted), lane media read only once a block
   comes on screen (`editor-depth.test.tsx`), WebCodecs codec/container
   selection, render engine choice, the editor-job worker against a fake API (claims only with a project and a
@@ -619,7 +622,7 @@ when a new stack starts. Specs:
 | Spec | Flow |
 |---|---|
 | `story.spec.ts` | brief → screenplay → cast (generate, approve, lock; design, pick and lock every voice; then the locations and props in the Elements view) → storyboard (generate, approve all frames, approve) → pilot from the approved frames (the speaking take carries TTS dialogue) → approve → batch (30 s target) → approve → editor (assemble; the Dialogue track holds the mixes; split, inspector trim, edge-drag trim; the preview plays local proxies because H.264 is hidden from WebCodecs) → export rendered in the tab (`auto` → ffmpeg.wasm) → verify watermark |
-| `mcp-sync.spec.ts` | page open; the test drives MCP tools as “Claude Code” (create character, add reference, lock, `ui_navigate`, `ui_focus`, `ui_notify`) and asserts the page updates live, attributed to the agent, without a reload; an agent's `export_render` is claimed and rendered by the open tab (`auto` → WebCodecs) and watermarked by the server |
+| `mcp-sync.spec.ts` | page open; the test drives MCP tools as “Claude Code” (create character, add reference, lock, `ui_navigate`, `ui_focus`, `ui_notify`) and asserts the page updates live, attributed to the agent, without a reload; an agent's `export_render` is claimed and rendered by the open tab (`auto` → WebCodecs) and watermarked by the server; in auth mode none, an agent's `ui_navigate` for another project with the tab's `sessionId` that reaches the tab before `/api/auth/me` has answered (the answer held) waits for it, then is carried out and acknowledged `ok: true` |
 | `footage.spec.ts` | upload (probe + poster in the browser) → analysis signals in the browser → AI suggestions → accept → auto edit → exports with the ffmpeg.wasm and WebCodecs engines → both listed and verified |
 | `history.spec.ts` | edit → history → diff → restore → UI updates |
 | `take-editing.spec.ts` | (desktop and mobile) relight a take and extend another by 2 s from the take tiles (lineage badges); generative extend of the first item in the editor (the lanes on desktop, the item list on phones) |

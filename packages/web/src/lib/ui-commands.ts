@@ -1,6 +1,7 @@
 import type { FocusKind, UiCommand, View } from '@rideo/shared';
 import { useProject } from '../store/project';
 import { useUi } from '../store/ui';
+import { whoAmI } from './auth';
 
 export const VIEW_FOR_KIND: Record<FocusKind, View> = {
   scene: 'story',
@@ -66,4 +67,20 @@ export async function handleUiCommand(
       useProject.getState().player(params.playerAction ?? 'play', params.time);
       return;
   }
+}
+
+/**
+ * An agent's UI command in this tab (docs/design/realtime-sync.md#who-sees-and-steers-which-tabs). A command for another
+ * project than the tab shows is refused, except in auth mode none (one person); the mode comes from `/api/auth/me`,
+ * so such a command waits for its answer (a tab that has not heard yet would refuse what mode none allows). The path
+ * is read once the answer is in: the tab may have moved meanwhile.
+ */
+export async function handleAgentUi(
+  cmd: UiCommand,
+  tab: () => { navigate: (to: string) => void; path: string },
+): Promise<void> {
+  const elsewhere = !!cmd.projectId && cmd.projectId !== shownProject(tab().path);
+  const me = elsewhere ? await whoAmI() : null;
+  const { navigate, path } = tab();
+  return handleUiCommand(cmd, navigate, path, { anyProject: me?.mode === 'none' });
 }
