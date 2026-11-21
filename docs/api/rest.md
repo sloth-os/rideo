@@ -383,7 +383,7 @@ Browser tabs run editor jobs (`client` lane) with their editor engine; see
 
 | Method | Path | Body | Result |
 |---|---|---|---|
-| POST | `/api/editor/claim` | `{sessionId, projectId, kinds?[]}` | `{job}` (leased to the session) or `{job: null}` |
+| POST | `/api/editor/claim` | `{sessionId, projectId, kinds?[]}` | `{job}` (leased to the session) or `{job: null}`; `409 conflict` when the session does not follow the project (claim after its `subscribed` answer, [realtime sync](../design/realtime-sync.md#server--client)) |
 | GET | `/api/editor/jobs/:jobId` | – | `Job` (with `staged` file names, for resuming) |
 | POST | `/api/editor/jobs/:jobId/heartbeat` | `{sessionId, progress?: {done, total, message?}}` | `{cancelled, leaseExpiresAt}` or `lease_lost` |
 | PUT | `/api/editor/jobs/:jobId/files/:name` | raw bytes (`?sessionId=`) | `{name, size}` (staged; names `[a-z0-9._-]`) |

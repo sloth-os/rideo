@@ -16,6 +16,7 @@ the socket closes, the tab reconnects and, seeing a new `instanceId`, resyncs.
 | Message | Meaning |
 |---|---|
 | `{type: "hello", sessionId, instanceId, serverTime}` | Sent on connect. `instanceId` changes on server restart, which tells clients to resync. |
+| `{type: "subscribed", projectId, ref?}` | The answer to a `subscribe` once the server follows the project for this session, after the events it replays (or the `resync`), with the `subscribe`'s `ref`. A refused `subscribe` gets the `error` below instead. From this answer on, an editor-job claim of this session for the project finds it followed: the tab claims only after it, again after every reconnect ([editor jobs](editor.md#editor-jobs)). |
 | `{type: "event", projectId, seq, event}` | A project event (below). `seq` increases per project. |
 | `{type: "resync", projectId, reason}` | The client must refetch `GET /api/projects/:id/state` (a sequence gap it cannot replay). |
 | `{type: "ui", command}` | A UI command from an agent (below). |
@@ -29,7 +30,7 @@ the socket closes, the tab reconnects and, seeing a new `instanceId`, resyncs.
 
 | Message | Meaning |
 |---|---|
-| `{type: "subscribe", projectId, lastSeq?}` | Start receiving events. With `lastSeq`, the server replays newer events from its ring buffer (the last 1000 per project), or sends `resync` when too far behind. With accounts the caller needs to read the project ([accounts](accounts.md)); otherwise the server answers `{type: "error", message: "forbidden: …"}`. |
+| `{type: "subscribe", projectId, lastSeq?, ref?}` | Start receiving events. With `lastSeq`, the server replays newer events from its ring buffer (the last 1000 per project), or sends `resync` when too far behind. With accounts the caller needs to read the project ([accounts](accounts.md)); otherwise the server answers `{type: "error", message: "forbidden: …"}`. The server answers `subscribed` with the same `ref` (a number the tab picks for each `subscribe`), so a tab that unsubscribed and subscribed again tells the answer to its latest `subscribe` from an earlier one's. |
 | `{type: "unsubscribe", projectId}` | Stop. |
 | `{type: "presence", projectId, route, selection?, viewport, engine?}` | What the user is looking at, and the tab's editor engine (`{ffmpeg, webcodecs: {video, audio}, busyJobId, threads, compositor, hidden}`: ffmpeg.wasm's threads, `webgpu` or `canvas` compositing, and whether the tab is hidden, [engine performance](engine-performance.md)). Agents read it with `ui_sessions`. Its project needs the same permission as `subscribe`: a tab claiming one it may not follow is answered `{type: "error", message: "forbidden: you may not follow …"}` and is present nowhere, so it gets nothing for that project ([who sees and steers which tabs](#who-sees-and-steers-which-tabs)). |
 | `{type: "ui-ack", commandId, ok, error?}` | Acknowledges a UI command: `ok: false` with the reason when the tab did not carry it out. |
@@ -57,7 +58,8 @@ those paths.
 - Events are published **after** the commit's ref update, in commit order. The per-project lock serializes
   commits, so `seq` order equals commit order.
 - On reconnect the client resubscribes with its last `seq`. On a different `instanceId`, or after a
-  `resync`, it reloads the snapshot and continues from the snapshot's `seq`, which `GET /state` returns.
+  `resync`, it reloads the snapshot and continues from the snapshot's `seq`, which `GET /state` returns. A new
+  connection is a new session that follows nothing until the server answers its `subscribe` (`subscribed`).
 - A page renders from `GET /state` alone; the recent history (`GET /history?limit=100`) arrives in the background and
   fills the History view and the activity when it does. The first history after a restart took 26.5 s on OpenList, and
   pages used to wait for both ([maintenance](storage-webdav.md#maintenance) also warms the log).
