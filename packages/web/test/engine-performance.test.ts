@@ -1,4 +1,4 @@
-import { type Job, newId, parseCube } from '@rideo/shared';
+import { type Job, newId, parseCube, posterCommand, speechCommand, thumbnailCommand } from '@rideo/shared';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { startHeartbeat } from '../src/engine/heartbeat';
 import { keepAlive } from '../src/engine/keep-alive';
@@ -71,6 +71,36 @@ describe('ffmpeg.wasm threads (docs/design/engine-performance.md)', () => {
     expect(withThreads(['-f', 'lavfi', 'anullsrc', 'y'], 8)).toEqual(['-f', 'lavfi', 'anullsrc', 'y']);
     expect(threadBudget(64, 7)).toEqual({ output: 8, decoder: 1, filters: 8, inputThreads: true });
     expect(threadBudget(0, 1)).toEqual({ output: 1, decoder: 2, filters: 1, inputThreads: false });
+  });
+
+  it('writes a poster or a scene thumbnail (one frame) on one thread, and other commands on their threads', () => {
+    // on threads, the core now and then never returned from a thumbnail: while starting them, or after its frame
+    expect(withThreads(thumbnailCommand('/in/src', 4, '/out/thumb.jpg'), 4)).toEqual([
+      '-ss',
+      '4.000',
+      '-threads',
+      '1',
+      '-i',
+      '/in/src',
+      '-frames:v',
+      '1',
+      '-vf',
+      'scale=320:-2',
+      '-q:v',
+      '5',
+      '-y',
+      '-threads',
+      '1',
+      '-filter_complex_threads',
+      '1',
+      '/out/thumb.jpg',
+    ]);
+    const poster = withThreads(posterCommand('/in/src', '/out/poster.jpg', { durationSec: 9 }), 8);
+    const threadArgs = (args: string[]) =>
+      args.filter((_, i) => args[i - 1] === '-threads' || args[i - 1] === '-filter_complex_threads');
+    expect(threadArgs(poster)).toEqual(['1', '1', '1']);
+    // a speech track is every frame of its input: its threads as planned
+    expect(threadArgs(withThreads(speechCommand('/in/src', '/out/speech.mp3'), 4))).toEqual(['2', '4', '4']);
   });
 
   it('counts the scalers, each with a pool of the graph’s threads, and keeps the whole command in the pool', () => {
