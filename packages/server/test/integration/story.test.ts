@@ -41,11 +41,10 @@ describe('story → movie workflow (REST, mock gateway)', () => {
         targetDurationSec: 30,
         pilotDurationSec: 10,
         resolution: { width: 320, height: 180 },
-        // The reviews of the cast, the takes and the cut, the production storyboards and the director's desk have
-        // tests of their own (autopilot.test.ts, director-desk.test.ts): this one follows the gates a person approves
+        // The reviews of the cast, the takes and the cut and the production storyboards have tests of their own
+        // (autopilot.test.ts): this one follows the gates a person approves
         review: { cast: false, cut: false, watchTakes: false, extensions: false },
         storyboard: { production: false },
-        blocking: { enabled: false },
       },
     });
     expect(created.workflow.stage).toBe('brief');
@@ -478,7 +477,7 @@ describe('story → movie workflow (REST, mock gateway)', () => {
       expect(clips.map((c) => c.id)).toEqual([clip.id]);
       const last = (await stack.api<any[]>('GET', `/projects/${pid}/history?limit=1`))[0];
       expect(last.message).toBe(
-        `Override consistency for ${rest.length} take(s): Visually verified against the references`,
+        `Override consistency for ${rest.length} take${rest.length === 1 ? '' : 's'}: Visually verified against the references`,
       );
     }
     const approved = await stack.api<Clip>('POST', `/projects/${pid}/clips/${clip.id}/approve`);

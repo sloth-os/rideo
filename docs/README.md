@@ -19,6 +19,7 @@
 | [design/performance.md](design/performance.md) | Performance-driven animation: a performance recorded in the studio (or footage) acted by the locked cast on a gateway performance model |
 | [design/search.md](design/search.md) | Semantic media search: frames of takes, footage, stills and references captioned by the vision model, searched by meaning (embeddings) or words |
 | [design/brand-kits.md](design/brand-kits.md) | Brand kits: fonts, colors, logo, intro and outro bumpers, lower-third templates and the brand bug, applied to projects |
+| [design/library.md](design/library.md) | The studio library: characters, elements, resources and the desk's 3D sets, props and figures kept once for all the studio's projects, in versions; Save to library, Use in project (the same ids and seeds), Update with its plan, 3D pins, where-used, permissions, reusing them across episodes, and why rideo does not call the 3D-Editor's server |
 | [design/agents.md](design/agents.md) | Agents: MCP prompts for common jobs, resources, studio recipes run on the server, variations of many shots and casting every voice |
 | [design/review.md](design/review.md) | Review and approvals: timecoded comments and drawings on takes and exports, share links for outside reviewers, reviews that approve gates, mentions and notifications |
 | [design/finishing.md](design/finishing.md) | Deliveries: presets, 4K upscale and frame interpolation through gateway models, ProRes and image-sequence masters, auto-reframed 9:16 and 1:1 cut-downs, thumbnails |
@@ -27,7 +28,7 @@
 | [design/multi-shot.md](design/multi-shot.md) | Multi-shot generation: consecutive shots in one request for models that render several shots, split at the cuts and verified shot by shot |
 | [design/directing.md](design/directing.md) | Directing controls: camera moves, lens and aperture, start and end frames, motion references, seeds, variations and A/B comparison |
 | [design/storyboard.md](design/storyboard.md) | The storyboard stage, board frames reused by the video pass, the animatic, screenplay import (Fountain, FDX, PDF), shot lists |
-| [design/director-desk.md](design/director-desk.md) | The 3D director's desk: every scene blocked in a small 3D set (mannequins, props, a camera per shot), AI blocking with a camera solver and the 180° rule, the blocking line and camera view given to the image model, the desk in the Storyboard view |
+| [design/director-desk.md](design/director-desk.md) | The 3D director's desk: the 3D-Editor's desk embedded in the Storyboard view (`RIDEO_DESK_URL`, its own origin and headers), the embed protocol, the brief made from rideo's documents, reference clips attached as motion references with the staged camera, the desk state stored per clip, library units (pins in the brief, unit bytes in `open`, publishing from the desk, the units a stored state uses, the Storyboard's 3D badge), what happened to rideo's own blocking |
 | [design/dialogue.md](design/dialogue.md) | Character voices (designed or cloned, locked), TTS or native dialogue, lip sync, the speaker check, the Dialogue track |
 | [design/character-consistency.md](design/character-consistency.md) | How consistency is guaranteed: identity lock, deterministic conditioning, judge gate, continuity, drift |
 | [design/continuity.md](design/continuity.md) | Continuity, storytelling and realism: prompt version 2 (scene lines, video prompt blocks, voices, exclusions), story structure, dialogue levels, film grammar in shot planning, the scene reference frame, temporal and physics checks |
@@ -63,8 +64,12 @@
 | Take | One generated attempt of a shot: keyframe, watermarked video, poster, consistency report, watermark id. |
 | Timeline | Tracks of items that reference takes or media, edited with pure operations. |
 | Gate | An approval that moves a workflow to its next stage. |
-| Blocking | A scene's 3D layout: the set, the characters' marks and a camera per shot ([director's desk](design/director-desk.md)). |
-| Camera view | A shot's camera seeing the blocking: the mannequins and the set, given to the image model as a layout. |
+| Desk | The 3D-Editor's director's desk embedded in the studio: a scene staged in 3D, each shot's reference clip rendered in the browser ([director's desk](design/director-desk.md)). |
+| Brief | What rideo tells the desk about a scene: its place, cast, props and shots with their cameras and planned layouts ([the brief](design/director-desk.md#the-brief)). |
+| Desk state | The desk's opaque save of a staged scene, stored per clip and given back when the desk opens ([the desk state](design/director-desk.md#the-desk-state)). |
+| Library item | Something the studio's projects share, kept once in versions (v1, v2, …): a character, an element, a resource, or a 3D set, prop or figure ([the studio library](design/library.md)). |
+| 3D unit | A set, prop or figure saved from the desk as one file; the library keeps it, the desk stages scenes with it ([library units](design/director-desk.md#library-units)). |
+| Pin | The 3D unit version a location, prop or character uses; it moves only when someone moves it, and is not part of the identity ([pins](design/library.md#pins-on-entities)). |
 | Clip gate | What a clip must pass before autopilot approves it: every take's checks (watched whole), the scene's review, its frames ([AI review](design/ai-review.md#the-clip-gate)). |
 | Actor | Who made a change: `user`, `agent` (MCP client), `system` (jobs), or `webdav` (external edit). |
 | Workspace | A browser's project store (IndexedDB) when projects are kept in browsers. |

@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Fake 3D desk</title>
+    <style>
+      body { margin: 0; padding: 12px; font: 13px/1.4 system-ui, sans-serif; background: #12151c; color: #e9ebf1; }
+      button { margin: 4px 4px 4px 0; padding: 6px 10px; font: inherit; }
+      code { word-break: break-all; }
+      ul { padding-left: 18px; }
+    </style>
+  </head>
+  <body>
+    <p>Fake desk <span data-testid="desk-connected">waiting</span> · <span data-testid="desk-scene"></span></p>
+    <p>Options: <code data-testid="desk-options"></code></p>
+    <p>Unit fields in the open: <code data-testid="desk-unit-fields">none</code></p>
+    <p>Given state: <code data-testid="desk-given">none</code></p>
+    <p>Current state: <code data-testid="desk-current"></code></p>
+    <p>Retimed by the brief: <code data-testid="desk-retimed"></code></p>
+    <ul data-testid="desk-shots"></ul>
+    <p>
+      <label>
+        Follow
+        <select data-testid="desk-follow">
+          <option value="motion">Motion</option>
+          <option value="pose">Poses</option>
+          <option value="camera">Camera</option>
+        </select>
+      </label>
+    </p>
+    <p>
+      <button type="button" data-testid="desk-edit">Edit</button>
+      <button type="button" data-testid="desk-update-shots">Update shots</button>
+      <button type="button" data-testid="desk-send">Send</button>
+      <button type="button" data-testid="desk-send-part">Send part</button>
+      <button type="button" data-testid="desk-send-longer">Send longer</button>
+      <button type="button" data-testid="desk-done">Done</button>
+      <button type="button" data-testid="desk-close-desk">Close</button>
+    </p>
+    <p>Rideo says: <span data-testid="desk-ack"></span></p>
+    <!-- library units (desk.html?units=1): the pins, the files the open brought, the record, publishing -->
+    <section data-testid="desk-units" hidden>
+      <p>Units option: <code data-testid="desk-units-option">none</code></p>
+      <ul data-testid="desk-pins"></ul>
+      <ul data-testid="desk-unit-files"></ul>
+      <p>Record: <code data-testid="desk-records"></code></p>
+      <p>
+        <button type="button" data-testid="desk-publish-set">Publish set</button>
+        <button type="button" data-testid="desk-publish-version">Publish new version</button>
+        <button type="button" data-testid="desk-publish-prop">Publish prop</button>
+      </p>
+      <p>Library says: <span data-testid="desk-unit-ack"></span></p>
+    </section>
+    <script src="desk.js"></script>
+  </body>
+</html>

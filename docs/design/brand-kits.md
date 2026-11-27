@@ -56,11 +56,12 @@ the compositor loads it as a `FontFace` named after its hash.
 | Surface | REST | MCP |
 |---|---|---|
 | kits | `GET /api/brand-kits`, `POST /api/brand-kits` `{name, colors?, bug?, lowerThirds?}`, `PATCH /api/brand-kits/:id`, `DELETE /api/brand-kits/:id` | `brand_kits_list`, `brand_kit_create`, `brand_kit_update` |
-| kit files | `PUT /api/brand-kits/:id/files/:slot` (multipart; `slot`: `title_font`, `body_font`, `logo`, `intro`, `outro`), `GET /api/brand-kits/:id/files/:file` | – |
+| kit files | `PUT /api/brand-kits/:id/files/:slot` (multipart; `slot`: `title_font`, `body_font`, `logo`, `intro`, `outro`), `GET /api/brand-kits/:id/files/:file` (served as a project's media is, with `X-Content-Type-Options: nosniff` and `Content-Security-Policy: default-src 'none'; sandbox`: a file opened as a page runs nothing) | – |
 | a project's brand | `PUT /api/projects/:id/brand` `{kitId \| null}` | `project_brand` |
 | bumpers, lower thirds | the timeline ops `add_bumper`, `add_text` with a template's style | `timeline_apply` |
 
-The studio has a **Brand kits** page (from the user menu): kits with their colors, fonts, logo, bumpers, bug and
+The studio has a **Brand kits** page (from the header's **Brand kits** link; in a project below `md`, from **More**,
+[brand](../brand.md#layout-and-responsiveness)): kits with their colors, fonts, logo, bumpers, bug and
 lower-third templates, editable by admins and directors. The project's settings choose the kit; the editor's toolbar
 adds a lower third from a template and the intro and outro; the export dialog has the brand bug switch.
 

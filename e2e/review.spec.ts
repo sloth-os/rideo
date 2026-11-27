@@ -91,6 +91,18 @@ test('takes are reviewed with timecoded notes and drawings; an outside reviewer 
   const row = card.getByTestId('review-row').filter({ hasText: title });
   await expect(row.getByTestId('review-link-state')).toContainText('link active');
   await expect(row.getByTestId('review-gate')).toHaveText('pilot_approved');
+  // Approvals so far of those asked for, the count naming its noun (docs/brand.md#voice)
+  await expect(row.getByTestId('review-approvals')).toHaveText('· 0 of 1 approval');
+  const team = `Cut for the team (${testInfo.project.name})`;
+  const clipId = Object.keys((await api.call<any>('GET', `/projects/${pid}/state`)).docs.clips)[0];
+  await api.call('POST', `/projects/${pid}/reviews`, {
+    title: team,
+    target: { kind: 'clip', clipId },
+    required: 2,
+  });
+  await expect(
+    card.getByTestId('review-row').filter({ hasText: team }).getByTestId('review-approvals'),
+  ).toHaveText('· 0 of 2 approvals');
 
   // The client, without an account: a name, the takes, a note with an arrow, then changes requested
   const client = await browser.newContext({
@@ -101,6 +113,7 @@ test('takes are reviewed with timecoded notes and drawings; an outside reviewer 
   const guest = await client.newPage();
   await guest.goto(new URL(url).pathname);
   await expect(guest.getByTestId('guest-review-title')).toHaveText(title);
+  await expect(guest.getByTestId('guest-approvals')).toHaveText('0 of 1 approval');
   await guest.getByTestId('guest-name').fill('Ana from Northwind');
   await guest.getByTestId('guest-start').click();
   const gp = guest.getByTestId('review-player');
@@ -139,8 +152,10 @@ test('takes are reviewed with timecoded notes and drawings; an outside reviewer 
   await api.call('POST', `/projects/${pid}/clips/${clip.id}/approve`);
   await guest.getByTestId('guest-approve').click();
   await expect(guest.getByTestId('guest-status')).toHaveText('approved');
+  await expect(guest.getByTestId('guest-approvals')).toHaveText('1 of 1 approval');
   await page.goto(`/p/${pid}/overview`);
   await expect(row.getByTestId('review-gate')).toHaveText('pilot_approved ✓');
+  await expect(row.getByTestId('review-approvals')).toHaveText('· 1 of 1 approval');
   await expect
     .poll(async () => (await api.call<any>('GET', `/projects/${pid}/state`)).docs.project.workflow.stage)
     .toBe('production');

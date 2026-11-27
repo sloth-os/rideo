@@ -13,6 +13,7 @@ import {
   orderedShotCharacters,
   orderedShotElements,
   type ProjectDocs,
+  plural,
   promptVersionOf,
   type Shot,
   type ShotBoard,
@@ -24,10 +25,9 @@ import {
 import { assertCastReady } from '../../domain/clips';
 import { notFound } from '../../errors';
 import type { JobContext } from '../queue';
-import { cameraView, ensureBlocking, withCameraView } from './blocking';
 import { commitAs, docsFor, type HandlerDeps } from './common';
 import { speakLines } from './dialogue';
-import { generateKeyframe, prepareShotReferences, stagingFor } from './keyframe';
+import { generateKeyframe, prepareShotReferences, stagingFor, withSceneReference } from './keyframe';
 import type { SheetPanel } from './sheet';
 
 /**
@@ -144,17 +144,12 @@ export async function shotBoard(deps: HandlerDeps, ctx: JobContext) {
     const withScene =
       sceneFrame &&
       (maxImages === undefined || (maxImages >= 3 && shotRefs.referenceUris.length < maxImages));
-    // The shot's camera view on the desk, before the scene reference (docs/design/director-desk.md)
-    const view = withCameraView(shotRefs, cameraView(docs, clip, shot), {
-      maxImages,
-      sceneReferenceUri: withScene ? await deps.media.pngDataUri(ctx.job.projectId, sceneFrame, 1024) : null,
-    });
+    const view = withSceneReference(
+      shotRefs,
+      withScene ? await deps.media.pngDataUri(ctx.job.projectId, sceneFrame, 1024) : null,
+    );
     const refs = view.refs;
-    const shotCtx: ShotContext = {
-      ...baseCtx,
-      sceneReference: view.sceneReference,
-      blockingImage: view.blockingImage,
-    };
+    const shotCtx: ShotContext = { ...baseCtx, sceneReference: view.sceneReference };
     const kf = await generateKeyframe(deps, ctx, {
       shotCtx,
       refs,
@@ -275,21 +270,11 @@ export async function storyboardGenerate(deps: HandlerDeps, ctx: JobContext) {
     plans.push(await ctx.spawn('clip.plan', { sceneId: scene.id }, { dedupeKey: `plan:${scene.id}` }));
   }
   if (plans.length) {
-    ctx.progress(0.1, 1, `planning ${plans.length} scene(s)`);
+    ctx.progress(0.1, 1, `planning ${plural(plans.length, 'scene')}`);
     await ctx.waitFor(plans.map((j) => j.id));
     docs = await docsFor(deps, ctx);
   }
   const ids = new Set(scenes.map((s) => s.id));
-  // Each scene blocked in 3D before its frames are drawn (docs/design/director-desk.md#jobs)
-  ctx.progress(0.15, 1, 'blocking the scenes');
-  await ensureBlocking(
-    deps,
-    ctx,
-    Object.values(docs.clips)
-      .filter((c) => c.sceneId && ids.has(c.sceneId))
-      .map((c) => c.id),
-  );
-  docs = await docsFor(deps, ctx);
   const targets = Object.values(docs.clips)
     .filter((c) => c.sceneId && ids.has(c.sceneId))
     .flatMap((clip) =>
@@ -303,7 +288,7 @@ export async function storyboardGenerate(deps: HandlerDeps, ctx: JobContext) {
     docs.characters,
     docs.elements,
   );
-  ctx.progress(0.2, 1, `drawing ${targets.length} frame(s)`);
+  ctx.progress(0.2, 1, `drawing ${plural(targets.length, 'frame')}`);
   const done = await drawBoards(ctx, targets, { sheets: docs.project.settings.storyboard.sheet });
   // The frames are reviewed before any video (docs/design/ai-review.md#how-a-review-runs)
   await deps.services.aiReviews

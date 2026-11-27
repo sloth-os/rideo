@@ -1,4 +1,4 @@
-import { isTerminalJob, speakingCharacters, voiceOf } from '@rideo/shared';
+import { isTerminalJob, plural, speakingCharacters, voiceOf } from '@rideo/shared';
 import { AppError } from '../../errors';
 import type { JobContext } from '../queue';
 import { docsFor, type HandlerDeps } from './common';
@@ -20,7 +20,7 @@ export async function voicesCast(deps: HandlerDeps, ctx: JobContext) {
     );
   let docs = await docsFor(deps, ctx);
   const cast = wanted(docs);
-  ctx.progress(0, 3, `${cast.length} voice(s) to cast`);
+  ctx.progress(0, 3, `${plural(cast.length, 'voice')} to cast`);
   const designs = [];
   for (const c of cast) {
     const v = voiceOf(c);

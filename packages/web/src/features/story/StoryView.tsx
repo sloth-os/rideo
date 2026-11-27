@@ -1,4 +1,4 @@
-import { briefAdaptation, formatDuration, isTerminalJob, type Scene } from '@rideo/shared';
+import { briefAdaptation, formatDuration, isTerminalJob, plural, type Scene } from '@rideo/shared';
 import {
   Check,
   Clapperboard,
@@ -40,7 +40,10 @@ function ImportScreenplay({ replace }: { replace: boolean }) {
       const r = await api.importScreenplay(projectId, file, replace);
       useUi
         .getState()
-        .toast(`Imported “${r.title}”: ${r.scenes} scenes, ${r.characters} characters`, 'success');
+        .toast(
+          `Imported “${r.title}”: ${plural(r.scenes, 'scene')}, ${plural(r.characters, 'character')}`,
+          'success',
+        );
     } catch (err) {
       reportError(err);
     } finally {
@@ -360,7 +363,7 @@ export function StoryView() {
     <div className="mx-auto max-w-4xl space-y-5">
       <SectionHeader
         title="Screenplay"
-        subtitle={`${sp.scenes.length} scene(s) written · ${sp.outline.length} outline beat(s)`}
+        subtitle={`${plural(sp.scenes.length, 'scene')} written · ${plural(sp.outline.length, 'outline beat')}`}
         actions={
           <>
             {!gate?.approved ? <ImportScreenplay replace /> : null}

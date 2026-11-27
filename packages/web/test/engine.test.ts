@@ -226,17 +226,17 @@ describe('editor-job worker', () => {
     await run({ leased: true, cancelled: true });
   });
 
-  it('retries a claim that overtook the live subscription', async () => {
+  // docs/design/editor.md#editor-jobs: the worker claims through a session that follows the project, and only then
+  it('claims through a session that follows the project, and leaves a refused claim to the next poke', async () => {
     const { api } = fakeApi([]);
-    let calls = 0;
+    let refuse = true;
     api.editorClaim = vi.fn(async () => {
-      calls++;
-      if (calls === 1)
+      if (refuse)
         throw new ApiError(409, {
           type: '',
           title: '',
           status: 409,
-          detail: 'subscribe first',
+          detail: 'this live session does not follow the project; subscribe first',
           code: 'conflict',
         });
       return { job: null };
@@ -250,10 +250,21 @@ describe('editor-job worker', () => {
         'analysis.signals': async () => ({}),
       },
     });
-    worker.setSession(() => 's1');
+    let following: string | null = null;
+    worker.setSession((projectId) => (projectId === following ? 's1' : null));
     worker.setProject('prj_01m3s0000000000000');
+    await idle();
+    // no session follows the project: nothing is claimed
+    expect(api.editorClaim).not.toHaveBeenCalled();
+    following = 'prj_01m3s0000000000000';
+    await worker.poke();
+    expect(api.editorClaim).toHaveBeenCalledWith('s1', 'prj_01m3s0000000000000');
+    // refused (the session closed meanwhile): no retry of its own, the next poke claims again
     await new Promise((r) => setTimeout(r, 400));
-    expect(calls).toBe(2);
+    expect(api.editorClaim).toHaveBeenCalledTimes(1);
+    refuse = false;
+    await worker.poke();
+    expect(api.editorClaim).toHaveBeenCalledTimes(2);
     worker.setProject(null);
   });
 });

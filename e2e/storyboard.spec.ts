@@ -17,6 +17,21 @@ ELI
 You came back.
 `;
 
+test('before the screenplay has scenes, the storyboard names no count of them', async ({
+  page,
+  request,
+}, testInfo) => {
+  const pid = await new Api(request).storyProject(`Storyboard, no scenes (${testInfo.project.name})`);
+  await page.goto(`/p/${pid}/storyboard`);
+  await expect(page.getByText('No scenes yet')).toBeVisible();
+  await expect(
+    page.getByText(
+      'The first scenes of the screenplay: approve a frame per shot before any video is generated. Approved frames start the video pass.',
+    ),
+  ).toBeVisible();
+  await expect(page.getByText(/The first 0/)).toHaveCount(0);
+});
+
 test('the storyboard is drawn, reordered and approved; the animatic plays and exports; screenplays import', async ({
   page,
   request,
@@ -31,6 +46,8 @@ test('the storyboard is drawn, reordered and approved; the animatic plays and ex
   await api.readyForStoryboard(pid);
 
   await page.goto(`/p/${pid}/storyboard`);
+  // The count agrees with its noun (docs/brand.md#voice)
+  await expect(page.getByText('The first 2 scenes: approve a frame per shot')).toBeVisible();
   await expect(page.getByTestId('approve-storyboard')).toBeDisabled();
   await page.getByTestId('generate-storyboard').click();
   const states = page.getByTestId('board-state');

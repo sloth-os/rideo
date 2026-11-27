@@ -10,7 +10,7 @@ import {
   BrandKitInputSchema,
   boardState,
   CAMERA_MOVES,
-  CameraSchema,
+  CameraPatchSchema,
   CharacterInputSchema,
   CommentTargetSchema,
   ConsentInputSchema,
@@ -31,6 +31,11 @@ import {
   isTerminalJob,
   LanguageCodeSchema,
   LENS_PRESETS,
+  LibraryApplyInputSchema,
+  LibraryDetachInputSchema,
+  LibraryItemPatchSchema,
+  LibraryListInputSchema,
+  LibrarySaveInputSchema,
   LoudnessTargetSchema,
   MotionReferenceSchema,
   type Permission,
@@ -64,9 +69,10 @@ import { z } from 'zod';
 import { currentPrincipal, type Principal } from '../auth/context';
 import type { ProjectState } from '../domain/projects';
 import type { Studio } from '../domain/studio';
-import { invalid, toAppError } from '../errors';
+import { AppError, invalid, toAppError } from '../errors';
 import { VERSION } from '../http/app';
 import type { AuthedRequest } from '../http/auth-routes';
+import { IdParam } from '../http/routes';
 import {
   castVoicesPrompt,
   directScenePrompt,
@@ -77,6 +83,18 @@ import {
 import type { ToolDef, ToolRegistry } from './registry';
 
 const PROJECT = z.string().describe('Project id (prj_…)');
+
+/**
+ * A tool's `projectId` is checked as REST checks a route's (`IdParam`), before anyone is asked about the project or
+ * anything reads it: a malformed one is `validation_error` for every caller (docs/design/mcp.md#transport-and-auth).
+ * Tools that take no project leave it undefined.
+ */
+function checkProjectId(projectId: unknown): void {
+  if (projectId === undefined || IdParam.safeParse({ id: projectId }).success) return;
+  throw invalid('projectId is not a project id (prj_ and 10 to 32 lowercase letters or digits)', [
+    { path: 'projectId', message: 'not a project id' },
+  ]);
+}
 
 /** Compact, agent-friendly project snapshot (full documents via doc_get). */
 export function summarizeState(state: ProjectState) {
@@ -264,10 +282,11 @@ function buildServer(studio: Studio): McpServer {
       shape,
       readOnly,
       permission,
-      // A recipe's step: the same activity and approval audit as a call from a client
+      // A recipe's step: the same project id check, activity and approval audit as a call from a client
       run: (async (args: ToolArgs<S>, actor: Actor) => {
         const projectId = (args as { projectId?: string }).projectId;
-        if (projectId && !readOnly && /^prj_/.test(projectId))
+        checkProjectId(projectId);
+        if (projectId && !readOnly)
           studio.deps.hub.activity(projectId, actor, `tool:${name}`, `${actor.name} → ${name}`);
         const result = await run(args, actor);
         if (projectId && permission === 'project.approve')
@@ -283,14 +302,25 @@ function buildServer(studio: Studio): McpServer {
     ) => {
       const actor = actorOf();
       const projectId = (args as { projectId?: string }).projectId;
-      if (projectId && !annotations.readOnlyHint && /^prj_/.test(projectId)) {
-        studio.deps.hub.activity(projectId, actor, `tool:${name}`, `${actor.name} → ${name}`);
-      }
       try {
+        // A call has a caller: outside auth mode none the app refuses /mcp without one. One that reaches a tool
+        // without one all the same is refused, not run as the studio (docs/design/mcp.md#transport-and-auth).
+        const principal = currentPrincipal();
+        if (!principal && studio.deps.accounts.mode !== 'none')
+          throw new AppError(
+            'unauthorized',
+            studio.deps.accounts.mode === 'oidc'
+              ? 'Sign in, or send an agent token'
+              : 'Missing or invalid bearer token',
+          );
+        // A malformed project id is refused before anyone is asked about the project, as over REST
+        checkProjectId(projectId);
+        if (projectId && !annotations.readOnlyHint)
+          studio.deps.hub.activity(projectId, actor, `tool:${name}`, `${actor.name} → ${name}`);
         // The same permissions as REST (docs/design/accounts.md#users-roles-and-projects).
-        if (projectId && /^prj_/.test(projectId))
+        if (projectId)
           await studio.deps.accounts.authorize(
-            currentPrincipal() ?? studio.deps.accounts.studioPrincipal(),
+            principal ?? studio.deps.accounts.studioPrincipal(),
             projectId,
             TOOL_PERMISSIONS[name] ?? (annotations.readOnlyHint ? 'project.read' : 'project.edit'),
           );
@@ -300,10 +330,6 @@ function buildServer(studio: Studio): McpServer {
             projectId,
             detail: { tool: name },
           });
-        // A picture (blocking_render) is image content
-        const image = (result as { [MCP_IMAGE]?: { data: string; mimeType: string } } | null)?.[MCP_IMAGE];
-        if (image)
-          return { content: [{ type: 'image' as const, data: image.data, mimeType: image.mimeType }] };
         return {
           content: [{ type: 'text' as const, text: JSON.stringify(result ?? { ok: true }, null, 2) }],
         };
@@ -796,7 +822,9 @@ function buildServer(studio: Studio): McpServer {
       shotId: z.string(),
       description: z.string().optional(),
       action: z.string().optional(),
-      camera: CameraSchema.partial().optional(),
+      camera: CameraPatchSchema.optional().describe(
+        'Only the camera fields given change: the shot keeps the others (framing and movement too)',
+      ),
       characterIds: z.array(z.string()).optional(),
       elementIds: z.array(z.string()).optional().describe('The location and the props/styles in the shot'),
       durationSec: z.number().positive().max(60).optional(),
@@ -818,6 +846,13 @@ function buildServer(studio: Studio): McpServer {
       const { projectId, clipId, shotId, ...fields } = a;
       return studio.clips.updateShot(actor, projectId, clipId, shotId, fields);
     },
+  );
+  tool(
+    'desk_brief',
+    "The SceneBrief of a clip for the 3D-Editor's director's desk (docs/design/director-desk.md#agents): the scene, its cast and props, and every shot with its framing, lens, move and planned layout. Stage it with the 3D-Editor's desk_stage_brief, render the shots there, then attach each clip with resource_add and shot_update {motionReference, camera}. The desk's state has no tool: it is the browser desk's opaque bytes.",
+    { projectId: PROJECT, clipId: z.string().describe('Clip id (clp_…), a scene with planned shots') },
+    (a) => studio.desk.brief(a.projectId, a.clipId),
+    ro,
   );
   // Take edits and extensions (docs/design/take-editing.md)
   tool(
@@ -1166,53 +1201,9 @@ function buildServer(studio: Studio): McpServer {
     { projectId: PROJECT, stage: STAGE, note: z.string().max(1000).default('') },
     (a, actor) => studio.aiReviews.override(actor, a.projectId, a.stage, a.note),
   );
-  // The 3D director's desk (docs/design/director-desk.md#surfaces)
-  tool(
-    'blocking_get',
-    "A scene's 3D blocking: the set (size, ground, landmarks, the sun), every character's mark, the props and each shot's camera (position, target, lens, end of a move), its state (missing, incomplete, ready), the completed draft the desk edits, the issues (a crossed line, a character out of frame, a camera in a wall) and each shot's blocking line as the prompts say it.",
-    { projectId: PROJECT, clipId: z.string() },
-    (a) => studio.storyboard.getBlocking(a.projectId, a.clipId),
-    ro,
-  );
-  tool(
-    'blocking_set',
-    "Save a scene's blocking (the shape blocking_get returns as `draft`; metres, y up, x right, z towards the front, facing 0° = the front). fix=true also keeps the cameras of cuts on the scene's side of the line. A shot's lens follows its camera; a camera move becomes the shot's move when it has none. Its frames become outdated: draw them again.",
-    {
-      projectId: PROJECT,
-      clipId: z.string(),
-      blocking: z.record(z.string(), z.unknown()),
-      fix: z.boolean().optional(),
-    },
-    (a, actor) => studio.storyboard.setBlocking(actor, a.projectId, a.clipId, a.blocking, { fix: a.fix }),
-  );
-  tool(
-    'blocking_generate',
-    "Block a scene with the AI (job scene.block): the text model lays out the set, the marks and a camera described per shot; a solver places the cameras from the shots' framing and lens and keeps the 180° rule. Returns the job; use job_wait, then blocking_get.",
-    { projectId: PROJECT, clipId: z.string() },
-    (a, actor) => studio.storyboard.generateBlocking(actor, a.projectId, a.clipId),
-  );
-  tool(
-    'blocking_render',
-    "A shot's camera view on the desk as a PNG (the mannequins and the set through its camera: the picture the image model gets as the layout of its frame).",
-    {
-      projectId: PROJECT,
-      clipId: z.string(),
-      shotId: z.string(),
-      width: z.number().int().min(160).max(1920).optional(),
-    },
-    async (a) => ({
-      [MCP_IMAGE]: {
-        data: (
-          await studio.storyboard.renderBlocking(a.projectId, a.clipId, a.shotId, a.width ?? 768)
-        ).toString('base64'),
-        mimeType: 'image/png',
-      },
-    }),
-    ro,
-  );
   tool(
     'clip_storyboard',
-    "Storyboard one production scene before its video (job clip.storyboard): blocked, its frames drawn, reviewed by the vision model with its camera views (fixes and rounds), and its frames approved when the review passes. The review is the clip's `boardReview`.",
+    "Storyboard one production scene before its video (job clip.storyboard): its frames drawn, reviewed by the vision model (fixes and rounds), and approved when the review passes. The review is the clip's `boardReview`.",
     { projectId: PROJECT, clipId: z.string() },
     (a, actor) => studio.storyboard.storyboardClip(actor, a.projectId, a.clipId),
   );
@@ -1353,7 +1344,7 @@ function buildServer(studio: Studio): McpServer {
   // Frontend control
   tool(
     'ui_sessions',
-    'Open browser sessions with what each user is looking at.',
+    'Open browser tabs you may see (your own, and those on projects you may read, showing only those projects), with what each user is looking at.',
     { projectId: z.string().optional() },
     async (a) => studio.ui.sessions(a.projectId),
     ro,
@@ -1377,7 +1368,7 @@ function buildServer(studio: Studio): McpServer {
   );
   tool(
     'ui_notify',
-    'Show a toast in the browser.',
+    'Show a toast in the browser: in the tabs on projectId, or without one in your own tabs.',
     {
       message: z.string().max(2000),
       level: z.enum(['info', 'success', 'warning', 'error']).optional(),
@@ -1491,6 +1482,82 @@ function buildServer(studio: Studio): McpServer {
     },
   );
 
+  // The studio library (docs/design/library.md#surfaces): the LibraryService REST calls too; no tool uploads bytes
+  tool(
+    'library_list',
+    "The studio library: characters, elements (places, props, styles), resources and the director's desk's 3D sets, props and figures that the studio's projects share, in versions. Summaries with their current version (3D units: its unit file's sha256, size, actor kind and height). Filter by kinds, kind, tag or words (q); archived: true lists archived items too; pages of limit items, the next one from cursor (the answer's next).",
+    LibraryListInputSchema.shape,
+    async (a) => studio.library.list(LibraryListInputSchema.parse(a)),
+    ro,
+  );
+  tool(
+    'library_get',
+    "A library item with its history (every version: number, digest, note, who made it and when, its rev for library_update's expectedRev); with version, also that version's manifest (its snapshot and files).",
+    {
+      itemId: z.string().describe('Library item id (lib_…)'),
+      version: z.number().int().min(1).max(1000).optional(),
+    },
+    async (a) => ({
+      item: await studio.library.get(a.itemId),
+      ...(a.version ? { version: await studio.library.version(a.itemId, a.version) } : {}),
+    }),
+    ro,
+  );
+  tool(
+    'library_update',
+    "Change a library item (its owner or an admin): name, description, tags, the current version (the one Use in project takes; projects keep theirs), archived (hidden from pickers, still served). expectedRev: the item's rev as you read it (library_conflict when it changed meanwhile).",
+    {
+      itemId: z.string().describe('Library item id (lib_…)'),
+      expectedRev: z.number().int().min(1).optional(),
+      ...LibraryItemPatchSchema.shape,
+    },
+    (a, actor) => {
+      const { itemId, expectedRev, ...patch } = a;
+      return studio.library.update(actor, itemId, LibraryItemPatchSchema.parse(patch), expectedRev);
+    },
+  );
+  tool(
+    'library_uses',
+    "Where a library item is used: the projects you may read, each with its uses (library links, 3D pins, what the clips' stored desk states use) and the version each uses. incomplete: a project could not be read, or projects live in browsers.",
+    { itemId: z.string().describe('Library item id (lib_…)') },
+    async (a) => studio.library.uses(a.itemId),
+    ro,
+  );
+  tool(
+    'library_save',
+    'Save a character, element or resource of the project to the studio library: a new item, or a new version of the item it is linked to (itemId for another; newItem for a new one, whatever itemId says). Its approved references and files are copied into the library and the entity is linked (one commit). A real person needs acknowledgeConsent (consent_required otherwise); basedOn: the version it was made from (library_conflict when the item has a later one); unchanged when nothing changed since the current version. A resource is kept under the type an upload of it would get: an image as the PNG, JPEG, WebP, GIF, BMP or TIFF its bytes are (its project resource takes that type too), a video or a sound under one type of its kind; anything else, an SVG among them, is a validation_error.',
+    { projectId: PROJECT, ...LibrarySaveInputSchema.shape },
+    (a, actor) => {
+      const { projectId, ...input } = a;
+      return studio.library.save(actor, projectId, LibrarySaveInputSchema.parse(input));
+    },
+  );
+  tool(
+    'library_apply',
+    "Apply a library version to the project (one commit): without target, Use in project (a new character or element keeping the library's id and seed, or a new resource); with a target, update or link it (its lock relocked: the version kept when its identity is unchanged, else raised, takes made with the old identity go stale), or pin a 3D unit on it (a set on a location, a prop on a prop, a figure on a character). replacePin: false refuses to re-point another item's pin, whether by a pin or by a version that carries one. dryRun answers the plan only. conflict (exists, name, pinned, archived), forbidden when the plan lists approved clips and you are no director, consent_required for a real person without acknowledgeConsent.",
+    { projectId: PROJECT, ...LibraryApplyInputSchema.shape },
+    (a, actor) => {
+      const { projectId, ...input } = a;
+      return studio.library.apply(actor, projectId, LibraryApplyInputSchema.parse(input));
+    },
+  );
+  tool(
+    'library_detach',
+    "Unlink an entity from the library (what: library; it stays as it is, the project's own) or remove its 3D pin (what: deskUnit; its scenes go back to the words at their next Update shots). One commit.",
+    { projectId: PROJECT, ...LibraryDetachInputSchema.shape },
+    (a, actor) => {
+      const { projectId, ...input } = a;
+      return studio.library.detach(actor, projectId, LibraryDetachInputSchema.parse(input));
+    },
+  );
+  tool(
+    'library_status',
+    "The project's library links and 3D pins, each current, behind (a newer version is current), ahead or missing (not in this studio's library), and whether a linked entity was edited here since its version.",
+    { projectId: PROJECT },
+    async (a) => studio.library.status(a.projectId),
+    ro,
+  );
+
   // Brand kits (docs/design/brand-kits.md)
   tool(
     'brand_kits_list',
@@ -1555,7 +1622,7 @@ function buildServer(studio: Studio): McpServer {
   );
   tool(
     'recipe_create',
-    'Save a recipe for the studio: a name, parameters ({name, type: string|number|boolean|id|ids, required?, default?}) and steps ({tool, args with {{param}}, {{item}} or {{steps.N.path}} placeholders, forEach?: "{{listParam}}", wait?: true to wait for the jobs a step starts}).',
+    "Save a recipe for the studio: a name, parameters ({name, type: string|number|boolean|id|ids, required?, default?}) and steps ({tool, args with {{param}}, {{item}} or {{steps.N.path}} placeholders, forEach?: \"{{listParam}}\", wait?: true to wait for the jobs a step starts}). A recipe acts only on the project it runs in: every step's tool takes a projectId and the step gives it {{projectId}}; a tool that takes none (project_list, project_create, settings_update, recipe_delete, …) may not be a step, and a projectId left out, written out, or filled in with another project by a parameter or an earlier step's result is refused (validation_error naming the step) when the recipe is saved, run or reaches that step. A step may not be recipe_run, nor a library tool but library_status (not library_list, library_get, library_uses, library_save, library_update, library_apply or library_detach): a recipe's job runs without its caller's library permissions and would read and change the library as the studio, so call those directly; library_status, which reads only the run's project, may be a step.",
     RecipeInputSchema.shape,
     (a, actor) => studio.recipes.create(actor, RecipeInputSchema.parse(a)),
   );
@@ -1571,7 +1638,7 @@ function buildServer(studio: Studio): McpServer {
   );
   tool(
     'recipe_run',
-    'Run a recipe on a project with its parameters: a recipe.run job that runs the steps in order (job_wait for the outcome of every step).',
+    'Run a recipe on a project with its parameters: a recipe.run job that runs the steps in order on that project alone (job_wait for the outcome of every step).',
     { projectId: PROJECT, recipeId: z.string(), params: z.record(z.string(), z.unknown()).optional() },
     (a, actor) => studio.recipes.run(actor, a.projectId, a.recipeId, a.params ?? {}),
   );
@@ -1699,6 +1766,7 @@ function buildServer(studio: Studio): McpServer {
 
   // Prompts for common jobs, filled with the project's material (docs/design/agents.md#prompts)
   const readable = async (projectId: string) => {
+    checkProjectId(projectId);
     await studio.deps.accounts.authorize(
       currentPrincipal() ?? studio.deps.accounts.studioPrincipal(),
       projectId,
@@ -1887,9 +1955,6 @@ interface Session {
 }
 
 const ownerOf = (p: Principal | null) => (p ? `${p.kind}:${p.token?.id ?? p.user.id}` : 'anonymous');
-
-/** A tool result that is a picture: `{ [MCP_IMAGE]: { data, mimeType } }` becomes MCP image content. */
-const MCP_IMAGE = '$image';
 
 /** Tools that need more than reading (read-only tools) or editing (the rest). */
 const TOOL_PERMISSIONS: Record<string, Permission> = {

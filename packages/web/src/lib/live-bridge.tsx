@@ -10,7 +10,7 @@ import { serveStorage, setWorkspaceEnabled, workspaceEnabled, workspaceId } from
 import { useWorkspaceStatus } from '../workspace/status';
 import { useConfigStore } from './config';
 import { LiveClient } from './live';
-import { handleUiCommand } from './ui-commands';
+import { handleAgentUi, shownProject } from './ui-commands';
 
 let client: LiveClient | null = null;
 
@@ -57,15 +57,15 @@ export function LiveBridge() {
         if (store.projectId === projectId)
           void store.load(projectId).then((s) => c.resetSeq(projectId, s.seq));
       },
-      onUi: (cmd) => handleUiCommand(cmd, (to) => nav.current.navigate(to), nav.current.path),
+      onUi: (cmd) => handleAgentUi(cmd, () => nav.current),
       onNotification: (n) => {
         useNotifications.getState().push(n);
         useUi.getState().toast(n.title, 'info');
       },
-      onStatus: (s) => {
-        useUi.getState().setLive(s);
-        if (s === 'live') void editorWorker.poke();
-      },
+      onStatus: (s) => useUi.getState().setLive(s),
+      // The server follows the project for this tab's session now (after every (re)connect): the tab may claim its
+      // editor jobs, never before (docs/design/editor.md#editor-jobs).
+      onSubscribed: () => void editorWorker.poke(),
       // Browser storage (docs/design/browser-storage.md): this tab serves its browser's projects.
       workspace: () => (workspaceEnabled() ? workspaceId() : null),
       onStorage: (request) => void serveStorage(request, (msg) => c.send(msg)),
@@ -73,7 +73,7 @@ export function LiveBridge() {
       onJobHeartbeat: (reply) => editorWorker.liveReply(reply),
     });
     client = c;
-    editorWorker.setSession(() => c.sessionId);
+    editorWorker.setSession((projectId) => (c.follows(projectId) ? c.sessionId : null));
     editorWorker.setLive((jobId, progress) => c.jobHeartbeat(jobId, progress));
     c.connect();
     // The config says where projects live: in this browser, the tab attaches its workspace.
@@ -111,7 +111,7 @@ export function LiveBridge() {
   const engine = useEngine();
   const busyJobId = engine.busy?.jobId ?? null;
   useEffect(() => {
-    const projectId = /^\/p\/(prj_[0-9a-z]+)/.exec(location.pathname)?.[1] ?? null;
+    const projectId = shownProject(location.pathname);
     const sel = useProject.getState().highlight;
     client?.setPresence({
       projectId,

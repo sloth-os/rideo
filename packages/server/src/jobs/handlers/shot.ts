@@ -45,7 +45,6 @@ import { sampleFrames } from '../../media/frames';
 import { sceneChanges } from '../../media/temporal';
 import { throwIfAborted } from '../../util/abort';
 import type { JobContext } from '../queue';
-import { cameraView, withCameraView } from './blocking';
 import { commitAs, docsFor, gatewayOptions, type HandlerDeps } from './common';
 import { lipSyncPass, prepareDialogue, takeAudio, takeAudioWav } from './dialogue';
 import {
@@ -54,6 +53,7 @@ import {
   prepareShotReferences,
   reconcileShot,
   stagingFor,
+  withSceneReference,
 } from './keyframe';
 import { type PreparedPerformance, preparePerformance, withPerformanceSound } from './performance';
 import { commitTake, finishTake } from './take-finish';
@@ -190,14 +190,10 @@ export async function shotGenerate(deps: HandlerDeps, ctx: JobContext) {
           }
         : null;
       const maxImages = imageLimits.limits?.max_input_images;
-      // One more image for the keyframe, when the image model takes at least three and there is room; and the shot's
-      // camera view on the desk before it (docs/design/director-desk.md)
+      // One more image for the keyframe, when the image model takes at least three and there is room
       const withScene =
         !!sceneRef && (maxImages === undefined || (maxImages >= 3 && referenceUris.length < maxImages));
-      const keyframeRefs = withCameraView(refs, cameraView(docs, clip, shot), {
-        maxImages,
-        sceneReferenceUri: withScene ? sceneRef!.uri : null,
-      });
+      const keyframeRefs = withSceneReference(refs, withScene ? sceneRef!.uri : null);
       const qualityChecks = settings.consistency.qualityChecks === true;
       // Who must not be in the frames: the clip's cast who are not in this shot
       const absent = absentCast(shotCtx.offscreen, docs.characters);
@@ -255,7 +251,6 @@ export async function shotGenerate(deps: HandlerDeps, ctx: JobContext) {
           shotCtx: {
             ...shotCtx,
             sceneReference: keyframeRefs.sceneReference,
-            blockingImage: keyframeRefs.blockingImage,
           },
           refs: keyframeRefs.refs,
           judge,

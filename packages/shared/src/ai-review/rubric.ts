@@ -89,10 +89,6 @@ export const REVIEW_RUBRICS = {
         id: 'pacing',
         ask: `each shot's length fits its action and its lines (about two words a second, plus a beat).`,
       },
-      {
-        id: 'blocking',
-        ask: `only when shots have "blocking": the scene is blocked in 3D and each such frame is followed by its camera view ("Blocking <label>:", coloured mannequins for the cast, as its "blocking" line says). Does each frame keep its camera view's angle and framing, who stands where and faces which way, and the light's side? Leave it out when no shot has one. "blockingIssues" lists what the blocking itself breaks.`,
-      },
     ],
   },
   cast: {

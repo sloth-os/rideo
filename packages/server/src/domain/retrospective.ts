@@ -1,4 +1,5 @@
 import {
+  byCount,
   FEEDBACK_DIMENSIONS,
   type FeedbackDimension,
   type FeedbackRetake,
@@ -8,6 +9,7 @@ import {
   type Job,
   type ProjectDocs,
   type ProjectUsage,
+  plural,
   type RetrospectiveArea,
   type RetrospectiveItem,
 } from '@rideo/shared';
@@ -106,7 +108,7 @@ export const RETROSPECTIVE_RULES: Rule[] = [
       const name = worst ? f.docs.characters[worst[0]]?.name : undefined;
       return {
         title: `Only ${percent(share)} of the shots passed the identity check on the first try`,
-        detail: `${first.length} of ${takes.length} takes in the cut passed at once; every retry is another paid generation.${name ? ` ${name} failed most (${worst![1]} times): approve a clearer front reference or simplify their identity.` : ''}`,
+        detail: `${first.length} of ${plural(takes.length, 'take')} in the cut passed at once; every retry is another paid generation.${name ? ` ${name} failed most (${plural(worst![1], 'time')}): approve a clearer front reference or simplify their identity.` : ''}`,
       };
     },
   },
@@ -116,59 +118,61 @@ export const RETROSPECTIVE_RULES: Rule[] = [
     check: (f) => {
       const t = f.usage.totals;
       if (t.videoSeconds <= 0 || t.discardedVideoSeconds / t.videoSeconds <= 0.2) return null;
+      const discarded = Math.round(t.discardedVideoSeconds);
       return {
         title: `${percent(t.discardedVideoSeconds / t.videoSeconds)} of the generated video was thrown away`,
-        detail: `${Math.round(t.discardedVideoSeconds)} of ${Math.round(t.videoSeconds)} seconds were attempts the gate discarded${t.discardedCostUsd ? ` (about $${t.discardedCostUsd.toFixed(2)})` : ''}. Clearer references and the storyboard stage catch problems before video is paid for.`,
+        detail: `${discarded} of ${plural(Math.round(t.videoSeconds), 'second')} ${byCount(discarded, 'was an attempt', 'were attempts')} the gate discarded${t.discardedCostUsd ? ` (about $${t.discardedCostUsd.toFixed(2)})` : ''}. Clearer references and the storyboard stage catch problems before video is paid for.`,
       };
     },
   },
   {
     id: 'unverified_takes',
     area: 'reliability',
-    check: (f) =>
-      f.signals.takes.unverified
-        ? {
-            title: `${f.signals.takes.unverified} takes in the cut were never verified`,
-            detail:
-              'The vision judge was unavailable when they were made. Check the vision provider, then re-check those takes instead of overriding them one by one.',
-          }
-        : null,
+    check: (f) => {
+      const n = f.signals.takes.unverified;
+      if (!n) return null;
+      return {
+        title: `${plural(n, 'take')} in the cut ${byCount(n, 'was', 'were')} never verified`,
+        detail: `The vision judge was unavailable when ${byCount(n, 'it was', 'they were')} made. Check the vision provider, then re-check ${byCount(n, 'that take instead of overriding it', 'those takes instead of overriding them one by one')}.`,
+      };
+    },
   },
   {
     id: 'overridden_takes',
     area: 'quality',
-    check: (f) =>
-      f.signals.takes.overridden
-        ? {
-            title: `${f.signals.takes.overridden} takes in the cut were overridden`,
-            detail:
-              'A person accepted them without a passing check: look at them first when the film looks wrong.',
-          }
-        : null,
+    check: (f) => {
+      const n = f.signals.takes.overridden;
+      if (!n) return null;
+      const them = byCount(n, 'it', 'them');
+      return {
+        title: `${plural(n, 'take')} in the cut ${byCount(n, 'was', 'were')} overridden`,
+        detail: `A person accepted ${them} without a passing check: look at ${them} first when the film looks wrong.`,
+      };
+    },
   },
   {
     id: 'quality_failures',
     area: 'quality',
-    check: (f) =>
-      f.signals.takes.qualityFailed
-        ? {
-            title: `${f.signals.takes.qualityFailed} takes in the cut failed the temporal or physics check`,
-            detail:
-              'They were kept because no attempt did better. Regenerate them with a revised action (the feedback recommends how).',
-          }
-        : null,
+    check: (f) => {
+      const n = f.signals.takes.qualityFailed;
+      if (!n) return null;
+      return {
+        title: `${plural(n, 'take')} in the cut failed the temporal or physics check`,
+        detail: `${byCount(n, 'It was', 'They were')} kept because no attempt did better. Regenerate ${byCount(n, 'it', 'them')} with a revised action (the feedback recommends how).`,
+      };
+    },
   },
   {
     id: 'llm_retries',
     area: 'reliability',
-    check: (f) =>
-      f.usage.totals.llmRetries
-        ? {
-            title: `${f.usage.totals.llmRetries} language or vision calls were turned away for load`,
-            detail:
-              'The provider answered 429 or 5xx and the calls were made again. A second provider, or fewer parallel jobs in the llm lane, keeps writing and judging moving.',
-          }
-        : null,
+    check: (f) => {
+      const n = f.usage.totals.llmRetries;
+      if (!n) return null;
+      return {
+        title: `${plural(n, 'language or vision call')} ${byCount(n, 'was', 'were')} turned away for load`,
+        detail: `The provider answered 429 or 5xx and ${byCount(n, 'the call was', 'the calls were')} made again. A second provider, or fewer parallel jobs in the llm lane, keeps writing and judging moving.`,
+      };
+    },
   },
   {
     id: 'queue_wait',
@@ -178,7 +182,7 @@ export const RETROSPECTIVE_RULES: Rule[] = [
       if (!k || k.jobs < 5 || k.waitSeconds <= k.runSeconds) return null;
       return {
         title: 'Shots waited longer in the queue than they ran',
-        detail: `${Math.round(k.waitSeconds / 60)} minutes waiting against ${Math.round(k.runSeconds / 60)} minutes running: raise the video lane (RIDEO_LANES video=…) if the gateway and provider allow more at once.`,
+        detail: `${plural(Math.round(k.waitSeconds / 60), 'minute')} waiting against ${plural(Math.round(k.runSeconds / 60), 'minute')} running: raise the video lane (RIDEO_LANES video=…) if the gateway and provider allow more at once.`,
       };
     },
   },
@@ -195,7 +199,7 @@ export const RETROSPECTIVE_RULES: Rule[] = [
       );
       if (p90 === null || p90 <= 600) return null;
       return {
-        title: `The slowest tenth of shots took over ${Math.round(p90 / 60)} minutes`,
+        title: `The slowest tenth of shots took over ${plural(Math.round(p90 / 60), 'minute')}`,
         detail:
           'Look at rideo_shot_step_seconds and rideo_take_attempts: retries, a slow video model or a slow judge each show there.',
       };
@@ -211,7 +215,7 @@ export const RETROSPECTIVE_RULES: Rule[] = [
       for (const j of failed) byKind.set(j.kind, [...(byKind.get(j.kind) ?? []), j]);
       const top = [...byKind.entries()].sort((a, b) => b[1].length - a[1].length).slice(0, 3);
       return {
-        title: `${failed.length} jobs failed`,
+        title: `${plural(failed.length, 'job')} failed`,
         detail: top
           .map(([kind, jobs]) => {
             const codes = new Map<string, number>();
@@ -267,14 +271,14 @@ export const RETROSPECTIVE_RULES: Rule[] = [
   {
     id: 'unexpected_cuts',
     area: 'quality',
-    check: (f) =>
-      f.signals.unexpectedCuts.length
-        ? {
-            title: `${f.signals.unexpectedCuts.length} shots jump inside the shot`,
-            detail:
-              'Stray cuts, pops or morphs the model made. The quality checks retry such takes; regenerate the ones in this cut.',
-          }
-        : null,
+    check: (f) => {
+      const n = f.signals.unexpectedCuts.length;
+      if (!n) return null;
+      return {
+        title: `${plural(n, 'shot')} ${byCount(n, 'jumps', 'jump')} inside the shot`,
+        detail: `Stray cuts, pops or morphs the model made. The quality checks retry such takes; regenerate ${byCount(n, 'the one', 'the ones')} in this cut.`,
+      };
+    },
   },
   {
     id: 'framing_runs',
@@ -282,7 +286,7 @@ export const RETROSPECTIVE_RULES: Rule[] = [
     check: (f) =>
       f.signals.framingRuns.length
         ? {
-            title: `${f.signals.framingRuns.length} runs of more than three shots with the same framing`,
+            title: `${plural(f.signals.framingRuns.length, 'run')} of more than three shots with the same framing`,
             detail: 'Vary coverage: establish wide, move closer for emotion, cut to inserts and reactions.',
           }
         : null,
@@ -290,14 +294,14 @@ export const RETROSPECTIVE_RULES: Rule[] = [
   {
     id: 'rushed_lines',
     area: 'quality',
-    check: (f) =>
-      f.signals.rushedLines.length
-        ? {
-            title: `${f.signals.rushedLines.length} lines are too long for their shots`,
-            detail:
-              'They are spoken too fast or cut off. Prompt version 2 fits lines to shots when planning; shorten or split these.',
-          }
-        : null,
+    check: (f) => {
+      const n = f.signals.rushedLines.length;
+      if (!n) return null;
+      return {
+        title: `${plural(n, 'line')} ${byCount(n, 'is too long for its shot', 'are too long for their shots')}`,
+        detail: `${byCount(n, 'It is', 'They are')} spoken too fast or cut off. Prompt version 2 fits lines to shots when planning; shorten or split ${byCount(n, 'it', 'these')}.`,
+      };
+    },
   },
   {
     id: 'undelivered_lines',
@@ -305,10 +309,10 @@ export const RETROSPECTIVE_RULES: Rule[] = [
     check: (f) => {
       const d = f.signals.dialogue;
       if (!d?.missing.length) return null;
+      const shots = new Set(d.missing.map((m) => m.shotId)).size;
       return {
-        title: `${d.missing.length} of ${d.lines} lines are not heard in the film`,
-        detail:
-          'The video model did not voice them clearly. Apply the recommendations to generate those shots again, and turn the quality checks on with an audio-visual model so the sound check catches them while generating.',
+        title: `${d.missing.length} of ${plural(d.lines, 'line')} ${byCount(d.missing.length, 'is', 'are')} not heard in the film`,
+        detail: `The video model did not voice ${byCount(d.missing.length, 'it', 'them')} clearly. Apply the recommendations to generate ${byCount(shots, 'that shot', 'those shots')} again, and turn the quality checks on with an audio-visual model so the sound check catches such lines while generating.`,
       };
     },
   },
@@ -325,7 +329,7 @@ export const RETROSPECTIVE_RULES: Rule[] = [
           .map((r) => r.shot)
           .join(', ')}${rs.length > 8 ? '…' : ''}`;
       return {
-        title: `${retakes.length} shot(s) have a new take since the last feedback: ${better.length} better, ${same.length} the same, ${worse.length} worse`,
+        title: `${plural(retakes.length, 'shot')} ${byCount(retakes.length, 'has', 'have')} a new take since the last feedback: ${better.length} better, ${same.length} the same, ${worse.length} worse`,
         detail:
           worse.length || same.length
             ? `${worse.length ? `Worse now: ${names(worse)}. ` : ''}${same.length ? `No better: ${names(same)}. ` : ''}A shot that fails the same way twice needs a new plan (re-plan the scene, or describe what goes wrong in the shot's negative prompt), not another attempt.`

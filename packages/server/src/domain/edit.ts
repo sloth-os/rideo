@@ -28,6 +28,7 @@ import {
   newId,
   type Project,
   type ProjectDocs,
+  plural,
   type RenderEngineChoice,
   type Resource,
   reframeTimeline,
@@ -262,7 +263,7 @@ export class EditService extends Service {
         return a;
       },
       {
-        message: `Review ${decisions.length} edit suggestion(s)`,
+        message: `Review ${plural(decisions.length, 'edit suggestion')}`,
         coalesce: { key: `suggestions:${analysisId}` },
       },
     );

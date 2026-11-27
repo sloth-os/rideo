@@ -36,6 +36,8 @@ const STATUS: Record<ErrorCode, number> = {
   setting_locked: 409,
   gateway_not_configured: 409,
   storage_offline: 503,
+  desk_state_conflict: 412,
+  library_conflict: 412,
   internal_error: 500,
 };
 
@@ -67,6 +69,13 @@ export const notFound = (what: string) => new AppError('not_found', `${what} not
 export const conflict = (message: string) => new AppError('conflict', message);
 export const invalid = (message: string, errors: unknown[] = []) =>
   new AppError('validation_error', message, errors);
+
+/** A body over a size limit: `validation_error`, answered with 413 (docs/design/director-desk.md#surfaces). */
+export function tooLarge(message: string): AppError {
+  const err = new AppError('validation_error', message);
+  (err as { status: number }).status = 413;
+  return err;
+}
 
 /** Normalizes any thrown value into an AppError. */
 export function toAppError(err: unknown): AppError {

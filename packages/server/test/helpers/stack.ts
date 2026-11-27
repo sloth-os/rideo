@@ -155,9 +155,8 @@ export async function readyStoryProject(
   /** The reference views drawn for every character (a front view by default). */
   opts: { views?: string[] } = {},
 ) {
-  const { review, blocking, storyboard, consistency, ...rest } = settings as {
+  const { review, storyboard, consistency, ...rest } = settings as {
     review?: object;
-    blocking?: object;
     storyboard?: object;
     consistency?: object;
   };
@@ -169,10 +168,9 @@ export async function readyStoryProject(
       targetDurationSec: 30,
       pilotDurationSec: 10,
       resolution: { width: 320, height: 180 },
-      // The AI reviews, the director's desk and the sheets have tests of their own (test/integration/ai-review.test.ts,
-      // clip-review.test.ts, autopilot.test.ts, director-desk.test.ts, storyboard.test.ts#scene-sheets, first-pass.test.ts)
+      // The AI reviews and the sheets have tests of their own (test/integration/ai-review.test.ts, clip-review.test.ts,
+      // autopilot.test.ts, storyboard.test.ts#scene-sheets, first-pass.test.ts)
       review: { ...NO_REVIEWS, ...review },
-      blocking: { enabled: false, ...blocking },
       storyboard: { production: false, ...storyboard },
       consistency: { turnaround: false, ...consistency },
       ...rest,

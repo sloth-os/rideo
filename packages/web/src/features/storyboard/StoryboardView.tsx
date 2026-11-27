@@ -1,12 +1,12 @@
 import {
   type BoardState,
-  blockingState,
   boardApprovable,
   boardState,
   type Clip,
   clipBoardReviewState,
   formatDuration,
   isTerminalJob,
+  plural,
   type Shot,
   sortedClips,
   storyboardClips,
@@ -17,7 +17,7 @@ import {
 import {
   ArrowLeft,
   ArrowRight,
-  Camera,
+  Box,
   Check,
   Clapperboard,
   Download,
@@ -28,7 +28,7 @@ import {
   Sparkles,
   X,
 } from 'lucide-react';
-import { lazy, Suspense, useState } from 'react';
+import { lazy, Suspense, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { Entity } from '../../components/Entity';
 import { JobRow } from '../../components/JobProgress';
@@ -45,14 +45,15 @@ import {
   Spinner,
 } from '../../components/ui';
 import { api, shotListUrl } from '../../lib/api';
+import { useConfig } from '../../lib/config';
 import { useProject } from '../../store/project';
 import { reportError, useUi } from '../../store/ui';
 import { AiReviewPanel, ReviewCard } from '../ai-review/AiReviewPanel';
+import { DeskPanel } from '../desk/DeskPanel';
+import { DeskUnitBadge } from '../desk/DeskUnitBadge';
 
 // The player pulls in mediabunny (WebCodecs); load it only when an animatic exists.
 const AnimaticPlayer = lazy(() => import('./AnimaticPlayer').then((m) => ({ default: m.AnimaticPlayer })));
-// The director's desk (docs/design/director-desk.md#the-desk) loads when a scene opens it.
-const DirectorDesk = lazy(() => import('./DirectorDesk').then((m) => ({ default: m.DirectorDesk })));
 
 const STATE_TONE: Record<BoardState, 'success' | 'warning' | 'danger' | 'info' | 'neutral'> = {
   approved: 'success',
@@ -215,7 +216,7 @@ function AnimaticPanel() {
           </h3>
           <p className="text-[12px] text-muted">
             {animatic
-              ? `${frames} frames · ${formatDuration(timelineDuration(animatic))} with dialogue and captions`
+              ? `${plural(frames, 'frame')} · ${formatDuration(timelineDuration(animatic))} with dialogue and captions`
               : 'The frames with their dialogue, temp music and captions, played and exported in this browser.'}
           </p>
         </div>
@@ -330,7 +331,7 @@ function BoardReviewCard({ clip }: { clip: Clip }) {
   );
 }
 
-/** A scene's row: its frames, its desk, and for a production scene its review. */
+/** A scene's row: its frames, and for a production scene its review. */
 function SceneRow({
   clip,
   title,
@@ -342,49 +343,48 @@ function SceneRow({
   duration: number;
   production?: boolean;
 }) {
-  const { docs } = useProject();
-  const [desk, setDesk] = useState(false);
   const shots = clip ? [...clip.shots].sort((a, b) => a.index - b.index) : [];
-  const blocked = clip
-    ? blockingState(
-        clip.blocking,
-        shots.map((s) => ({ id: s.id, index: s.index, characterIds: s.characterIds, camera: s.camera })),
-      )
-    : 'missing';
+  // The 3D-Editor's desk on the scene, when the studio has one (docs/design/director-desk.md#the-desk)
+  const desk = !!useConfig()?.features.desk && !!clip?.shots.length;
+  const [deskOpen, setDeskOpen] = useState(false);
+  const section = useRef<HTMLElement>(null);
   return (
-    <section className="space-y-2" data-testid={production ? 'production-scene' : 'storyboard-scene'}>
+    <section
+      ref={section}
+      className="space-y-2"
+      data-testid={production ? 'production-scene' : 'storyboard-scene'}
+    >
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h3 className="text-[13px] font-semibold">
-          {title}
-          <span className="ml-2 font-normal text-muted">{formatDuration(duration)}</span>
-          {clip && docs?.project.settings.blocking?.enabled ? (
-            <Badge tone={blocked === 'ready' ? 'success' : 'neutral'} className="ml-2">
-              {blocked === 'ready'
-                ? 'blocked'
-                : blocked === 'incomplete'
-                  ? 'blocking incomplete'
-                  : 'not blocked'}
-            </Badge>
-          ) : null}
-        </h3>
-        {clip?.shots.length ? (
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <h3 className="min-w-0 text-[13px] font-semibold">
+            {title}
+            <span className="ml-2 font-normal text-muted">{formatDuration(duration)}</span>
+          </h3>
+          {/* the scene's library units against its stored desk state (docs/design/director-desk.md#drift-the-storyboard-badge) */}
+          {desk && clip ? <DeskUnitBadge clipId={clip.id} /> : null}
+        </div>
+        {desk ? (
           <Button
             size="sm"
-            icon={<Camera className="size-3.5" />}
-            onClick={() => setDesk((v) => !v)}
-            aria-expanded={desk}
+            icon={<Box className="size-4" />}
+            onClick={() => setDeskOpen(true)}
             data-testid="open-desk"
+            title={clip?.status === 'approved' ? 'Opens read-only: the clip is approved' : undefined}
           >
-            Director's desk
+            Director’s desk
           </Button>
         ) : null}
       </div>
-      {production && clip ? <BoardReviewCard clip={clip} /> : null}
-      {clip && desk ? (
-        <Suspense fallback={<Spinner className="size-5" />}>
-          <DirectorDesk clip={clip} onClose={() => setDesk(false)} />
-        </Suspense>
+      {deskOpen && clip ? (
+        <DeskPanel
+          clip={clip}
+          onClose={() => {
+            setDeskOpen(false);
+            section.current?.querySelector<HTMLButtonElement>('[data-testid="open-desk"]')?.focus();
+          }}
+        />
       ) : null}
+      {production && clip ? <BoardReviewCard clip={clip} /> : null}
       {clip ? (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {shots.map((shot) => (
@@ -398,10 +398,15 @@ function SceneRow({
   );
 }
 
+/** The scenes the storyboard draws, by their count: none yet before the screenplay has scenes (docs/brand.md#voice). */
+function firstScenes(count: number): string {
+  if (count === 0) return 'The first scenes of the screenplay';
+  return count === 1 ? 'The first scene' : `The first ${plural(count, 'scene')}`;
+}
+
 /**
  * The storyboard stage (docs/design/storyboard.md): the frames of the first scenes as a grid to review, reorder,
- * redraw and approve, each scene's director's desk, the production scenes with their reviews, the animatic, and the
- * shot list downloads.
+ * redraw and approve, the production scenes with their reviews, the animatic, and the shot list downloads.
  */
 export function StoryboardView() {
   const { docs, projectId, workflow, jobs } = useProject();
@@ -424,7 +429,7 @@ export function StoryboardView() {
         title="Storyboard"
         subtitle={
           enabled
-            ? `The first ${scenes.length} scene(s): approve a frame per shot before any video is generated. Approved frames start the video pass.`
+            ? `${firstScenes(scenes.length)}: approve a frame per shot before any video is generated. Approved frames start the video pass.`
             : 'The storyboard is off for this project (Overview → Settings).'
         }
         actions={
@@ -461,7 +466,7 @@ export function StoryboardView() {
               onClick={() =>
                 api
                   .approveAllBoards(projectId)
-                  .then((r) => useUi.getState().toast(`${r.approved} frame(s) approved`, 'success'))
+                  .then((r) => useUi.getState().toast(`${plural(r.approved, 'frame')} approved`, 'success'))
                   .catch(reportError)
               }
               data-testid="approve-all-boards"
@@ -494,7 +499,7 @@ export function StoryboardView() {
       {enabled ? <AiReviewPanel stage="storyboard" /> : null}
       {enabled ? (
         <p className="text-[13px] text-muted" data-testid="storyboard-progress">
-          {progress.approved} of {progress.shots} frames approved
+          {progress.approved} of {plural(progress.shots, 'frame')} approved
           {progress.states.failed ? ` · ${progress.states.failed} failed` : ''}
           {progress.states.stale + progress.states.outdated
             ? ` · ${progress.states.stale + progress.states.outdated} to redraw`
@@ -519,8 +524,8 @@ export function StoryboardView() {
         <div className="space-y-4" data-testid="production-scenes">
           <h3 className="text-[14px] font-semibold">Production scenes</h3>
           <p className="text-[12px] text-muted">
-            Each scene is blocked, drawn and reviewed before any of its video: the batch goes on when its
-            review passes.
+            Each scene is drawn and reviewed before any of its video: the batch goes on when its review
+            passes.
           </p>
           {production.map((clip) => (
             <SceneRow

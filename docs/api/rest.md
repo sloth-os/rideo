@@ -9,7 +9,8 @@ token. Every route except `/api/health`, `/api/ready`, `/api/auth/*`, the guest 
 detection tool) needs one (401). Project routes also need a permission of the caller's role in the
 project (`project.read` for reads, `project.edit` for writes, `project.approve` for approvals, `project.manage` for
 settings, access and branches; `project.comment` for review comments and decisions): 403 `forbidden` otherwise, and
-the project list only shows readable projects.
+the project list only shows readable projects. A project route whose `:id` is not a project id (`prj_…`) answers 422
+`validation_error` to every caller, before any permission is asked.
 
 Errors are RFC 9457 problem details (`application/problem+json`) with a stable `code`:
 
@@ -41,6 +42,8 @@ Errors are RFC 9457 problem details (`application/problem+json`) with a stable `
 | `gateway_error` | 502 | mm-gateway returned an error |
 | `llm_invalid_output` | 502 | the LLM output failed validation after repair |
 | `storage_error` | 503 | the WebDAV backend failed |
+| `desk_state_conflict` | 412 | a desk state `PUT` whose `If-Match` or `If-None-Match` does not name the stored state ([the desk state](../design/director-desk.md#when-rideo-stores-it)) |
+| `library_conflict` | 412 | a library item's `If-Match` that is not its revision, or a new version whose `basedOn` is not the item's latest (`errors: [{latest}]`) ([the library](../design/library.md#versions-and-revisions)) |
 | `lease_lost` | 409 | an editor job is no longer leased to this session (expired, cancelled or reassigned) |
 | `consent_required` | 422 | an uploaded reference or voice sample of a real person lacks its consent record ([provenance](../design/provenance.md#consent-records)) |
 | `unauthorized` | 401 | not signed in, or a missing, wrong, revoked or expired token |
@@ -123,10 +126,32 @@ See [browser storage](../design/browser-storage.md#the-protocol).
 | PATCH | `/api/brand-kits/:id` | the same, partial | the kit (its author or an admin) |
 | DELETE | `/api/brand-kits/:id` | – | `204`, with its files |
 | PUT | `/api/brand-kits/:id/files/:slot` | multipart `file`; `slot`: `title_font`, `body_font`, `logo`, `intro`, `outro` | the kit; `422` for a file that is not a font (signature), an image or a video (probe), or a bumper over 30 s |
-| GET | `/api/brand-kits/:id/files/:file` | – | the file |
+| GET | `/api/brand-kits/:id/files/:file` | – | the file, with `X-Content-Type-Options: nosniff` and `Content-Security-Policy: default-src 'none'; sandbox` (a file opened as a page runs nothing) |
 | PUT | `/api/projects/:id/brand` | `{kitId \| null}` | `{brand}`: the kit applied (its files copied into the project's media), or removed (`project.manage`) |
 
 Exports take `bug` (`POST /exports`, default: the brand's `bug.enabled`) to draw the brand bug.
+
+## Library
+
+[The studio library](../design/library.md): characters, elements, resources and 3D units shared by the studio's
+projects, in versions. Reading needs any authenticated caller; publishing (creating items, adding versions, saving
+from a project) a signed-in person, the studio token or an unscoped editor token; changing an item its owner or an
+admin.
+
+| Method | Path | Body / query | Result |
+|---|---|---|---|
+| GET | `/api/library/items` | `kinds?` (comma-separated: `character`, `element`, `resource`, `desk-set`, `desk-prop`, `desk-figure`), `kind?`, `tag?`, `q?`, `archived?` (`true`/`false`, default `false`; `true` lists archived items too), `sort?` (`updated`, `name`), `limit?` (1–200, default 100), `cursor?` | `{items, next}`: summaries (no history; `versions`, and for 3D units the current version's `unit: {sha256, bytes, format, formatVersion, actorKind, heightM, dimensionsM?}`) |
+| POST | `/api/library/items` | multipart: `meta` (JSON, first: `{kind, name, description?, tags?, note?, unit?: {format, formatVersion, meta}, resource?: {kind, role, name, notes?, probe?}}`), `payload`, `thumbnail?` (PNG, ≤ 64 KiB, ≤ 256 px) | `201 {item, version, unchanged: false}` with `ETag: "r<rev>"` (3D units and resources; `403` before the parts are read for a caller who may not publish; `413` for a part over its limit: a unit over 32 MiB, a thumbnail over 64 KiB, `meta` over 32 KiB; `422` for parts out of order, bad `meta`, a unit file that is not one or not of the item's kind, an image resource whose bytes are not a PNG, JPEG, WebP, GIF, BMP or TIFF, a video or an audio resource whose part type is not one type of its kind once its parameters are dropped (a list such as `video/mp4, text/html`, another kind's type; `reason: payload`), a thumbnail that is not a PNG of at most 256 px); a video or an audio resource is kept under its type without parameters |
+| GET | `/api/library/items/:itemId` | – | the item with its history, `ETag: "r<rev>"` |
+| PATCH | `/api/library/items/:itemId` | `{name?, description?, tags?, current?, archived?}`, `If-Match?` | the item with its new `ETag` (its owner or an admin); `412 library_conflict` with the current `ETag` |
+| POST | `/api/library/items/:itemId/versions` | multipart as above, `meta.basedOn?`; `If-Match?` | `201 {item, version}`, or `200 {item, version, unchanged: true}` for the current version's bytes; `403` (a caller who may not publish) and `404` (no such item) before the parts are read; `412 library_conflict` (a stale `If-Match`: `errors: [{rev, latest}]` and the current `ETag`; `basedOn` not the latest: `errors: [{latest}]`) |
+| GET | `/api/library/items/:itemId/versions/:version` | – | the version's manifest (`ETag` its digest) |
+| GET | `/api/library/items/:itemId/versions/:version/files/:sha256` | `Range`, `If-None-Match` | the file (`206` for a range, `416` past its end, `304`; `HEAD` answers the headers), `ETag` its sha256, `Cache-Control: private, max-age=31536000, immutable`, `X-Content-Type-Options: nosniff`, `Content-Security-Policy: default-src 'none'; sandbox`; `404` when the version names no such file |
+| GET | `/api/library/items/:itemId/uses` | – | `{incomplete, projects: [{projectId, title, role, uses: [{itemId, version, via, entity?, clips?, approved?}]}]}`: the projects the caller may read that use it |
+| GET | `/api/projects/:id/library` | – | `{links, behind}`: the project's library links and 3D pins, each `current`, `behind`, `ahead` or `missing` |
+| POST | `/api/projects/:id/library/save` | `{entity: {kind, id}, itemId?, newItem?, name?, description?, tags?, note?, basedOn?, acknowledgeConsent?}` | `201` (`200` when unchanged) `{item, version, unchanged, commit}`: a new version of `itemId` or of the item the entity is linked to, a new item when it has no link or with `newItem: true` (which wins over `itemId`); `404` for an `itemId` that is not there; `consent_required` for a real person without `acknowledgeConsent`; `422` (`reason: payload`) for a resource the library would not take as an upload (an image that is not a raster picture, a video or an audio file without one type of its kind); an image is saved under the type of its bytes, and the project's resource takes that type in the same commit |
+| POST | `/api/projects/:id/library/apply` | `{itemId, version?, target?: {kind, id}, relock?, replacePin?, acknowledgeConsent?, dryRun?}` | `{plan, applied, entity, commit}`: Use in project, update, link or pin; `409 conflict` (`exists`, `name`, `pinned`; an archived item), `403` when the plan lists approved clips and the caller is no director, `consent_required` for a real person without `acknowledgeConsent`, `character_locked`, `element_locked`, `voice_locked`; `dryRun` answers the plan without asking for either |
+| POST | `/api/projects/:id/library/detach` | `{target: {kind, id}, what: "library" \| "deskUnit"}` | `{entity, commit}` |
 
 ## Agents
 
@@ -135,9 +160,9 @@ Exports take `bug` (`POST /exports`, default: the brand's `bug.enabled`) to draw
 | Method | Path | Body / query | Result |
 |---|---|---|---|
 | GET | `/api/recipes` | – | built-in and studio recipes |
-| POST | `/api/recipes` | `{name, description?, params?, steps}` | `201` the recipe (validated against the MCP tools) |
+| POST | `/api/recipes` | `{name, description?, params?, steps}` | `201` the recipe (validated against the MCP tools); `422` for a step that is `recipe_run`, a library tool but `library_status`, a tool that takes no `projectId`, or a step whose `projectId` is left out or written out rather than `{{projectId}}` (a recipe acts only on the project it runs in; one a parameter fills in is checked when it runs) |
 | DELETE | `/api/recipes/:id` | – | `204`; built-ins `403`, others' recipes `403` unless admin |
-| POST | `/api/projects/:id/recipes/:recipeId/run` | `{params}` | `202 Job` (`recipe.run`); the caller needs the strongest permission of its steps |
+| POST | `/api/projects/:id/recipes/:recipeId/run` | `{params}` | `202 Job` (`recipe.run`); the caller needs the strongest permission of its steps; `422` for a recipe saved before with a step recipes may not use, or a step whose `projectId`, with the parameters filled in, is not this project |
 | POST | `/api/projects/:id/clips/:clipId/variations` | `{shotIds?, count: 2–4}` | `202 Job[]` (`shot.generate`, one per new take) |
 | POST | `/api/projects/:id/voices/cast` | `{characterIds?, pick?, lock?}` | `202 Job` (`voices.cast`; `tts_unavailable` without TTS) |
 
@@ -175,7 +200,7 @@ documents, so they are also in `state`, history and live updates.
 | POST | `/api/projects/:id/reviews/:rid/decisions` | `{decision: "approve" \| "changes", note?}` | the review; an approved review for a gate approves the gate when it can (`project.comment`) |
 | DELETE | `/api/projects/:id/reviews/:rid/link` | – | the review, its link revoked (`project.approve`) |
 | GET | `/api/review/:token` | – | guests: `{projectId, project: {title}, review (without its link), items[{key, label, target, media}], comments}` |
-| GET | `/api/review/:token/media/*` | `Range` | guests: the review's videos and posters only |
+| GET | `/api/review/:token/media/*` | `Range` | guests: the review's videos and posters only (the same headers as project media) |
 | POST | `/api/review/:token/comments` | `{name, target, at?, annotation?, body}` | guests: `201` the thread, on what the review shows |
 | POST | `/api/review/:token/comments/:cid/replies` | `{name, body}` | guests: `201` the thread |
 | POST | `/api/review/:token/decisions` | `{name, decision, note?}` | guests: the review |
@@ -210,7 +235,7 @@ review does not show is `403 forbidden`.
 | POST | `/api/projects/import` | the project file (`application/octet-stream`), `?mode=new\|replace\|copy` | `201 {id, title, kind, mode, files, skipped}`; `409 conflict` when the project is already here and no mode says what to do |
 | POST | `/api/projects/:id/sync` | `{discardInvalid?}` | WebDAV sync report |
 | GET | `/api/projects/:id/docs/*path` | `?at=<commit>` | document |
-| GET | `/api/projects/:id/media/*path` | `Range` supported | bytes |
+| GET | `/api/projects/:id/media/*path` | `Range` supported | bytes, with `X-Content-Type-Options: nosniff` and `Content-Security-Policy: default-src 'none'; sandbox` (a file opened as a page runs nothing) |
 | POST | `/api/projects/:id/uploads` | multipart `file`, optional `poster` (JPEG) and `meta` JSON `{probe, kind?, role?, name?}` (`probe`: `ProbeSchema`, made by the browser) | `Resource`: `ready` with a probe; otherwise `processing` + a `media.process` editor job; a `.cube` file is a `lut` resource (`application/x-cube`, validated: `422` when it is not a 3D LUT) |
 | POST | `/api/projects/:id/resources` | `{uri, kind?, role?, name?}` | `Resource` (`processing` + `media.process` editor job for audio/video) |
 
@@ -273,14 +298,14 @@ review does not show is `403 forbidden`.
 | POST | `/api/projects/:id/clips/plan` | `{sceneId}` | `Job` |
 | POST | `/api/projects/:id/clips/:clipId/generate` | – | `Job` (`clip.generate`: `shot.generate` per shot, or `shot.group` for consecutive shots of a multi-shot model unless `settings.generation.multiShot` is `off`, [multi-shot](../design/multi-shot.md); then the scene review) |
 | POST | `/api/projects/:id/clips/:clipId/review` | `{fix?: boolean}` | `Job` (`clip.review`: the scene watched as one video and heard, and, unless `fix: false`, its priority 1 regenerations applied, [scenes before the edit](../design/ai-review.md#scenes-before-the-edit)); `422` when a shot has no take |
-| GET | `/api/projects/:id/clips/:clipId/blocking` | – | `{blocking, state, draft, issues, lines}`: the scene's 3D blocking, `missing` / `incomplete` / `ready`, the completed draft the desk edits, its issues and each shot's blocking line ([director's desk](../design/director-desk.md#surfaces)) |
-| PUT | `/api/projects/:id/clips/:clipId/blocking` | `{blocking, fix?}` (`fix`: keep the cameras of cuts on the line) | the same; `422` for a blocking that does not validate, `409` for an approved clip |
-| POST | `/api/projects/:id/clips/:clipId/blocking/generate` | – | `Job` (`scene.block`: the AI's floor plan, its cameras solved) |
-| GET | `/api/projects/:id/clips/:clipId/shots/:shotId/blocking.png` | `?width=160–1920` | the shot's camera view (PNG) |
-| POST | `/api/projects/:id/clips/:clipId/storyboard` | – | `Job` (`clip.storyboard`: a production scene blocked, drawn, reviewed and its frames approved, [production storyboards](../design/ai-review.md#production-storyboards)) |
+| GET | `/api/projects/:id/clips/:clipId/desk-brief` | – | the clip's `SceneBrief` for the 3D-Editor's desk ([the brief](../design/director-desk.md#the-brief)); `422` for a clip without shots |
+| GET | `/api/projects/:id/clips/:clipId/desk-state` | – | the desk state's bytes (`application/octet-stream`, headers `X-Desk-State-Format`, `X-Desk-State-Version`, `ETag`); `204` No Content when the clip names none (no body, no `ETag`, not cached), `404` only for a project or clip that is not there, `503` `storage_error` when it names one whose file cannot be read: retry, or, when the file is missing or failed its hash check and so may be gone for good, `DELETE` the state, after which the desk's next `open` uses its own copy or the brief ([the desk state](../design/director-desk.md#the-desk-state)) |
+| PUT | `/api/projects/:id/clips/:clipId/desk-state` | the bytes (`application/octet-stream`, at most 64 MiB) with `X-Desk-State-Format` and `X-Desk-State-Version`, and the state they replace: `If-Match: "<sha256>"` (its `ETag`) or `If-None-Match: *` (none stored); `X-Desk-State-Replace: 1` when the person chose to replace that state (the desk panel's Replace: a commit of its own that never amends the tip, so the history keeps the replaced state); `X-Desk-State-Units` (optional): the library units the state uses, `<slot>=<ref>@<version>:<staged>[:local][:<why>]` joined by `, ` or `-` for none, kept as `clip.deskState.units` (no header: not known; [what a stored state uses](../design/director-desk.md#what-a-stored-state-uses)) | `{deskState}` with the new state's `ETag`; the same bytes again change nothing, whatever the precondition; `412` `desk_state_conflict` when the stored state is not the one named (the answer's `ETag` is the stored state's, none when the clip names none; nothing is stored, and no file is kept unless another state was stored while the body arrived); without a precondition the bytes replace whatever is stored; `413` over 64 MiB (by `Content-Length` before the body is read, else counted as it arrives), `422` for missing or other format or version headers, an `X-Desk-State-Units` that does not parse (or over 128 rows or 8 KiB) and any other body type (never parsed: malformed JSON is a `422` too) |
+| DELETE | `/api/projects/:id/clips/:clipId/desk-state` | – | `204`: the clip names no desk state; the desk's next `open` gets none, so it restores its own copy in a browser that has one (the next stored state writes it back), else stages the brief |
+| POST | `/api/projects/:id/clips/:clipId/storyboard` | – | `Job` (`clip.storyboard`: a production scene's frames drawn, reviewed and approved, [production storyboards](../design/ai-review.md#production-storyboards)) |
 | POST | `/api/projects/:id/clips/:clipId/board-review/override` | `{note?}` | `Clip`: continue without passing the scene's storyboard review (an approval) |
 | POST | `/api/projects/:id/takes/watch` | `{takes?: [{clipId, shotId, takeId}]}` (the cut's takes when empty) | `Job` (`takes.watch`: takes watched whole from their videos, [takes watched whole](../design/ai-review.md#takes-watched-whole)) |
-| PATCH | `/api/projects/:id/clips/:clipId/shots/:shotId` | shot fields, including `camera.{lensMm, aperture, move}`, `startFrame`, `endFrame`, `motionReference` (`mode`: `motion`, `pose`, `camera` or `performance`), `seed` ([directing](../design/directing.md)) | `Clip` |
+| PATCH | `/api/projects/:id/clips/:clipId/shots/:shotId` | shot fields, including `camera.{framing, movement, lensMm, aperture, move}` (only the camera fields given change: the others keep their values, no defaults are filled in), `startFrame`, `endFrame`, `motionReference` (`mode`: `motion`, `pose`, `camera` or `performance`), `seed` ([directing](../design/directing.md)) | `Clip` |
 | GET | `/api/projects/:id/performance` | – | `{model, available}`: the model performance takes use ([performance](../design/performance.md)); a regenerate or variations of a performance shot without one: `422 performance_unavailable` |
 | POST | `/api/projects/:id/clips/:clipId/shots/:shotId/variations` | `{count: 2–4}` | `Job[]` (`shot.generate` with `variation`) |
 | POST | `/api/projects/:id/clips/:clipId/shots/:shotId/takes/:takeId/edit` | `{kind: "restyle" \| "relight" \| "replace" \| "angle" \| "remove", instruction}` | `Job` (`take.edit`, [take editing](../design/take-editing.md)) |
@@ -358,7 +383,7 @@ Browser tabs run editor jobs (`client` lane) with their editor engine; see
 
 | Method | Path | Body | Result |
 |---|---|---|---|
-| POST | `/api/editor/claim` | `{sessionId, projectId, kinds?[]}` | `{job}` (leased to the session) or `{job: null}` |
+| POST | `/api/editor/claim` | `{sessionId, projectId, kinds?[]}` | `{job}` (leased to the session) or `{job: null}`; `409 conflict` when the session does not follow the project (claim after its `subscribed` answer, [realtime sync](../design/realtime-sync.md#server--client)) |
 | GET | `/api/editor/jobs/:jobId` | – | `Job` (with `staged` file names, for resuming) |
 | POST | `/api/editor/jobs/:jobId/heartbeat` | `{sessionId, progress?: {done, total, message?}}` | `{cancelled, leaseExpiresAt}` or `lease_lost` |
 | PUT | `/api/editor/jobs/:jobId/files/:name` | raw bytes (`?sessionId=`) | `{name, size}` (staged; names `[a-z0-9._-]`) |

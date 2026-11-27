@@ -15,20 +15,34 @@ afterAll(async () => {
   await stack?.stop();
 });
 
-async function liveSession(projectId: string) {
+/**
+ * A tab's live session: like a tab, it follows the project before it claims (the server's `subscribed` answer to its
+ * `subscribe`, docs/design/editor.md#editor-jobs), unless `follow` is false.
+ */
+async function liveSession(projectId: string, { follow = true } = {}) {
   const ws = new WebSocket(`${stack.url.replace(/^http/, 'ws')}/api/live`);
   const received: any[] = [];
+  const waiting: ((msg: any) => void)[] = [];
   const sessionId = await new Promise<string>((ok) =>
     ws.addEventListener('message', (m) => {
       const msg = JSON.parse(String(m.data));
       received.push(msg);
+      for (const w of waiting) w(msg);
       if (msg.type === 'hello') ok(msg.sessionId);
     }),
   );
-  ws.send(JSON.stringify({ type: 'subscribe', projectId }));
-  await new Promise((r) => setTimeout(r, 50));
+  /** Subscribes and resolves with the server's answer to this subscribe. */
+  const subscribe = (ref: number) =>
+    new Promise<any>((ok) => {
+      waiting.push((msg) => {
+        if (msg.type === 'subscribed' && msg.ref === ref) ok(msg);
+      });
+      ws.send(JSON.stringify({ type: 'subscribe', projectId, ref }));
+    });
+  if (follow) await subscribe(1);
   return {
     sessionId,
+    subscribe,
     close: () => ws.close(),
     send: (msg: object) => ws.send(JSON.stringify(msg)),
     /** The answers to job heartbeats so far. */
@@ -92,6 +106,22 @@ describe('editor jobs over REST', () => {
       409,
       'conflict',
     );
+    // A live session that does not follow the project yet is refused; once the server answers its subscribe, its
+    // claim is taken (docs/design/editor.md#editor-jobs)
+    const s0 = await liveSession(p.id, { follow: false });
+    try {
+      await expectProblem(
+        stack.api('POST', '/editor/claim', { sessionId: s0.sessionId, projectId: p.id }),
+        409,
+        'conflict',
+      );
+      expect(await s0.subscribe(7)).toEqual({ type: 'subscribed', projectId: p.id, ref: 7 });
+      expect(await stack.api('POST', '/editor/claim', { sessionId: s0.sessionId, projectId: p.id })).toEqual({
+        job: null,
+      });
+    } finally {
+      s0.close();
+    }
     const s1 = await liveSession(p.id);
     const s2 = await liveSession(p.id);
     try {

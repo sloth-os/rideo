@@ -170,6 +170,16 @@ export class ProjectRegistry {
     return made;
   }
 
+  /**
+   * Completes a digest made before a field existed (the studio library's uses, docs/design/library.md#where-it-is-used)
+   * while it is still the one held: kept in memory and written with the next write.
+   */
+  completeDigest(projectId: string, made: ProjectDigest, fields: Pick<ProjectDigest, 'library'>): void {
+    if (this.digests.get(projectId) !== made) return;
+    this.digests.set(projectId, { ...made, ...fields });
+    this.scheduleDigestWrite(projectId);
+  }
+
   private async makeDigest(projectId: string): Promise<ProjectDigest> {
     const h = await this.existing(projectId);
     const branch = await h.repo.currentBranch();

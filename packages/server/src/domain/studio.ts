@@ -28,7 +28,6 @@ import { GatewayClient } from '../gateway/gateway-client';
 import { ProxyClient } from '../gateway/proxy-client';
 import { GatewayProxies } from '../gateway/proxy-sync';
 import { screenplayReview, screenplayRevise, storyboardReview } from '../jobs/handlers/ai-review';
-import { sceneBlock } from '../jobs/handlers/blocking';
 import { clipReview } from '../jobs/handlers/clip-review';
 import { batchGenerate, clipGenerate, clipPlan } from '../jobs/handlers/clips';
 import type { HandlerDeps } from '../jobs/handlers/common';
@@ -76,6 +75,7 @@ import { BrandService } from './brand';
 import { BundleService } from './bundles';
 import { ClipService } from './clips';
 import type { Deps, Logger } from './deps';
+import { DeskService } from './desk';
 import { EditService } from './edit';
 import { EditorService } from './editor';
 import { ElementService } from './elements';
@@ -85,6 +85,7 @@ import { InboxService } from './inbox';
 import { InsightsService } from './insights';
 import { InterchangeService } from './interchange';
 import { jobNotice, jobRecipient } from './job-notices';
+import { LibraryService } from './library';
 import { LocalizationService } from './localization';
 import { PerformanceService } from './performance';
 import { ProjectService } from './projects';
@@ -123,8 +124,12 @@ export interface Studio {
   interchange: InterchangeService;
   recipes: RecipeService;
   brand: BrandService;
+  /** The studio library (docs/design/library.md): one service behind REST and MCP. */
+  library: LibraryService;
   search: SearchService;
   performance: PerformanceService;
+  /** The 3D-Editor's director's desk: briefs and desk states (docs/design/director-desk.md#surfaces). */
+  desk: DeskService;
   inbox: InboxService;
   push: PushService;
   editor: EditorService;
@@ -384,9 +389,11 @@ export function createStudio(
     recipes: new RecipeService(deps),
     search: new SearchService(deps),
     performance: new PerformanceService(deps),
+    desk: new DeskService(deps),
     inbox: new InboxService(deps),
     push,
     brand: new BrandService(deps),
+    library: new LibraryService(deps),
     editor: new EditorService(deps),
     feedback: new FeedbackService(deps, { clips: clipService, projects: projectService }),
     aiReviews: new AiReviewService(deps, {
@@ -464,7 +471,6 @@ export function createStudio(
   reg('screenplay.revise', screenplayRevise);
   reg('storyboard.review', storyboardReview);
   reg('clip.review', clipReview);
-  reg('scene.block', sceneBlock);
   reg('clip.storyboard', clipStoryboard);
   reg('cast.review', castReview);
   reg('takes.watch', takesWatch);
@@ -600,7 +606,7 @@ export function createStudio(
     deps: handlerDeps,
     ...services,
     history: new HistoryService(deps),
-    ui: new UiService(hub),
+    ui: new UiService(hub, accounts),
     // The caller of the request being handled (docs/design/accounts.md), else the configured user.
     userActor: () =>
       currentPrincipal()?.actor ?? { kind: 'user', id: config.user.id, name: config.user.name },
@@ -617,6 +623,12 @@ export function createStudio(
     async start() {
       await mkdir(join(config.dataDir), { recursive: true });
       await media.init();
+      // What a crash or a killed upload left in the scratch directory, a day on
+      // (docs/design/storage-webdav.md#local-cache-and-staging)
+      await media
+        .sweepTmp()
+        .then((removed) => log.info({ removed }, 'removed stale scratch files'))
+        .catch((err) => log.warn({ err }, 'scratch sweep failed'));
       // An export written to storage behind its readiness says so (docs/design/storage-webdav.md#local-cache-and-staging)
       media.onUploaded = (projectId, path) =>
         void projectsRegistry

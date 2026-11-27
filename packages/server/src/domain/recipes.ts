@@ -5,17 +5,52 @@ import {
   hasPlaceholder,
   type Job,
   newId,
+  RECIPE_PROJECT_ARG,
   type Recipe,
   type RecipeInput,
   RecipeParamsError,
+  type RecipeRunScope,
   RecipeSchema,
   recipeParams,
+  recipeProjectRefusal,
+  recipeStepProjectRefusal,
+  recipeStepsRefusal,
 } from '@rideo/shared';
 import { z } from 'zod';
 import { currentPrincipal } from '../auth/context';
 import { AppError, invalid, notFound } from '../errors';
 import { strongest, type ToolRegistry } from '../mcp/registry';
 import { Service } from './base';
+
+/**
+ * A recipe whose steps call a tool recipes may not use is `validation_error`, naming the step and the tool
+ * (docs/design/agents.md#recipes): checked when it is saved, when a run starts and when its job runs.
+ */
+export function refuseSteps(recipe: Pick<RecipeInput, 'steps'>): void {
+  const refused = recipeStepsRefusal(recipe.steps);
+  if (refused) throw invalid(refused);
+}
+
+/** Whether a tool takes the project it acts on (a projectId), or undefined for a tool the registry does not have. */
+export function takesProject(tools: ToolRegistry, tool: string): boolean | undefined {
+  const def = tools.get(tool);
+  return def ? Object.hasOwn(def.shape, RECIPE_PROJECT_ARG) : undefined;
+}
+
+/**
+ * A recipe acts only on the project it runs in (docs/design/agents.md#recipes): a run is authorized for that project
+ * alone, and its job runs the steps without asking anyone about theirs. A step whose tool takes no projectId, or whose
+ * projectId (the run's parameters and project filled in) is not the run's project, is `validation_error` naming the step
+ * and the argument: checked when a run starts and when its job begins, before any step runs.
+ */
+export function refuseOtherProjects(
+  recipe: Pick<RecipeInput, 'steps'>,
+  tools: ToolRegistry,
+  run: RecipeRunScope,
+): void {
+  const refused = recipeProjectRefusal(recipe.steps, (tool) => takesProject(tools, tool), run);
+  if (refused) throw invalid(refused);
+}
 
 /**
  * Recipes (docs/design/agents.md#recipes): Rideo's built-in ones and the studio's, stored as JSON on the storage
@@ -65,14 +100,21 @@ export class RecipeService extends Service {
     return r;
   }
 
-  /** Checks that every step names a tool and that its arguments without placeholders fit the tool. */
+  /**
+   * Checks that every step names a tool a recipe may use (not `recipe_run`, nor a studio library tool but
+   * `library_status`: `RECIPE_REFUSED_TOOLS`), acts on the project the recipe runs in (its tool takes a projectId and
+   * the step gives it `{{projectId}}`, or a placeholder checked when the recipe runs) and that its arguments without
+   * placeholders fit the tool.
+   */
   private validate(input: RecipeInput): void {
+    refuseSteps(input);
     const tools = this.tools();
     const params = new Set(['projectId', ...input.params.map((p) => p.name)]);
     input.steps.forEach((step, k) => {
       const def = tools.get(step.tool);
       if (!def) throw invalid(`step ${k + 1}: unknown tool ${step.tool}`);
-      if (step.tool === 'recipe_run') throw invalid(`step ${k + 1}: recipes do not run recipes`);
+      const elsewhere = recipeStepProjectRefusal(step, k, takesProject(tools, step.tool));
+      if (elsewhere) throw invalid(elsewhere);
       const fixed = Object.fromEntries(Object.entries(step.args).filter(([, v]) => !hasPlaceholder(v)));
       const r = z.object(def.shape).partial().safeParse(fixed);
       if (!r.success)
@@ -118,7 +160,10 @@ export class RecipeService extends Service {
     this.studio.delete(id);
   }
 
-  /** Starts a run: parameters checked, and the caller's role against the strongest step. */
+  /**
+   * Starts a run: parameters checked, every step acting on this project with them filled in, and the caller's role on
+   * it against the strongest step.
+   */
   async run(
     actor: Actor,
     projectId: string,
@@ -127,6 +172,8 @@ export class RecipeService extends Service {
   ): Promise<Job> {
     await this.deps.projects.existing(projectId);
     const recipe = await this.get(recipeId);
+    // A recipe saved before a tool was refused to recipes is refused here, before its job is queued
+    refuseSteps(recipe);
     let params: Record<string, unknown>;
     try {
       params = recipeParams(recipe, given);
@@ -137,6 +184,9 @@ export class RecipeService extends Service {
     const tools = this.tools();
     const missing = recipe.steps.find((s) => !tools.has(s.tool));
     if (missing) throw invalid(`unknown tool ${missing.tool}`);
+    // The run is authorized for this project alone, so its steps act on it alone (a recipe saved before the rule, or a
+    // parameter that names another project, is refused before its job is queued)
+    refuseOtherProjects(recipe, tools, { projectId, params });
     const p = currentPrincipal();
     if (p)
       await this.deps.accounts.authorize(

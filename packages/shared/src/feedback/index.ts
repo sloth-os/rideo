@@ -28,6 +28,7 @@ import type {
 import type { Timeline, VideoItem } from '../schemas/timeline';
 import type { Prices } from '../schemas/usage';
 import { itemEnd, primaryTrack } from '../timeline/ops';
+import { byCount, plural } from '../util/text';
 
 /**
  * Feedback on the finished film (docs/design/feedback.md): where each shot is in the export, the signals that need no
@@ -667,7 +668,7 @@ export function assembleFeedback(input: {
     recs.push({
       priority: 1,
       dimension: 'dialogue',
-      title: `Generate ${m.shot} again: ${missing.length === 1 ? 'a line is' : `${missing.length} lines are`} not heard`,
+      title: `Generate ${m.shot} again: ${missing.length === 1 ? 'a line' : plural(missing.length, 'line')} ${byCount(missing.length, 'is', 'are')} not heard`,
       detail: `${missing.map((x) => `${x.character}: “${x.line.slice(0, 200)}”`).join(' ')} The video model did not voice ${missing.length === 1 ? 'it' : 'them'} clearly; a new take with the same prompt usually does.`,
       issueIds: issues
         .filter((i) => i.source === 'signal' && i.dimension === 'dialogue' && i.shotId === shotId)
@@ -761,7 +762,7 @@ export function feedbackMarkdown(
     lines.push(
       '## What changed since the last feedback',
       '',
-      `${fb.retakes.length} shot(s) have a new take: ${c.better} better, ${c.same} the same, ${c.worse} worse (issues weighted critical 3, major 2, minor 1).`,
+      `${plural(fb.retakes.length, 'shot')} ${byCount(fb.retakes.length, 'has', 'have')} a new take: ${c.better} better, ${c.same} the same, ${c.worse} worse (issues weighted critical 3, major 2, minor 1).`,
       '',
       ...fb.retakes.map((r) => `- ${r.shot}: ${r.before.issues} → ${r.after.issues} (${r.outcome})`),
       '',

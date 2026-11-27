@@ -4,6 +4,7 @@ import {
   entryId,
   isStillMedia,
   planIndex,
+  plural,
   type SearchEntry,
   type SearchTarget,
   searchNames,
@@ -159,7 +160,7 @@ async function caption(
           if (e.code === 'cancelled' || (e.retryable && e.code !== 'llm_invalid_output')) throw err;
           fail([key], err);
         }
-        ctx.progress(done, total, `captioned ${done} of ${total} frames`);
+        ctx.progress(done, total, `captioned ${done} of ${plural(total, 'frame')}`);
         if (added.length >= SAVE_EVERY) await save();
       }).finally(save);
     }

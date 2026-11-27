@@ -45,10 +45,11 @@ Text/background pairs meet WCAG AA (4.5:1 for body text, 3:1 for large text and 
 
 ## Components
 
-Buttons (`primary` = accent, `secondary` = surface-2, `ghost`, `danger`), Badge (status colours above),
-Card, Tabs, Dialog, Toast (bottom-right on desktop, top on mobile), Progress (linear, with a job message),
-EmptyState, the workflow Stepper, and ConsistencyBadge (`passed 0.92` / `failed` / `unverified` / `stale` /
-`override`). Icons come from `lucide-react`: 16px in dense UI, 20px in navigation.
+Buttons (`primary` = accent, `secondary` = surface-2, `ghost`, `danger`), Badge (status colours above; a display class
+given to it, such as `hidden` below a breakpoint, replaces its own `inline-flex`), Card, Tabs, Dialog (Escape closes the
+one on top: a plan opened over a picker leaves the picker open), Toast (bottom-right on desktop, top on mobile),
+Progress (linear, with a job message), EmptyState, the workflow Stepper, and ConsistencyBadge (`passed 0.92` / `failed`
+/ `unverified` / `stale` / `override`). Icons come from `lucide-react`: 16px in dense UI, 20px in navigation.
 
 ## Layout and responsiveness
 
@@ -61,6 +62,24 @@ EmptyState, the workflow Stepper, and ConsistencyBadge (`passed 0.92` / `failed`
 No view may scroll horizontally at 360px width, except the timeline lane, which scrolls inside its own
 container.
 
+The project header keeps the project's title, its stage and its branch apart from the header's controls at every
+width from 360px, signed in or not:
+
+- The title gives way to its badges with an ellipsis (its full text in its tooltip), but never below the smaller of
+  its own width and 3rem, and it is never wider than its text: a short title is followed by its badges, not by a gap.
+- The stage badge waits for `sm` (640px); from there it shows whole.
+- A branch other than `main` shows as a badge whose name gives way down to the badge's icon, the branch named in its
+  tooltip ("Branch alt-ending"), at every width.
+- While the project's bottom bar and its **More** menu show (below `md`, 768px), the header's studio links (Library,
+  Brand kits, and Settings for an administrator) are under **More**; the header keeps the engine state, the live dot,
+  the theme, the Inbox, the notifications and the account. The engine state's label shows from `lg` (1024px), its icon
+  always.
+- The title row cuts only what the header's room cannot hold, so nothing runs under the header's controls, and
+  nothing scrolls sideways.
+
+A card names its character, element or resource in full: a name longer than the card's line wraps onto the next line,
+never cut with an ellipsis, so a phone shows the whole name whatever the font.
+
 ## Logo
 
 A play triangle whose left edge forms the stem of an "R", in Ember on a dark tile
@@ -70,3 +89,8 @@ A play triangle whose left edge forms the stem of an "R", in Ember on a dark til
 
 Direct and production-minded: "Lock Mira to start generating", "3 shots need review", "Rendered 45:12 ·
 watermarked". Say what happens, never hype it.
+
+A count agrees with its noun and its verb: "1 shot needs review", "3 shots need review", "1 of 4 lines is not
+heard", never "shot(s)" or "1 shots". Every message that shows a count, in the studio, the server's messages, job
+progress, commit messages and the MCP tools' answers, writes it with `plural` and chooses the verb or pronoun after it
+with `byCount` (`@rideo/shared`).

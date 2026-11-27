@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { startMockGateway, startMockIdp } from '@rideo/mock-gateway';
 import { buildServer, loadConfig, type RideoServer } from '@rideo/server';
+import { startDeskPage } from './desk-page';
 import { startHostPage } from './host-page';
 import { GATEWAY_ADMIN_KEY, PORTS } from './ports';
 import { startPrefixProxy } from './prefix-proxy';
@@ -136,12 +137,29 @@ const slowMedia: Server = await startSlowMediaProxy({
 console.log(
   `rideo e2e slow media: http://127.0.0.1:${PORTS.slowMedia}/ → :${PORTS.main} (ranged media held 20 s)`,
 );
+// The fake 3D desk on its own origin: localhost against the studio's 127.0.0.1 (docs/design/director-desk.md#tests).
+const deskPage: Server = await startDeskPage({
+  port: PORTS.desk,
+  frameAncestors: [PORTS.main, PORTS.units].flatMap((port) => [
+    `http://127.0.0.1:${port}`,
+    `http://localhost:${port}`,
+  ]),
+});
+console.log(`rideo e2e fake desk on http://localhost:${PORTS.desk}/desk.html`);
+// Library units (docs/design/director-desk.md#library-units): a studio of its own whose desk is the fake desk in
+// units mode, so the main studio keeps the desk of before.
+await start(
+  'units studio',
+  await env(PORTS.units, { RIDEO_DESK_URL: `http://localhost:${PORTS.desk}/desk.html?units=1` }),
+);
 // The main studio last.
 await start(
   `main studio (gateway ${gateway.url})`,
   await env(PORTS.main, {
     // Cost estimates on the Insights view (docs/design/observability.md#usage-ledger).
     RIDEO_PRICES: JSON.stringify({ 'mock-video-v1': { videoSecond: 0.1 }, 'mock-image-v1': { image: 0.02 } }),
+    // The director's desk on the Storyboard view (docs/design/director-desk.md#the-setting).
+    RIDEO_DESK_URL: `http://localhost:${PORTS.desk}/desk.html`,
   }),
 );
 
@@ -152,6 +170,7 @@ async function stop() {
   for (const s of [...servers].reverse()) await s.stop().catch(() => undefined);
   await new Promise((r) => proxy.close(() => r(null)));
   await new Promise((r) => host.close(() => r(null)));
+  await new Promise((r) => deskPage.close(() => r(null)));
   slowMedia.closeAllConnections();
   await new Promise((r) => slowMedia.close(() => r(null)));
   await idp.close().catch(() => undefined);

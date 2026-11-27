@@ -122,6 +122,27 @@ describe('MCP server', () => {
     expect(sessions[0].presence.viewport.width).toBe(412);
     const nav = await call('ui_navigate', { projectId: project.id, view: 'cast' });
     expect(nav.acked).toHaveLength(1);
+    // Auth mode none: every tab is the one person's, as before (docs/design/realtime-sync.md#who-sees-and-steers-which-tabs):
+    // a session id reaches its tab on no project, and a toast without a project every tab
+    const home = new WebSocket(`${stack.url.replace('http', 'ws')}/api/live`);
+    const homeId = await new Promise<string>((resolve) => {
+      home.onmessage = (m) => {
+        const msg = JSON.parse(String(m.data)) as ServerMessage;
+        if (msg.type === 'hello') resolve(msg.sessionId);
+        if (msg.type === 'ui')
+          home.send(JSON.stringify({ type: 'ui-ack', commandId: msg.command.id, ok: true }));
+      };
+    });
+    expect(
+      (await call('ui_navigate', { projectId: project.id, view: 'story', sessionId: homeId })).delivered,
+    ).toEqual([homeId]);
+    expect((await call('ui_notify', { message: 'Every tab' })).delivered).toEqual(
+      expect.arrayContaining([sessions[0].sessionId, homeId]),
+    );
+    expect((await call<any[]>('ui_sessions', {})).map((s) => s.sessionId)).toEqual(
+      expect.arrayContaining([sessions[0].sessionId, homeId]),
+    );
+    home.close();
 
     const job = await call('screenplay_generate', { projectId: project.id });
     const done = await call('job_wait', { projectId: project.id, jobId: job.id, timeoutSec: 60 });
@@ -211,7 +232,8 @@ describe('MCP server', () => {
     const ui = messages
       .filter((m) => m.type === 'ui')
       .map((m) => (m as Extract<ServerMessage, { type: 'ui' }>).command.action);
-    expect(ui).toEqual(['navigate', 'focus']);
+    // the toast without a project reached this tab too
+    expect(ui).toEqual(['navigate', 'notify', 'focus']);
     ws.close();
 
     const md = await client.readResource({ uri: `rideo://projects/${project.id}/screenplay.md` });

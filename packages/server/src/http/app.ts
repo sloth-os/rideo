@@ -40,10 +40,11 @@ import { type AuthedRequest, registerAuthRoutes } from './auth-routes';
 import { applyBasePath, injectBase, requestBase } from './base-path';
 import { registerBrandRoutes } from './brand-routes';
 import { effectiveConfig, StudioHost } from './host';
+import { registerLibraryRoutes } from './library-routes';
 import { registerPerformanceRoutes } from './performance-routes';
 import { registerPushRoutes } from './push-routes';
 import { registerReviewRoutes } from './review-routes';
-import { registerRoutes } from './routes';
+import { IdParam, registerRoutes } from './routes';
 import { registerSearchRoutes } from './search-routes';
 import { requestWorkspace } from './workspace-request';
 
@@ -164,7 +165,7 @@ export async function buildServer(
     reply.header('vary', 'Origin');
     reply.header(
       'access-control-expose-headers',
-      'content-range, accept-ranges, content-length, content-disposition, x-rideo-source',
+      'content-range, accept-ranges, content-length, content-disposition, x-rideo-source, etag, x-desk-state-format, x-desk-state-version',
     );
     // media a cross-origin-isolated host may play
     reply.header('cross-origin-resource-policy', 'cross-origin');
@@ -172,7 +173,7 @@ export async function buildServer(
       reply.header('access-control-allow-methods', 'GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS');
       reply.header(
         'access-control-allow-headers',
-        'authorization, content-type, range, x-rideo-workspace, x-rideo-coalesce, x-rideo-size, x-rideo-range',
+        'authorization, content-type, range, x-rideo-workspace, x-rideo-coalesce, x-rideo-size, x-rideo-range, x-desk-state-format, x-desk-state-version, x-desk-state-replace, x-desk-state-units, if-match, if-none-match',
       );
       reply.header('access-control-max-age', '600');
       return reply.code(204).send();
@@ -188,8 +189,16 @@ export async function buildServer(
     '/api/auth/login',
     '/api/auth/callback',
   ]);
+  const unauthorized = () =>
+    new AppError(
+      'unauthorized',
+      accounts().mode === 'oidc' ? 'Sign in, or send an agent token' : 'Missing or invalid bearer token',
+    );
   app.addHook('onRequest', async (req, reply) => {
     const url = req.url.split('?')[0]!;
+    // The route that will answer, not the raw path: the router decodes percent-escapes before it matches (`/%61pi/…`
+    // is served by `/api/…`). A request no route matches keeps its path.
+    const route = req.routeOptions?.url ?? url;
     const principal = await accounts().authenticate({
       authorization: req.headers.authorization,
       cookie: req.headers.cookie,
@@ -197,24 +206,20 @@ export async function buildServer(
     });
     (req as AuthedRequest).principal = principal;
     // Guests of a review's share link (docs/design/review.md#reviews-and-share-links): the token is the access.
-    const guest = url.startsWith('/api/review/');
+    const guest = route.startsWith('/api/review/');
     const guarded =
-      (url.startsWith('/api/') && !open.has(url) && !guest) || url === '/mcp' || url === '/metrics';
+      (route.startsWith('/api/') && !open.has(route) && !guest) || route === '/mcp' || route === '/metrics';
     if (!guarded || principal) return;
     // The free detection tool (docs/design/provenance.md#public-detection-tool): file uploads need no token.
     const publicDetect =
       req.method === 'POST' &&
-      url === '/api/watermark/detect' &&
+      route === '/api/watermark/detect' &&
       String(req.headers['content-type'] ?? '').startsWith('multipart/form-data');
     if (publicDetect) {
       (req as { publicCaller?: boolean }).publicCaller = true;
       return;
     }
-    const err = new AppError(
-      'unauthorized',
-      accounts().mode === 'oidc' ? 'Sign in, or send an agent token' : 'Missing or invalid bearer token',
-    );
-    return reply.code(401).type('application/problem+json').send(problemDetails(err, url));
+    return reply.code(401).type('application/problem+json').send(problemDetails(unauthorized(), url));
   });
   // The rest of the request runs as its principal: services and MCP tools read it (currentPrincipal).
   app.addHook('onRequest', (req, _reply, done) => {
@@ -252,14 +257,19 @@ export async function buildServer(
         'slow request',
       );
   });
-  // Every project route needs its permission (ROUTE_PERMISSIONS, docs/design/accounts.md#users-roles-and-projects).
+  // Every project route needs its permission (ROUTE_PERMISSIONS, docs/design/accounts.md#users-roles-and-projects): the
+  // matched route's pattern and its `:id`, decoded as the handler reads them, whatever the URL's percent-escapes. The
+  // `:id` is checked first, as the handlers check it: a malformed one answers 422 to every caller.
+  const PROJECT_ROUTE = '/api/projects/:id';
   app.addHook('preHandler', async (req) => {
+    const route = req.routeOptions?.url;
+    if (!route || (route !== PROJECT_ROUTE && !route.startsWith(`${PROJECT_ROUTE}/`))) return;
     const principal = (req as AuthedRequest).principal;
-    const m = /^\/api\/projects\/([a-z]{3}_[0-9a-z]{10,32})(\/[^?]*)?$/.exec(req.url.split('?')[0]!);
-    if (!m || !principal) return;
-    const permission = routePermission(req.method, m[2] ?? '');
-    await accounts().authorize(principal, m[1]!, permission);
-    if (permission === 'project.approve') (req as { approval?: string }).approval = m[1]!;
+    if (!principal) throw unauthorized();
+    const projectId = IdParam.parse(req.params ?? {}).id;
+    const permission = routePermission(req.method, route.slice(PROJECT_ROUTE.length));
+    await accounts().authorize(principal, projectId, permission);
+    if (permission === 'project.approve') (req as { approval?: string }).approval = projectId;
   });
   // Approvals that went through are audited (docs/design/accounts.md#audit-log).
   app.addHook('onResponse', async (req, reply) => {
@@ -374,6 +384,8 @@ export async function buildServer(
         sfx: config.sfx ? { provider: config.sfx.provider } : null,
         /** NLE hand-off (docs/design/interchange.md#where-the-media-is): the WebDAV root clients reach. */
         interchange: { mediaBase: studio.interchange.defaultMediaBase() },
+        /** The 3D-Editor's desk page (docs/design/director-desk.md#the-setting); null: no desk. */
+        desk: config.desk ? { url: config.desk.url } : null,
       },
       llm: ai
         ? { provider: config.llm.provider, model: config.llm.model, vision: config.vision.model }
@@ -471,6 +483,7 @@ export async function buildServer(
   registerRoutes(app, studio);
   registerReviewRoutes(app, studio);
   registerBrandRoutes(app, studio);
+  registerLibraryRoutes(app, studio);
   registerSearchRoutes(app, studio);
   registerPerformanceRoutes(app, studio);
   registerPushRoutes(app, studio);

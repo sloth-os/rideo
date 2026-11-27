@@ -907,7 +907,7 @@ describe('what changed since the last feedback (docs/design/feedback.md#what-cha
     });
     const md = feedbackMarkdown(fb, { title: 'T' });
     expect(md).toContain('## What changed since the last feedback');
-    expect(md).toContain('2 shot(s) have a new take: 1 better, 1 the same, 0 worse');
+    expect(md).toContain('2 shots have a new take: 1 better, 1 the same, 0 worse');
     expect(md).toContain('- C1·S2: 4 → 1 (better)');
   });
 });

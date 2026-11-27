@@ -32,6 +32,8 @@ interface Session {
   userId?: string;
   /** Whether the session may follow a project (read permission); everyone may without accounts. */
   authorize?: (projectId: string) => Promise<boolean>;
+  /** Presence claims so far: a claim checked against `authorize` counts only while no newer one came. */
+  presenceClaims: number;
 }
 
 interface Buffered {
@@ -40,6 +42,14 @@ interface Buffered {
 }
 
 export type HubListener = (projectId: string, seq: number, event: ProjectEvent) => void;
+
+/**
+ * Who a UI command may reach besides the tabs on its project (docs/design/realtime-sync.md#who-sees-and-steers-which-tabs):
+ * `everyone` in auth mode none, one person whose tabs they all are (a session id reaches its tab wherever it is, a command
+ * without a project every tab, as before); otherwise the caller's user (a command without a project reaches their own
+ * tabs; a session id only picks one of the tabs a command reaches).
+ */
+export type UiReach = { everyone: true } | { userId: string | null };
 
 const RING = 1000;
 const MAX_INLINE_DOCS = 512 * 1024;
@@ -61,6 +71,11 @@ export type JobHeartbeatHandler = (
   jobId: string,
   progress?: { done: number; total: number; message?: string },
 ) => { cancelled: boolean; leaseExpiresAt: string | null };
+
+/** Whether a session is on a project: subscribed to it, or present on it. */
+function onProject(s: Session, projectId: string): boolean {
+  return s.projects.has(projectId) || s.presence?.projectId === projectId;
+}
 
 /** Per-project event fan-out, replay, presence and UI command relay (docs/design/realtime-sync.md). */
 export class LiveHub {
@@ -135,7 +150,7 @@ export class LiveHub {
   /** Whether a live session exists and follows the project (editor-job claims). */
   isSubscribed(sessionId: string, projectId: string): boolean {
     const s = this.sessions.get(sessionId);
-    return !!s && (s.projects.has(projectId) || s.presence?.projectId === projectId);
+    return !!s && onProject(s, projectId);
   }
 
   attach(
@@ -152,6 +167,7 @@ export class LiveHub {
       lastSeen: Date.now(),
       userId: opts.userId,
       authorize: opts.authorize,
+      presenceClaims: 0,
     };
     this.sessions.set(session.id, session);
     this.deps.metrics?.liveSessions.set({}, this.sessions.size);
@@ -168,14 +184,19 @@ export class LiveHub {
     return session.id;
   }
 
-  /** Subscribes a session to a project when it may read it. */
-  private async follow(session: Session, projectId: string, lastSeq?: number): Promise<void> {
+  /**
+   * Subscribes a session to a project when it may read it, then answers `subscribed` (with the `subscribe`'s `ref`):
+   * from that answer on, an editor-job claim of the session for the project finds it followed
+   * (docs/design/editor.md#editor-jobs).
+   */
+  private async follow(session: Session, projectId: string, lastSeq?: number, ref?: number): Promise<void> {
     if (session.authorize && !(await session.authorize(projectId))) {
       this.send(session, { type: 'error', message: `forbidden: you may not follow ${projectId}` });
       return;
     }
     session.projects.add(projectId);
     if (lastSeq !== undefined) this.replay(session, projectId, lastSeq);
+    this.send(session, { type: 'subscribed', projectId, ...(ref === undefined ? {} : { ref }) });
   }
 
   private onMessage(session: Session, raw: Buffer | string): void {
@@ -195,7 +216,7 @@ export class LiveHub {
     const msg = res.data;
     switch (msg.type) {
       case 'subscribe': {
-        void this.follow(session, msg.projectId, msg.lastSeq);
+        void this.follow(session, msg.projectId, msg.lastSeq, msg.ref);
         break;
       }
       case 'unsubscribe':
@@ -203,7 +224,7 @@ export class LiveHub {
         break;
       case 'presence': {
         const { type: _t, ...presence } = msg;
-        session.presence = presence;
+        void this.claimPresence(session, presence);
         break;
       }
       case 'ui-ack':
@@ -248,6 +269,34 @@ export class LiveHub {
         this.workspaceHandler?.result(session.id, msg);
         break;
     }
+  }
+
+  /**
+   * A tab's presence. On a project it counts only when the session may follow that project, as a `subscribe`: a refused
+   * claim is answered like a refused follow and leaves the tab present nowhere, so no UI command for that project
+   * reaches it. Claims are decided in the order they arrive: an older answer never replaces a newer claim.
+   */
+  private async claimPresence(session: Session, presence: Presence): Promise<void> {
+    const claim = ++session.presenceClaims;
+    const projectId = presence.projectId;
+    // nothing to ask: no project, no accounts, or a project the session follows or is present on already
+    if (
+      !projectId ||
+      !session.authorize ||
+      session.projects.has(projectId) ||
+      session.presence?.projectId === projectId
+    ) {
+      session.presence = presence;
+      return;
+    }
+    const allowed = await session.authorize(projectId).catch(() => false);
+    if (claim !== session.presenceClaims) return;
+    if (allowed) {
+      session.presence = presence;
+      return;
+    }
+    session.presence = null;
+    this.send(session, { type: 'error', message: `forbidden: you may not follow ${projectId}` });
   }
 
   private replay(session: Session, projectId: string, lastSeq: number): void {
@@ -307,32 +356,52 @@ export class LiveHub {
     return [...ids];
   }
 
+  /** The open sessions, on a project when given (subscribed to it or present on it). */
   sessionsFor(projectId?: string): SessionInfo[] {
+    return this.sessionsWithUser(projectId).map((s) => s.session);
+  }
+
+  /** `sessionsFor` with the person each session is signed in as (UiService decides who sees which). */
+  sessionsWithUser(projectId?: string): { session: SessionInfo; userId?: string }[] {
     return [...this.sessions.values()]
-      .filter((s) => !projectId || s.projects.has(projectId) || s.presence?.projectId === projectId)
+      .filter((s) => !projectId || onProject(s, projectId))
       .map((s) => ({
-        sessionId: s.id,
-        projectIds: [...s.projects],
-        presence: s.presence,
-        connectedAt: s.connectedAt,
-        lastSeen: new Date(s.lastSeen).toISOString(),
+        session: {
+          sessionId: s.id,
+          projectIds: [...s.projects],
+          presence: s.presence,
+          connectedAt: s.connectedAt,
+          lastSeen: new Date(s.lastSeen).toISOString(),
+        },
+        userId: s.userId,
       }));
   }
 
-  /** Sends a UI command to matching sessions and waits (up to timeoutMs) for acknowledgements. */
+  /**
+   * Sends a UI command and waits (up to `timeoutMs`) for acknowledgements. It goes to the tabs on its project; one
+   * without a project to those `reach` allows (none when it is left out); `sessionId` picks one of these tabs and never
+   * adds another, except for `everyone` (auth mode none, as before).
+   */
   async sendUi(
     command: Omit<UiCommand, 'id'>,
-    timeoutMs = 3000,
+    opts: { reach?: UiReach; timeoutMs?: number } = {},
   ): Promise<{
     commandId: string;
     delivered: string[];
     acked: { sessionId: string; ok: boolean; error?: string }[];
   }> {
     const full: UiCommand = { ...command, id: newId('command') };
+    const reach = opts.reach ?? { userId: null };
+    const timeoutMs = opts.timeoutMs ?? 3000;
     const targets = [...this.sessions.values()].filter((s) => {
-      if (full.sessionId) return s.id === full.sessionId;
-      if (!full.projectId) return true;
-      return s.projects.has(full.projectId) || s.presence?.projectId === full.projectId;
+      if ('everyone' in reach) {
+        if (full.sessionId) return s.id === full.sessionId;
+        return !full.projectId || onProject(s, full.projectId);
+      }
+      const audience = full.projectId
+        ? onProject(s, full.projectId)
+        : reach.userId !== null && s.userId === reach.userId;
+      return audience && (!full.sessionId || s.id === full.sessionId);
     });
     const acked: { sessionId: string; ok: boolean; error?: string }[] = [];
     const done = new Promise<void>((resolve) => {

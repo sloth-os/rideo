@@ -17,6 +17,7 @@ import {
   parseProbe,
   planAudioWindows,
   planChunks,
+  plural,
   posterCommand,
   probeCommand,
   renderInputs,
@@ -92,19 +93,26 @@ export async function startEditorWorker(
 ): Promise<EditorWorker> {
   const api = stack.url;
   const ws = new WebSocket(`${api.replace(/^http/, 'ws')}/api/live`);
+  // Like a tab, it claims only once the server follows the project for its session: after the answer to its subscribe
+  // (docs/design/editor.md#editor-jobs)
+  let followed!: () => void;
+  const subscribed = new Promise<void>((ok) => {
+    followed = ok;
+  });
   const sessionId = await new Promise<string>((ok, fail) => {
     ws.addEventListener('message', (m) => {
       const msg = JSON.parse(String(m.data));
       if (msg.type === 'hello') ok(msg.sessionId);
+      if (msg.type === 'subscribed' && msg.projectId === projectId && msg.ref === 1) followed();
     });
     ws.addEventListener('error', () => fail(new Error('live connection failed')));
   });
-  ws.send(JSON.stringify({ type: 'subscribe', projectId }));
+  ws.send(JSON.stringify({ type: 'subscribe', projectId, ref: 1 }));
   // Like a tab: ping the live hub, which drops sessions silent for a minute (and their claims with them).
   const pinger = setInterval(() => {
     if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'ping' }));
   }, 15_000);
-  await new Promise((r) => setTimeout(r, 50));
+  await subscribed;
   const dir = await mkdtemp(join(tmpdir(), 'rideo-editor-'));
   const handled: Job[] = [];
   let running = true;
@@ -227,7 +235,7 @@ export async function startEditorWorker(
         await beat(
           chunk.index + 1,
           chunks.length + 1,
-          `rendered ${chunk.index + 1}/${chunks.length} chunk(s)`,
+          `rendered ${chunk.index + 1}/${plural(chunks.length, 'chunk')}`,
         );
         staged++;
         if (opts.dieAfterParts !== undefined && staged >= opts.dieAfterParts) throw new Died();

@@ -1,5 +1,6 @@
-import { fillPlaceholders, isTerminalJob, type Job } from '@rideo/shared';
+import { fillPlaceholders, isTerminalJob, type Job, recipeStepTargetRefusal } from '@rideo/shared';
 import { ZodError, z } from 'zod';
+import { refuseOtherProjects, refuseSteps } from '../../domain/recipes';
 import { AppError, toAppError } from '../../errors';
 import type { JobContext } from '../queue';
 import type { HandlerDeps } from './common';
@@ -15,13 +16,18 @@ function jobsIn(result: unknown): string[] {
 
 /**
  * `recipe.run` (docs/design/agents.md#recipes): the steps in order through the MCP tool registry, as the job's actor,
- * waiting for the jobs of `wait` steps; a failing step stops the recipe.
+ * waiting for the jobs of `wait` steps; a failing step stops the recipe. A recipe that calls a tool recipes may not use,
+ * or whose steps name another project than the job's (a job queued before the rule or enqueued directly, a recipe file
+ * replaced on the storage), fails before any step runs; a step whose projectId an earlier step's result fills in with
+ * another project fails before it runs. The job asks no one about the steps' projects: they must be its own.
  */
 export async function recipeRun(deps: HandlerDeps, ctx: JobContext) {
   const { recipeId, params } = ctx.job.params as { recipeId: string; params: Record<string, unknown> };
   const projectId = ctx.job.projectId;
   const recipe = await deps.services.recipes.get(recipeId);
+  refuseSteps(recipe);
   const tools = deps.services.recipes.tools();
+  refuseOtherProjects(recipe, tools, { projectId, params: params ?? {} });
   const scope: Record<string, unknown> = { ...params, projectId, steps: [] as unknown[] };
   const outcomes: { step: number; tool: string; ok: boolean; jobs: string[] }[] = [];
   for (const [k, step] of recipe.steps.entries()) {
@@ -35,8 +41,15 @@ export async function recipeRun(deps: HandlerDeps, ctx: JobContext) {
     const results: unknown[] = [];
     const jobs: string[] = [];
     for (const item of items) {
+      const filled = fillPlaceholders(step.args, { ...scope, item }) as Record<string, unknown>;
+      // Its projectId as the step will get it, an earlier step's result included: the run's project, or no step
+      const elsewhere = recipeStepTargetRefusal(k, step.tool, filled, projectId);
+      if (elsewhere) {
+        deps.metrics.recipeSteps.inc({ tool: step.tool, outcome: 'failed' });
+        throw new AppError('validation_error', elsewhere);
+      }
       try {
-        const args = z.object(def.shape).parse(fillPlaceholders(step.args, { ...scope, item }));
+        const args = z.object(def.shape).parse(filled);
         const result = await def.run(args as never, ctx.actor);
         results.push(result);
         jobs.push(...jobsIn(result));

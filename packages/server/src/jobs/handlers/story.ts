@@ -15,6 +15,8 @@ import {
   docPath,
   type Element,
   type ElementReferenceView,
+  type ExistingNames,
+  existingNames,
   type GatewayImageRequest,
   identityFragment,
   identityFromLlm,
@@ -25,6 +27,7 @@ import {
   type Project,
   type ProjectDocs,
   type ProjectSettings,
+  plural,
   promptVersionOf,
   type ReferenceCheckInput,
   type ReferenceCheckOutput,
@@ -78,6 +81,30 @@ async function writingDirection(deps: HandlerDeps, settings: ProjectSettings) {
   };
 }
 
+/**
+ * The characters, places and props the project already has, whose names the writer keeps
+ * (docs/design/continuity.md#storytelling); undefined when it has none. Logged with how many the bounds left out.
+ */
+function writerExisting(ctx: JobContext, docs: ProjectDocs): ExistingNames | undefined {
+  const characters = Object.values(docs.characters);
+  const elements = Object.values(docs.elements).filter((e) => e.kind !== 'style');
+  const existing = existingNames(characters, elements);
+  if (existing)
+    ctx.log.info(
+      {
+        projectId: docs.project.id,
+        characters: existing.characters.length,
+        elements: existing.elements.length,
+        leftOut: {
+          characters: characters.length - existing.characters.length,
+          elements: elements.length - existing.elements.length,
+        },
+      },
+      "the writer is told the project's characters and places",
+    );
+  return existing;
+}
+
 export async function screenplayGenerate(deps: HandlerDeps, ctx: JobContext) {
   const docs = await docsFor(deps, ctx);
   const p = docs.project;
@@ -128,6 +155,7 @@ export async function screenplayGenerate(deps: HandlerDeps, ctx: JobContext) {
     });
   }
   const writing = await writingDirection(deps, p.settings);
+  const projectNames = writerExisting(ctx, docs);
   // The brief adapted for the video model before it is written (docs/design/first-pass.md#the-brief-adapted-for-the-video-model)
   const prompt = await adaptBrief(
     deps,
@@ -155,6 +183,7 @@ export async function screenplayGenerate(deps: HandlerDeps, ctx: JobContext) {
           language: p.settings.language,
           aspectRatio: p.settings.aspectRatio,
           attachments,
+          ...(projectNames ? { existing: projectNames } : {}),
           ...writing.direction,
         },
         ctx.signal,
@@ -209,7 +238,7 @@ export async function screenplayGenerate(deps: HandlerDeps, ctx: JobContext) {
       };
     },
     (r) =>
-      `Generate screenplay “${r.title}” (${r.beats} beats, ${r.scenes} scenes, ${r.characters} characters, ${r.elements} locations and props)${r.castOnly ? '; only the cast may appear' : ''}`,
+      `Generate screenplay “${r.title}” (${plural(r.beats, 'beat')}, ${plural(r.scenes, 'scene')}, ${plural(r.characters, 'character')}, ${plural(r.elements, 'location or prop', 'locations and props')})${r.castOnly ? '; only the cast may appear' : ''}`,
   );
   // The screenplay is reviewed before the cast is made (docs/design/ai-review.md#how-a-review-runs)
   await deps.services.aiReviews
@@ -324,7 +353,7 @@ async function adaptBrief(
           },
         });
       },
-      `Adapt the brief for the video model (${out.moments.length} moment(s))`,
+      `Adapt the brief for the video model (${plural(out.moments.length, 'moment')})`,
     );
     return prompt;
   } catch (err) {
@@ -346,6 +375,7 @@ export async function screenplayExtend(deps: HandlerDeps, ctx: JobContext) {
   if (!beats.length) return { added: 0 };
   const characters = Object.values(docs.characters);
   const writing = await writingDirection(deps, docs.project.settings);
+  const projectNames = writerExisting(ctx, docs);
   // Version 2: the brief, the last written scene in full and the beats after these (docs/design/continuity.md).
   const written = sp.scenes.slice().sort((a, b) => a.index - b.index);
   const last = written[written.length - 1];
@@ -388,6 +418,7 @@ export async function screenplayExtend(deps: HandlerDeps, ctx: JobContext) {
       props: Object.values(docs.elements)
         .filter((e) => e.kind === 'prop')
         .map((e) => ({ name: e.name, description: e.description })),
+      ...(projectNames ? { existing: projectNames } : {}),
       previousScenes: sp.scenes
         .slice(-6)
         .map((s) => ({ index: s.index, heading: s.heading, summary: s.summary || s.action.slice(0, 300) })),
@@ -431,7 +462,7 @@ export async function screenplayExtend(deps: HandlerDeps, ctx: JobContext) {
           tx.set(docPath.element(e.id), e);
       return added.length;
     },
-    (n) => `Write ${n} more scene(s) from the outline`,
+    (n) => `Write ${plural(n, 'more scene')} from the outline`,
   );
   return { added: result };
 }

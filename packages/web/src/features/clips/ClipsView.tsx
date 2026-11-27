@@ -7,6 +7,7 @@ import {
   formatDuration,
   isAcceptable,
   isTerminalJob,
+  plural,
   type Shot,
   sortedClips,
   type Take,
@@ -628,7 +629,9 @@ function ClipCard({
             onClick={() =>
               api
                 .batchVariations(projectId, clip.id, { count: 2 })
-                .then((jobs) => useUi.getState().toast(`${jobs.length} variations started`, 'success'))
+                .then((jobs) =>
+                  useUi.getState().toast(`${plural(jobs.length, 'variation')} started`, 'success'),
+                )
                 .catch(reportError)
             }
             data-testid="clip-variations"

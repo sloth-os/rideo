@@ -12,6 +12,7 @@ import {
   type Export,
   ExportRenderResultSchema,
   type ProjectDocs,
+  plural,
   ruleSuggestions,
   type StagedAudio,
   stagedPieces,
@@ -88,7 +89,7 @@ export async function analysisSuggest(deps: HandlerDeps, ctx: JobContext) {
       blackSegments: analysis.blackSegments,
     });
     let ai: EditSuggestion[] = [];
-    let summary = `${probe.durationSec.toFixed(1)}s, ${analysis.scenes.length} scene(s), ${analysis.silences.length} silence(s), ${analysis.blackSegments.length} black segment(s)${loudnessLufs !== null ? `, ${loudnessLufs.toFixed(1)} LUFS` : ''}.`;
+    let summary = `${probe.durationSec.toFixed(1)}s, ${plural(analysis.scenes.length, 'scene')}, ${plural(analysis.silences.length, 'silence')}, ${plural(analysis.blackSegments.length, 'black segment')}${loudnessLufs !== null ? `, ${loudnessLufs.toFixed(1)} LUFS` : ''}.`;
     // Without a gateway the rule-based suggestions are the analysis (docs/design/settings.md#without-mm-gateway).
     if (deps.config.gateway.configured) ctx.progress(0.4, 1, 'asking the editor model for suggestions');
     try {
@@ -132,7 +133,7 @@ export async function analysisSuggest(deps: HandlerDeps, ctx: JobContext) {
           suggestions: [...rules, ...ai],
         });
       },
-      `Analyze ${resource.name}: ${rules.length + ai.length} suggestion(s)`,
+      `Analyze ${resource.name}: ${plural(rules.length + ai.length, 'suggestion')}`,
     );
     if (speech) await deps.staging.remove(speech.jobId);
     return { suggestions: rules.length + ai.length, scenes: analysis.scenes.length };
@@ -434,7 +435,8 @@ export async function exportFinish(deps: HandlerDeps, ctx: JobContext) {
               ],
         transform: embed ? (y) => embed.transform(y) : () => undefined,
         signal: ctx.signal,
-        onProgress: (frames) => ctx.progress(frames, total, `watermarking ${frames}/${total} frames`),
+        onProgress: (frames) =>
+          ctx.progress(frames, total, `watermarking ${frames}/${plural(total, 'frame')}`),
       });
       if (watermarkId) deps.metrics.watermark.inc({ op: 'embed' });
       if (delivery.format === 'frames') {

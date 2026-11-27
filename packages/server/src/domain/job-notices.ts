@@ -22,7 +22,6 @@ const NOTICES: Partial<Record<JobKind, { done: string; failed: string; view: Vie
   'cast.review': { done: 'Cast reviewed', failed: 'Cast review failed', view: 'cast' },
   'cut.review': { done: 'Cut reviewed', failed: 'Cut review failed', view: 'exports' },
   'clip.storyboard': { done: 'Scene storyboarded', failed: 'Scene storyboard failed', view: 'storyboard' },
-  'scene.block': { done: 'Scene blocked', failed: 'Blocking failed', view: 'storyboard' },
 };
 
 const REVIEWED: Partial<Record<JobKind, string>> = {

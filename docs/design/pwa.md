@@ -39,7 +39,8 @@ gates to approve, agents and jobs to watch.
 
 It refreshes while open (every 15 s when visible, on focus, and when a notification arrives). The header has an
 Inbox button with the number of approvals and reviews waiting, on phones too; on phones the Inbox also links to the
-brand kits and the watermark check, which leave the header there.
+brand kits and the watermark check, which leaves the header there (in a project the brand kits are under **More**,
+[brand](../brand.md#layout-and-responsiveness)).
 
 ## Notifications on the phone (Web Push)
 

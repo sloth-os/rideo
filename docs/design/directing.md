@@ -80,7 +80,10 @@ together, with their consistency scores, seeds, variations and frame sources; "U
 | `GET /api/config` → `directing.moves` (the library) | `camera_moves` |
 
 The clip review's **Direct** panel per shot edits the camera (move, lens, aperture), the start and end frames, the
-motion reference and the seed, and starts variations; takes have a compare toggle.
+motion reference and the seed, and starts variations; takes have a compare toggle. A `camera` sent to the PATCH or to
+`shot_update` changes only the fields it names (the panel sends only the ones that changed, the
+[director's desk](director-desk.md#the-result) the lens and the move): the shot's other camera fields, its framing and
+movement among them, keep their values, and none is filled in with a default.
 
 Frame and motion references must be resources of the project (images for frames, videos for motion): a missing
 or wrong-kind resource is a `validation_error` when the shot is saved and when it is generated.

@@ -72,16 +72,21 @@ studio.unmount();
 | `chrome.header` | `true` | `false` hides the studio's header, for hosts that bring their own navigation |
 
 `mountRideo(element, options)` returns `{navigate(path), setTheme(theme), unmount()}`. One studio per page: its
-stores are module singletons.
+stores are module singletons. `unmount()` while the [director's desk](director-desk.md#the-desk) is open is leaving it
+without Close: the desk's newest state not stored yet is sent to the server on the way out (best effort, not waited
+for), and the desk's iframe (another host, sandboxed without top navigation) goes away with the studio.
 
 ### Talking to a server on another origin
 
 The server answers cross-origin calls from the origins in `RIDEO_CORS_ORIGINS` (comma-separated, or `*`; a setting in
 the [Settings](settings.md) page): `Access-Control-Allow-Origin` for that origin, the methods the API uses, the headers
-it reads (`authorization`, `content-type`, `range`, `x-rideo-workspace`, `x-rideo-coalesce`) and exposes
-(`content-range`, `accept-ranges`, `content-length`, `content-disposition`), and `Cross-Origin-Resource-Policy:
-cross-origin` on media so a cross-origin-isolated host can play it. Cookies are not sent cross-origin; such hosts pass a
-`token`. The live channel accepts the same origins (the `Origin` header is checked on the upgrade).
+it reads (`authorization`, `content-type`, `range`, `x-rideo-workspace`, `x-rideo-coalesce`, `x-rideo-size`,
+`x-rideo-range`, and the [desk state](director-desk.md#the-desk-state)'s `x-desk-state-format`, `x-desk-state-version`,
+`x-desk-state-replace`, `if-match` and `if-none-match`) and exposes (`content-range`, `accept-ranges`,
+`content-length`, `content-disposition`, `x-rideo-source`, `etag`, `x-desk-state-format`, `x-desk-state-version`), and
+`Cross-Origin-Resource-Policy: cross-origin` on media so a cross-origin-isolated host can play it. Cookies are not sent
+cross-origin; such hosts pass a `token`. The live channel accepts the same origins (the `Origin` header is checked on
+the upgrade).
 
 [Browser storage](browser-storage.md) works embedded: projects go to the host origin's IndexedDB. The editor engine runs
 multi-threaded when the host page is cross-origin isolated and single-threaded otherwise.

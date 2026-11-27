@@ -111,3 +111,48 @@ test('an export requested by an agent is rendered by the open tab and watermarke
     await agent.client.close();
   }
 });
+
+// docs/design/realtime-sync.md#who-sees-and-steers-which-tabs: the tab tells auth mode none from /api/auth/me
+test('in auth mode none, a command for another project that reaches a tab before it knows who is signed in waits for that, then is carried out', async ({
+  page,
+  request,
+  baseURL,
+}, testInfo) => {
+  const api = new Api(request);
+  const shown = await api.storyProject(`MCP shown (${testInfo.project.name})`);
+  const target = await api.storyProject(`MCP target (${testInfo.project.name})`);
+  const agent = await connectAgent(baseURL!);
+  try {
+    // the tab's ask of who is signed in is held: the live channel and the agent's command come first
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await page.route('**/api/auth/me', async (route) => {
+      await held;
+      await route.continue();
+    });
+    await page.goto(`/p/${shown}/overview`);
+    let session = '';
+    await expect
+      .poll(async () => {
+        const tabs = await agent.call<{ sessionId: string }[]>('ui_sessions', { projectId: shown });
+        session = tabs[0]?.sessionId ?? '';
+        return session;
+      })
+      .not.toBe('');
+    const navigated = agent.call<{ acked: { sessionId: string; ok: boolean; error?: string }[] }>(
+      'ui_navigate',
+      { projectId: target, view: 'cast', sessionId: session },
+    );
+    // the tab waits for the answer rather than refusing the command ("this tab shows another project")
+    await page.waitForTimeout(500);
+    expect(page.url()).toContain(`/p/${shown}/overview`);
+    release();
+    expect((await navigated).acked).toEqual([{ sessionId: session, ok: true }]);
+    await expect(page).toHaveURL(new RegExp(`/p/${target}/cast$`));
+    await expect(page.getByTestId('add-character')).toBeVisible();
+  } finally {
+    await agent.client.close();
+  }
+});

@@ -60,8 +60,6 @@ describe('autopilot: every step reviewed and approved', () => {
         resolution: { width: 320, height: 180 },
         autopilot: true,
         storyboard: { enabled: true, scenes: 3, production: true },
-        // The director's desk is a person's choice for new projects (docs/design/first-pass.md#the-desk-on-request)
-        blocking: { enabled: true, layoutImage: true },
         // A person picks the voices TTS dialogue needs: the film speaks through the video model's own sound
         dialogue: { mode: 'off' },
       },
@@ -78,7 +76,6 @@ describe('autopilot: every step reviewed and approved', () => {
       sceneThreshold: 8,
       minDimension: 8,
     });
-    expect(settings.blocking.enabled).toBe(true);
     await stack.api('POST', `/projects/${pid}/workflow/approve`, { gate: 'brief_submitted' });
     await waitStage(pid, 'export', 900_000);
     await serverIdle(pid);
@@ -104,8 +101,7 @@ describe('autopilot: every step reviewed and approved', () => {
     expect(clips.length).toBeGreaterThan(1);
     for (const clip of clips) {
       expect(clip.status, `clip ${clip.index + 1}`).toBe('approved');
-      // Blocked, its frames drawn and approved before its video
-      expect(clip.blocking?.source).toBe('ai');
+      // Its frames drawn and approved before its video
       for (const s of clip.shots) expect(s.board?.approved).toBe(true);
       // Every take watched whole
       for (const s of clip.shots) {

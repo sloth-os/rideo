@@ -16,6 +16,8 @@ export function Toaster() {
     <div
       className="pointer-events-none fixed inset-x-3 top-3 z-[60] flex flex-col items-center gap-2 sm:inset-x-auto sm:top-auto sm:right-4 sm:bottom-4 sm:items-end"
       aria-live="polite"
+      // full-screen panels make the rest of the page inert, never the toasts (docs/design/director-desk.md#the-desk)
+      data-keep-active=""
     >
       {toasts.map((t) => {
         const Icon = t.actor?.kind === 'agent' ? Bot : ICONS[t.level];

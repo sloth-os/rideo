@@ -38,6 +38,21 @@ describe('workflow evaluation', () => {
     expect(checkRequirement('characters.allHaveApprovedRefs', d).details).toEqual(['Jonah']);
   });
 
+  it('counts what the gates wait for with the noun agreeing, for 1 and for 2 (docs/brand.md#voice)', () => {
+    const unlocked = (name: string) =>
+      f.character({ name, lock: { locked: false, version: 0 }, references: [] });
+    const one = f.docs({ characters: f.byId([f.character(), unlocked('Jonah')]) });
+    const two = f.docs({ characters: f.byId([unlocked('Jonah'), unlocked('Ada')]) });
+    expect(checkRequirement('characters.allLocked', one).message).toBe('1 character not locked');
+    expect(checkRequirement('characters.allLocked', two).message).toBe('2 characters not locked');
+    expect(checkRequirement('characters.allHaveApprovedRefs', one).message).toBe(
+      '1 character without an approved reference',
+    );
+    expect(checkRequirement('characters.allHaveApprovedRefs', two).message).toBe(
+      '2 characters without an approved reference',
+    );
+  });
+
   it('measures the target length and story completion', () => {
     const mira = f.character();
     const approved = f.clip({

@@ -15,7 +15,14 @@ resulting change streams live to the frontend.
   of the token's owner, within the token's role and projects, with the same permissions as REST (approval tools
   need `project.approve`, settings, branches and access `project.manage`, comments and review decisions
   `project.comment`). A session stays bound to the caller that
-  opened it (403 for anyone else).
+  opened it (403 for anyone else). Outside auth mode `none` every call has a caller: the app refuses `/mcp` without
+  one (401), and a tool reached without one all the same answers `unauthorized` rather than running as the studio.
+  Recipe steps, which run their tools inside jobs rather than over `/mcp`, are not affected.
+- A tool's `projectId` is checked first, as REST checks a route's (`prj_` and 10 to 32 lowercase letters or digits):
+  a malformed one answers `validation_error` for every caller, before any permission is asked (no `auth.denied`) and
+  before anything reads a project. Recipe steps run the same check, and the prompts and the
+  `rideo://projects/{projectId}/…` resources refuse a malformed id with the same message before asking who may read
+  the project.
 - Clients that only support stdio can bridge with `npx mcp-remote http://HOST:8787/mcp`.
 - Under a subpath the endpoint is `<base>/mcp` ([subpath](subpath.md)). When projects live in browsers, an agent
   reaches the projects of browsers that have a studio tab open; `?workspace=ws_…` on the URL (the Overview's command
@@ -41,7 +48,7 @@ Tools return `structuredContent` (JSON) plus the same JSON as a text block for c
 structured output. Failures return `isError: true` with `{code, message}` using the stable error codes of
 the REST API (`validation_error`, `not_found`, `character_not_locked`, `character_locked`, `voice_not_locked`,
 `voice_locked`,
-`consistency_gate`, `gate_unmet`, `conflict`, `gateway_error`, …).
+`consistency_gate`, `gate_unmet`, `conflict`, `library_conflict`, `gateway_error`, …).
 
 Long-running tools (`*_generate`, `batch_generate`, `export_render`, `footage_analyze`) enqueue a job and
 return it immediately. Agents poll with `job_get` or block with `job_wait` (up to 120 s per call).
@@ -122,14 +129,11 @@ or keep going and `job_wait` until a tab picks the job up.
 | `clip_plan` | `projectId`, `sceneId` → job |
 | `clip_generate` | `projectId`, `clipId` → job |
 | `clip_review` | `projectId`, `clipId`, `fix?` → job: the scene watched as one video and heard before the edit, and its shots fixed ([scenes before the edit](ai-review.md#scenes-before-the-edit)) |
-| `clip_storyboard` | `projectId`, `clipId` → job: a production scene blocked, drawn, reviewed and its frames approved ([production storyboards](ai-review.md#production-storyboards)) |
+| `clip_storyboard` | `projectId`, `clipId` → job: a production scene's frames drawn, reviewed and approved ([production storyboards](ai-review.md#production-storyboards)) |
 | `clip_board_review_override` | `projectId`, `clipId`, `note?` → clip: continue without passing its storyboard review (an approval) |
 | `takes_watch` | `projectId`, `takes?[]` (`clipId`, `shotId`, `takeId`; the cut's when empty) → job: takes watched whole ([takes watched whole](ai-review.md#takes-watched-whole)) |
-| `blocking_get` | `projectId`, `clipId` → `{blocking, state, draft, issues, lines}` ([director's desk](director-desk.md#surfaces)) |
-| `blocking_set` | `projectId`, `clipId`, `blocking`, `fix?` → the same |
-| `blocking_generate` | `projectId`, `clipId` → job (`scene.block`) |
-| `blocking_render` | `projectId`, `clipId`, `shotId`, `width?` → the shot's camera view as image content (PNG) |
-| `shot_update` | `projectId`, `clipId`, `shotId`, `fields` |
+| `desk_brief` | `projectId`, `clipId` → the clip's `SceneBrief` for the 3D-Editor's desk, to stage with its `desk_stage_brief` ([director's desk](director-desk.md#agents)); the desk's state has no tool (opaque bytes for the browser desk) |
+| `shot_update` | `projectId`, `clipId`, `shotId`, `fields` (a `camera` changes only the fields it names) |
 | `shot_regenerate` | `projectId`, `clipId`, `shotId` → job |
 | `take_select` | `projectId`, `clipId`, `shotId`, `takeId`, `inCut?` (also put the take in the cut, in place of the shot's items: [when a fix does not pass](feedback.md#when-a-fix-does-not-pass)) |
 | `take_override` | `projectId`, `clipId`, `shotId`, `takeId`, `reason` (requires `allowAgentOverrides`) |
@@ -195,9 +199,41 @@ or keep going and `job_wait` until a tab picks the job up.
 `export_render` takes `bug?` (the brand bug); lower thirds and bumpers are timeline ops (`add_text` with a template's
 style, `add_bumper`).
 
+### Library
+
+[The studio library](library.md): characters, elements, resources and 3D units shared by the studio's projects. The
+tools without a `projectId` check the library's own permissions (read: any authenticated caller; publish: people, the
+studio token, unscoped editor tokens; manage: the owner or an admin); the project tools take the project's
+(`library_status` reads, the others edit; an apply whose plan lists approved clips needs a director).
+
+| Tool | Arguments |
+|---|---|
+| `library_list` | `kinds?` (`character`, `element`, `resource`, `desk-set`, `desk-prop`, `desk-figure`), `kind?`, `tag?`, `q?`, `archived?` (`true` lists archived items too), `sort?`, `limit?`, `cursor?` → `{items, next}` (read-only) |
+| `library_get` | `itemId`, `version?` → `{item, version?}`: the item with its history, and that version's manifest when `version` is given (read-only) |
+| `library_update` | `itemId`, `name?`, `description?`, `tags?`, `current?`, `archived?`, `expectedRev?` → the item (its owner or an admin; `library_conflict` for a stale `expectedRev`) |
+| `library_uses` | `itemId` → `{incomplete, projects}`: where it is used, in the projects the caller may read (read-only) |
+| `library_save` | `projectId`, `entity` (`{kind: "character" \| "element" \| "resource", id}`), `itemId?`, `newItem?` (wins over `itemId`), `name?`, `description?`, `tags?`, `note?`, `basedOn?`, `acknowledgeConsent?` → `{item, version, unchanged, commit}` |
+| `library_apply` | `projectId`, `itemId`, `version?`, `target?`, `relock?`, `replacePin?`, `acknowledgeConsent?`, `dryRun?` → `{plan, applied, entity, commit}`: Use in project, update, link, or pin a 3D unit on its target |
+| `library_detach` | `projectId`, `target`, `what` (`library`, `deskUnit`) → `{entity, commit}` |
+| `library_status` | `projectId` → the project's links and 3D pins, each `current`, `behind`, `ahead` or `missing` (read-only) |
+
+No tool uploads bytes: 3D units come from the desk and resources from projects (or a REST upload). Of these tools a
+recipe may use only `library_status`, which reads the run's own project ([agents](agents.md#recipes)).
+
 ### Agents: recipes and many things at once
 
-[Agents](agents.md#recipes): recipes are sequences of these tools with parameters, run on the server.
+[Agents](agents.md#recipes): recipes are sequences of these tools with parameters, run on the server. A step may not
+use `recipe_run`, nor a library tool but `library_status`: not those that change the library or a project through it
+(`library_save`, `library_update`, `library_apply`, `library_detach`), nor those that read the studio library or where
+its items are used (`library_list`, `library_get`, `library_uses`). A recipe's job does not carry its caller's library
+permissions and would act as the studio, so a recipe that names one is refused with `validation_error` when it is
+saved, run or its job runs. Call those tools directly; `library_status`, which reads only the run's project, may be a
+step. A recipe acts only on the project it runs in, which is all a run is authorized for: every step's tool takes a
+`projectId` and the step gives it `{{projectId}}`. A tool that takes none acts on the studio (`project_list`,
+`project_import`, `settings_update`, `recipe_delete`, …) and may not be a step; a `projectId` left out, written out
+(a literal id), or filled in with another project (by a parameter, a list's item or an earlier step's result) is
+refused with `validation_error` naming the step and the argument, when the recipe is saved, when a run starts, when
+its job begins and before that step runs ([agents](agents.md#recipes)).
 
 | Tool | Arguments |
 |---|---|
@@ -244,17 +280,23 @@ style, `add_bumper`).
 
 ### Frontend control
 
-These tools act on the user's open browser tabs through the live channel (see
-[realtime-sync](realtime-sync.md)). Without a `sessionId`, a command goes to every session viewing the
-project. The result lists which sessions acknowledged it within 3 s.
+These tools act on open browser tabs through the live channel (see
+[realtime-sync](realtime-sync.md#ui-commands)). A command goes to every tab on its project (subscribed to it or present
+on it); a `sessionId` picks one of those tabs. The result lists which sessions acknowledged it within 3 s (`ok: false`
+with the reason when a tab did not carry it out). Outside auth mode `none` they stay within the projects their caller
+may use ([who sees and steers which tabs](realtime-sync.md#who-sees-and-steers-which-tabs)): a command needs
+`project.edit` on its project and reaches no tab elsewhere, whatever `sessionId` names (`delivered: []`); `ui_notify`
+without a `projectId` reaches only the caller's own tabs; `ui_sessions` lists the caller's own tabs and those on
+projects it may read, each showing only those projects. In auth mode `none`, as before, a `sessionId` reaches its tab
+wherever it is, `ui_notify` without a project reaches every tab, and `ui_sessions` lists them all.
 
 | Tool | Arguments | Browser effect |
 |---|---|---|
-| `ui_sessions` | `projectId?` | – (lists sessions with route, selection, viewport, editor engine and current editor job) |
-| `ui_navigate` | `projectId`, `view` (`overview`, `story`, `cast`, `elements`, `resources`, `clips`, `editor`, `analysis`, `history`, `exports`), `params?` | route change |
-| `ui_focus` | `projectId`, `target {kind: scene, character, element, clip, shot, take, timeline-item, commit, job; id}` | scrolls to and highlights the entity |
-| `ui_notify` | `message`, `level?`, `projectId?` | toast |
-| `ui_player` | `projectId`, `action` (`play`, `pause`, `seek`), `time?` | editor/preview playback |
+| `ui_sessions` | `projectId?` | – (lists the sessions the caller may see, with route, selection, viewport, editor engine and current editor job) |
+| `ui_navigate` | `projectId`, `view` (`overview`, `story`, `cast`, `elements`, `resources`, `clips`, `editor`, `analysis`, `history`, `exports`), `params?`, `sessionId?` | route change |
+| `ui_focus` | `projectId`, `target {kind: scene, character, element, clip, shot, take, timeline-item, commit, job; id}`, `sessionId?` | scrolls to and highlights the entity |
+| `ui_notify` | `message`, `level?`, `projectId?`, `sessionId?` | toast |
+| `ui_player` | `projectId`, `action` (`play`, `pause`, `seek`), `time?`, `sessionId?` | editor/preview playback |
 
 ## Resources
 

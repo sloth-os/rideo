@@ -332,8 +332,8 @@ one. Then the browser takes one 320 px JPEG per scene (at most 12) and, when the
 configured, a mono 16 kHz speech track (`-vn -ac 1 -ar 16000 -b:a 48k speech.mp3`). The results are
 uploaded, and the server's `analysis.suggest` job runs the AI part: transcript (STT via the proxy), the
 vision LLM's summary and suggestions from the signals and thumbnails, plus the deterministic rule-based
-suggestions (`ruleSuggestions` in `shared/src/story/normalize.ts`: cut black, tighten long silences, fade
-in/out), which exist even without an LLM.
+suggestions (`ruleSuggestions` in `shared/src/story/normalize.ts`: cut black, tighten long silences ("Tighten the
+8.0s pause": the definite article, which fits any length), fade in/out), which exist even without an LLM.
 
 ## Rendering
 
@@ -470,8 +470,13 @@ An editor job is a job in the `client` lane. The server never runs it; a browser
 Protocol (REST, see [api/rest.md](../api/rest.md#editor-jobs)):
 
 1. **Claim.** A tab with a project open asks `POST /api/editor/claim {sessionId, projectId}` when it is
-   idle, on every `job` event for a queued `client` job, and every 10 s. The server hands out the oldest
-   queued editor job of that project, sets `status: running` and a lease (`sessionId`, `expiresAt`, 60 s).
+   idle, on every `job` event for a queued `client` job, and every 10 s, but only once the server follows the project
+   for its live session: after the `subscribed` answer to its `subscribe`
+   ([realtime sync](realtime-sync.md#server--client)), and after a reconnect only once the new session's
+   resubscription is answered (the claim goes over HTTP, the subscription over the WebSocket: the claim could
+   otherwise reach the server first). The server refuses a claim of a session that does not follow the project
+   (`409 conflict`, "subscribe first"). It hands out the oldest queued editor job of that project, sets
+   `status: running` and a lease (`sessionId`, `expiresAt`, 60 s).
 2. **Heartbeat.** Every 10 s the tab reports progress and extends the lease. The reply tells it when the
    job was cancelled, or that the lease is lost. The heartbeat goes two ways: a dedicated worker posts it over HTTP,
    and the page sends it on the live channel (`job-heartbeat`, [realtime sync](realtime-sync.md#client--server)).

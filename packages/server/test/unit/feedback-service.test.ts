@@ -133,7 +133,7 @@ describe('retrospective rules (docs/design/feedback.md#retrospective-improvement
     const item = retrospective(facts).find((r) => r.rule === 'retake_results')!;
     expect(item).toMatchObject({
       area: 'quality',
-      title: '3 shot(s) have a new take since the last feedback: 1 better, 1 the same, 1 worse',
+      title: '3 shots have a new take since the last feedback: 1 better, 1 the same, 1 worse',
     });
     expect(item.detail).toContain('Worse now: C1·S3. No better: C1·S2.');
     facts.retakes = [retake('C1·S1', 4, 0)];
@@ -201,6 +201,130 @@ describe('retrospective rules (docs/design/feedback.md#retrospective-improvement
     expect(items.find((r) => r.rule === 'failed_jobs')!.detail).toBe(
       'clip.plan: 2 (mostly llm_invalid_output)',
     );
+  });
+
+  it('writes each count with its noun and verb agreeing, for 1 and for 2 (docs/brand.md#voice)', () => {
+    const clipId = 'clp_0000000000aaaaaa';
+    const shotId = 'sht_0000000000aaaaaa';
+    const at = (min: number) => new Date(Date.UTC(2026, 9, 25, 0, min)).toISOString();
+    const counted = (n: number) => {
+      const facts = quiet();
+      facts.usage = usage(
+        { llmRetries: n, videoSeconds: 3, discardedVideoSeconds: n },
+        {
+          'shot.generate': {
+            jobs: 5,
+            succeeded: 5,
+            failed: 0,
+            cancelled: 0,
+            runSeconds: 60 * n,
+            waitSeconds: 120 * n,
+            costUsd: 0,
+          },
+        },
+      );
+      const times = <T>(make: (i: number) => T) => Array.from({ length: n }, (_, i) => make(i));
+      facts.signals = {
+        ...facts.signals,
+        takes: { total: 10, passed: 6, failed: 0, unverified: n, overridden: n, stale: 0, qualityFailed: n },
+        unexpectedCuts: times((i) => ({ at: 3 + i, score: 0.6 })),
+        framingRuns: times((i) => ({ clipId, framing: 'medium', count: 5, start: i * 30, end: i * 30 + 25 })),
+        rushedLines: times((i) => ({
+          clipId,
+          shotId,
+          shot: `C1·S${i + 1}`,
+          words: 20,
+          durationSec: 5,
+          start: i,
+        })),
+        dialogue: {
+          lines: n + 1,
+          heard: 1,
+          missing: times((i) => ({
+            clipId,
+            shotId: `sht_00000000000000${i}`,
+            shot: `C1·S${i + 1}`,
+            character: 'Mira',
+            line: 'Not tonight.',
+            heard: 0,
+            start: i,
+            end: i + 1,
+          })),
+        },
+      };
+      facts.jobs = times(() =>
+        job({ kind: 'clip.plan', status: 'failed', startedAt: at(0), finishedAt: at(1) }),
+      );
+      facts.retakes = times((i) => ({
+        clipId,
+        shotId: `sht_00000000000000${i}`,
+        shot: `C1·S${i + 1}`,
+        recommendationId: null,
+        before: { takeId: 'tke_0000000000aaaaaa', issues: 2 },
+        after: { takeId: 'tke_0000000000bbbbbb', issues: 0 },
+        outcome: 'better' as const,
+      }));
+      return Object.fromEntries(retrospective(facts).map((r) => [r.rule, `${r.title} | ${r.detail}`]));
+    };
+    const one = counted(1);
+    const two = counted(2);
+    const pick = (said: Record<string, string>, rule: string) => said[rule]!.split(' | ');
+
+    expect(pick(one, 'rushed_lines')[0]).toBe('1 line is too long for its shot');
+    expect(pick(two, 'rushed_lines')[0]).toBe('2 lines are too long for their shots');
+    expect(pick(one, 'rushed_lines')[1]).toMatch(
+      /^It is spoken too fast or cut off\..*shorten or split it\.$/,
+    );
+    expect(pick(two, 'rushed_lines')[1]).toMatch(
+      /^They are spoken too fast or cut off\..*shorten or split these\.$/,
+    );
+    expect(pick(one, 'undelivered_lines')[0]).toBe('1 of 2 lines is not heard in the film');
+    expect(pick(two, 'undelivered_lines')[0]).toBe('2 of 3 lines are not heard in the film');
+    expect(pick(one, 'undelivered_lines')[1]).toMatch(
+      /^The video model did not voice it clearly\. Apply the recommendations to generate that shot again,/,
+    );
+    expect(pick(two, 'undelivered_lines')[1]).toMatch(
+      /^The video model did not voice them clearly\. Apply the recommendations to generate those shots again,/,
+    );
+    expect(pick(one, 'unverified_takes')[0]).toBe('1 take in the cut was never verified');
+    expect(pick(two, 'unverified_takes')[0]).toBe('2 takes in the cut were never verified');
+    expect(pick(one, 'unverified_takes')[1]).toContain('unavailable when it was made');
+    expect(pick(two, 'unverified_takes')[1]).toContain('unavailable when they were made');
+    expect(pick(one, 'overridden_takes')).toEqual([
+      '1 take in the cut was overridden',
+      'A person accepted it without a passing check: look at it first when the film looks wrong.',
+    ]);
+    expect(pick(two, 'overridden_takes')[0]).toBe('2 takes in the cut were overridden');
+    expect(pick(one, 'quality_failures')[0]).toBe('1 take in the cut failed the temporal or physics check');
+    expect(pick(one, 'quality_failures')[1]).toMatch(
+      /^It was kept because no attempt did better\. Regenerate it /,
+    );
+    expect(pick(two, 'quality_failures')[1]).toMatch(
+      /^They were kept because no attempt did better\. Regenerate them /,
+    );
+    expect(pick(one, 'llm_retries')[0]).toBe('1 language or vision call was turned away for load');
+    expect(pick(two, 'llm_retries')[0]).toBe('2 language or vision calls were turned away for load');
+    expect(pick(one, 'llm_retries')[1]).toContain('the call was made again');
+    expect(pick(two, 'llm_retries')[1]).toContain('the calls were made again');
+    expect(pick(one, 'unexpected_cuts')[0]).toBe('1 shot jumps inside the shot');
+    expect(pick(two, 'unexpected_cuts')[0]).toBe('2 shots jump inside the shot');
+    expect(pick(one, 'framing_runs')[0]).toBe('1 run of more than three shots with the same framing');
+    expect(pick(two, 'framing_runs')[0]).toBe('2 runs of more than three shots with the same framing');
+    expect(pick(one, 'failed_jobs')[0]).toBe('1 job failed');
+    expect(pick(two, 'failed_jobs')[0]).toBe('2 jobs failed');
+    expect(pick(one, 'retake_results')[0]).toBe(
+      '1 shot has a new take since the last feedback: 1 better, 0 the same, 0 worse',
+    );
+    expect(pick(two, 'retake_results')[0]).toBe(
+      '2 shots have a new take since the last feedback: 2 better, 0 the same, 0 worse',
+    );
+    expect(pick(one, 'discarded_generations')[1]).toMatch(
+      /^1 of 3 seconds was an attempt the gate discarded\./,
+    );
+    expect(pick(two, 'discarded_generations')[1]).toMatch(
+      /^2 of 3 seconds were attempts the gate discarded\./,
+    );
+    expect(pick(one, 'queue_wait')[1]).toMatch(/^2 minutes waiting against 1 minute running:/);
   });
 
   it('turns a settings action into a project settings patch from the fixed table', () => {

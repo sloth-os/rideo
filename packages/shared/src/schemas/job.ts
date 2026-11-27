@@ -42,7 +42,6 @@ export const JOB_KINDS = [
   'screenplay.revise',
   'storyboard.review',
   'clip.review',
-  'scene.block',
   'clip.storyboard',
   'cast.review',
   'takes.watch',
@@ -98,8 +97,7 @@ export const JOB_LANES: Record<JobKind, Lane> = {
   'storyboard.review': 'control',
   // waits for the shots its fixes generate again
   'clip.review': 'control',
-  'scene.block': 'llm',
-  // waits for its blocking, frames and review
+  // waits for its frames and review
   'clip.storyboard': 'control',
   'cast.review': 'llm',
   'takes.watch': 'llm',
@@ -152,7 +150,6 @@ export const JOB_GATEWAY: Record<JobKind, 'required' | 'optional' | 'none'> = {
   'screenplay.revise': 'required',
   'storyboard.review': 'required',
   'clip.review': 'required',
-  'scene.block': 'required',
   'clip.storyboard': 'required',
   'cast.review': 'required',
   'takes.watch': 'required',

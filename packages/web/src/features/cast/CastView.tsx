@@ -41,6 +41,8 @@ import { useConfig } from '../../lib/config';
 import { useProject } from '../../store/project';
 import { reportError, useUi } from '../../store/ui';
 import { AiReviewPanel } from '../ai-review/AiReviewPanel';
+import { LibraryProvider } from '../library/LibraryProvider';
+import { LibraryRows, SaveToLibraryButton, UseFromLibraryButton } from '../library/rows';
 import { VoicePanel } from './VoicePanel';
 
 const IDENTITY_FIELDS: [keyof Identity, string][] = [
@@ -82,9 +84,10 @@ function CharacterCard({ c }: { c: Character }) {
       className="rounded-[var(--radius-card)] border border-border bg-surface"
     >
       <div className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-3">
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <h3 className="truncate text-base font-semibold" data-testid="character-name">
+        {/* the name keeps 16rem of the line (all of it on a phone) and wraps when longer, never cut: Save and Lock wrap below, the badges after it */}
+        <div className="min-w-0 grow basis-64">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <h3 className="min-w-0 text-base font-semibold wrap-anywhere" data-testid="character-name">
               {c.name}
             </h3>
             <Badge>{c.role}</Badge>
@@ -106,6 +109,7 @@ function CharacterCard({ c }: { c: Character }) {
           </div>
           <p className="mt-0.5 truncate text-[12px] text-muted">{c.summary}</p>
         </div>
+        <SaveToLibraryButton kind="character" entity={c} />
         {locked ? (
           <Button
             size="sm"
@@ -325,6 +329,9 @@ function CharacterCard({ c }: { c: Character }) {
               <Editable value={c.summary} multiline rows={2} onSave={(v) => update({ summary: v })} />
             </Field>
           ) : null}
+          <div className="mt-3">
+            <LibraryRows kind="character" entity={c} />
+          </div>
         </div>
       </div>
       <VoicePanel c={c} />
@@ -345,123 +352,126 @@ export function CastView() {
   );
   const gate = workflow?.stages.find((s) => s.id === 'cast')?.gate;
   return (
-    <div className="mx-auto max-w-5xl space-y-4">
-      <SectionHeader
-        title="Cast"
-        subtitle="Approve references, lock each character and the voice of everyone who speaks. Only locked identities and voices appear in generated shots."
-        actions={
-          <>
-            <Button
-              icon={<UserPlus className="size-4" />}
-              onClick={() => setAdding(true)}
-              data-testid="add-character"
-            >
-              Add character
-            </Button>
-            {cfg?.features.tts ? (
+    <LibraryProvider projectId={projectId} docs={docs}>
+      <div className="mx-auto max-w-5xl space-y-4">
+        <SectionHeader
+          title="Cast"
+          subtitle="Approve references, lock each character and the voice of everyone who speaks. Only locked identities and voices appear in generated shots."
+          actions={
+            <>
               <Button
-                icon={<AudioLines className="size-4" />}
-                onClick={() =>
-                  api
-                    .castVoices(projectId, {})
-                    .then(() => useUi.getState().toast('Designing a voice for everyone who speaks', 'info'))
-                    .catch(reportError)
-                }
-                data-testid="cast-voices"
+                icon={<UserPlus className="size-4" />}
+                onClick={() => setAdding(true)}
+                data-testid="add-character"
               >
-                Design every voice
+                Add character
               </Button>
-            ) : null}
-            {workflow?.stage === 'cast' && gate ? (
-              <Button
-                variant="primary"
-                icon={<Lock className="size-4" />}
-                disabled={!gate.satisfied}
-                onClick={() =>
-                  api
-                    .approve(projectId, 'cast_locked')
-                    .then(() => useUi.getState().toast('Cast locked', 'success'))
-                    .catch(reportError)
-                }
-                data-testid="approve-cast"
-              >
-                Lock cast
-              </Button>
-            ) : null}
-          </>
-        }
-      />
-      <AiReviewPanel stage="cast" />
-      {workflow?.stage === 'cast' && gate && !gate.satisfied ? (
-        <div
-          className="space-y-1 rounded-[var(--radius-control)] border border-border bg-surface-2 p-3 text-[13px]"
-          data-testid="cast-unmet"
-        >
-          {gate.requirements
-            .filter((r) => !r.ok)
-            .map((r) => (
-              <p key={r.id}>
-                {r.message}
-                {r.details?.length ? `: ${r.details.join(', ')}` : ''}
-                {r.id.startsWith('elements.') ? (
-                  <>
-                    {' '}
-                    <Link
-                      to={`/p/${projectId}/elements`}
-                      className="text-accent underline"
-                      data-testid="go-elements"
-                    >
-                      Open elements
-                    </Link>
-                  </>
-                ) : null}
-              </p>
-            ))}
-        </div>
-      ) : null}
-      {characters.length === 0 ? (
-        <EmptyState title="No characters yet">
-          Generate the screenplay to draft a cast, or add characters yourself.
-        </EmptyState>
-      ) : (
-        <div className="space-y-4" data-testid="characters">
-          {characters.map((c) => (
-            <CharacterCard key={c.id} c={c} />
-          ))}
-        </div>
-      )}
-      <Dialog
-        open={adding}
-        onClose={() => setAdding(false)}
-        title="Add character"
-        footer={
-          <Button
-            variant="primary"
-            disabled={!name.trim()}
-            onClick={() =>
-              api
-                .createCharacter(projectId, { name })
-                .then(() => {
-                  setAdding(false);
-                  setName('');
-                })
-                .catch(reportError)
-            }
-            data-testid="add-character-submit"
+              <UseFromLibraryButton kind="character" />
+              {cfg?.features.tts ? (
+                <Button
+                  icon={<AudioLines className="size-4" />}
+                  onClick={() =>
+                    api
+                      .castVoices(projectId, {})
+                      .then(() => useUi.getState().toast('Designing a voice for everyone who speaks', 'info'))
+                      .catch(reportError)
+                  }
+                  data-testid="cast-voices"
+                >
+                  Design every voice
+                </Button>
+              ) : null}
+              {workflow?.stage === 'cast' && gate ? (
+                <Button
+                  variant="primary"
+                  icon={<Lock className="size-4" />}
+                  disabled={!gate.satisfied}
+                  onClick={() =>
+                    api
+                      .approve(projectId, 'cast_locked')
+                      .then(() => useUi.getState().toast('Cast locked', 'success'))
+                      .catch(reportError)
+                  }
+                  data-testid="approve-cast"
+                >
+                  Lock cast
+                </Button>
+              ) : null}
+            </>
+          }
+        />
+        <AiReviewPanel stage="cast" />
+        {workflow?.stage === 'cast' && gate && !gate.satisfied ? (
+          <div
+            className="space-y-1 rounded-[var(--radius-control)] border border-border bg-surface-2 p-3 text-[13px]"
+            data-testid="cast-unmet"
           >
-            Add
-          </Button>
-        }
-      >
-        <Field label="Name">
-          <Input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="Mira"
-            data-testid="new-character-name"
-          />
-        </Field>
-      </Dialog>
-    </div>
+            {gate.requirements
+              .filter((r) => !r.ok)
+              .map((r) => (
+                <p key={r.id}>
+                  {r.message}
+                  {r.details?.length ? `: ${r.details.join(', ')}` : ''}
+                  {r.id.startsWith('elements.') ? (
+                    <>
+                      {' '}
+                      <Link
+                        to={`/p/${projectId}/elements`}
+                        className="text-accent underline"
+                        data-testid="go-elements"
+                      >
+                        Open elements
+                      </Link>
+                    </>
+                  ) : null}
+                </p>
+              ))}
+          </div>
+        ) : null}
+        {characters.length === 0 ? (
+          <EmptyState title="No characters yet">
+            Generate the screenplay to draft a cast, or add characters yourself.
+          </EmptyState>
+        ) : (
+          <div className="space-y-4" data-testid="characters">
+            {characters.map((c) => (
+              <CharacterCard key={c.id} c={c} />
+            ))}
+          </div>
+        )}
+        <Dialog
+          open={adding}
+          onClose={() => setAdding(false)}
+          title="Add character"
+          footer={
+            <Button
+              variant="primary"
+              disabled={!name.trim()}
+              onClick={() =>
+                api
+                  .createCharacter(projectId, { name })
+                  .then(() => {
+                    setAdding(false);
+                    setName('');
+                  })
+                  .catch(reportError)
+              }
+              data-testid="add-character-submit"
+            >
+              Add
+            </Button>
+          }
+        >
+          <Field label="Name">
+            <Input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Mira"
+              data-testid="new-character-name"
+            />
+          </Field>
+        </Dialog>
+      </div>
+    </LibraryProvider>
   );
 }

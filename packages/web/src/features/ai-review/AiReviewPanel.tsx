@@ -1,5 +1,6 @@
 import {
   DEFAULT_MIN_DIMENSION,
+  plural,
   REVIEW_DIMENSIONS,
   type ReviewStage,
   type ReviewState,
@@ -59,7 +60,6 @@ const DIMENSION_LABEL: Record<string, string> = {
   composition: 'Composition',
   coverage: 'Coverage',
   storytelling: 'Storytelling',
-  blocking: 'Keeps the blocking',
   likeness: 'Likeness',
   consistency: 'Consistent views',
   distinct: 'Told apart',
@@ -97,10 +97,7 @@ function actionText(
 }
 
 function Bars({ review, stage }: { review: StageReview; stage: ReviewStage }) {
-  // A dimension the review did not score (the blocking of a scene without one) is left out
-  const dims = (REVIEW_DIMENSIONS[stage] as readonly string[]).filter(
-    (d) => d !== 'blocking' || typeof review.scores[d] === 'number',
-  );
+  const dims: readonly string[] = REVIEW_DIMENSIONS[stage];
   return (
     <ul className="grid grid-cols-1 gap-x-4 gap-y-1 sm:grid-cols-2" aria-label="Scores">
       {dims.map((d) => {
@@ -366,7 +363,7 @@ export function ReviewCard({
               ? ` · earlier: ${review.history.map((h) => h.score.toFixed(1)).join(', ')}`
               : ''}
             {review.model ? ` · ${review.model}` : ''}
-            {` · ${review.issues.length} issue(s), ${openRecs} open recommendation(s)`}
+            {` · ${plural(review.issues.length, 'issue')}, ${plural(openRecs, 'open recommendation')}`}
           </p>
           {review.issues.length || review.recommendations.length ? (
             <div>
