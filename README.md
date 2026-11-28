@@ -8,7 +8,7 @@ can also upload existing footage and let the AI suggest and apply an edit.
 | Capability | How Rideo does it |
 |---|---|
 | Asset management | Every project asset (screenplay, characters, clips, timeline, media) lives on a **WebDAV** store: an external server (OpenList, Nextcloud, Apache, rclone…) or the embedded `/dav` server. You can mount it in Finder or Explorer and edit it there. |
-| 3D staging | The **3D-Editor's director's desk**, embedded in the Storyboard view (an iframe on its own origin, set in Settings): a person stages a scene in 3D from a brief rideo makes of its shots, cast and props, and each shot gets the desk's reference clip, rendered in the browser, as its motion reference with the staged lens and camera move. See [docs/design/director-desk.md](docs/design/director-desk.md). |
+| 3D staging | The **3D-Editor's director's desk**, embedded in the Storyboard view (an iframe on its own origin, set in Settings; the Docker Compose files run one beside the studio): a person stages a scene in 3D from a brief rideo makes of its shots, cast and props, and each shot gets the desk's reference clip, rendered in the browser, as its motion reference with the staged lens and camera move. See [docs/design/director-desk.md](docs/design/director-desk.md). |
 | Character consistency | A hard **consistency gate**. Characters are identity-locked with approved reference images, every generation is conditioned on those references, and every keyframe and clip is judged against them before it can enter the cut. See [docs/design/character-consistency.md](docs/design/character-consistency.md). |
 | Version control | A git-like, content-addressed history (commits, branches, tags, diff, restore) stored next to the assets on WebDAV. |
 | Generation | Images, video and music go through the [`@sloth-os/mm-gateway-ts`](https://github.com/sloth-os/mm-gateway-ts) SDK for [mm-gateway](https://github.com/sloth-os/mm-gateway). All other AI calls (LLM, vision, speech-to-text) go through the gateway's `/proxy/{domain}/{path}` reverse proxy. |
@@ -96,8 +96,8 @@ npm run test:e2e:real # on real models: mm-gateway in Docker + your image, video
 npm run build         # web app + bundled server and mock gateway (scripts/bundle.mjs)
 ```
 
-Docker: `docker compose -f docker-compose.demo.yml up` runs the offline demo on http://localhost:8787;
-see [docs/deployment.md](docs/deployment.md) for production with mm-gateway.
+Docker: `docker compose -f docker-compose.demo.yml up` runs the offline demo on http://localhost:8787, with the
+3D-Editor's director's desk beside it; see [docs/deployment.md](docs/deployment.md) for production with mm-gateway.
 
 CI runs the same stages on GitHub Actions (`.github/workflows/ci.yml`).
 

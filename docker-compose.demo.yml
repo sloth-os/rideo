@@ -1,5 +1,6 @@
-# Fully offline demo: Rideo with the mock mm-gateway (deterministic images, video, music and LLM).
-#   docker compose -f docker-compose.demo.yml up  →  http://localhost:8787
+# Fully offline demo: Rideo with the mock mm-gateway (deterministic images, video, music and LLM) and the
+# 3D-Editor's director's desk.
+#   docker compose -f docker-compose.demo.yml up  →  http://localhost:8787 (the desk loads from http://127.0.0.1:8788)
 services:
   rideo:
     image: ghcr.io/sloth-os/rideo:latest
@@ -13,6 +14,8 @@ services:
       RIDEO_TTS_PROVIDER: elevenlabs
       # Sound effects through the mock's ElevenLabs sound generation (docs/design/post-audio.md).
       RIDEO_SFX_PROVIDER: elevenlabs
+      # The desk page the Storyboard view embeds: the 3d-editor service below (docs/deployment.md#the-directors-desk).
+      RIDEO_DESK_URL: ${RIDEO_DESK_URL-http://127.0.0.1:8788/desk.html}
     ports:
       - "8787:8787"
     volumes:
@@ -32,5 +35,17 @@ services:
     healthcheck:
       disable: true
 
+  # The 3D-Editor, serving its director's desk: browsers load it, rideo's server never calls it.
+  3d-editor:
+    image: ${DESK_IMAGE:-ghcr.io/sloth-os/3d-editor:latest}
+    environment:
+      # The origins that may frame the desk (its frame-ancestors): the studio as browsers open it
+      DESK_EMBED_ORIGINS: ${DESK_EMBED_ORIGINS:-http://localhost:8787}
+    ports:
+      - "127.0.0.1:8788:8080"
+    volumes:
+      - 3d-editor-demo-data:/data
+
 volumes:
   rideo-demo-data:
+  3d-editor-demo-data:
