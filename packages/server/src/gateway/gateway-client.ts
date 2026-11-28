@@ -8,6 +8,7 @@ import {
   type ModelLimitsEntry,
   ModelLimitsEntrySchema,
   TERMINAL_TASK_STATUSES,
+  withoutTrailingSlashes,
 } from '@rideo/shared';
 import {
   Configuration,
@@ -164,7 +165,7 @@ export class GatewayClient {
     },
   ) {
     const configuration = new Configuration({
-      basePath: (cfg.url ?? 'http://gateway.invalid').replace(/\/+$/, ''),
+      basePath: withoutTrailingSlashes(cfg.url ?? 'http://gateway.invalid'),
       accessToken: cfg.apiKey,
     });
     // A direct connection, like the proxy client's fetch: environment proxies are not used.

@@ -7,6 +7,7 @@ import {
   type ProxySyncCode,
   type ProxySyncState,
   SETTING_ENDPOINT_IDS,
+  withoutTrailingSlashes,
 } from '@rideo/shared';
 import {
   Configuration,
@@ -106,7 +107,7 @@ const hostOf = (url: string): string => {
     return url.toLowerCase();
   }
 };
-const trimUrl = (url: string): string => url.replace(/\/+$/, '');
+const trimUrl = (url: string): string => withoutTrailingSlashes(url);
 const sameNames = (a: Record<string, string> = {}, b: Record<string, string> = {}) =>
   Object.keys(a).sort().join('\n') === Object.keys(b).sort().join('\n');
 

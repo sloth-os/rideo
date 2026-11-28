@@ -53,3 +53,47 @@ describe('the ready log', () => {
     });
   });
 });
+
+describe('the path of RIDEO_PUBLIC_URL', () => {
+  it('logs a warning at start that says why the path is not used as the base path', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'rideo-public-path-'));
+    const lines: Record<string, unknown>[] = [];
+    const stream = new Writable({
+      write(chunk, _encoding, done) {
+        for (const line of String(chunk).split('\n')) if (line.trim()) lines.push(JSON.parse(line));
+        done();
+      },
+    });
+    const config = loadConfig({
+      RIDEO_PORT: '0',
+      RIDEO_HOST: '127.0.0.1',
+      RIDEO_DATA_DIR: dir,
+      RIDEO_STORAGE: 'embedded',
+      RIDEO_PUBLIC_URL: 'https://studio.example.com/api',
+      NODE_ENV: 'test',
+      RIDEO_WATERMARK_KEY: 'integration-test-key',
+      RIDEO_WEBDAV_SYNC_INTERVAL_SEC: '0',
+      RIDEO_WEB_DIST: join(dir, 'no-web'),
+    });
+    const studio = await buildServer(config, { logger: { level: 'info', stream } });
+    try {
+      // not refused: the studio starts and serves at the root
+      await studio.start();
+      const warning = lines.filter((line) => String(line.msg).startsWith('the path of RIDEO_PUBLIC_URL'));
+      expect(warning).toHaveLength(1);
+      expect(warning[0]).toMatchObject({ level: 40, path: '/api' });
+      expect(String(warning[0]!.reason)).toMatch(
+        /^its first segment is one of the studio's own paths \(\/api, /,
+      );
+      expect(String(warning[0]!.msg)).toContain('is not used as the base path: its first segment is one of');
+      expect(String(warning[0]!.msg)).toContain('set RIDEO_BASE_PATH');
+      expect(lines.find((line) => line.msg === 'Rideo is ready')).toMatchObject({
+        url: 'https://studio.example.com/api',
+        basePath: '/',
+      });
+    } finally {
+      await studio.stop();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});

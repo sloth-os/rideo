@@ -250,7 +250,10 @@ effective value = environment (non-empty) ?? settings file ?? default
 
 `loadConfig(env, overrides, settings)` merges `{...settings, ...nonEmpty(env)}` and parses the result with the same
 `EnvSchema`, so a value from the file is validated exactly like one from the environment. The config remembers its
-sources (`config.sources`) for the Settings view.
+sources (`config.sources`) for the Settings view. Reading a value takes time linear in its length: the slashes at the
+ends of URLs (`RIDEO_PUBLIC_URL`, `RIDEO_CORS_ORIGINS`, `MM_GATEWAY_URL`, the WebDAV URL and root, the OIDC issuer,
+API base URLs) are trimmed by a loop, not by a regular expression that backtracks over a run of slashes, so no saved
+value holds the server up on later saves, on every start, or on `GET /api/config`.
 
 At start, `buildServer()` reads the file and builds the effective config. A file that no longer validates (edited by
 hand, or an older value the schema now rejects) is not fatal: the studio starts on the environment alone, logs

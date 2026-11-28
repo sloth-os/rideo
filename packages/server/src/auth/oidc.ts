@@ -1,4 +1,5 @@
 import { createHash, createPublicKey, randomBytes, verify } from 'node:crypto';
+import { withoutTrailingSlashes } from '@rideo/shared';
 import { AppError } from '../errors';
 
 /**
@@ -67,7 +68,7 @@ export class OidcClient {
 
   meta(): Promise<Discovery> {
     this.discovery ??= this.json<Discovery>(
-      `${this.settings.issuer.replace(/\/+$/, '')}/.well-known/openid-configuration`,
+      `${withoutTrailingSlashes(this.settings.issuer)}/.well-known/openid-configuration`,
     ).catch((err) => {
       this.discovery = null;
       throw err;

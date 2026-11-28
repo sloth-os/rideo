@@ -1,40 +1,119 @@
 import type { IncomingMessage } from 'node:http';
 import type { FastifyRequest } from 'fastify';
-import { normalizeBasePath } from '../config';
+import { MAX_BASE_PATH_LENGTH, normalizeBasePath } from '../config';
 
 /**
- * Serving under a subpath (docs/design/subpath.md): the base of a request is the proxy's `X-Forwarded-Prefix` when it
- * is a valid path, else the configured one. Requests that still carry the base (proxies that keep the prefix) have it
- * removed before anything routes them, so both proxy styles reach the same routes.
+ * Serving under a subpath (docs/design/subpath.md#both-proxy-styles). A request's pages and links are written with its
+ * base: the proxy's `X-Forwarded-Prefix` when it is a valid path, else the configured one. Routing never follows the
+ * header's value: a request that carries the header comes from a proxy that removed its own prefix and is routed as it
+ * came; one without it (a proxy that keeps the prefix, or none) has the configured base path removed from the front of
+ * its path, once.
  */
 const BASE = Symbol('rideo.basePath');
 
 type WithBase = IncomingMessage & { [BASE]?: string };
 
-export function forwardedPrefix(req: IncomingMessage): string | null {
+/** The request's X-Forwarded-Prefix as sent, or null without one. */
+function prefixHeader(req: IncomingMessage): string | null {
   const raw = req.headers['x-forwarded-prefix'];
   const value = Array.isArray(raw) ? raw[0] : raw;
-  if (!value) return null;
-  return normalizeBasePath(value.split(',')[0]!.trim());
+  return value ? value : null;
 }
 
-/** Strips the base path from the request URL and remembers the request's base. Runs in the HTTP server factory. */
+/**
+ * The proxy's base path: X-Forwarded-Prefix when it is a base path (docs/design/subpath.md#the-base-path), so never one
+ * that starts with one of the studio's own paths; a value over 256 characters is ignored unread.
+ */
+export function forwardedPrefix(req: IncomingMessage): string | null {
+  const value = prefixHeader(req);
+  if (value === null || value.length > MAX_BASE_PATH_LENGTH) return null;
+  return normalizeBasePath(value.split(',')[0]!);
+}
+
+/** Whether `url` (a request target) is `base` itself or under it. */
+function underBase(url: string, base: string): boolean {
+  return url === base || url.startsWith(`${base}/`) || url.startsWith(`${base}?`);
+}
+
+/**
+ * Remembers the request's base and, unless a proxy already stripped its prefix (the request carries
+ * X-Forwarded-Prefix), removes the configured base path from the front of its path. Runs in the HTTP server factory and
+ * on WebSocket upgrades, before the embedded /dav and Fastify see the request.
+ */
 export function applyBasePath(req: IncomingMessage, configured: string): void {
-  const base = forwardedPrefix(req) ?? configured;
-  (req as WithBase)[BASE] = base;
+  (req as WithBase)[BASE] = forwardedPrefix(req) ?? configured;
+  if (!configured || prefixHeader(req) !== null) return;
   const url = req.url ?? '/';
-  for (const prefix of new Set([base, configured])) {
-    if (!prefix) continue;
-    if (url === prefix) {
-      req.url = '/';
-      return;
-    }
-    if (url.startsWith(`${prefix}/`) || url.startsWith(`${prefix}?`)) {
-      req.url = url.slice(prefix.length) || '/';
-      if (req.url.startsWith('?')) req.url = `/${req.url}`;
-      return;
-    }
+  if (!underBase(url, configured)) return;
+  const rest = url.slice(configured.length);
+  req.url = rest.startsWith('/') ? rest : `/${rest}`;
+}
+
+/** What replaces a token's value in logged URLs (as in the gateway's redacted configuration). */
+const REDACTED = '[redacted]';
+
+/** A query parameter's name as the server's query parser reads it: percent-escapes decoded; any case. */
+function queryName(raw: string): string {
+  try {
+    return decodeURIComponent(raw.replaceAll('+', ' ')).toLowerCase();
+  } catch {
+    return raw.toLowerCase();
   }
+}
+
+/**
+ * `url` with the value of each `token` query parameter (an API or agent token: docs/design/accounts.md) replaced by
+ * `[redacted]`, for a log line. Linear in the URL's length.
+ */
+export function redactUrl(url: string): string {
+  const q = url.indexOf('?');
+  if (q === -1) return url;
+  const params = url
+    .slice(q + 1)
+    .split('&')
+    .map((param) => {
+      const eq = param.indexOf('=');
+      if (eq === -1 || queryName(param.slice(0, eq)) !== 'token') return param;
+      return `${param.slice(0, eq)}=${REDACTED}`;
+    });
+  return `${url.slice(0, q + 1)}${params.join('&')}`;
+}
+
+/** The kept-prefix warning is logged at most once in this time (ms) per server. */
+export const KEPT_PREFIX_WARNING_EVERY_MS = 10 * 60_000;
+
+/**
+ * A check, run on every request (and WebSocket upgrade) before applyBasePath, that logs at warn, at most once per
+ * KEPT_PREFIX_WARNING_EVERY_MS on `now`'s clock, when a request carries X-Forwarded-Prefix and its path starts with the
+ * configured base path or with the header's own base path (docs/design/subpath.md#upgrading-from-an-earlier-version).
+ * Such a request is routed as it came, the base path kept on its path: a proxy that keeps the prefix and sends the
+ * header, or passes a client's on, makes it (and its API answers with the app's page), but so does a client that asks a
+ * stripping proxy for a doubled prefix. Clients can send the header too, so the line is worded as a condition on the
+ * proxy and kept rare; it names a valid base path only, never the header's text, and the URL with its token redacted.
+ */
+export function keptPrefixWarning(
+  log: { warn(obj: object, msg: string): void },
+  configured: string,
+  now: () => number = Date.now,
+): (req: IncomingMessage) => void {
+  let last = Number.NEGATIVE_INFINITY;
+  return (req) => {
+    if (prefixHeader(req) === null) return;
+    const url = req.url ?? '/';
+    const base = [configured, forwardedPrefix(req) ?? ''].find((b) => b !== '' && underBase(url, b));
+    if (base === undefined) return;
+    const at = now();
+    if (at - last < KEPT_PREFIX_WARNING_EVERY_MS) return;
+    last = at;
+    log.warn(
+      { base, url: redactUrl(url) },
+      `a request that carries X-Forwarded-Prefix has a path under ${base}; such a request is routed as it came, ` +
+        `${base} kept on its path: if the proxy in front keeps the prefix in paths, it must not send ` +
+        'X-Forwarded-Prefix and must drop a client\'s (nginx: proxy_set_header X-Forwarded-Prefix "" in the location; Caddy: ' +
+        'header_up -X-Forwarded-Prefix; Apache httpd: RequestHeader unset X-Forwarded-Prefix), see ' +
+        'docs/design/subpath.md#upgrading-from-an-earlier-version (logged at most once every 10 minutes)',
+    );
+  };
 }
 
 /** The base path the browser sees this request under ('' or `/a/b`). */

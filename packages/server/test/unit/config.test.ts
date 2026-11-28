@@ -313,6 +313,125 @@ describe('config', () => {
     expect(normalizeBasePath('/a?x=1')).toBeNull();
   });
 
+  it('refuses a RIDEO_BASE_PATH longer than 256 characters (docs/design/subpath.md#the-base-path)', () => {
+    const longest = `/${'a'.repeat(255)}`;
+    expect(loadConfig({ RIDEO_BASE_PATH: longest }).basePath).toBe(longest);
+    expect(normalizeBasePath(longest)).toBe(longest);
+    for (const value of [`${longest}a`, `${longest}/`, `/a${'/'.repeat(300)}`]) {
+      let message: string | undefined;
+      try {
+        loadConfig({ RIDEO_BASE_PATH: value });
+      } catch (err) {
+        const issues = (err as { issues: { path: string[]; message: string }[] }).issues;
+        message = issues.find((i) => i.path.join('.') === 'RIDEO_BASE_PATH')?.message;
+      }
+      expect(message, value.slice(0, 20)).toBe('a path of at most 256 characters');
+      expect(normalizeBasePath(value)).toBeNull();
+    }
+  });
+
+  it('refuses a RIDEO_BASE_PATH that starts with one of the studio’s own paths (docs/design/subpath.md#the-base-path)', () => {
+    const refusal = (value: string) => {
+      try {
+        loadConfig({ RIDEO_BASE_PATH: value });
+      } catch (err) {
+        const issues = (err as { issues: { path: string[]; message: string }[] }).issues;
+        return issues.find((i) => i.path.join('.') === 'RIDEO_BASE_PATH')?.message;
+      }
+      return undefined;
+    };
+    for (const value of [
+      '/api',
+      '/api/',
+      '/dav/x',
+      '/mcp',
+      '/metrics',
+      '/sw.js',
+      '/assets/v2',
+      '/index.html',
+    ]) {
+      expect(refusal(value), value).toBe(
+        "a path whose first segment is not one of the studio's own (/api, /mcp, /metrics, /dav, /assets, /icons, " +
+          '/index.html, /logo.svg, /manifest.webmanifest, /sw.js, /sw.js.map)',
+      );
+      expect(normalizeBasePath(value), value).toBeNull();
+    }
+    // a segment is the studio's only when it is one exactly
+    for (const value of [
+      '/api-docs',
+      '/apis',
+      '/davinci',
+      '/API',
+      '/metrics2',
+      '/sw',
+      '/studio/api',
+      '/rideo/dav',
+    ]) {
+      expect(loadConfig({ RIDEO_BASE_PATH: value }).basePath, value).toBe(value);
+    }
+    // a path like /rideo is the rule a value breaks first
+    expect(refusal('/api/../x')).toBe('a path like /rideo (letters, digits, . _ ~ -)');
+  });
+
+  it('does not use a RIDEO_PUBLIC_URL path that is no base path, and says why (docs/design/subpath.md#the-base-path)', () => {
+    const long = `/${'a'.repeat(300)}`;
+    for (const [url, reason] of [
+      ['https://example.com/api', "its first segment is one of the studio's own paths (/api, /mcp"],
+      ['https://example.com/dav/x/', "its first segment is one of the studio's own paths"],
+      [`https://example.com${long}`, 'it is longer than 256 characters'],
+      ['https://example.com/my studio', 'it is not a path of segments of letters, digits and . _ ~ -'],
+    ] as const) {
+      // not refused: the studio serves at the root (and under a stripping proxy's X-Forwarded-Prefix)
+      const c = loadConfig({ RIDEO_PUBLIC_URL: url });
+      expect(c.basePath, url).toBe('');
+      expect(c.publicUrlPathIgnored?.path, url).toBe(new URL(url).pathname);
+      expect(c.publicUrlPathIgnored?.reason, url).toContain(reason);
+    }
+    expect(loadConfig({ RIDEO_PUBLIC_URL: 'https://example.com/api' }).publicUrl).toBe(
+      'https://example.com/api',
+    );
+    // used, the root, none, or RIDEO_BASE_PATH set: nothing to say
+    for (const env of [
+      { RIDEO_PUBLIC_URL: 'https://example.com/rideo/' },
+      { RIDEO_PUBLIC_URL: 'https://example.com/' },
+      {},
+      { RIDEO_PUBLIC_URL: 'https://example.com/api', RIDEO_BASE_PATH: '/studio' },
+    ]) {
+      expect(loadConfig(env).publicUrlPathIgnored, JSON.stringify(env)).toBeNull();
+    }
+    expect(
+      loadConfig({ RIDEO_PUBLIC_URL: 'https://example.com/api', RIDEO_BASE_PATH: '/studio' }).basePath,
+    ).toBe('/studio');
+  });
+
+  it('reads URL settings in time linear in their length, a run of slashes too (docs/design/settings.md)', () => {
+    // `/\/+$/` and `/^\/+|\/+$/g` took about 17 s on each of these: quadratic in a run of slashes before a character
+    const run = '/'.repeat(200_000);
+    const started = performance.now();
+    const c = loadConfig({
+      RIDEO_CORS_ORIGINS: `https://a.example${run}x, https://b.example${run}`,
+      MM_GATEWAY_URL: `http://gateway.example${run}x`,
+      RIDEO_PUBLIC_URL: `https://example.com/rideo${run}x`,
+      RIDEO_WEBDAV_ROOT: `${run}projects${run}x`,
+      RIDEO_LLM_PROXY_DOMAIN: `https://ai.example.com${run}v1${run}x`,
+    });
+    expect(performance.now() - started).toBeLessThan(1000);
+    expect(c.cors.origins).toEqual([`https://a.example${run}x`, 'https://b.example']);
+    expect(c.gateway.url).toBe(`http://gateway.example${run}x`);
+    expect(c.publicUrl).toBe(`https://example.com/rideo${run}x`);
+    expect(c.basePath).toBe('');
+    expect(c.publicUrlPathIgnored?.reason).toBe('it is longer than 256 characters');
+    expect(c.webdav.root).toBe(`/projects${run}x`);
+    expect(c.llm?.prefix).toBe(`v1${run}x`);
+    // trailing runs go
+    const trimmed = loadConfig({
+      MM_GATEWAY_URL: `http://gateway.example/v1${run}`,
+      RIDEO_WEBDAV_ROOT: `${run}r${run}`,
+    });
+    expect(trimmed.gateway.url).toBe('http://gateway.example/v1');
+    expect(trimmed.webdav.root).toBe('/r');
+  });
+
   it('resolves auto storage: WebDAV with a URL, the built-in store when it has projects, else the browser', () => {
     expect(loadConfig({ RIDEO_EMBEDDED_DAV: 'true' }).storage.mode).toBe('embedded');
     const fresh = loadConfig({});

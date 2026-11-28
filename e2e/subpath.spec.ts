@@ -10,6 +10,28 @@ const CASES = [
   { name: 'the prefix stripped by a reverse proxy', base: at(PORTS.proxy, '/rideo/') },
 ];
 
+// Routing follows the proxy and the studio's own base path, never a client's X-Forwarded-Prefix
+// (docs/design/subpath.md#both-proxy-styles).
+test('a client’s X-Forwarded-Prefix never re-roots the studio, and a stripped path is not stripped again', async ({
+  request,
+}) => {
+  const reached = async (url: string, headers: Record<string, string> = {}) => {
+    const res = await request.get(url, { headers });
+    return `${res.status()} ${(res.headers()['content-type'] ?? '').split(';')[0]}`;
+  };
+  // the studio under /studio with the prefix kept: its API, and none under a prefix the client names
+  expect(await reached(at(PORTS.subpath, '/studio/api/health'))).toBe('200 application/json');
+  expect(await reached(at(PORTS.subpath, '/x/api/health'), { 'x-forwarded-prefix': '/x' })).toBe(
+    '200 text/html',
+  );
+  expect(
+    await reached(at(PORTS.subpath, '/studio/x/api/health'), { 'x-forwarded-prefix': '/studio/x' }),
+  ).toBe('200 text/html');
+  // through the stripping proxy at /rideo: its API, and /rideo/studio/… arrives as /studio/… and stays there
+  expect(await reached(at(PORTS.proxy, '/rideo/api/health'))).toBe('200 application/json');
+  expect(await reached(at(PORTS.proxy, '/rideo/studio/api/health'))).toBe('200 text/html');
+});
+
 for (const { name, base } of CASES) {
   test(`the studio works under a subpath: ${name}`, async ({ page }) => {
     const prefix = new URL(base).pathname;

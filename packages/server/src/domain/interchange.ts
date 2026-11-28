@@ -17,6 +17,7 @@ import {
   SourceSchema,
   sortedClips,
   type Timeline,
+  withoutTrailingSlashes,
 } from '@rideo/shared';
 import { ZodError } from 'zod';
 import { conflict, invalid } from '../errors';
@@ -55,7 +56,7 @@ export class InterchangeService extends Service {
   defaultMediaBase(): string {
     const { webdav, publicUrl } = this.deps.config;
     return webdav.url
-      ? `${webdav.url.replace(/\/+$/, '')}${webdav.root}`
+      ? `${withoutTrailingSlashes(webdav.url)}${webdav.root}`
       : `${publicUrl}${DAV_PREFIX}${webdav.root}`;
   }
 

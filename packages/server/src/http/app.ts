@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
-import { createServer } from 'node:http';
+import { createServer, type IncomingMessage } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { join, resolve } from 'node:path';
 import type { Readable } from 'node:stream';
@@ -37,7 +37,7 @@ import { workspaceContext } from '../storage/workspaces';
 import { type RequestCounters, requestCounters } from '../util/request-context';
 import { VERSION } from '../version';
 import { type AuthedRequest, registerAuthRoutes } from './auth-routes';
-import { applyBasePath, injectBase, requestBase } from './base-path';
+import { applyBasePath, injectBase, keptPrefixWarning, requestBase } from './base-path';
 import { registerBrandRoutes } from './brand-routes';
 import { effectiveConfig, StudioHost } from './host';
 import { registerLibraryRoutes } from './library-routes';
@@ -90,13 +90,16 @@ export function sameSiteOrAllowed(
 
 export async function buildServer(
   config: Config,
-  opts: { storage?: StorageBackend; logger?: boolean | object } = {},
+  /** `now`: the clock of rate-limited log lines (tests inject one). */
+  opts: { storage?: StorageBackend; logger?: boolean | object; now?: () => number } = {},
 ): Promise<RideoServer> {
   // Settings from the UI under the environment (docs/design/settings.md#where-values-come-from).
   const settingsStore = await new SettingsStore(join(config.dataDir, 'settings.json')).load();
   const effective = effectiveConfig(config, settingsStore.values);
   const basePath = config.basePath;
   let host: StudioHost | null = null;
+  // Set once Fastify's logger exists: says when a proxy that keeps the prefix sends X-Forwarded-Prefix.
+  let keptPrefix: ((req: IncomingMessage) => void) | undefined;
   const app = Fastify({
     logger:
       opts.logger ??
@@ -113,16 +116,21 @@ export async function buildServer(
     serverFactory: (handler) => {
       const server = createServer((req, res) => {
         // Under a subpath (docs/design/subpath.md), before Fastify and the embedded /dav.
+        keptPrefix?.(req);
         applyBasePath(req, basePath);
         const dav = host?.dav;
         if (dav?.matches(req.url)) return dav.handle(req, res, `${requestBase(req)}${DAV_PREFIX}/`);
         handler(req, res);
       });
       // WebSocket upgrades (the live channel) do not pass the request handler: the same rewrite, first.
-      server.prependListener('upgrade', (req) => applyBasePath(req, basePath));
+      server.prependListener('upgrade', (req) => {
+        keptPrefix?.(req);
+        applyBasePath(req, basePath);
+      });
       return server;
     },
   });
+  keptPrefix = keptPrefixWarning(app.log.child({ component: 'subpath' }), basePath, opts.now);
   let port = config.port;
   const metrics = new Metrics();
   host = new StudioHost({
@@ -560,6 +568,16 @@ export async function buildServer(
       port = (app.server.address() as AddressInfo).port;
       await host!.start();
       const c = current();
+      if (config.publicUrlPathIgnored) {
+        // Not refused (docs/design/subpath.md#the-base-path): such a studio may work behind a stripping proxy.
+        const { path, reason } = config.publicUrlPathIgnored;
+        app.log.warn(
+          { path, reason },
+          `the path of RIDEO_PUBLIC_URL is not used as the base path: ${reason}; the studio serves at the root, and ` +
+            'under a path only behind a stripping proxy that sends X-Forwarded-Prefix; set RIDEO_BASE_PATH to give ' +
+            'the base path (docs/design/subpath.md#the-base-path)',
+        );
+      }
       app.log.info(
         {
           // the address to open in a browser: the public URL the studio's links, cookie and desk rule are made for

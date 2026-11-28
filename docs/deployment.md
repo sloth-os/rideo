@@ -90,10 +90,23 @@ on its own.
 ## Behind a reverse proxy, under a subpath
 
 Rideo can be served under a path of another site (`https://example.com/rideo/`) behind Caddy, nginx or Apache
-httpd, with the prefix stripped by the proxy or kept. Set `RIDEO_PUBLIC_URL=https://example.com/rideo` (or
-`RIDEO_BASE_PATH=/rideo`), or let the proxy send `X-Forwarded-Prefix`. Ready-made configurations are in
-`deploy/caddy/Caddyfile`, `deploy/nginx/rideo.conf` and `deploy/httpd/rideo.conf`; see
-[serving under a subpath](design/subpath.md).
+httpd, with the prefix stripped by the proxy or kept:
+
+- **A proxy that strips the prefix must send `X-Forwarded-Prefix`**, replacing what the client sent.
+- **A proxy that keeps the prefix must not send `X-Forwarded-Prefix`, must drop a client's, and needs
+  `RIDEO_BASE_PATH=/rideo`** (or a `RIDEO_PUBLIC_URL` with the path). It drops the header with
+  `proxy_set_header X-Forwarded-Prefix "";` (nginx, in the `location` beside its other `proxy_set_header` lines),
+  `header_up -X-Forwarded-Prefix` (Caddy) or `RequestHeader unset X-Forwarded-Prefix` (Apache httpd).
+
+**Upgrading:** earlier versions also removed the base path from requests that carried `X-Forwarded-Prefix`, so a
+keeping proxy that sent the header worked. Now such a request is routed as it came and reaches no route (the API
+answers with the app's page); the studio logs a warning, at most once every 10 minutes, when a request with the header
+has a path under its base path ([upgrading](design/subpath.md#upgrading-from-an-earlier-version)).
+
+Set `RIDEO_PUBLIC_URL=https://example.com/rideo` with either style, so links that leave the browser carry the subpath.
+The base path's first segment is none of the studio's own paths (`/api`, `/mcp`, `/metrics`, `/dav`, `/assets`, …).
+Ready-made configurations (all of them stripping) are in `deploy/caddy/Caddyfile`, `deploy/nginx/rideo.conf` and
+`deploy/httpd/rideo.conf`; see [serving under a subpath](design/subpath.md).
 
 **Serve it over HTTPS with HTTP/2** when people edit long cuts. Over HTTP/1.1 a browser opens at most six connections
 to a host, and the editor's media reads can take five of them, so the API, the heartbeats of a running export and an
@@ -113,8 +126,8 @@ that is set in the environment wins and shows locked there; one that is not can 
 | Variable | Default | Meaning |
 |---|---|---|
 | `RIDEO_HOST` / `RIDEO_PORT` | `0.0.0.0` / `8787` | listen address (*environment only*) |
-| `RIDEO_PUBLIC_URL` | `http://localhost:8787` + the base path | external base URL, with the subpath (links in MCP results, share links, the OIDC redirect URI) (*environment only*) |
-| `RIDEO_BASE_PATH` | the path of `RIDEO_PUBLIC_URL` | serve under a subpath, e.g. `/rideo` ([subpath](design/subpath.md)); a proxy's `X-Forwarded-Prefix` overrides it per request (*environment only*) |
+| `RIDEO_PUBLIC_URL` | `http://localhost:8787` + the base path | external base URL, with the subpath (links in MCP results, share links, the OIDC redirect URI); a path that cannot be a base path (over 256 characters, other characters, or a first segment that is one of the studio's own) is not used as the base path, and the studio says why in a warning at start (*environment only*) |
+| `RIDEO_BASE_PATH` | the path of `RIDEO_PUBLIC_URL` | serve under a subpath, e.g. `/rideo`, at most 256 characters, whose first segment is none of the studio's own (`api`, `mcp`, `metrics`, `dav`, the app's files; otherwise the server does not start) ([subpath](design/subpath.md#the-base-path)): removed from the front of request paths that come without `X-Forwarded-Prefix` (a proxy that keeps the prefix); a stripping proxy's `X-Forwarded-Prefix` overrides it in pages and links (*environment only*) |
 | `RIDEO_CORS_ORIGINS` | – | comma-separated origins (or `*`) whose pages may use this server through the studio library ([embedding](design/embedding.md#talking-to-a-server-on-another-origin)) |
 | `RIDEO_DESK_URL` | – | the 3D-Editor's desk page the Storyboard view embeds (`https://…/desk.html`, or `http://` on `localhost` or `127.0.0.1`; on its own host, never another port of rideo's host, since browsers send rideo's session cookie to every port of it: with `RIDEO_OIDC_ISSUER` set, a desk whose host name is the one of `RIDEO_PUBLIC_URL` is refused; served with `Cross-Origin-Embedder-Policy: require-corp`, `Cross-Origin-Resource-Policy: cross-origin` and a `Content-Security-Policy: frame-ancestors` naming rideo's origins); empty: no desk ([director's desk](design/director-desk.md#topology-and-headers)). The compose files set it to the 3D-Editor they run ([the director's desk](#the-directors-desk)) |
 | `RIDEO_THEME` | – | the studio theme as JSON: default mode, colors, fonts, radii, brand ([themes](design/embedding.md#themes)) |

@@ -14,7 +14,10 @@ gateway calls carry the gateway task id; exports, feedback and editor jobs add t
 time and the storage operations it made (count and time), so a per-request storage lookup shows in the logs rather
 than in a demo. Once it serves, the studio logs `Rideo is ready` with `url`, the address to open in a browser
 (`RIDEO_PUBLIC_URL`; by default `http://localhost:<port>` and the base path), `listen`, where it answers on the machine
-itself, its base path, the storage mode (with the WebDAV URL) and the gateway.
+itself, its base path, the storage mode (with the WebDAV URL) and the gateway. Under a subpath it warns at start when
+the path of `RIDEO_PUBLIC_URL` is not used as the base path (with the reason), and at most once every 10 minutes when a
+request that carries `X-Forwarded-Prefix` has a path under a base path, which a proxy that keeps the prefix and sends
+the header causes ([subpath](subpath.md#upgrading-from-an-earlier-version)).
 
 ## Usage ledger
 

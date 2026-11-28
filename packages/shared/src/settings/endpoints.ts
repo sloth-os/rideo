@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { withoutEdgeSlashes } from '../util/slashes';
 
 /**
  * The AI endpoints reached through the mm-gateway proxy and the provider APIs they speak
@@ -303,8 +304,9 @@ export function parseApiBase(raw: string): ApiBase | null {
   }
   if (url.protocol !== 'https:' && url.protocol !== 'http:') return null;
   if (url.username || url.password || url.search || url.hash || !url.hostname) return null;
-  // The URL parser has resolved dot segments already
-  const path = url.pathname.replace(/^\/+|\/+$/g, '');
+  // The URL parser has resolved dot segments already; a loop trims the slashes (a regular expression would take time
+  // quadratic in a run of them)
+  const path = withoutEdgeSlashes(url.pathname);
   return { domain: url.hostname.toLowerCase(), origin: url.origin, prefix: path || null };
 }
 

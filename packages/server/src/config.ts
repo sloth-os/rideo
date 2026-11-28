@@ -13,6 +13,8 @@ import {
   settingEndpoint,
   type Theme,
   ThemeSchema,
+  withoutEdgeSlashes,
+  withoutTrailingSlashes,
 } from '@rideo/shared';
 import { z } from 'zod';
 
@@ -46,12 +48,97 @@ const list = (v: string | undefined) =>
     .map((x) => x.trim().toLowerCase())
     .filter(Boolean);
 
-/** A base path (docs/design/subpath.md): `/a/b`, no trailing slash; '' for the root. */
+/**
+ * The longest base path (docs/design/subpath.md#the-base-path): a longer `RIDEO_BASE_PATH` is refused, a longer
+ * `X-Forwarded-Prefix` is not read.
+ */
+export const MAX_BASE_PATH_LENGTH = 256;
+
+/**
+ * The studio's own top-level paths, which no base path starts with (docs/design/subpath.md#the-base-path): its routes
+ * (`/api`, which holds the health checks and the live channel, `/mcp`, `/metrics`) and the built-in WebDAV server
+ * (`/dav`, mounted before the routes). Under a base path that starts with one, a path could be read two ways. Checked
+ * against what a built server registers (test/unit/base-path.test.ts).
+ */
+export const RESERVED_PREFIXES: readonly string[] = ['/api', '/mcp', '/metrics', '/dav'];
+
+/**
+ * The names at the top of the web app's build (packages/web/dist), which the server answers at the root: like the
+ * server's own paths, never the first segment of a base path. Checked against `public/` and the build.
+ */
+export const BUILD_TOP_LEVEL: readonly string[] = [
+  'assets',
+  'icons',
+  'index.html',
+  'logo.svg',
+  'manifest.webmanifest',
+  'sw.js',
+  'sw.js.map',
+];
+
+/** The rule a value breaks that keeps it from being a base path (docs/design/subpath.md#the-base-path). */
+export type BasePathProblem = 'too_long' | 'not_a_path' | 'reserved';
+
+const OWN_PATHS = [...RESERVED_PREFIXES, ...BUILD_TOP_LEVEL.map((name) => `/${name}`)].join(', ');
+
+/** What `RIDEO_BASE_PATH` must be, by the rule a value breaks: the error that stops the server at start. */
+const BASE_PATH_REQUIREMENTS: Record<BasePathProblem, string> = {
+  too_long: `a path of at most ${MAX_BASE_PATH_LENGTH} characters`,
+  not_a_path: 'a path like /rideo (letters, digits, . _ ~ -)',
+  reserved: `a path whose first segment is not one of the studio's own (${OWN_PATHS})`,
+};
+
+/** Why the path of `RIDEO_PUBLIC_URL` is not the base path, by the rule it breaks: the warning at start. */
+const BASE_PATH_REASONS: Record<BasePathProblem, string> = {
+  too_long: `it is longer than ${MAX_BASE_PATH_LENGTH} characters`,
+  not_a_path: 'it is not a path of segments of letters, digits and . _ ~ -',
+  reserved: `its first segment is one of the studio's own paths (${OWN_PATHS})`,
+};
+
+const SEGMENT = /^[A-Za-z0-9._~-]+$/;
+
+/**
+ * Why `raw` cannot be a base path, or null when it can ('' and '/' are the root). Trailing slashes are dropped first;
+ * a value longer than MAX_BASE_PATH_LENGTH is refused before anything else reads it, and the rest takes time linear in
+ * its length.
+ */
+export function basePathProblem(raw: string): BasePathProblem | null {
+  if (raw.length > MAX_BASE_PATH_LENGTH) return 'too_long';
+  const value = withoutTrailingSlashes(raw.trim());
+  if (value === '') return null;
+  if (value.charCodeAt(0) !== 0x2f) return 'not_a_path';
+  const segments = value.slice(1).split('/');
+  for (const segment of segments)
+    if (segment === '.' || segment === '..' || !SEGMENT.test(segment)) return 'not_a_path';
+  const first = segments[0]!;
+  return RESERVED_PREFIXES.includes(`/${first}`) || BUILD_TOP_LEVEL.includes(first) ? 'reserved' : null;
+}
+
+/** A base path (docs/design/subpath.md#the-base-path): `/a/b`, no trailing slash; '' for the root; null for none. */
 export function normalizeBasePath(raw: string | undefined | null): string | null {
-  if (raw === undefined || raw === null) return null;
-  const trimmed = raw.trim().replace(/\/+$/, '');
-  if (trimmed === '') return '';
-  return /^(\/[A-Za-z0-9._~-]+)+$/.test(trimmed) && !/(^|\/)\.{1,2}(\/|$)/.test(trimmed) ? trimmed : null;
+  if (raw === undefined || raw === null || basePathProblem(raw) !== null) return null;
+  return withoutTrailingSlashes(raw.trim());
+}
+
+/**
+ * The path of `RIDEO_PUBLIC_URL` as the base path, or why it is not one. Such a path is not refused: the studio may
+ * work behind a stripping proxy that sends `X-Forwarded-Prefix` (docs/design/subpath.md#the-base-path).
+ */
+export function publicUrlBasePath(publicUrl: string | undefined): {
+  base: string;
+  ignored: { path: string; reason: string } | null;
+} {
+  if (!publicUrl) return { base: '', ignored: null };
+  let path: string;
+  try {
+    path = new URL(publicUrl).pathname;
+  } catch {
+    return { base: '', ignored: { path: '', reason: 'RIDEO_PUBLIC_URL is not a URL' } };
+  }
+  const problem = basePathProblem(path);
+  return problem === null
+    ? { base: withoutTrailingSlashes(path), ignored: null }
+    : { base: '', ignored: { path, reason: BASE_PATH_REASONS[problem] } };
 }
 
 const basePath = z
@@ -59,12 +146,12 @@ const basePath = z
   .optional()
   .transform((v, ctx) => {
     if (v === undefined || v === '') return undefined;
-    const p = normalizeBasePath(v);
-    if (p === null) {
-      ctx.addIssue({ code: 'custom', message: 'a path like /rideo (letters, digits, . _ ~ -)' });
+    const problem = basePathProblem(v);
+    if (problem !== null) {
+      ctx.addIssue({ code: 'custom', message: BASE_PATH_REQUIREMENTS[problem] });
       return z.NEVER;
     }
-    return p;
+    return withoutTrailingSlashes(v.trim());
   });
 
 const theme = z
@@ -337,6 +424,11 @@ export interface Config {
   publicUrl: string;
   /** Serving under a subpath (docs/design/subpath.md): '' or `/a/b`. */
   basePath: string;
+  /**
+   * Why the path of `RIDEO_PUBLIC_URL` is not the base path (docs/design/subpath.md#the-base-path), for the warning
+   * logged at start; null when it is, when it is the root, or when `RIDEO_BASE_PATH` gives the base path.
+   */
+  publicUrlPathIgnored: { path: string; reason: string } | null;
   /** Origins that may call the API from their pages (docs/design/embedding.md); `*` for any. */
   cors: { origins: string[] };
   /** The 3D-Editor's desk page (docs/design/director-desk.md#the-setting); null: no desk. */
@@ -495,15 +587,8 @@ export function loadConfig(
 ): Config {
   const e = EnvSchema.parse({ ...settings, ...nonEmptyEnv(env) });
   const port = e.RIDEO_PORT;
-  const publicUrlPath = (() => {
-    if (!e.RIDEO_PUBLIC_URL) return '';
-    try {
-      return normalizeBasePath(new URL(e.RIDEO_PUBLIC_URL).pathname) ?? '';
-    } catch {
-      return '';
-    }
-  })();
-  const base = e.RIDEO_BASE_PATH ?? publicUrlPath;
+  const publicUrlBase = publicUrlBasePath(e.RIDEO_PUBLIC_URL);
+  const base = e.RIDEO_BASE_PATH ?? publicUrlBase.base;
   const storageMode: StorageModeSetting =
     e.RIDEO_STORAGE !== 'auto'
       ? e.RIDEO_STORAGE
@@ -519,12 +604,14 @@ export function loadConfig(
   const cfg: Config = {
     host: e.RIDEO_HOST!,
     port,
-    publicUrl: (e.RIDEO_PUBLIC_URL ?? `http://localhost:${port}${base}`).replace(/\/+$/, ''),
+    publicUrl: withoutTrailingSlashes(e.RIDEO_PUBLIC_URL ?? `http://localhost:${port}${base}`),
     basePath: base,
+    // the path of RIDEO_PUBLIC_URL matters only when it is the base path's source
+    publicUrlPathIgnored: e.RIDEO_BASE_PATH === undefined ? publicUrlBase.ignored : null,
     cors: {
       origins: (e.RIDEO_CORS_ORIGINS ?? '')
         .split(',')
-        .map((o) => o.trim().replace(/\/+$/, ''))
+        .map((o) => withoutTrailingSlashes(o.trim()))
         .filter(Boolean),
     },
     desk: e.RIDEO_DESK_URL?.trim() ? { url: e.RIDEO_DESK_URL.trim() } : null,
@@ -564,7 +651,7 @@ export function loadConfig(
       url: e.RIDEO_WEBDAV_URL,
       username: e.RIDEO_WEBDAV_USERNAME,
       password: e.RIDEO_WEBDAV_PASSWORD,
-      root: `/${e.RIDEO_WEBDAV_ROOT!.replace(/^\/+|\/+$/g, '')}`,
+      root: `/${withoutEdgeSlashes(e.RIDEO_WEBDAV_ROOT!)}`,
       embedded: mountsEmbeddedDav(storageMode, e.RIDEO_EMBEDDED_DAV),
       embeddedSetting: e.RIDEO_EMBEDDED_DAV,
       davUsername: e.RIDEO_DAV_USERNAME,
@@ -573,7 +660,7 @@ export function loadConfig(
     },
     coalesceWindowSec: e.RIDEO_COALESCE_WINDOW_SEC,
     gateway: {
-      url: e.MM_GATEWAY_URL?.replace(/\/+$/, ''),
+      url: e.MM_GATEWAY_URL === undefined ? undefined : withoutTrailingSlashes(e.MM_GATEWAY_URL),
       configured: !!e.MM_GATEWAY_URL,
       apiKey: e.MM_GATEWAY_API_KEY,
       adminKey: e.MM_GATEWAY_ADMIN_KEY,

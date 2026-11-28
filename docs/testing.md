@@ -101,7 +101,8 @@ RIDEO_TEST_WEBDAV_URL=http://rideo:rideo@localhost:8080/ npx vitest run --projec
   the settings table (each setting once, in a known group, environment-only configuration and key material kept out,
   secrets marked, `showIf` targets, option labels for every option); the endpoint table (every endpoint's settings
   exist in its group, API keys are secrets, fallbacks point earlier), API base URLs (bare domains, URLs with and
-  without a path, ports, refused credentials, queries and schemes), proxy paths with a prefix, credential headers per
+  without a path, ports, refused credentials, queries and schemes; a path of 200,000 slashes read in time linear in its
+  length, like the slash trimming it uses, `slashes.test.ts`), proxy paths with a prefix, credential headers per
   provider, keys shared by origin, desired proxies (one account per key, header names merged, a second origin on one
   domain refused); themes (CSS values that cannot break out, mode colors over shared ones, a readable text color
   for any accent, the brand tokens' WCAG contrast, merging); ustar headers (long names in the prefix, base-256 sizes,
@@ -204,8 +205,18 @@ starts, a file or a folder (by its newest file) more than a day old removed and 
   codes, the metric, the identity file's mode, and the key each domain is called with); `FsBackend` (atomic writes, ranges, conditional writes, refused escapes); the workspace registry
   and `RoutedStorage` with stand-in tabs (studio data in the data directory, a new project in the asking browser,
   listings per caller, the trash beside the project, another person's workspace refused, a closed tab failing its
-  operations, a reconnecting tab waited for, preconditions passed through); prefix stripping for both proxy styles,
-  `X-Forwarded-Prefix` that cannot name another host, the page's `<base>`.
+  operations, a reconnecting tab waited for, preconditions passed through); base paths (only the configured one
+  removed from a path, once, and never from a request that carries `X-Forwarded-Prefix`; the header's value never
+  removed; `X-Forwarded-Prefix` that cannot name another host, values over 256 characters ignored and a longer
+  `RIDEO_BASE_PATH` refused; 200,000-character values read in time linear in their length; a `RIDEO_BASE_PATH` whose
+  first segment is one of the studio's own (`/api`, `/dav/x`, `/mcp`, `/sw.js`) refused with its rule while `/api-docs`
+  is fine, and that list checked against the routes a built server registers, the embedded WebDAV prefix and the top
+  of the web app's `public/` and `dist/`; the path of `RIDEO_PUBLIC_URL` that cannot be a base path (malformed, over
+  256 characters, one of the studio's own) not used, with the reason the start warning gives; the warning about a
+  request with `X-Forwarded-Prefix` under a base path at most once every 10 minutes on an injected clock, naming only a
+  valid base and the URL with its token redacted), the page's `<base>`; `loadConfig` with 200,000 slashes in
+  `RIDEO_CORS_ORIGINS`, `MM_GATEWAY_URL`, `RIDEO_PUBLIC_URL`, the WebDAV root and an API base URL in time linear in
+  their length.
 - **web**: every answer of the API read to its end, an empty `204` too (the desk state's read and clear, a `DELETE`,
   a telemetry batch, a transfer the server reads and its refusal; a body that fails to arrive is still the answer,
   `api.test.ts`), live-event store reducer and optimistic timeline edits (queued, the rest replayed on each answer, a
@@ -539,6 +550,15 @@ starts, a file or a folder (by its newest file) more than a day old removed and 
   across projects (an agent's review and commit, the gate, today's failures).
 - **Cross-origin isolation** (`isolation.test.ts`): COOP and COEP on the studio, its assets and its routes;
   none with `RIDEO_CROSS_ORIGIN_ISOLATION=off`.
+- **Serving under a subpath** (`subpath.test.ts`): a studio under `/studio` reached with the prefix kept and through a
+  stripping proxy's `X-Forwarded-Prefix` (pages, files, the API, problems, the session cookie, the live channel and
+  the built-in WebDAV server); a client's own `X-Forwarded-Prefix` never reaching a route under its prefix (the
+  metrics, the settings read and changed, the live channel's upgrade and `/dav`), at the root and under `/studio`; a
+  path its proxy stripped not stripped again; a header over 256 characters ignored; the warning about a request with
+  `X-Forwarded-Prefix` under the base path logged once per 10-minute window (an injected clock), with the base and the
+  redacted URL only. A studio under `/studio` with `RIDEO_API_TOKEN`: without credentials, percent-encoded API, MCP,
+  metrics and live paths under the base answer `401`, and absolute-form targets with and without the base never reach
+  a protected route; with the token they are served (`200`, the live channel `101`).
 - **Performance** (`performance.test.ts`): a WebM recording set as a shot's performance; the model reported, none
   when the project turns them off (`422 performance_unavailable` on a regenerate); the take on `mock-performance-v1`
   from the keyframe, verified, as long as the performance and with its sound; the metric; MCP `performance_model`.
@@ -590,7 +610,8 @@ starts, a file or a folder (by its newest file) more than a day old removed and 
 - **Observability** (`observability.test.ts`): a clip generated on the mock fills `job.usage`, the project's
   `.rideo/usage.json` (priced with `RIDEO_PRICES`) and `/metrics`; `GET /insights` and MCP `project_insights`.
 - **The ready log** (`ready-log.test.ts`): a studio with `RIDEO_PUBLIC_URL` logs `Rideo is ready` with that address as
-  `url`, the address it listens on as `listen` and the URL's path as its base path.
+  `url`, the address it listens on as `listen` and the URL's path as its base path; one whose `RIDEO_PUBLIC_URL` path
+  starts with `/api` serves at the root and warns at start why that path is not its base path.
 - **Interchange** (`interchange.test.ts`): an edit project's cut handed off in the four formats (the OTIO's clip URL
   fetched from the embedded WebDAV server is the uploaded file, byte for byte; mounted paths as `file://` URLs; the
   EDL's events, dissolve and speed line); an empty animatic refused; a re-edited OTIO (clips swapped and trimmed, a
@@ -683,7 +704,7 @@ when a new stack starts. Specs:
 | `insights.spec.ts` | (desktop and mobile) the Insights view of a generated project: cost (with `RIDEO_PRICES` on the stack) by model and job kind, the story's model calls without a price counted in a warning whose noun and verb agree with the count, times per job kind, take quality, the feedback score and the retrospective; the studio's telemetry reaching `/metrics` (`rideo_web_vitals_seconds`), its request finished, not reported as failed (the `204` read to the end); no sideways scroll on phones |
 | `settings.spec.ts` | (desktop and mobile, each on a studio of its own) without a gateway the dashboard says AI is off; Settings: sections and search, a locked value, the gateway tested, an invalid value refused under its field and its section opened, the gateway saved and applied (the dashboard and the live channel follow without a reload, a film can be started); the text model's API base URL and API key set with the gateway's admin token, registered in the mock gateway (the card says so, the vision card shares the key, **Test** answers), the key replaced and removed; then the gateway cleared again; no horizontal scroll |
 | `browser-storage.spec.ts` | (desktop and mobile, on the studio without WebDAV and gateway) a project kept in IndexedDB with its upload and poster; its project file downloaded; deleted and imported back; imported again as a copy; still there after a reload. Desktop: analysis by rules (the footage's gap in its sound suggested as "Tighten the 2.5s pause"), auto edit and an export rendered in the tab, the export stored in the browser and served by the service worker from IndexedDB |
-| `subpath.spec.ts` | (desktop and mobile) the studio under `/studio` with the prefix kept and under `/rideo` through a prefix-stripping proxy: the bare prefix, the injected `<base>`, the live channel, a project's deep link reloaded, the MCP command, the manifest and the service worker's scope, no request outside the prefix, problems for unknown API routes |
+| `subpath.spec.ts` | (desktop and mobile) the studio under `/studio` with the prefix kept and under `/rideo` through a prefix-stripping proxy: the bare prefix, the injected `<base>`, the live channel, a project's deep link reloaded, the MCP command, the manifest and the service worker's scope, no request outside the prefix, problems for unknown API routes; a client's `X-Forwarded-Prefix` never re-rooting the studio (`/x/api/health` and `/studio/x/api/health` with the header answer the app's page) and a path the stripping proxy stripped not stripped again (`/rideo/studio/api/health` answers the app's page, `/rideo/api/health` the API) |
 | `embed.spec.ts` | (desktop and mobile) a host app built with Vite against `@rideo/web` on another origin: its theme and name, light mode, the host's styles and the studio's kept apart, the browser-storage studio reached across origins (live channel too), hash routes heard by the host, `navigate` and `setTheme` from the host, an upload probed by ffmpeg.wasm loaded from the host's build, the project in the host origin's IndexedDB; browser routing under the host's `/video` without the studio's header (on a phone, nor the Library its More takes from the header) |
 
 The e2e stack starts through Playwright's `webServer` (`e2e/support/stack.ts`, ports in `e2e/support/ports.ts`): the

@@ -72,6 +72,7 @@ export * from './timeline/suggestions';
 export * from './timeline/transcript';
 export * from './util/canonical-json';
 export * from './util/hash';
+export * from './util/slashes';
 export * from './util/text';
 export * from './util/time';
 export * from './watermark';
