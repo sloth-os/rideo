@@ -51,7 +51,9 @@ person's tool in the browser; agents work from the same brief with the 3D-Editor
 `https://desk.example.com/desk.html`. Empty (the default): no desk, and the **Director's desk** buttons are not shown.
 The URL must be `https:`, or `http:` on `localhost` or `127.0.0.1` for development (both pages must be
 [secure contexts](#topology-and-headers)); its path is the page itself, not a folder. Like every setting, the
-environment wins and locks the field ([settings](settings.md)).
+environment wins and locks the field ([settings](settings.md)). rideo's Docker Compose files run the 3D-Editor beside
+the studio and set it to `http://127.0.0.1:8788/desk.html` for a studio opened on `http://localhost:8787`
+([deployment](../deployment.md#the-directors-desk)).
 
 Every browser reads it from `GET /api/config` as `features.desk: {url}` (`null` when unset): it is not a secret, and
 the studio needs it before a person opens a project. The bridge takes the desk's origin from it once

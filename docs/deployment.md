@@ -11,18 +11,19 @@ the process needs before it can serve a page, and it can pin any setting (the UI
 ```bash
 cp .env.example .env                                 # optional: only what must be fixed before start
 cp deploy/mm-gateway.example.yaml mm-gateway.yaml    # gateway backends, proxies and keys
-docker compose up -d        # rideo on :8787 (UI, API, /mcp, /dav) + mm-gateway
+docker compose up -d        # rideo on :8787 (UI, API, /mcp, /dav) + mm-gateway + the 3D-Editor's desk
 ```
 
-Then open the studio, go to Settings (the gear in the header) and choose where projects are stored and which models
-to use. `docker-compose.yml` sets `MM_GATEWAY_URL` to the compose service, so the gateway shows as set by the
-environment.
+Then open the studio at http://localhost:8787, go to Settings (the gear in the header) and choose where projects are
+stored and which models to use. `docker-compose.yml` sets `MM_GATEWAY_URL` to the compose service, so the gateway
+shows as set by the environment, and `RIDEO_DESK_URL` to the 3D-Editor it runs, so the Storyboard view's
+**Director's desk** works with nothing to set up ([the director's desk](#the-directors-desk)).
 
 `docker-compose.yml` runs `ghcr.io/sloth-os/rideo` next to `ghcr.io/sloth-os/mm-gateway` (config mounted at
-`/etc/mm-gateway/config.yaml`). For a fully offline demo, `docker compose -f docker-compose.demo.yml up`
-swaps mm-gateway for the mock gateway, which ships in the same image
-(`node packages/mock-gateway/dist/main.js`). Both services build from the `Dockerfile` when the image is
-not available locally or on GHCR.
+`/etc/mm-gateway/config.yaml`) and `ghcr.io/sloth-os/3d-editor` (the `3d-editor` service). For a fully offline demo,
+`docker compose -f docker-compose.demo.yml up` swaps mm-gateway for the mock gateway, which ships in rideo's image
+(`node packages/mock-gateway/dist/main.js`), and runs the 3D-Editor too. The rideo and mock gateway services build
+from the `Dockerfile` when the image is not available locally or on GHCR; the 3D-Editor's image comes from GHCR.
 
 The image runs as the `node` user under `tini`, keeps its data on the `/data` volume, logs JSON (pino) and
 reports health through `/api/health`. CI publishes `ghcr.io/sloth-os/rideo:latest` and `:<sha>` from
@@ -35,6 +36,35 @@ WebDAV store, in the built-in one, or in people's browsers. `RIDEO_DATA_DIR` (`/
 (`settings.json`, secrets included: keep the volume private), the embedded WebDAV root (studio-wide data such as
 accounts and brand kits when projects live in browsers), the media cache, the editor-job staging area and, without a
 configured certificate, the development C2PA signer.
+
+### The director's desk
+
+Both compose files run the 3D-Editor beside the studio and point the studio at its desk page
+([director's desk](design/director-desk.md)). They stay two programs: rideo's server never calls the 3D-Editor,
+browsers load the desk from it (and keep it working offline through its service worker), and each image is updated
+on its own.
+
+| | Studio | 3D-Editor (`3d-editor`) |
+|---|---|---|
+| Opened at | http://localhost:8787 | http://127.0.0.1:8788/desk.html, inside the studio's Storyboard view |
+| Published on | port 8787 | port 8788 of 127.0.0.1 only |
+| Set by the compose file | `RIDEO_DESK_URL=http://127.0.0.1:8788/desk.html` | `DESK_EMBED_ORIGINS=http://localhost:8787` |
+
+- **Two host names.** The desk is on `127.0.0.1` and the studio on `localhost`. Browsers keep cookies per host name,
+  not per port, so the studio's session cookie and storage never reach the desk, and both addresses are secure
+  contexts, which the desk's video export needs ([topology and headers](design/director-desk.md#topology-and-headers)).
+  Open the studio on `localhost`: opened on http://127.0.0.1:8787 it shares the desk's host name, and the desk, which
+  only the origins of `DESK_EMBED_ORIGINS` may frame, does not load in it.
+- **On a server**, give each its own HTTPS host name behind your proxy (for example `studio.example.com`, and
+  `desk.example.com` proxied to `127.0.0.1:8788`) and set both in `.env`: `RIDEO_DESK_URL=https://desk.example.com/desk.html`
+  and `DESK_EMBED_ORIGINS=https://studio.example.com`. `DESK_EMBED_ORIGINS` is comma-separated: list every origin the
+  studio is opened on, and the pages that embed the studio ([embedding](design/embedding.md)).
+- **Versions.** The image is `ghcr.io/sloth-os/3d-editor:latest`; `DESK_IMAGE` in `.env` pins another one (a
+  `:sha-<commit>` tag of the 3D-Editor's CI, or an image you built). The studio and the desk share only the versioned
+  [protocol](design/director-desk.md#the-protocol).
+- **Without the desk**, set `RIDEO_DESK_URL=` (empty) in `.env` and start `docker compose up -d rideo mm-gateway`.
+- **The 3D Editor itself** is at http://127.0.0.1:8788/ as well. It keeps its own projects on the `3d-editor-data`
+  volume; the desk needs none of them (rideo keeps each clip's [desk state](design/director-desk.md#the-desk-state)).
 
 ## Behind a reverse proxy, under a subpath
 
@@ -65,7 +95,7 @@ that is set in the environment wins and shows locked there; one that is not can 
 | `RIDEO_PUBLIC_URL` | `http://localhost:8787` + the base path | external base URL, with the subpath (links in MCP results, share links, the OIDC redirect URI) (*environment only*) |
 | `RIDEO_BASE_PATH` | the path of `RIDEO_PUBLIC_URL` | serve under a subpath, e.g. `/rideo` ([subpath](design/subpath.md)); a proxy's `X-Forwarded-Prefix` overrides it per request (*environment only*) |
 | `RIDEO_CORS_ORIGINS` | – | comma-separated origins (or `*`) whose pages may use this server through the studio library ([embedding](design/embedding.md#talking-to-a-server-on-another-origin)) |
-| `RIDEO_DESK_URL` | – | the 3D-Editor's desk page the Storyboard view embeds (`https://…/desk.html`, or `http://` on `localhost` or `127.0.0.1`; on its own host, never another port of rideo's host, since browsers send rideo's session cookie to every port of it: with `RIDEO_OIDC_ISSUER` set, a desk whose host name is the one of `RIDEO_PUBLIC_URL` is refused; served with `Cross-Origin-Embedder-Policy: require-corp`, `Cross-Origin-Resource-Policy: cross-origin` and a `Content-Security-Policy: frame-ancestors` naming rideo's origins); empty: no desk ([director's desk](design/director-desk.md#topology-and-headers)) |
+| `RIDEO_DESK_URL` | – | the 3D-Editor's desk page the Storyboard view embeds (`https://…/desk.html`, or `http://` on `localhost` or `127.0.0.1`; on its own host, never another port of rideo's host, since browsers send rideo's session cookie to every port of it: with `RIDEO_OIDC_ISSUER` set, a desk whose host name is the one of `RIDEO_PUBLIC_URL` is refused; served with `Cross-Origin-Embedder-Policy: require-corp`, `Cross-Origin-Resource-Policy: cross-origin` and a `Content-Security-Policy: frame-ancestors` naming rideo's origins); empty: no desk ([director's desk](design/director-desk.md#topology-and-headers)). The compose files set it to the 3D-Editor they run ([the director's desk](#the-directors-desk)) |
 | `RIDEO_THEME` | – | the studio theme as JSON: default mode, colors, fonts, radii, brand ([themes](design/embedding.md#themes)) |
 | `RIDEO_API_TOKEN` | – | bearer token for `/api`, `/api/live`, `/mcp` (unset = open, for local use); with accounts it stays a studio token acting as the configured user with admin rights (*environment only*) |
 | `RIDEO_OIDC_ISSUER` | – | accounts ([accounts](design/accounts.md)): the OpenID Connect issuer; people sign in through it and the redirect URI is `RIDEO_PUBLIC_URL/api/auth/callback` |
