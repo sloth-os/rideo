@@ -207,8 +207,10 @@ result's summary ("Attached 4 camera references.") and remembers it for the next
 ([the result](#the-result)).
 
 - **Connecting.** No `hello` within 15 seconds of a `load` event of the iframe that no `hello` has answered: "The
-  desk at <origin> did not answer. Check that it is served with the headers it needs" with a link to
-  [these headers](#topology-and-headers); **Close** still works. The desk posts `hello` from its own `load` handler,
+  desk at <origin> did not answer. Check that this browser can reach it, on another host name than the studio's, and
+  that it is served with the headers it needs" with a link to [the topology and these headers](#topology-and-headers):
+  a desk this browser cannot load, one the studio's origin may not frame and one served without its headers all end
+  the same way; **Close** still works. The desk posts `hello` from its own `load` handler,
   which usually reaches rideo before the iframe's `load` event, so the bridge counts both: a `load` with no `hello` for
   it (the first, or the desk page loading again, say into the browser's error page after the desk was redeployed
   without its headers) drops the old connection, shows "Connecting to the desk at …" again and starts the 15 seconds.

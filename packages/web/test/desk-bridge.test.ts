@@ -367,7 +367,7 @@ describe('the desk bridge: connecting (docs/design/director-desk.md#the-protocol
     expect(h.last()).toMatchObject({
       phase: 'failed',
       failure:
-        'The desk at https://desk.example.com did not answer. Check that it is served with the headers it needs',
+        "The desk at https://desk.example.com did not answer. Check that this browser can reach it, on another host name than the studio's, and that it is served with the headers it needs",
       remedy: 'headers',
     });
     await h.bridge.close();

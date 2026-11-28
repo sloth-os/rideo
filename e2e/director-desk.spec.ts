@@ -490,7 +490,7 @@ test('a desk that never says hello: the panel says so after 15 seconds, and Clos
   await openDesk(page, pid);
   const failure = page.getByTestId('desk-failure');
   await expect(failure).toContainText(
-    `The desk at http://localhost:${PORTS.desk} did not answer. Check that it is served with the headers it needs`,
+    `The desk at http://localhost:${PORTS.desk} did not answer. Check that this browser can reach it, on another host name than the studio's, and that it is served with the headers it needs`,
     { timeout: 40_000 },
   );
   await expect(failure.getByRole('link')).toHaveAttribute('href', /director-desk\.md#topology-and-headers$/);

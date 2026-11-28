@@ -9,10 +9,13 @@ the process needs before it can serve a page, and it can pin any setting (the UI
 ## Docker Compose
 
 ```bash
-cp .env.example .env                                 # optional: only what must be fixed before start
+cp .env.example .env                                 # needed (may stay as it is): only what must be fixed before start
 cp deploy/mm-gateway.example.yaml mm-gateway.yaml    # gateway backends, proxies and keys
 docker compose up -d        # rideo on :8787 (UI, API, /mcp, /dav) + mm-gateway + the 3D-Editor's desk
 ```
+
+`docker-compose.yml` reads `.env` for its services, so the file must exist (copied from `.env.example`, it changes
+nothing); the one-command start without any file is the demo, `docker compose -f docker-compose.demo.yml up`.
 
 Then open the studio at http://localhost:8787, go to Settings (the gear in the header) and choose where projects are
 stored and which models to use. `docker-compose.yml` sets `MM_GATEWAY_URL` to the compose service, so the gateway
@@ -59,10 +62,28 @@ on its own.
   `desk.example.com` proxied to `127.0.0.1:8788`) and set both in `.env`: `RIDEO_DESK_URL=https://desk.example.com/desk.html`
   and `DESK_EMBED_ORIGINS=https://studio.example.com`. `DESK_EMBED_ORIGINS` is comma-separated: list every origin the
   studio is opened on, and the pages that embed the studio ([embedding](design/embedding.md)).
-- **Versions.** The image is `ghcr.io/sloth-os/3d-editor:latest`; `DESK_IMAGE` in `.env` pins another one (a
-  `:sha-<commit>` tag of the 3D-Editor's CI, or an image you built). The studio and the desk share only the versioned
-  [protocol](design/director-desk.md#the-protocol).
-- **Without the desk**, set `RIDEO_DESK_URL=` (empty) in `.env` and start `docker compose up -d rideo mm-gateway`.
+- **The desk page wins over Settings.** The compose files set `RIDEO_DESK_URL`, which takes the place of a desk page
+  saved in Settings and locks that field ([settings](design/settings.md)). An empty `RIDEO_DESK_URL=` in `.env` hands
+  the setting back to Settings: the studio then has the desk page saved there, or no desk when none is.
+- **Other machines.** `127.0.0.1:8788` is the browser's own machine, so the default serves a browser on the Docker
+  host. A browser elsewhere (the studio opened by the host's LAN address, or through an SSH tunnel of port 8787 only)
+  needs a desk page it can reach: publish the 3D-Editor for it and set `RIDEO_DESK_URL` and `DESK_EMBED_ORIGINS` as
+  on a server.
+- **The 3D-Editor's other services stay closed.** The desk page calls no server, so the compose files turn the
+  3D-Editor's MCP endpoint off (`DESK_MCP_ENABLED=true` turns it on) and pass `DESK_AUTH_TOKEN` as its `AUTH_TOKEN`:
+  set one on a server, and its API, live sync and WebDAV answer only with that token, while the desk page and its
+  files stay public. The `3d-editor` service runs on a network of its own (`desk`): it reaches neither the studio nor
+  mm-gateway, which it never needs.
+- **Versions.** The image is `ghcr.io/sloth-os/3d-editor:latest`; `DESK_IMAGE` in `.env` pins another one (a tag of
+  the 3D-Editor's CI such as `:sha-cd51694`, the first seven characters of a commit on its `main`, or an image you
+  built). Compose keeps an image it already has: `docker compose pull 3d-editor && docker compose up -d 3d-editor`
+  takes the latest. The studio and the desk share only the versioned [protocol](design/director-desk.md#the-protocol).
+- **The demo reads `.env` too.** Compose fills the `${…}` values of `docker-compose.demo.yml` from `.env` as well, so
+  values set there for a server (`DESK_EMBED_ORIGINS=https://studio.example.com`) apply to the demo; start the demo
+  from a checkout without them.
+- **Without the desk**, set `RIDEO_DESK_URL=` (empty) in `.env` with no desk page in Settings, and start only the
+  studio and its gateway: `docker compose up -d rideo mm-gateway` (`docker compose -f docker-compose.demo.yml up
+  rideo mock-gateway` for the demo). `docker compose stop 3d-editor` stops a 3D-Editor an earlier `up` started.
 - **The 3D Editor itself** is at http://127.0.0.1:8788/ as well. It keeps its own projects on the `3d-editor-data`
   volume; the desk needs none of them (rideo keeps each clip's [desk state](design/director-desk.md#the-desk-state)).
 

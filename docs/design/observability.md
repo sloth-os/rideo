@@ -12,7 +12,9 @@ JSON (pino). Every line of a request carries `reqId`; every line of a job carrie
 gateway calls carry the gateway task id; exports, feedback and editor jobs add their ids. Errors carry their stable
 `code` ([errors](../api/rest.md)). A request that takes longer than 2 s logs `slow request` with its route, status,
 time and the storage operations it made (count and time), so a per-request storage lookup shows in the logs rather
-than in a demo.
+than in a demo. Once it serves, the studio logs `Rideo is ready` with `url`, the address to open in a browser
+(`RIDEO_PUBLIC_URL`; by default `http://localhost:<port>` and the base path), `listen`, where it answers on the machine
+itself, its base path, the storage mode (with the WebDAV URL) and the gateway.
 
 ## Usage ledger
 

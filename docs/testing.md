@@ -287,6 +287,13 @@ starts, a file or a folder (by its newest file) more than a day old removed and 
   list) and its mode remembered, the bridge flushed when the panel goes away, the iframe mounted anew for another clip,
   Replace (three confirmations) and Start over only after their confirmations); a result uploaded and attached shot by
   shot with its JPEG poster ([director's desk](design/director-desk.md#tests)).
+- **the compose files' desk** (`packages/shared/test/desk-compose.test.ts`): both Docker Compose files run the
+  3D-Editor's image as the `3d-editor` service and point the studio at its desk page, which rideo accepts (also with
+  accounts on) on another host name than the studio's; every port of the service is published on 127.0.0.1 at the
+  desk page's port, only the studio's origin may frame the desk, the service gets none of the studio's `.env` or
+  volumes (only its own named volume, declared in the file) and a network of its own, its MCP endpoint is off and its
+  token comes from `DESK_AUTH_TOKEN`, and the deployment docs give the same values; the reader refuses a key given
+  twice, as Compose does.
 - **the studio library** (`packages/shared/test/library.test.ts`, `accounts.test.ts`, `digest.test.ts`,
   `documents.test.ts`, `packages/server/test/unit/library-store.test.ts`, `library-upload.test.ts`): the schemas of
   every kind and their limits; the snapshot digest blind to reference ids, wardrobe ids, `createdAt` and
@@ -582,6 +589,8 @@ starts, a file or a folder (by its newest file) more than a day old removed and 
   at that place, and no second element for it.
 - **Observability** (`observability.test.ts`): a clip generated on the mock fills `job.usage`, the project's
   `.rideo/usage.json` (priced with `RIDEO_PRICES`) and `/metrics`; `GET /insights` and MCP `project_insights`.
+- **The ready log** (`ready-log.test.ts`): a studio with `RIDEO_PUBLIC_URL` logs `Rideo is ready` with that address as
+  `url`, the address it listens on as `listen` and the URL's path as its base path.
 - **Interchange** (`interchange.test.ts`): an edit project's cut handed off in the four formats (the OTIO's clip URL
   fetched from the embedded WebDAV server is the uploaded file, byte for byte; mounted paths as `file://` URLs; the
   EDL's events, dissolve and speed line); an empty animatic refused; a re-edited OTIO (clips swapped and trimmed, a

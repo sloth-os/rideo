@@ -41,11 +41,21 @@ services:
     environment:
       # The origins that may frame the desk (its frame-ancestors): the studio as browsers open it
       DESK_EMBED_ORIGINS: ${DESK_EMBED_ORIGINS:-http://localhost:8787}
+      # The desk calls no server: the 3D-Editor's MCP endpoint stays off unless asked for, and a token (set one on a
+      # server) closes its API, sync and WebDAV, which the desk page does not need
+      MCP_ENABLED: ${DESK_MCP_ENABLED:-false}
+      AUTH_TOKEN: ${DESK_AUTH_TOKEN-}
     ports:
       - "127.0.0.1:8788:8080"
     volumes:
       - 3d-editor-demo-data:/data
+    # a network of its own: it reaches neither the studio nor the gateway, which it never needs
+    networks:
+      - desk
 
 volumes:
   rideo-demo-data:
   3d-editor-demo-data:
+
+networks:
+  desk:

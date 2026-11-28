@@ -562,7 +562,10 @@ export async function buildServer(
       const c = current();
       app.log.info(
         {
-          url: url(),
+          // the address to open in a browser: the public URL the studio's links, cookie and desk rule are made for
+          // (http://localhost:<port> unless RIDEO_PUBLIC_URL says otherwise), not the address it listens on
+          url: config.publicUrl,
+          listen: url(),
           basePath: c.basePath || '/',
           storage: c.storage.mode,
           webdav: c.storage.mode === 'webdav' ? c.webdav.url : undefined,

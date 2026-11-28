@@ -424,7 +424,7 @@ export class DeskBridge {
       this.helloTimer = null;
       this.awaitingHello = false;
       this.fail(
-        `The desk at ${this.origin} did not answer. Check that it is served with the headers it needs`,
+        `The desk at ${this.origin} did not answer. Check that this browser can reach it, on another host name than the studio's, and that it is served with the headers it needs`,
         'headers',
       );
     }, DESK_HELLO_TIMEOUT_MS);

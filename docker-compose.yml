@@ -10,7 +10,8 @@ services:
       MM_GATEWAY_URL: http://mm-gateway:8000
       RIDEO_DATA_DIR: /data
       # The desk page the Storyboard view embeds: the 3d-editor service below, on another host name than the
-      # studio's (127.0.0.1, for a studio opened on localhost). Set it in .env for other hosts; empty: no desk.
+      # studio's (127.0.0.1, for a studio opened on localhost). Set it in .env for other hosts; empty: the desk page
+      # saved in Settings, if any (docs/deployment.md#the-directors-desk).
       RIDEO_DESK_URL: ${RIDEO_DESK_URL-http://127.0.0.1:8788/desk.html}
     ports:
       - "8787:8787"
@@ -38,12 +39,22 @@ services:
     environment:
       # The origins that may frame the desk (its frame-ancestors): the studio as browsers open it
       DESK_EMBED_ORIGINS: ${DESK_EMBED_ORIGINS:-http://localhost:8787}
+      # The desk calls no server: the 3D-Editor's MCP endpoint stays off unless asked for, and a token (set one on a
+      # server) closes its API, sync and WebDAV, which the desk page does not need
+      MCP_ENABLED: ${DESK_MCP_ENABLED:-false}
+      AUTH_TOKEN: ${DESK_AUTH_TOKEN-}
     ports:
       - "127.0.0.1:8788:8080"
     volumes:
       - 3d-editor-data:/data
+    # a network of its own: it reaches neither the studio nor the gateway, which it never needs
+    networks:
+      - desk
     restart: unless-stopped
 
 volumes:
   rideo-data:
   3d-editor-data:
+
+networks:
+  desk:
