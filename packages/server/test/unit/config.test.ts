@@ -373,19 +373,37 @@ describe('config', () => {
     expect(refusal('/api/../x')).toBe('a path like /rideo (letters, digits, . _ ~ -)');
   });
 
-  it('does not use a RIDEO_PUBLIC_URL path that is no base path, and says why (docs/design/subpath.md#the-base-path)', () => {
+  it('does not use a RIDEO_PUBLIC_URL path that is no base path, and says why and what serves it (docs/design/subpath.md#the-base-path)', () => {
     const long = `/${'a'.repeat(300)}`;
-    for (const [url, reason] of [
-      ['https://example.com/api', "its first segment is one of the studio's own paths (/api, /mcp"],
-      ['https://example.com/dav/x/', "its first segment is one of the studio's own paths"],
-      [`https://example.com${long}`, 'it is longer than 256 characters'],
-      ['https://example.com/my studio', 'it is not a path of segments of letters, digits and . _ ~ -'],
+    // under a path that starts with one of the studio's own, only a stripping proxy's X-Forwarded-Prefix serves it
+    const header = (path: string) =>
+      `, and under ${path} only behind a stripping proxy that sends X-Forwarded-Prefix: ${path}, since ` +
+      "RIDEO_BASE_PATH cannot start with one of the studio's own paths";
+    // the header follows the same rules as the settings otherwise: nothing serves it under that path
+    const nothing =
+      ', and nothing serves it under that path, since X-Forwarded-Prefix and RIDEO_BASE_PATH follow the same rules: ' +
+      'give RIDEO_PUBLIC_URL a path like /rideo';
+    for (const [url, reason, remedy] of [
+      [
+        'https://example.com/api',
+        "its first segment is one of the studio's own paths (/api, /mcp",
+        header('/api'),
+      ],
+      ['https://example.com/mcp', "its first segment is one of the studio's own paths", header('/mcp')],
+      ['https://example.com/dav/x/', "its first segment is one of the studio's own paths", header('/dav/x')],
+      [`https://example.com${long}`, 'it is longer than 256 characters', nothing],
+      [
+        'https://example.com/my studio',
+        'it is not a path of segments of letters, digits and . _ ~ -',
+        nothing,
+      ],
     ] as const) {
-      // not refused: the studio serves at the root (and under a stripping proxy's X-Forwarded-Prefix)
+      // not refused: the studio serves at the root
       const c = loadConfig({ RIDEO_PUBLIC_URL: url });
       expect(c.basePath, url).toBe('');
       expect(c.publicUrlPathIgnored?.path, url).toBe(new URL(url).pathname);
       expect(c.publicUrlPathIgnored?.reason, url).toContain(reason);
+      expect(c.publicUrlPathIgnored?.remedy, url).toBe(remedy);
     }
     expect(loadConfig({ RIDEO_PUBLIC_URL: 'https://example.com/api' }).publicUrl).toBe(
       'https://example.com/api',

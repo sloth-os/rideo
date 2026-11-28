@@ -81,6 +81,26 @@ describe('interchange service', () => {
     ).toBe('https://cloud.test/remote.php/dav/files/me/films');
   });
 
+  it('reads the WebDAV URL in time linear in its length, a run of slashes too (docs/design/settings.md)', () => {
+    // `/\/+$/` took about 17 s on such a URL: quadratic in a run of slashes before another character
+    const { docs } = project();
+    const run = '/'.repeat(200_000);
+    const url = `https://cloud.test/remote.php/dav${run}x`;
+    const { svc } = service(docs, { RIDEO_WEBDAV_URL: url, RIDEO_WEBDAV_ROOT: 'films' });
+    const started = performance.now();
+    const base = svc.defaultMediaBase();
+    expect(performance.now() - started).toBeLessThan(1000);
+    // nothing to trim: the URL ends with a character
+    expect(base).toBe(`${url}/films`);
+    // a trailing run goes
+    expect(
+      service(docs, {
+        RIDEO_WEBDAV_URL: `https://cloud.test/dav${run}`,
+        RIDEO_WEBDAV_ROOT: 'films',
+      }).svc.defaultMediaBase(),
+    ).toBe('https://cloud.test/dav/films');
+  });
+
   it('carries open, timed review notes on the takes as markers, and counts the hand-off', async () => {
     const { docs, take } = project();
     const { svc, metrics } = service(docs);

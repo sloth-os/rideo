@@ -166,6 +166,40 @@ describe('the proxy-sync plan (docs/design/settings.md#registration-in-mm-gatewa
     expect(off.conflicts['ai.example.com']).toMatch(/turned off/);
   });
 
+  it('reads a proxy’s base URL in time linear in its length, a run of slashes too (docs/design/settings.md)', () => {
+    // `/\/+$/` took about 17 s on such a URL: quadratic in a run of slashes before another character
+    const run = '/'.repeat(200_000);
+    const started = performance.now();
+    const at = planProxySync(
+      config({ proxies: [{ base_url: `https://ai.example.com${run}x`, accounts: [] }] }),
+      desired(TEXT),
+      identity,
+    );
+    expect(performance.now() - started).toBeLessThan(1000);
+    // nothing to trim: it forwards to another URL than the studio needs, and the conflict says which
+    expect(at.registered).toEqual([]);
+    expect(at.conflicts['ai.example.com']).toContain(
+      `forwards to https://ai.example.com${run}x; the studio needs it at https://ai.example.com.`,
+    );
+    // a trailing run goes: the studio's own proxy at its origin, nothing to move
+    const own = planProxySync(
+      config({
+        keys: [{ id: 'rideo-a1b2c3', key: REDACTED, allow_tags: ['rideo-a1b2c3'], enabled: true }],
+        proxies: [
+          {
+            domain: 'ai.example.com',
+            base_url: `https://ai.example.com${run}`,
+            tags: ['rideo-a1b2c3'],
+            accounts: [{ id: account, headers: { authorization: REDACTED } }],
+          },
+        ],
+      }),
+      desired(TEXT),
+      identity,
+    );
+    expect(own).toMatchObject({ ops: [], registered: ['ai.example.com'], conflicts: {} });
+  });
+
   it('removes what it no longer wants: its own proxies, its accounts in others, then its key', () => {
     const mine = accountIdFor(identity.instance, 'sk-text');
     const plan = planProxySync(

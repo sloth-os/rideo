@@ -120,6 +120,38 @@ describe('OIDC (docs/design/accounts.md#sign-in-oidc)', () => {
   });
 });
 
+describe('the OIDC issuer (docs/design/accounts.md#sign-in-oidc)', () => {
+  it('is read in time linear in its length, a run of slashes too (docs/design/settings.md)', async () => {
+    // `/\/+$/` took about 17 s on such an issuer: quadratic in a run of slashes before another character
+    const run = '/'.repeat(200_000);
+    const asked: string[] = [];
+    const discovery = (issuer: string) =>
+      new OidcClient(
+        { issuer, clientId: 'rideo', scopes: 'openid', redirectUri: 'https://rideo.test/api/auth/callback' },
+        (async (url: string) => {
+          asked.push(url);
+          return new Response(
+            JSON.stringify({
+              issuer,
+              authorization_endpoint: `${ISSUER}/auth`,
+              token_endpoint: `${ISSUER}/token`,
+              jwks_uri: `${ISSUER}/jwks`,
+            }),
+          );
+        }) as typeof fetch,
+      ).meta();
+    const started = performance.now();
+    const meta = await discovery(`${ISSUER}${run}x`);
+    expect(performance.now() - started).toBeLessThan(1000);
+    expect(meta.authorization_endpoint).toBe(`${ISSUER}/auth`);
+    // nothing to trim: the issuer ends with a character
+    expect(asked).toEqual([`${ISSUER}${run}x/.well-known/openid-configuration`]);
+    // a trailing run goes
+    await discovery(`${ISSUER}${run}`);
+    expect(asked[1]).toBe(`${ISSUER}/.well-known/openid-configuration`);
+  });
+});
+
 describe('sessions and the audit log', () => {
   it('keeps sessions by hash, with expiry, across a restart', async () => {
     const store = new SessionStore(join(dir, 'sessions'), 60_000);

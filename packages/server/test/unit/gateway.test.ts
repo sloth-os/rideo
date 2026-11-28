@@ -1,6 +1,7 @@
 import { createServer, type IncomingHttpHeaders } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { type RunningMockGateway, startMockGateway } from '@rideo/mock-gateway';
+import axios from 'axios';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import {
   GatewayClient,
@@ -247,6 +248,40 @@ describe('GatewayClient (SDK)', () => {
       expect(local.gatewayTasks.get({ modality: 'image', status: 'rejected' })).toBe(1);
     } finally {
       server.close();
+    }
+  });
+
+  it('reads its URL in time linear in its length, a run of slashes too (docs/design/settings.md)', async () => {
+    // `/\/+$/` took about 17 s on such a URL: quadratic in a run of slashes before another character
+    const run = '/'.repeat(200_000);
+    const url = `http://gateway.example/v1${run}x`;
+    // the requests the SDK makes, answered here: the URL it calls is the client's base and the operation's path
+    const asked: string[] = [];
+    const create = axios.create.bind(axios);
+    const spy = vi.spyOn(axios, 'create').mockImplementation((config) =>
+      create({
+        ...config,
+        adapter: async (request) => {
+          asked.push(request.url ?? '');
+          return { data: { status: 'ok' }, status: 200, statusText: 'OK', headers: {}, config: request };
+        },
+      }),
+    );
+    try {
+      const timeoutsSec = { image: 30, video: 60, music: 30 };
+      const started = performance.now();
+      const slashes = new GatewayClient({ url, pollMs: 20, timeoutsSec });
+      expect(performance.now() - started).toBeLessThan(1000);
+      expect(await slashes.health()).toBe(true);
+      // nothing to trim: the URL ends with a character
+      expect(asked).toEqual([`${url}/health`]);
+      // a trailing run goes
+      expect(
+        await new GatewayClient({ url: `http://gateway.example/v1${run}`, pollMs: 20, timeoutsSec }).health(),
+      ).toBe(true);
+      expect(asked[1]).toBe('http://gateway.example/v1/health');
+    } finally {
+      spy.mockRestore();
     }
   });
 

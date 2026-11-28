@@ -55,7 +55,7 @@ describe('the ready log', () => {
 });
 
 describe('the path of RIDEO_PUBLIC_URL', () => {
-  it('logs a warning at start that says why the path is not used as the base path', async () => {
+  it('logs a warning at start that says why the path is not used as the base path, and what serves it there', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'rideo-public-path-'));
     const lines: Record<string, unknown>[] = [];
     const stream = new Writable({
@@ -86,7 +86,13 @@ describe('the path of RIDEO_PUBLIC_URL', () => {
         /^its first segment is one of the studio's own paths \(\/api, /,
       );
       expect(String(warning[0]!.msg)).toContain('is not used as the base path: its first segment is one of');
-      expect(String(warning[0]!.msg)).toContain('set RIDEO_BASE_PATH');
+      // only a stripping proxy that sends the header serves it under /api: RIDEO_BASE_PATH cannot be /api
+      expect(String(warning[0]!.msg)).toContain(
+        '; the studio serves at the root, and under /api only behind a stripping proxy that sends ' +
+          "X-Forwarded-Prefix: /api, since RIDEO_BASE_PATH cannot start with one of the studio's own paths " +
+          '(docs/design/subpath.md#the-base-path)',
+      );
+      expect(String(warning[0]!.msg)).not.toContain('set RIDEO_BASE_PATH');
       expect(lines.find((line) => line.msg === 'Rideo is ready')).toMatchObject({
         url: 'https://studio.example.com/api',
         basePath: '/',

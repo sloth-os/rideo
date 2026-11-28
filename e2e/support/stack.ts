@@ -106,6 +106,14 @@ const proxy: Server = await startPrefixProxy({
   upstream: PORTS.subpath,
 });
 console.log(`rideo e2e proxy: http://127.0.0.1:${PORTS.proxy}/rideo/ → :${PORTS.subpath}`);
+// A stripping proxy under one of the studio's own paths (docs/design/subpath.md#the-base-path): only its header serves
+// the studio there, since RIDEO_BASE_PATH cannot start with one.
+const ownPathProxy: Server = await startPrefixProxy({
+  port: PORTS.ownPathProxy,
+  prefix: '/mcp',
+  upstream: PORTS.subpath,
+});
+console.log(`rideo e2e proxy: http://127.0.0.1:${PORTS.ownPathProxy}/mcp/ → :${PORTS.subpath}`);
 // Settings changed in the UI (docs/design/settings.md): start without a gateway, left to the spec to connect.
 for (const [name, port] of [
   ['settings studio', PORTS.settings],
@@ -169,6 +177,7 @@ async function stop() {
   stopping = true;
   for (const s of [...servers].reverse()) await s.stop().catch(() => undefined);
   await new Promise((r) => proxy.close(() => r(null)));
+  await new Promise((r) => ownPathProxy.close(() => r(null)));
   await new Promise((r) => host.close(() => r(null)));
   await new Promise((r) => deskPage.close(() => r(null)));
   slowMedia.closeAllConnections();

@@ -16,22 +16,28 @@ A request's pages and links are written with its base path, taken from the first
 | none | | the root |
 
 A base path is a slash followed by path segments of `A-Z a-z 0-9 . _ ~ -`, at most 256 characters, without a trailing
-slash, whose first segment is none of the studio's own top-level paths: its routes (`api`, which holds the health
-checks and the live channel, `mcp`, `metrics`), the built-in WebDAV server (`dav`), and the top of the web app's build,
-which the server answers at the root (`assets`, `icons`, `index.html`, `logo.svg`, `manifest.webmanifest`, `sw.js`,
-`sw.js.map`). Under such a base a path could be read two ways: with `RIDEO_BASE_PATH=/api`, a request that keeps
-`/api/settings` as it came reaches the settings, whatever a proxy's rule says about `/api/api/settings`. `/api-docs`
-and `/apis` are fine. What is not a base path:
+slash. The configured one (`RIDEO_BASE_PATH`, or the path of `RIDEO_PUBLIC_URL`) also has a first segment that is none
+of the studio's own top-level paths: its routes (`api`, which holds the health checks and the live channel, `mcp`,
+`metrics`), the built-in WebDAV server (`dav`), and the top of the web app's build, which the server answers at the
+root (`assets`, `icons`, `index.html`, `logo.svg`, `manifest.webmanifest`, `sw.js`, `sw.js.map`). The configured base
+path is removed from paths, and under such a base a path could be read two ways: with `RIDEO_BASE_PATH=/api`, a request
+that keeps `/api/settings` as it came reaches the settings, whatever a proxy's rule says about `/api/api/settings`.
+`/api-docs` and `/apis` are fine. The base in `X-Forwarded-Prefix` may start with one of the studio's own paths (a
+stripping proxy at `/mcp/`): a request that carries the header is routed as it came and the header's value is never
+removed from a path, so no path is read two ways. What is not a base path:
 
 - in `RIDEO_BASE_PATH`, stops the server at start with the rule it breaks (`a path of at most 256 characters`,
   `a path like /rideo …`, `a path whose first segment is not one of the studio's own …`);
 - in the path of `RIDEO_PUBLIC_URL`, is not used as the base path: the studio serves at the root and logs a warning at
-  start that says why. It is not refused, since such a studio may work behind a stripping proxy that sends
-  `X-Forwarded-Prefix`; set `RIDEO_BASE_PATH` to give the base path;
-- in `X-Forwarded-Prefix`, is ignored as a base (`//evil.example`, `..`, query strings, `/api`), so the header cannot
-  steer redirects off the site. A value longer than 256 characters is ignored as a base before it is read any
-  further; like any `X-Forwarded-Prefix`, it still means the request came through a stripping proxy, so nothing is
-  removed from its path ([both proxy styles](#both-proxy-styles)).
+  start that says why and what can serve it under that path. A path whose first segment is one of the studio's own
+  (`https://example.com/mcp`) is served under that path only behind a stripping proxy that sends it in
+  `X-Forwarded-Prefix`; `RIDEO_BASE_PATH` cannot be such a path. A path over 256 characters or with other characters
+  is served under that path by nothing, since the header follows the same rules: give `RIDEO_PUBLIC_URL` a path like
+  `/rideo`;
+- in `X-Forwarded-Prefix`, is ignored as a base (`//evil.example`, `..`, query strings), so the header cannot steer
+  redirects off the site. A value longer than 256 characters is ignored as a base before it is read any further; like
+  any `X-Forwarded-Prefix`, it still means the request came through a stripping proxy, so nothing is removed from its
+  path ([both proxy styles](#both-proxy-styles)).
 
 Reading a base path takes time linear in its length, and so does reading the URL settings (`RIDEO_PUBLIC_URL`,
 `RIDEO_CORS_ORIGINS`, `MM_GATEWAY_URL`, the WebDAV URL and root, the OIDC issuer, API base URLs): their slashes are
@@ -44,8 +50,9 @@ A proxy either **strips** the prefix (nginx `proxy_pass http://rideo:8787/;`, Ca
 (nginx `proxy_pass http://rideo:8787;`, Caddy `handle`). The server accepts both:
 
 - **A stripping proxy** sets `X-Forwarded-Prefix` itself, replacing what the client sent (the configurations below
-  do). A request that carries the header is routed as it came, and its pages and links are written with the
-  header's base. One that sends no header is taken for a keeping proxy: with a configured base path, the client's
+  do), and delivers it whatever the client sends ([below](#a-stripping-proxy-delivers-its-header)). A request that
+  carries the header is routed as it came, and its pages and links are written with the header's base. One that
+  arrives without the header is taken for a keeping proxy's: with a configured base path, the client's
   `/rideo/rideo/metrics` would arrive as `/rideo/metrics` and reach `/metrics`.
 - **A keeping proxy** forwards `/rideo/…` as it came and sends no `X-Forwarded-Prefix`; the server needs its base path
   from `RIDEO_BASE_PATH` or a `RIDEO_PUBLIC_URL` with the path. Before routing (in the HTTP server factory, so
@@ -57,11 +64,34 @@ A proxy either **strips** the prefix (nginx `proxy_pass http://rideo:8787/;`, Ca
 The server never removes the header's value from a path, nor a prefix twice. So a client cannot re-root the studio
 under a prefix of its choice (`X-Forwarded-Prefix: /x` with `/x/metrics` is not `/metrics`), a path the proxy stripped
 is not stripped again (behind a stripping proxy at `/rideo` with `RIDEO_PUBLIC_URL=https://example.com/rideo`,
-`/rideo/rideo/metrics` reaches `/rideo/metrics`, which no route serves), and, since no base path starts with one of
-the studio's own paths, a proxy rule that denies a path under the prefix (`location /rideo/metrics { deny all; }`)
-holds on the server too. Requests in absolute form (`GET http://host/rideo/api/projects`) are not stripped either:
-they reach no route under the base path, and the routes they do reach (`http://host/api/projects`) ask for
-credentials like any other.
+`/rideo/rideo/metrics` reaches `/rideo/metrics`, which no route serves), and, since no configured base path starts with
+one of the studio's own paths, a proxy rule that denies a path under the prefix
+(`location /rideo/metrics { deny all; }`) holds on the server too, as long as a stripping proxy delivers its header.
+Requests in absolute form (`GET http://host/rideo/api/projects`) are not stripped either: they reach no route under the
+base path, and the routes they do reach (`http://host/api/projects`) ask for credentials like any other.
+
+#### A stripping proxy delivers its header
+
+A stripping proxy must deliver its `X-Forwarded-Prefix` whatever the client sends, including the headers a client
+names in `Connection`. A proxy that follows HTTP's hop-by-hop rule drops every header the client lists there
+(`Connection: X-Forwarded-Prefix`); if it drops the one it set itself, the request arrives as a keeping proxy's would,
+and the configured base path is removed from it: `/rideo/rideo/metrics` reaches `/metrics` past the proxy's rule for
+`/rideo/metrics`. Tested with the configurations below and deny rules under the prefix, for `Connection` naming the
+header in any case, alone or in a list (commas, `;`, tabs, several `Connection` lines, with `close`, `keep-alive` or
+`Upgrade`):
+
+| Proxy (stripping the prefix) | Delivers its `X-Forwarded-Prefix` when a client names it in `Connection` |
+|---|---|
+| nginx 1.24 | yes: `proxy_set_header Connection` replaces the client's `Connection`, and nginx drops no header it names |
+| Caddy v2.11.9 | yes: `header_up` sets the header after the headers the client names are dropped |
+| Apache httpd 2.4.58 | only with `RequestHeader unset Connection "expr=req_novary('Connection') =~ /x-forwarded-prefix/i"`: mod_proxy_http drops the headers a client names in `Connection` after mod_headers has set `X-Forwarded-Prefix`, so the configuration removes such a `Connection` header first |
+
+The Apache line removes the client's `Connection` only when it names `X-Forwarded-Prefix` (in any case, anywhere in
+it, so in every form mod_proxy_http would read as that name; the `close` or `keep-alive` of such a client goes with
+it). Removing it from every request also works, but then Apache ignores a client's `Connection: close` (it keeps the
+connection open) and an HTTP/1.0 client's `keep-alive` (it closes the connection after each answer). Either way the
+live channel still upgrades (`upgrade=websocket` follows the `Upgrade` header), and uploads (512 MiB, with a length or
+chunked) and HTTP/2 requests, which carry no `Connection` header, are not affected.
 
 ### Upgrading from an earlier version
 
@@ -85,12 +115,16 @@ set up as follows:
 A request that carries `X-Forwarded-Prefix` and whose path starts with the configured base path, or with the header's
 own base path, is what a keeping proxy that sends the header produces, so the server logs a warning, at most once
 every 10 minutes per server: if the proxy keeps the prefix in paths, it must not send `X-Forwarded-Prefix` and must
-drop a client's (with the directives above). The line carries `base`, the base path the path starts with (always a
-valid one, never the header's text), and `url`, the request's URL with the value of a `token` query parameter replaced
-by `[redacted]`. Behind a stripping proxy that sends the header, a client that asks for a doubled prefix
-(`/rideo/rideo/…`) causes the same line; the proxy is right and nothing needs to change. So does a visit to one of
-the app's pages when the base path has that page's name (base `/library`: the library page is `/library/library`,
-which arrives as `/library`), so there the line can come back every 10 minutes though the proxy is right.
+drop a client's (with the directives above). A header base whose first segment is one of the studio's own paths is no
+such sign: behind a stripping proxy at `/api/`, the app's own requests have paths under it (`/api/api/projects`
+arrives as `/api/projects`), so with such a header only the configured base path is a sign. The line carries `base`,
+the base path the path starts with (always a valid one, never the header's text), `signal`, which base that is
+(`configured` or `header`), and `method`, the request's method; never the rest of the path or the query, which can
+hold a share link's secret (`/review/<project>.<review>.<secret>`) or a `token`. Behind a stripping proxy that sends
+the header, a client that asks for a doubled prefix (`/rideo/rideo/…`) causes the same line; the proxy is right and
+nothing needs to change. So does a visit to one of the app's pages when the base path has that page's name (base
+`/library`: the library page is `/library/library`, which arrives as `/library`), so there the line can come back
+every 10 minutes though the proxy is right.
 
 ### What the server writes with the base
 
@@ -125,8 +159,9 @@ concern and is covered by the end-to-end suite against the built app.
 
 Copy-ready files are in `deploy/`: `deploy/caddy/Caddyfile`, `deploy/nginx/rideo.conf`, `deploy/httpd/rideo.conf`.
 Each serves `/rideo/` and redirects `/rideo` to it, strips the prefix and sets `X-Forwarded-Prefix` itself (over any a
-client sent), forwards WebSocket upgrades (`/api/live`, MCP streams), does not buffer uploads or media, and allows long
-requests (editor-job uploads, exports).
+client sent, and whatever the client names in `Connection`: [a stripping proxy delivers its
+header](#a-stripping-proxy-delivers-its-header)), forwards WebSocket upgrades (`/api/live`, MCP streams), does not
+buffer uploads or media, and allows long requests (editor-job uploads, exports).
 
 ```caddy
 # Caddy: handle_path strips /rideo; the header tells Rideo where it lives
@@ -166,6 +201,8 @@ RewriteEngine On
 RewriteRule ^/rideo$ /rideo/ [R=308,L]
 ProxyPreserveHost On
 RequestHeader set X-Forwarded-Prefix "/rideo"
+# mod_proxy_http drops the headers a client names in Connection: one that names X-Forwarded-Prefix goes first
+RequestHeader unset Connection "expr=req_novary('Connection') =~ /x-forwarded-prefix/i"
 ProxyPass        /rideo/ http://127.0.0.1:8787/ upgrade=websocket flushpackets=on timeout=3600
 ProxyPassReverse /rideo/ http://127.0.0.1:8787/
 ```

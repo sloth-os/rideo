@@ -569,13 +569,12 @@ export async function buildServer(
       await host!.start();
       const c = current();
       if (config.publicUrlPathIgnored) {
-        // Not refused (docs/design/subpath.md#the-base-path): such a studio may work behind a stripping proxy.
-        const { path, reason } = config.publicUrlPathIgnored;
+        // Not refused (docs/design/subpath.md#the-base-path): the remedy says what serves the studio under that path.
+        const { path, reason, remedy } = config.publicUrlPathIgnored;
         app.log.warn(
           { path, reason },
-          `the path of RIDEO_PUBLIC_URL is not used as the base path: ${reason}; the studio serves at the root, and ` +
-            'under a path only behind a stripping proxy that sends X-Forwarded-Prefix; set RIDEO_BASE_PATH to give ' +
-            'the base path (docs/design/subpath.md#the-base-path)',
+          `the path of RIDEO_PUBLIC_URL is not used as the base path: ${reason}; the studio serves at the root` +
+            `${remedy} (docs/design/subpath.md#the-base-path)`,
         );
       }
       app.log.info(

@@ -267,10 +267,44 @@ describe('a studio at the root', () => {
     // the header still names the base of the client's pages
     expect((await page('/', client, root)).text).toContain('<base href="/x/" />');
   });
+
+  it('serves a stripping proxy at /mcp/: a header base may start with one of the studio’s own paths', async () => {
+    for (const prefix of ['/mcp', '/api/x', '/assets']) {
+      const proxy = { 'x-forwarded-prefix': prefix };
+      expect((await page('/', proxy, root)).text, prefix).toContain(`<base href="${prefix}/" />`);
+      expect(JSON.parse((await page('/api/config', proxy, root)).text).basePath, prefix).toBe(prefix);
+    }
+    // the app's own requests through the proxy at /mcp/: the client's /mcp/api/… arrives as /api/…
+    const proxy = { 'x-forwarded-prefix': '/mcp' };
+    expect(await reached(root, 'GET', '/api/health', proxy)).toBe('200 json');
+    expect(await upgrade(root, '/api/live', proxy)).toBe('101 hello');
+    const out = await fetch(`${root.url}/api/auth/logout`, { method: 'POST', headers: proxy });
+    expect(out.headers.get('set-cookie')).toContain('Path=/mcp;');
+    const dav = await fetch(`${root.url}/dav/`, { method: 'PROPFIND', headers: { ...proxy, depth: '1' } });
+    expect(dav.status).toBe(207);
+    const hrefs = [...(await dav.text()).matchAll(/<(?:\w+:)?href>([^<]+)</g)].map((m) => m[1]!);
+    expect(hrefs.length).toBeGreaterThan(0);
+    for (const href of hrefs)
+      expect(new URL(href, root.url).pathname.startsWith('/mcp/dav/'), href).toBe(true);
+    // its client's /mcp/mcp arrives as /mcp: the studio's MCP endpoint, never the header's value removed
+    const init = {
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'initialize',
+      params: {
+        protocolVersion: '2025-03-26',
+        capabilities: {},
+        clientInfo: { name: 'subpath', version: '0' },
+      },
+    };
+    expect(
+      await reached(root, 'POST', '/mcp', { ...proxy, accept: 'application/json, text/event-stream' }, init),
+    ).toMatch(/^200 (json|text\/event-stream)$/);
+  });
 });
 
 describe('the warning about a proxy that keeps the prefix and sends X-Forwarded-Prefix', () => {
-  it('is logged once per 10-minute window, with the base and the redacted URL only', async () => {
+  it('is logged once per 10-minute window, with the base, which base it is and the method only', async () => {
     const dataDir = await mkdtemp(join(tmpdir(), 'rideo-kept-prefix-'));
     const lines: Record<string, unknown>[] = [];
     const stream = new Writable({
@@ -302,9 +336,11 @@ describe('the warning about a proxy that keeps the prefix and sends X-Forwarded-
       expect(await reached(at, 'GET', '/studio/api/health')).toBe('200 json');
       expect(await reached(at, 'GET', '/api/health', { 'x-forwarded-prefix': '/rideo' })).toBe('200 json');
       expect(warnings()).toHaveLength(0);
-      // a keeping proxy that sends the header: the API answers with the app's page, and the line is logged once
+      // a keeping proxy that sends the header: the page answers, and the line is logged once; a share link carries
+      // its secret in its path, an API or agent token in `?token=`
       const proxy = { 'x-forwarded-prefix': '/studio' };
-      expect(await reached(at, 'GET', '/studio/api/projects?token=secret-tok&x=1', proxy)).toBe('200 page');
+      const share = '/studio/review/prj_0123456789ab.rev_0123456789ab.S3CR3T-LINK?token=secret-tok&x=1';
+      expect(await reached(at, 'GET', share, proxy)).toBe('200 page');
       expect(await reached(at, 'GET', '/studio/metrics', { 'x-forwarded-prefix': '/x<y>' })).toBe('200 page');
       expect(await upgrade(at, '/studio/api/live', proxy)).toBe('200');
       expect(warnings()).toHaveLength(1);
@@ -312,12 +348,15 @@ describe('the warning about a proxy that keeps the prefix and sends X-Forwarded-
         level: 40,
         component: 'subpath',
         base: '/studio',
-        url: '/studio/api/projects?token=[redacted]&x=1',
+        signal: 'configured',
+        method: 'GET',
       });
+      expect(warnings()[0]).not.toHaveProperty('url');
       expect(String(warnings()[0]!.msg)).toContain(
         "if the proxy in front keeps the prefix in paths, it must not send X-Forwarded-Prefix and must drop a client's",
       );
-      expect(JSON.stringify(lines)).not.toMatch(/secret-tok|<y>/);
+      // nothing after the base, no query, no header text
+      expect(JSON.stringify(lines)).not.toMatch(/review|prj_|rev_|S3CR3T|secret-tok|token|<y>/);
       // the rest of the window: still one line
       now += KEPT_PREFIX_WARNING_EVERY_MS - 1;
       expect(await reached(at, 'GET', '/studio/api/config', proxy)).toBe('200 page');
@@ -327,8 +366,15 @@ describe('the warning about a proxy that keeps the prefix and sends X-Forwarded-
       expect(await upgrade(at, '/studio/api/live?token=secret-tok', proxy)).toBe('200');
       expect(await reached(at, 'GET', '/studio/api/config', proxy)).toBe('200 page');
       expect(warnings()).toHaveLength(2);
-      expect(warnings()[1]).toMatchObject({ base: '/studio', url: '/studio/api/live?token=[redacted]' });
-      expect(JSON.stringify(lines)).not.toContain('secret-tok');
+      expect(warnings()[1]).toMatchObject({ base: '/studio', signal: 'configured', method: 'GET' });
+      // the window after: a path under the header's own base, from a POST
+      now += KEPT_PREFIX_WARNING_EVERY_MS;
+      expect(await reached(at, 'POST', '/rideo/api/projects', { 'x-forwarded-prefix': '/rideo' }, {})).toBe(
+        '404 problem',
+      );
+      expect(warnings()).toHaveLength(3);
+      expect(warnings()[2]).toMatchObject({ base: '/rideo', signal: 'header', method: 'POST' });
+      expect(JSON.stringify(lines)).not.toMatch(/S3CR3T|secret-tok|token/);
     } finally {
       await server.stop();
       await rm(dataDir, { recursive: true, force: true });

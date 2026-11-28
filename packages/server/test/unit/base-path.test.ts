@@ -1,4 +1,4 @@
-import { readdirSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import type { IncomingMessage } from 'node:http';
 import { tmpdir } from 'node:os';
@@ -20,14 +20,14 @@ import {
   injectBase,
   KEPT_PREFIX_WARNING_EVERY_MS,
   keptPrefixWarning,
-  redactUrl,
   requestBase,
 } from '../../src/http/base-path';
 import { DAV_PREFIX } from '../../src/storage/embedded-dav';
 
-const req = (url: string, prefix?: string) =>
+const req = (url: string, prefix?: string, method = 'GET') =>
   ({
     url,
+    method,
     headers: prefix !== undefined ? { 'x-forwarded-prefix': prefix } : {},
   }) as unknown as IncomingMessage;
 
@@ -94,14 +94,30 @@ describe('serving under a subpath (docs/design/subpath.md)', () => {
     expect(applied('/rideo/api/health', '/rideo', '').url).toBe('/api/health');
   });
 
-  it('ignores an X-Forwarded-Prefix that starts with one of the studio’s own paths', () => {
-    for (const value of ['/api', '/dav/x', '/mcp', '/metrics', '/sw.js', '/assets/v2']) {
-      expect(forwardedPrefix(req('/', value)), value).toBeNull();
-      // still a stripping proxy's request: routed as it came, written with the configured base
-      expect(applied('/api/health', '/rideo', value), value).toEqual({ url: '/api/health', base: '/rideo' });
+  it('takes an X-Forwarded-Prefix that starts with one of the studio’s own paths: its value is never removed from a path', () => {
+    // a stripping proxy at /mcp/, /api/x/ or /assets/ (docs/design/subpath.md#the-base-path)
+    for (const value of ['/mcp', '/api/x', '/assets', '/api', '/dav/x', '/metrics', '/sw.js', '/assets/v2']) {
+      expect(forwardedPrefix(req('/', value)), value).toBe(value);
+      // routed as it came, written with the header's base
+      expect(applied('/api/health', '/rideo', value), value).toEqual({ url: '/api/health', base: value });
+      expect(applied('/api/health', '', value), value).toEqual({ url: '/api/health', base: value });
     }
+    // the MCP endpoint behind a stripping proxy at /mcp/: the client's /mcp/mcp arrives as /mcp and stays there
+    expect(applied('/mcp', '', '/mcp')).toEqual({ url: '/mcp', base: '/mcp' });
+    expect(forwardedPrefix(req('/', '/mcp/'))).toBe('/mcp');
     expect(forwardedPrefix(req('/', '/api-docs'))).toBe('/api-docs');
     expect(forwardedPrefix(req('/', '/studio/api'))).toBe('/studio/api');
+    // every other rule still holds
+    for (const bad of [
+      '/api/../x',
+      '/mcp//x',
+      '//api',
+      '/api/./x',
+      '/api?x=1',
+      'api',
+      `/api/${'a'.repeat(MAX_BASE_PATH_LENGTH)}`,
+    ])
+      expect(forwardedPrefix(req('/', bad)), bad.slice(0, 20)).toBeNull();
   });
 
   it('ignores an X-Forwarded-Prefix longer than 256 characters before reading it', () => {
@@ -174,7 +190,7 @@ async function firstSegments(webDist: string): Promise<string[]> {
 }
 
 const web = fileURLToPath(new URL('../../../web/', import.meta.url));
-/** The top-level entries of a directory of the web app, or null while it is not there (not built, or rebuilt now). */
+/** The top-level entries of a directory of the web app, or null while it is not there (not built). */
 const entries = (dir: string): string[] | null => {
   try {
     return readdirSync(join(web, dir)).sort();
@@ -183,6 +199,8 @@ const entries = (dir: string): string[] | null => {
     throw err;
   }
 };
+/** Whether the web app is built (`npm run build -w @rideo/web`): the checks of its build run only then, and say so. */
+const built = entries('dist')?.includes('index.html') ?? false;
 
 describe('the studio’s own top-level paths (docs/design/subpath.md#the-base-path)', () => {
   it('are the first segments of the server’s routes and the embedded WebDAV server', async () => {
@@ -193,7 +211,7 @@ describe('the studio’s own top-level paths (docs/design/subpath.md#the-base-pa
     expect([...routes.map((s) => `/${s}`), DAV_PREFIX].sort()).toEqual(own);
   }, 60_000);
 
-  it('name the top of the web app’s build, which the server answers at the root', async () => {
+  it('name the top of the web app’s build: its public files and what Vite and the service worker build add', () => {
     expect([...BUILD_TOP_LEVEL].sort()).toEqual(
       ['assets', 'icons', 'index.html', 'logo.svg', 'manifest.webmanifest', 'sw.js', 'sw.js.map'].sort(),
     );
@@ -201,13 +219,47 @@ describe('the studio’s own top-level paths (docs/design/subpath.md#the-base-pa
     const publicFiles = entries('public');
     expect(publicFiles).not.toBeNull();
     for (const entry of publicFiles!) expect(BUILD_TOP_LEVEL, `public/${entry}`).toContain(entry);
-    const dist = entries('dist');
-    if (!dist?.includes('index.html')) return;
-    expect(dist).toEqual([...BUILD_TOP_LEVEL].sort());
-    // served: each file of the build is a route at the root, and no route starts with anything else
-    const own = [...RESERVED_PREFIXES.map((p) => p.slice(1)), ...BUILD_TOP_LEVEL];
-    for (const segment of await firstSegments(join(web, 'dist'))) expect(own, segment).toContain(segment);
-  }, 60_000);
+  });
+
+  // skipped, and reported as skipped, while the web app is not built (docs/testing.md)
+  it.skipIf(!built)(
+    'are the top of the built web app, which the server answers at the root',
+    async () => {
+      const dist = entries('dist');
+      expect(dist).toEqual([...BUILD_TOP_LEVEL].sort());
+      // served: each file of the build is a route at the root, and no route starts with anything else
+      const own = [...RESERVED_PREFIXES.map((p) => p.slice(1)), ...BUILD_TOP_LEVEL];
+      for (const segment of await firstSegments(join(web, 'dist'))) expect(own, segment).toContain(segment);
+    },
+    60_000,
+  );
+});
+
+describe('the shipped Apache httpd configuration (docs/design/subpath.md#a-stripping-proxy-delivers-its-header)', () => {
+  const repo = fileURLToPath(new URL('../../../../', import.meta.url));
+  /** The directives of an Apache configuration: its lines without comments and blank lines. */
+  const directives = (text: string) =>
+    text
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line !== '' && !line.startsWith('#'));
+  const shipped = directives(readFileSync(join(repo, 'deploy/httpd/rideo.conf'), 'utf8'));
+  const documented = directives(
+    /```apache\n([\s\S]*?)```/.exec(readFileSync(join(repo, 'docs/design/subpath.md'), 'utf8'))![1]!,
+  );
+
+  it('removes a client’s Connection that names X-Forwarded-Prefix, which mod_proxy_http would drop after setting it', () => {
+    // mod_proxy_http drops the headers a client names in Connection after mod_headers has set X-Forwarded-Prefix
+    const unset = `RequestHeader unset Connection "expr=req_novary('Connection') =~ /x-forwarded-prefix/i"`;
+    for (const lines of [shipped, documented]) {
+      expect(lines).toContain('RequestHeader set X-Forwarded-Prefix "/rideo"');
+      expect(lines).toContain(unset);
+    }
+    // the documented block is the shipped file but for its X-Forwarded-Proto line
+    expect(documented).toEqual(
+      shipped.filter((line) => !line.startsWith('RequestHeader set X-Forwarded-Proto ')),
+    );
+  });
 });
 
 describe('the warning about a proxy that keeps the prefix and sends X-Forwarded-Prefix', () => {
@@ -218,7 +270,7 @@ describe('the warning about a proxy that keeps the prefix and sends X-Forwarded-
     const warn = keptPrefixWarning({ warn: (obj, msg) => lines.push({ obj, msg }) }, configured, () => now);
     return {
       lines,
-      send: (url: string, prefix?: string) => warn(req(url, prefix)),
+      send: (url: string, prefix?: string, method?: string) => warn(req(url, prefix, method)),
       at: (ms: number) => {
         now = ms;
       },
@@ -229,7 +281,7 @@ describe('the warning about a proxy that keeps the prefix and sends X-Forwarded-
     const server = check('/rideo');
     server.send('/rideo/api/projects', '/rideo');
     expect(server.lines).toHaveLength(1);
-    expect(server.lines[0]!.obj).toEqual({ base: '/rideo', url: '/rideo/api/projects' });
+    expect(server.lines[0]!.obj).toEqual({ base: '/rideo', signal: 'configured', method: 'GET' });
     const msg = server.lines[0]!.msg;
     expect(msg).toContain(
       'has a path under /rideo; such a request is routed as it came, /rideo kept on its path',
@@ -251,9 +303,9 @@ describe('the warning about a proxy that keeps the prefix and sends X-Forwarded-
     expect(server.lines).toHaveLength(1);
     // the next window
     server.at(KEPT_PREFIX_WARNING_EVERY_MS);
-    server.send('/rideo?x=1', '/x');
+    server.send('/rideo?x=1', '/x', 'PROPFIND');
     expect(server.lines).toHaveLength(2);
-    expect(server.lines[1]!.obj).toEqual({ base: '/rideo', url: '/rideo?x=1' });
+    expect(server.lines[1]!.obj).toEqual({ base: '/rideo', signal: 'configured', method: 'PROPFIND' });
     server.at(2 * KEPT_PREFIX_WARNING_EVERY_MS - 1);
     server.send('/rideo/metrics', '/rideo');
     expect(server.lines).toHaveLength(2);
@@ -275,34 +327,50 @@ describe('the warning about a proxy that keeps the prefix and sends X-Forwarded-
     root.send('/api/projects', '/studio');
     expect(root.lines).toHaveLength(0);
     root.send('/studio/api/projects', '/studio');
-    expect(root.lines.map((l) => l.obj)).toEqual([{ base: '/studio', url: '/studio/api/projects' }]);
+    expect(root.lines.map((l) => l.obj)).toEqual([{ base: '/studio', signal: 'header', method: 'GET' }]);
   });
 
-  it('names a valid base path only, never the header’s text, and the URL with its token redacted', () => {
+  it('names a valid base path, which base it is and the method only: never the header’s text, nor anything after the base', () => {
+    // a share link carries its secret in its path (docs/design/review.md), an API or agent token in `?token=`
+    const secret = '/review/prj_0123456789ab.rev_0123456789ab.S3CR3T-SHARE-LINK';
     const server = check('/rideo');
-    server.send('/rideo/api/live?token=secret-tok&x=1', '//evil.example/<script>');
-    expect(server.lines.map((l) => l.obj)).toEqual([
-      { base: '/rideo', url: '/rideo/api/live?token=[redacted]&x=1' },
-    ]);
-    expect(JSON.stringify(server.lines)).not.toMatch(/evil|script|secret-tok/);
-    // at the root, a header that is no base path names no base: nothing to say
+    server.send(`/rideo${secret}?token=secret-tok&x=1`, '//evil.example/<script>');
+    expect(server.lines.map((l) => l.obj)).toEqual([{ base: '/rideo', signal: 'configured', method: 'GET' }]);
     const root = check('');
-    for (const prefix of ['//evil.example', '/evil/<x>', '/api', `/${'a'.repeat(MAX_BASE_PATH_LENGTH)}`])
-      root.send(`${prefix}/api/projects`, prefix);
-    expect(root.lines).toHaveLength(0);
+    root.send(`/studio${secret}?token=secret-tok`, '/studio', 'POST');
+    expect(root.lines.map((l) => l.obj)).toEqual([{ base: '/studio', signal: 'header', method: 'POST' }]);
+    // no path segment after the base, no query, no header text: in the fields or the message
+    for (const text of [JSON.stringify(server.lines), JSON.stringify(root.lines)])
+      expect(text).not.toMatch(/review|prj_|rev_|S3CR3T|token|secret|evil|script/);
+    // at the root, a header that is no base path names no base: nothing to say
+    const none = check('');
+    for (const prefix of ['//evil.example', '/evil/<x>', `/${'a'.repeat(MAX_BASE_PATH_LENGTH)}`])
+      none.send(`${prefix}/api/projects`, prefix);
+    expect(none.lines).toHaveLength(0);
   });
 
-  it('redacts the value of each token query parameter, however its name is written', () => {
-    expect(redactUrl('/api/live?token=a&TOKEN=b&%74oken=c&tokens=d&x=token%3De&y=1')).toBe(
-      '/api/live?token=[redacted]&TOKEN=[redacted]&%74oken=[redacted]&tokens=d&x=token%3De&y=1',
-    );
-    expect(redactUrl('/api/live')).toBe('/api/live');
-    expect(redactUrl('/a?token')).toBe('/a?token');
-    expect(redactUrl('/a?%zz=1&token=2')).toBe('/a?%zz=1&token=[redacted]');
-    // linear: a long URL is redacted at once
-    const long = `/a?${'b=1&'.repeat(50_000)}token=x`;
-    const started = performance.now();
-    expect(redactUrl(long).endsWith('&token=[redacted]')).toBe(true);
-    expect(performance.now() - started).toBeLessThan(1000);
+  it('takes no header base that starts with one of the studio’s own paths as a sign, so the app behind a proxy at /api/ stays quiet', () => {
+    // the app's own requests behind stripping proxies at /api/, /mcp/ and /assets/, in window after window
+    const root = check('');
+    for (let window = 0; window < 3; window++) {
+      root.at(window * KEPT_PREFIX_WARNING_EVERY_MS);
+      for (const [url, prefix] of [
+        ['/api/projects', '/api'],
+        ['/api/live', '/api'],
+        ['/api/config', '/api'],
+        ['/api', '/api'],
+        ['/mcp', '/mcp'],
+        ['/assets/index.js', '/assets'],
+        ['/api/x/projects', '/api/x'],
+      ] as const)
+        root.send(url, prefix);
+    }
+    expect(root.lines).toHaveLength(0);
+    // the configured base path is still a sign: a keeping proxy at /rideo/ that passes a client's /api on
+    const server = check('/rideo');
+    server.send('/api/projects', '/api');
+    expect(server.lines).toHaveLength(0);
+    server.send('/rideo/api/projects', '/api');
+    expect(server.lines.map((l) => l.obj)).toEqual([{ base: '/rideo', signal: 'configured', method: 'GET' }]);
   });
 });

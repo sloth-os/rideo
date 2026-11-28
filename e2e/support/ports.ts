@@ -28,6 +28,11 @@ export const PORTS = {
   outageMobile: E2E_PORT + 12,
   /** The studio whose desk is the fake desk in units mode, `desk.html?units=1` (docs/design/director-desk.md#tests). */
   units: E2E_PORT + 13,
+  /**
+   * A reverse proxy that serves the subpath studio under /mcp, a path whose first segment is one of the studio's own,
+   * and strips the prefix (docs/design/subpath.md#the-base-path).
+   */
+  ownPathProxy: E2E_PORT + 14,
 } as const;
 
 export const at = (port: number, path = '') => `http://127.0.0.1:${port}${path}`;

@@ -15,9 +15,11 @@ time and the storage operations it made (count and time), so a per-request stora
 than in a demo. Once it serves, the studio logs `Rideo is ready` with `url`, the address to open in a browser
 (`RIDEO_PUBLIC_URL`; by default `http://localhost:<port>` and the base path), `listen`, where it answers on the machine
 itself, its base path, the storage mode (with the WebDAV URL) and the gateway. Under a subpath it warns at start when
-the path of `RIDEO_PUBLIC_URL` is not used as the base path (with the reason), and at most once every 10 minutes when a
-request that carries `X-Forwarded-Prefix` has a path under a base path, which a proxy that keeps the prefix and sends
-the header causes ([subpath](subpath.md#upgrading-from-an-earlier-version)).
+the path of `RIDEO_PUBLIC_URL` is not used as the base path (with the reason and what can serve the studio under it),
+and at most once every 10 minutes when a request that carries `X-Forwarded-Prefix` has a path under the configured
+base path or under the header's own (unless that one starts with one of the studio's own paths), which a proxy that
+keeps the prefix and sends the header causes; that line names the base, which base it is and the method, never the
+rest of the path or the query ([subpath](subpath.md#upgrading-from-an-earlier-version)).
 
 ## Usage ledger
 

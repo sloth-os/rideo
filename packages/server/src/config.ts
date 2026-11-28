@@ -95,7 +95,36 @@ const BASE_PATH_REASONS: Record<BasePathProblem, string> = {
   reserved: `its first segment is one of the studio's own paths (${OWN_PATHS})`,
 };
 
+/** The rest of the warning at start for a path of `RIDEO_PUBLIC_URL` that neither setting nor header can serve. */
+const UNSERVED_PATH =
+  ', and nothing serves it under that path, since X-Forwarded-Prefix and RIDEO_BASE_PATH follow the same rules: give ' +
+  'RIDEO_PUBLIC_URL a path like /rideo';
+
+/**
+ * What serves the studio under the path of `RIDEO_PUBLIC_URL` when that path is not the base path, by the rule it breaks
+ * (docs/design/subpath.md#the-base-path): the rest of the warning at start, after "the studio serves at the root".
+ */
+const PUBLIC_PATH_REMEDIES: Record<BasePathProblem | 'not_a_url', (path: string) => string> = {
+  // X-Forwarded-Prefix may start with one of the studio's own paths; RIDEO_BASE_PATH may not
+  reserved: (path) =>
+    `, and under ${path} only behind a stripping proxy that sends X-Forwarded-Prefix: ${path}, since RIDEO_BASE_PATH ` +
+    "cannot start with one of the studio's own paths",
+  too_long: () => UNSERVED_PATH,
+  not_a_path: () => UNSERVED_PATH,
+  not_a_url: () => ': give RIDEO_PUBLIC_URL a URL like https://example.com/rideo',
+};
+
 const SEGMENT = /^[A-Za-z0-9._~-]+$/;
+
+/**
+ * Whether the first segment of `path` (`/a/b`) is one of the studio's own top-level paths
+ * (docs/design/subpath.md#the-base-path): never the configured base path's, but a stripping proxy's X-Forwarded-Prefix
+ * may start with one.
+ */
+export function startsWithOwnPath(path: string): boolean {
+  const first = path.split('/', 2)[1] ?? '';
+  return RESERVED_PREFIXES.includes(`/${first}`) || BUILD_TOP_LEVEL.includes(first);
+}
 
 /**
  * Why `raw` cannot be a base path, or null when it can ('' and '/' are the root). Trailing slashes are dropped first;
@@ -110,8 +139,7 @@ export function basePathProblem(raw: string): BasePathProblem | null {
   const segments = value.slice(1).split('/');
   for (const segment of segments)
     if (segment === '.' || segment === '..' || !SEGMENT.test(segment)) return 'not_a_path';
-  const first = segments[0]!;
-  return RESERVED_PREFIXES.includes(`/${first}`) || BUILD_TOP_LEVEL.includes(first) ? 'reserved' : null;
+  return startsWithOwnPath(value) ? 'reserved' : null;
 }
 
 /** A base path (docs/design/subpath.md#the-base-path): `/a/b`, no trailing slash; '' for the root; null for none. */
@@ -120,25 +148,34 @@ export function normalizeBasePath(raw: string | undefined | null): string | null
   return withoutTrailingSlashes(raw.trim());
 }
 
+/** Why the path of `RIDEO_PUBLIC_URL` is not the base path, and what serves the studio under it (`remedy`). */
+export interface IgnoredPublicUrlPath {
+  path: string;
+  reason: string;
+  remedy: string;
+}
+
 /**
- * The path of `RIDEO_PUBLIC_URL` as the base path, or why it is not one. Such a path is not refused: the studio may
- * work behind a stripping proxy that sends `X-Forwarded-Prefix` (docs/design/subpath.md#the-base-path).
+ * The path of `RIDEO_PUBLIC_URL` as the base path, or why it is not one. Such a path is not refused: the studio serves
+ * at the root, and under a path whose first segment is one of its own behind a stripping proxy that sends it in
+ * `X-Forwarded-Prefix` (docs/design/subpath.md#the-base-path).
  */
 export function publicUrlBasePath(publicUrl: string | undefined): {
   base: string;
-  ignored: { path: string; reason: string } | null;
+  ignored: IgnoredPublicUrlPath | null;
 } {
   if (!publicUrl) return { base: '', ignored: null };
   let path: string;
   try {
     path = new URL(publicUrl).pathname;
   } catch {
-    return { base: '', ignored: { path: '', reason: 'RIDEO_PUBLIC_URL is not a URL' } };
+    const remedy = PUBLIC_PATH_REMEDIES.not_a_url('');
+    return { base: '', ignored: { path: '', reason: 'RIDEO_PUBLIC_URL is not a URL', remedy } };
   }
   const problem = basePathProblem(path);
-  return problem === null
-    ? { base: withoutTrailingSlashes(path), ignored: null }
-    : { base: '', ignored: { path, reason: BASE_PATH_REASONS[problem] } };
+  if (problem === null) return { base: withoutTrailingSlashes(path), ignored: null };
+  const remedy = PUBLIC_PATH_REMEDIES[problem](withoutTrailingSlashes(path));
+  return { base: '', ignored: { path, reason: BASE_PATH_REASONS[problem], remedy } };
 }
 
 const basePath = z
@@ -425,10 +462,11 @@ export interface Config {
   /** Serving under a subpath (docs/design/subpath.md): '' or `/a/b`. */
   basePath: string;
   /**
-   * Why the path of `RIDEO_PUBLIC_URL` is not the base path (docs/design/subpath.md#the-base-path), for the warning
-   * logged at start; null when it is, when it is the root, or when `RIDEO_BASE_PATH` gives the base path.
+   * Why the path of `RIDEO_PUBLIC_URL` is not the base path and what serves the studio under it
+   * (docs/design/subpath.md#the-base-path), for the warning logged at start; null when it is, when it is the root, or
+   * when `RIDEO_BASE_PATH` gives the base path.
    */
-  publicUrlPathIgnored: { path: string; reason: string } | null;
+  publicUrlPathIgnored: IgnoredPublicUrlPath | null;
   /** Origins that may call the API from their pages (docs/design/embedding.md); `*` for any. */
   cors: { origins: string[] };
   /** The 3D-Editor's desk page (docs/design/director-desk.md#the-setting); null: no desk. */

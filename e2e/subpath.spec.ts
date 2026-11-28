@@ -3,11 +3,16 @@ import { at, PORTS } from './support/ports';
 
 /**
  * Serving under a subpath (docs/design/subpath.md): the same build of the app under /studio (the proxy keeps the
- * prefix, RIDEO_BASE_PATH says it) and under /rideo (a proxy strips it and sends X-Forwarded-Prefix, like nginx).
+ * prefix, RIDEO_BASE_PATH says it), under /rideo (a proxy strips it and sends X-Forwarded-Prefix, like nginx) and under
+ * /mcp, a path whose first segment is one of the studio's own, which only such a proxy serves.
  */
 const CASES = [
   { name: 'the prefix kept, set by RIDEO_BASE_PATH', base: at(PORTS.subpath, '/studio/') },
   { name: 'the prefix stripped by a reverse proxy', base: at(PORTS.proxy, '/rideo/') },
+  {
+    name: 'the prefix /mcp, one of the studio’s own paths, stripped by a reverse proxy',
+    base: at(PORTS.ownPathProxy, '/mcp/'),
+  },
 ];
 
 // Routing follows the proxy and the studio's own base path, never a client's X-Forwarded-Prefix
@@ -30,6 +35,9 @@ test('a client’s X-Forwarded-Prefix never re-roots the studio, and a stripped 
   // through the stripping proxy at /rideo: its API, and /rideo/studio/… arrives as /studio/… and stays there
   expect(await reached(at(PORTS.proxy, '/rideo/api/health'))).toBe('200 application/json');
   expect(await reached(at(PORTS.proxy, '/rideo/studio/api/health'))).toBe('200 text/html');
+  // through the stripping proxy at /mcp: its API, and /mcp/mcp/… arrives as /mcp/… and stays there
+  expect(await reached(at(PORTS.ownPathProxy, '/mcp/api/health'))).toBe('200 application/json');
+  expect(await reached(at(PORTS.ownPathProxy, '/mcp/mcp/api/health'))).toBe('200 text/html');
 });
 
 for (const { name, base } of CASES) {
